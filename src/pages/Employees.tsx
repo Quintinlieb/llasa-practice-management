@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,11 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Upload } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import * as XLSX from "xlsx";
 
 interface Employee {
   id: string;
@@ -31,6 +32,7 @@ const Employees = () => {
     employeeSurname: "",
     idNumber: "",
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -119,6 +121,53 @@ const Employees = () => {
     }
   };
 
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsLoading(true);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      const employeesToInsert = jsonData.map((row: any) => ({
+        company_id: user.id,
+        employee_name: row["Name"] || row["name"] || row["Employee Name"] || "",
+        employee_surname: row["Surname"] || row["surname"] || row["Employee Surname"] || "",
+        id_number: String(row["ID Number"] || row["id_number"] || row["ID"] || ""),
+      })).filter(emp => emp.employee_name && emp.employee_surname && emp.id_number);
+
+      if (employeesToInsert.length === 0) {
+        throw new Error("No valid employee data found. Please ensure your Excel has columns: Name, Surname, ID Number");
+      }
+
+      const { error } = await supabase.from("employees").insert(employeesToInsert);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: `${employeesToInsert.length} employee(s) imported successfully!`,
+      });
+
+      fetchEmployees();
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -139,13 +188,33 @@ const Employees = () => {
               Manage your employee records
             </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Employee
+          <div className="flex gap-3">
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleBulkUpload}
+                className="hidden"
+                id="bulk-upload"
+              />
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+              >
+                <Upload className="h-4 w-4" />
+                Bulk Upload
               </Button>
-            </DialogTrigger>
+            </div>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Employee
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Employee</DialogTitle>
@@ -193,6 +262,7 @@ const Employees = () => {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <Card className="shadow-lg">

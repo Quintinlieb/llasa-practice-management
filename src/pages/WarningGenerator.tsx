@@ -6,11 +6,35 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Eye, Download, X } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { jsPDF } from "jspdf";
+
+const MISCONDUCT_TYPES = [
+  "Unauthorised Absenteeism",
+  "Poor Time Keeping",
+  "Sleeping On Duty",
+  "Using Phone on Duty",
+  "Insubordination",
+  "Insolent Behaviour",
+  "Unauthorised Possession",
+  "Unauthorised Excess",
+  "Unauthorised Removal",
+  "Testing Positive for Alcohol",
+  "Intoxicated at Work",
+  "Dereliction of Duties",
+  "Negligence",
+  "Dishonesty",
+  "Breach of Policy",
+  "Breach of Rule(s)",
+  "Breach of Procedure",
+];
 
 const WarningGenerator = () => {
   const { user, loading } = useAuth();
@@ -29,10 +53,11 @@ const WarningGenerator = () => {
     validityMonths: "",
     issuedBy: "",
     dateIssued: new Date().toISOString().split("T")[0],
-    misconduct: "",
+    misconductTypes: [] as string[],
     description: "",
     datesCommitted: "",
   });
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -102,42 +127,70 @@ const WarningGenerator = () => {
     }
   };
 
-  const generatePDF = () => {
+  const generatePDF = (download = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    let yPosition = 20;
+    const margin = 20;
+    const contentWidth = pageWidth - 2 * margin;
+    let yPosition = 25;
 
+    // Modern Header with accent color
+    doc.setFillColor(49, 175, 54);
+    doc.rect(0, 0, pageWidth, 15, "F");
+    
     // Title
-    doc.setFontSize(18);
+    doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
-    doc.text("WRITTEN WARNING", pageWidth / 2, yPosition, { align: "center" });
-    yPosition += 15;
+    doc.setTextColor(255, 255, 255);
+    doc.text("WRITTEN WARNING", pageWidth / 2, 10, { align: "center" });
+    
+    doc.setTextColor(0, 0, 0);
+    yPosition += 5;
 
-    // Company Details
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
+    // Company Details Section
     if (profile) {
-      doc.text(`Company: ${profile.company_name}`, 20, yPosition);
-      yPosition += 6;
-      doc.text(`Registration: ${profile.registration_number}`, 20, yPosition);
-      yPosition += 6;
-      doc.text(`Address: ${profile.physical_address}`, 20, yPosition);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(49, 175, 54);
+      doc.text("COMPANY INFORMATION", margin, yPosition);
+      yPosition += 7;
+      
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(9);
+      doc.text(`${profile.company_name}`, margin, yPosition);
+      yPosition += 5;
+      doc.text(`Reg No: ${profile.registration_number}`, margin, yPosition);
+      yPosition += 5;
+      doc.text(`${profile.physical_address}`, margin, yPosition);
       yPosition += 10;
     }
 
     if (formData.tradingName) {
-      doc.text(`Trading Name: ${formData.tradingName}`, 20, yPosition);
+      doc.setFontSize(9);
+      doc.text(`Trading As: ${formData.tradingName}`, margin, yPosition);
       yPosition += 10;
     }
 
-    // Employee Details
-    doc.setFont("helvetica", "bold");
-    doc.text("EMPLOYEE DETAILS:", 20, yPosition);
+    // Divider line
+    doc.setDrawColor(49, 175, 54);
+    doc.setLineWidth(0.5);
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
     yPosition += 8;
+
+    // Employee Details
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(49, 175, 54);
+    doc.text("EMPLOYEE DETAILS", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
-    doc.text(`Name: ${formData.employeeName} ${formData.employeeSurname}`, 20, yPosition);
-    yPosition += 6;
-    doc.text(`ID Number: ${formData.employeeIdNumber}`, 20, yPosition);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.text(`Name: ${formData.employeeName} ${formData.employeeSurname}`, margin, yPosition);
+    yPosition += 5;
+    doc.text(`ID Number: ${formData.employeeIdNumber}`, margin, yPosition);
     yPosition += 10;
 
     // Warning Details
@@ -148,100 +201,141 @@ const WarningGenerator = () => {
       final: "Final Written Warning",
     }[formData.warningType] || formData.warningType;
 
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("WARNING DETAILS:", 20, yPosition);
-    yPosition += 8;
+    doc.setTextColor(49, 175, 54);
+    doc.text("WARNING DETAILS", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
-    doc.text(`Type of Warning: ${warningTypeText}`, 20, yPosition);
-    yPosition += 6;
-    doc.text(`Validity Period: ${formData.validityMonths} months`, 20, yPosition);
-    yPosition += 6;
-    doc.text(`Issued By: ${formData.issuedBy}`, 20, yPosition);
-    yPosition += 6;
-    doc.text(`Date Issued: ${formData.dateIssued}`, 20, yPosition);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.text(`Type: ${warningTypeText}`, margin, yPosition);
+    yPosition += 5;
+    doc.text(`Validity: ${formData.validityMonths} months`, margin, yPosition);
+    yPosition += 5;
+    doc.text(`Issued By: ${formData.issuedBy}`, margin, yPosition);
+    yPosition += 5;
+    doc.text(`Date: ${formData.dateIssued}`, margin, yPosition);
     yPosition += 10;
 
-    // Misconduct
-    doc.setFont("helvetica", "bold");
-    doc.text("MISCONDUCT:", 20, yPosition);
+    // Divider line
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
     yPosition += 8;
+
+    // Misconduct Types
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(49, 175, 54);
+    doc.text("MISCONDUCT TYPE(S)", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
-    doc.text(formData.misconduct, 20, yPosition);
-    yPosition += 10;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    formData.misconductTypes.forEach((type) => {
+      doc.text(`• ${type}`, margin + 2, yPosition);
+      yPosition += 5;
+    });
+    yPosition += 5;
 
     // Description
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("DESCRIPTION OF MISCONDUCT:", 20, yPosition);
-    yPosition += 8;
+    doc.setTextColor(49, 175, 54);
+    doc.text("DESCRIPTION OF MISCONDUCT", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
-    const descriptionLines = doc.splitTextToSize(formData.description, 170);
-    doc.text(descriptionLines, 20, yPosition);
-    yPosition += descriptionLines.length * 6 + 6;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    const descriptionLines = doc.splitTextToSize(formData.description, contentWidth);
+    doc.text(descriptionLines, margin, yPosition);
+    yPosition += descriptionLines.length * 5 + 8;
 
     // Dates Committed
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("DATE(S) COMMITTED:", 20, yPosition);
-    yPosition += 8;
+    doc.setTextColor(49, 175, 54);
+    doc.text("DATE(S) COMMITTED", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
-    doc.text(formData.datesCommitted, 20, yPosition);
-    yPosition += 15;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
+    doc.text(formData.datesCommitted, margin, yPosition);
+    yPosition += 10;
+
+    // Divider line
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 8;
 
     // Consequences
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("CONSEQUENCES:", 20, yPosition);
-    yPosition += 8;
+    doc.setTextColor(49, 175, 54);
+    doc.text("CONSEQUENCES", margin, yPosition);
+    yPosition += 7;
+    
     doc.setFont("helvetica", "normal");
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(9);
     const consequencesText =
       "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
-    const consequencesLines = doc.splitTextToSize(consequencesText, 170);
-    doc.text(consequencesLines, 20, yPosition);
-    yPosition += consequencesLines.length * 6 + 15;
+    const consequencesLines = doc.splitTextToSize(consequencesText, contentWidth);
+    doc.text(consequencesLines, margin, yPosition);
+    yPosition += consequencesLines.length * 5 + 12;
 
-    // Signatures
+    // Divider line
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 8;
+
+    // Signatures Section
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.text("SIGNATURES:", 20, yPosition);
-    yPosition += 15;
-
-    doc.setFont("helvetica", "normal");
-    doc.text("_____________________________", 20, yPosition);
-    doc.text("Date: _______________", 120, yPosition);
-    yPosition += 6;
-    doc.text("Employer/Issuer Signature", 20, yPosition);
-    yPosition += 15;
-
-    doc.text("_____________________________", 20, yPosition);
-    doc.text("Date: _______________", 120, yPosition);
-    yPosition += 6;
-    doc.text("Employee Signature", 20, yPosition);
-    yPosition += 15;
-
-    doc.text("_____________________________", 20, yPosition);
-    doc.text("Date: _______________", 120, yPosition);
-    yPosition += 6;
-    doc.text("Representative Signature", 20, yPosition);
-    yPosition += 15;
-
-    doc.text("_____________________________", 20, yPosition);
-    doc.text("Date: _______________", 120, yPosition);
-    yPosition += 6;
-    doc.text("Interpreter Signature", 20, yPosition);
-    yPosition += 15;
-
-    doc.text("_____________________________", 20, yPosition);
-    doc.text("Date: _______________", 120, yPosition);
-    yPosition += 6;
-    doc.text("Witness Signature", 20, yPosition);
+    doc.setTextColor(49, 175, 54);
+    doc.text("SIGNATURES", margin, yPosition);
     yPosition += 12;
 
-    // Footer Note
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
+    
+    const signatureSpacing = 18;
+    const signatures = [
+      "Employer/Issuer",
+      "Employee",
+      "Representative",
+      "Interpreter",
+      "Witness"
+    ];
+
+    signatures.forEach((label) => {
+      doc.text("___________________________________", margin, yPosition);
+      doc.text("Date: ______________", 130, yPosition);
+      yPosition += 5;
+      doc.text(label, margin, yPosition);
+      yPosition += signatureSpacing;
+    });
+
+    // Footer Note
+    yPosition += 5;
+    doc.setFontSize(8);
     doc.setFont("helvetica", "italic");
+    doc.setTextColor(100, 100, 100);
     const footerText =
       "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
-    const footerLines = doc.splitTextToSize(footerText, 170);
-    doc.text(footerLines, 20, yPosition);
+    const footerLines = doc.splitTextToSize(footerText, contentWidth);
+    doc.text(footerLines, margin, yPosition);
 
-    doc.save(`Warning_${formData.employeeSurname}_${formData.dateIssued}.pdf`);
+    if (download) {
+      doc.save(`Warning_${formData.employeeSurname}_${formData.dateIssued}.pdf`);
+    } else {
+      const blob = doc.output("blob");
+      setPdfBlob(blob);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -262,35 +356,21 @@ const WarningGenerator = () => {
         validity_months: parseInt(formData.validityMonths),
         issued_by: formData.issuedBy,
         date_issued: formData.dateIssued,
-        misconduct: formData.misconduct,
+        misconduct: formData.misconductTypes.join(", "),
         description: formData.description,
         dates_committed: formData.datesCommitted,
       });
 
       if (error) throw error;
 
-      generatePDF();
+      generatePDF(true);
 
       toast({
         title: "Success",
         description: "Warning document generated and saved!",
       });
 
-      // Reset form
-      setFormData({
-        tradingName: "",
-        employeeId: "",
-        employeeName: "",
-        employeeSurname: "",
-        employeeIdNumber: "",
-        warningType: "",
-        validityMonths: "",
-        issuedBy: "",
-        dateIssued: new Date().toISOString().split("T")[0],
-        misconduct: "",
-        description: "",
-        datesCommitted: "",
-      });
+      handleDiscard();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -300,6 +380,66 @@ const WarningGenerator = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePreview = () => {
+    if (formData.misconductTypes.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please select at least one misconduct type",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.description || !formData.employeeName || !formData.employeeSurname || 
+        !formData.employeeIdNumber || !formData.warningType || !formData.issuedBy || !formData.datesCommitted) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    generatePDF(false);
+  };
+
+  const handleDownload = () => {
+    if (formData.misconductTypes.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please select at least one misconduct type",
+        variant: "destructive",
+      });
+      return;
+    }
+    generatePDF(true);
+  };
+
+  const handleDiscard = () => {
+    setFormData({
+      tradingName: "",
+      employeeId: "",
+      employeeName: "",
+      employeeSurname: "",
+      employeeIdNumber: "",
+      warningType: "",
+      validityMonths: "",
+      issuedBy: "",
+      dateIssued: new Date().toISOString().split("T")[0],
+      misconductTypes: [],
+      description: "",
+      datesCommitted: "",
+    });
+    setPdfBlob(null);
+  };
+
+  const toggleMisconductType = (type: string) => {
+    setFormData(prev => ({
+      ...prev,
+      misconductTypes: prev.misconductTypes.includes(type)
+        ? prev.misconductTypes.filter(t => t !== type)
+        : [...prev.misconductTypes, type]
+    }));
   };
 
   if (loading) {
@@ -447,14 +587,51 @@ const WarningGenerator = () => {
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Misconduct Details</h3>
                   <div className="space-y-2">
-                    <Label htmlFor="misconduct">Misconduct *</Label>
-                    <Input
-                      id="misconduct"
-                      value={formData.misconduct}
-                      onChange={(e) => setFormData({ ...formData, misconduct: e.target.value })}
-                      placeholder="Brief title of misconduct"
-                      required
-                    />
+                    <Label>Misconduct Type(s) *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          {formData.misconductTypes.length === 0
+                            ? "Select misconduct type(s)"
+                            : `${formData.misconductTypes.length} type(s) selected`}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full p-4 max-h-[300px] overflow-y-auto" align="start">
+                        <div className="space-y-2">
+                          {MISCONDUCT_TYPES.map((type) => (
+                            <div key={type} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={type}
+                                checked={formData.misconductTypes.includes(type)}
+                                onCheckedChange={() => toggleMisconductType(type)}
+                              />
+                              <label
+                                htmlFor={type}
+                                className="text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                              >
+                                {type}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    {formData.misconductTypes.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {formData.misconductTypes.map((type) => (
+                          <Badge key={type} variant="secondary" className="gap-1">
+                            {type}
+                            <X
+                              className="h-3 w-3 cursor-pointer"
+                              onClick={() => toggleMisconductType(type)}
+                            />
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="description">Description of Misconduct *</Label>
@@ -462,7 +639,7 @@ const WarningGenerator = () => {
                       id="description"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Detailed description of the misconduct"
+                      placeholder="Provide specific details about the misconduct incident(s)"
                       rows={5}
                       required
                     />
@@ -479,8 +656,41 @@ const WarningGenerator = () => {
                   </div>
                 </div>
 
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    onClick={handlePreview}
+                    disabled={isLoading}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    onClick={handleDownload}
+                    disabled={isLoading}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 gap-2"
+                    onClick={handleDiscard}
+                    disabled={isLoading}
+                  >
+                    <X className="h-4 w-4" />
+                    Discard
+                  </Button>
+                </div>
+
                 <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
-                  {isLoading ? "Generating..." : "Generate & Download PDF"}
+                  {isLoading ? "Saving..." : "Save & Download Warning"}
                 </Button>
               </form>
             </CardContent>

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, Upload, Edit } from "lucide-react";
+import { Plus, Trash2, Upload, Edit, FilePlus } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -418,14 +418,30 @@ const Employees = () => {
                       <TableCell>{employee.employee_surname}</TableCell>
                       <TableCell>{employee.id_number}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleEdit(employee)}
-                          className="hover:text-primary"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(employee)}
+                            className="hover:text-primary"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate('/warning-generator', { 
+                              state: { 
+                                employeeName: employee.employee_name,
+                                employeeSurname: employee.employee_surname,
+                                employeeIdNumber: employee.id_number
+                              } 
+                            })}
+                            className="group"
+                          >
+                            <FilePlus className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

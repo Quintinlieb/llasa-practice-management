@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, FileText, X, Info } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,10 +42,12 @@ const MISCONDUCT_TYPES = [
 const WarningGenerator = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
   const [formData, setFormData] = useState({
     tradingName: "",
     employeeId: "",
@@ -71,6 +75,20 @@ const WarningGenerator = () => {
       fetchEmployees();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (location.state) {
+      const { employeeName, employeeSurname, employeeIdNumber } = location.state as any;
+      if (employeeName && employeeSurname && employeeIdNumber) {
+        setFormData(prev => ({
+          ...prev,
+          employeeName,
+          employeeSurname,
+          employeeIdNumber
+        }));
+      }
+    }
+  }, [location.state]);
 
   const fetchProfile = async () => {
     if (!user) return;
@@ -387,7 +405,7 @@ const WarningGenerator = () => {
       });
       return;
     }
-    generatePDF(false);
+    setShowPreview(true);
   };
 
   const handleDownload = () => {
@@ -692,6 +710,130 @@ const WarningGenerator = () => {
           </Card>
         </div>
       </div>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl h-[90vh] p-0">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>Warning Document Preview</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-full px-6 pb-6">
+            <div className="bg-white text-black p-8 mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
+              {/* Header */}
+              <div className="bg-[#31af36] h-12 -mx-8 -mt-8 mb-6 flex items-center justify-center">
+                <h1 className="text-2xl font-bold text-white">WRITTEN WARNING</h1>
+              </div>
+
+              {/* Company Information */}
+              {profile && (
+                <div className="mb-6">
+                  <h2 className="text-sm font-bold text-[#31af36] mb-2">COMPANY INFORMATION</h2>
+                  <div className="text-xs space-y-1">
+                    <p>{profile.company_name}</p>
+                    <p>Reg No: {profile.registration_number}</p>
+                    <p>{profile.physical_address}</p>
+                  </div>
+                </div>
+              )}
+
+              {formData.tradingName && (
+                <div className="text-xs mb-6">
+                  <p>Trading As: {formData.tradingName}</p>
+                </div>
+              )}
+
+              {/* Divider */}
+              <div className="border-t-2 border-[#31af36] mb-6" />
+
+              {/* Employee Details */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-2">EMPLOYEE DETAILS</h2>
+                <div className="text-xs space-y-1">
+                  <p>Name: {formData.employeeName} {formData.employeeSurname}</p>
+                  <p>ID Number: {formData.employeeIdNumber}</p>
+                </div>
+              </div>
+
+              {/* Warning Details */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-2">WARNING DETAILS</h2>
+                <div className="text-xs space-y-1">
+                  <p>Type: {
+                    {
+                      first: "First Written Warning",
+                      second: "Second Written Warning",
+                      serious: "Serious Written Warning",
+                      final: "Final Written Warning",
+                    }[formData.warningType] || formData.warningType
+                  }</p>
+                  <p>Validity: {formData.validityMonths} months</p>
+                  <p>Issued By: {formData.issuedBy}</p>
+                  <p>Date: {formData.dateIssued}</p>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-[#31af36] mb-6" />
+
+              {/* Misconduct Types */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-2">MISCONDUCT TYPE(S)</h2>
+                <div className="text-xs space-y-1">
+                  {formData.misconductTypes.map((type, idx) => (
+                    <p key={idx}>• {type}</p>
+                  ))}
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-2">DESCRIPTION OF MISCONDUCT</h2>
+                <p className="text-xs whitespace-pre-wrap">{formData.description}</p>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-[#31af36] mb-6" />
+
+              {/* Consequences */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-2">CONSEQUENCES</h2>
+                <p className="text-xs">
+                  You are required to refrain completely from committing any further acts of misconduct. 
+                  Should you commit the same or similar act of misconduct within the validity period of this warning, 
+                  progressive disciplinary action will be taken which could lead to your dismissal.
+                </p>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-[#31af36] mb-6" />
+
+              {/* Signatures */}
+              <div className="mb-6">
+                <h2 className="text-sm font-bold text-[#31af36] mb-3">SIGNATURES</h2>
+                <div className="space-y-6 text-xs">
+                  {["Employer/Issuer", "Employee", "Representative", "Interpreter", "Witness"].map((label, idx) => (
+                    <div key={idx}>
+                      <div className="flex justify-between mb-1">
+                        <span className="border-b border-black flex-1 max-w-[60%]"></span>
+                        <span className="ml-4">Date: <span className="border-b border-black inline-block w-32"></span></span>
+                      </div>
+                      <p className="mt-1">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer Note */}
+              <div className="mt-8">
+                <p className="text-[10px] text-gray-600 italic">
+                  If the employee refuses to sign this warning, the witness's signature will confirm that the employee 
+                  did receive the warning and that the contents were explained to him/her.
+                </p>
+              </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

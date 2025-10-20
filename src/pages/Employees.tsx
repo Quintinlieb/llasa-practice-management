@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Trash2, Upload, Edit } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,7 +26,11 @@ const Employees = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     employeeName: "",
@@ -46,6 +51,16 @@ const Employees = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    const filtered = employees.filter(
+      (emp) =>
+        emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.employee_surname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        emp.id_number.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredEmployees(filtered);
+  }, [employees, searchQuery]);
+
   const fetchEmployees = async () => {
     if (!user) return;
 
@@ -63,6 +78,7 @@ const Employees = () => {
       });
     } else {
       setEmployees(data || []);
+      setFilteredEmployees(data || []);
     }
   };
 
@@ -73,27 +89,48 @@ const Employees = () => {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.from("employees").insert({
-        company_id: user.id,
-        employee_name: formData.employeeName,
-        employee_surname: formData.employeeSurname,
-        id_number: formData.idNumber,
-      });
+      if (editingEmployee) {
+        const { error } = await supabase
+          .from("employees")
+          .update({
+            employee_name: formData.employeeName,
+            employee_surname: formData.employeeSurname,
+            id_number: formData.idNumber,
+          })
+          .eq("id", editingEmployee.id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: "Success",
-        description: "Employee added successfully!",
-      });
+        toast({
+          title: "Success",
+          description: "Employee updated successfully!",
+        });
+      } else {
+        const { error } = await supabase.from("employees").insert({
+          company_id: user.id,
+          employee_name: formData.employeeName,
+          employee_surname: formData.employeeSurname,
+          id_number: formData.idNumber,
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Success",
+          description: "Employee added successfully!",
+        });
+      }
 
       setFormData({ employeeName: "", employeeSurname: "", idNumber: "" });
+      setEditingEmployee(null);
       setIsDialogOpen(false);
       fetchEmployees();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message.includes("employees_id_number_unique")
+          ? "An employee with this ID number already exists."
+          : error.message,
         variant: "destructive",
       });
     } finally {
@@ -101,10 +138,15 @@ const Employees = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this employee?")) return;
+  const handleBulkDelete = async () => {
+    if (selectedEmployees.size === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete ${selectedEmployees.size} employee(s)?`)) return;
 
-    const { error } = await supabase.from("employees").delete().eq("id", id);
+    const { error } = await supabase
+      .from("employees")
+      .delete()
+      .in("id", Array.from(selectedEmployees));
 
     if (error) {
       toast({
@@ -115,10 +157,47 @@ const Employees = () => {
     } else {
       toast({
         title: "Success",
-        description: "Employee deleted successfully!",
+        description: `${selectedEmployees.size} employee(s) deleted successfully!`,
       });
+      setSelectedEmployees(new Set());
       fetchEmployees();
     }
+  };
+
+  const handleEdit = (employee: Employee) => {
+    setEditingEmployee(employee);
+    setFormData({
+      employeeName: employee.employee_name,
+      employeeSurname: employee.employee_surname,
+      idNumber: employee.id_number,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setEditingEmployee(null);
+      setFormData({ employeeName: "", employeeSurname: "", idNumber: "" });
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedEmployees.size === filteredEmployees.length) {
+      setSelectedEmployees(new Set());
+    } else {
+      setSelectedEmployees(new Set(filteredEmployees.map((emp) => emp.id)));
+    }
+  };
+
+  const toggleSelectEmployee = (id: string) => {
+    const newSelected = new Set(selectedEmployees);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedEmployees(newSelected);
   };
 
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,6 +268,19 @@ const Employees = () => {
             </p>
           </div>
           <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={handleBulkDelete}
+              disabled={selectedEmployees.size === 0}
+              className={`gap-2 ${
+                selectedEmployees.size > 0
+                  ? "border-destructive text-destructive hover:bg-destructive/10"
+                  : ""
+              }`}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
             <div>
               <input
                 ref={fileInputRef}
@@ -208,7 +300,7 @@ const Employees = () => {
                 Bulk Upload
               </Button>
             </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Plus className="h-4 w-4" />
@@ -217,9 +309,9 @@ const Employees = () => {
               </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add New Employee</DialogTitle>
+                <DialogTitle>{editingEmployee ? "Edit Employee" : "Add New Employee"}</DialogTitle>
                 <DialogDescription>
-                  Enter the employee's details below
+                  {editingEmployee ? "Update the employee's details below" : "Enter the employee's details below"}
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -257,7 +349,7 @@ const Employees = () => {
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Adding..." : "Add Employee"}
+                  {isLoading ? (editingEmployee ? "Updating..." : "Adding...") : (editingEmployee ? "Update Employee" : "Add Employee")}
                 </Button>
               </form>
             </DialogContent>
@@ -271,6 +363,14 @@ const Employees = () => {
             <CardDescription>
               {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
             </CardDescription>
+            <div className="mt-4">
+              <Input
+                placeholder="Search by name, surname, or ID number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-md"
+              />
+            </div>
           </CardHeader>
           <CardContent>
             {employees.length === 0 ? (
@@ -285,6 +385,15 @@ const Employees = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={
+                          filteredEmployees.length > 0 &&
+                          selectedEmployees.size === filteredEmployees.length
+                        }
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Surname</TableHead>
                     <TableHead>ID Number</TableHead>
@@ -292,19 +401,30 @@ const Employees = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {employees.map((employee) => (
+                  {filteredEmployees.map((employee) => (
                     <TableRow key={employee.id}>
-                      <TableCell className="font-medium">{employee.employee_name}</TableCell>
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedEmployees.has(employee.id)}
+                          onCheckedChange={() => toggleSelectEmployee(employee.id)}
+                        />
+                      </TableCell>
+                      <TableCell 
+                        className="font-medium cursor-pointer hover:text-primary"
+                        onClick={() => handleEdit(employee)}
+                      >
+                        {employee.employee_name}
+                      </TableCell>
                       <TableCell>{employee.employee_surname}</TableCell>
                       <TableCell>{employee.id_number}</TableCell>
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDelete(employee.id)}
-                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleEdit(employee)}
+                          className="hover:text-primary"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Edit className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>

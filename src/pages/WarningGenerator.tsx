@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Download, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Download, FileText, X, Info } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,7 +56,6 @@ const WarningGenerator = () => {
     dateIssued: new Date().toISOString().split("T")[0],
     misconductTypes: [] as string[],
     description: "",
-    datesCommitted: "",
   });
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
 
@@ -251,20 +251,7 @@ const WarningGenerator = () => {
     doc.setFontSize(9);
     const descriptionLines = doc.splitTextToSize(formData.description, contentWidth);
     doc.text(descriptionLines, margin, yPosition);
-    yPosition += descriptionLines.length * 5 + 8;
-
-    // Dates Committed
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
-    doc.text("DATE(S) COMMITTED", margin, yPosition);
-    yPosition += 7;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    doc.text(formData.datesCommitted, margin, yPosition);
-    yPosition += 10;
+    yPosition += descriptionLines.length * 5 + 10;
 
     // Divider line
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
@@ -358,7 +345,7 @@ const WarningGenerator = () => {
         date_issued: formData.dateIssued,
         misconduct: formData.misconductTypes.join(", "),
         description: formData.description,
-        dates_committed: formData.datesCommitted,
+        dates_committed: "",
       });
 
       if (error) throw error;
@@ -392,7 +379,7 @@ const WarningGenerator = () => {
       return;
     }
     if (!formData.description || !formData.employeeName || !formData.employeeSurname || 
-        !formData.employeeIdNumber || !formData.warningType || !formData.issuedBy || !formData.datesCommitted) {
+        !formData.employeeIdNumber || !formData.warningType || !formData.issuedBy) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
@@ -428,9 +415,20 @@ const WarningGenerator = () => {
       dateIssued: new Date().toISOString().split("T")[0],
       misconductTypes: [],
       description: "",
-      datesCommitted: "",
     });
     setPdfBlob(null);
+  };
+
+  const isFormValid = () => {
+    return (
+      formData.misconductTypes.length > 0 &&
+      formData.description &&
+      formData.employeeName &&
+      formData.employeeSurname &&
+      formData.employeeIdNumber &&
+      formData.warningType &&
+      formData.issuedBy
+    );
   };
 
   const toggleMisconductType = (type: string) => {
@@ -634,45 +632,46 @@ const WarningGenerator = () => {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description of Misconduct *</Label>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="description">Description of Misconduct *</Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p>Type a brief summary of what the employee did in respect of the selected misconduct type(s), together with the dates committed.</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                     <Textarea
                       id="description"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      placeholder="Provide specific details about the misconduct incident(s)"
+                      placeholder="Provide specific details about the misconduct incident(s) including dates"
                       rows={5}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="datesCommitted">Date(s) Committed *</Label>
-                    <Input
-                      id="datesCommitted"
-                      value={formData.datesCommitted}
-                      onChange={(e) => setFormData({ ...formData, datesCommitted: e.target.value })}
-                      placeholder="e.g., 2025-01-15, 2025-01-20"
                       required
                     />
                   </div>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-1 gap-2"
                     onClick={handlePreview}
-                    disabled={isLoading}
+                    disabled={isLoading || !isFormValid()}
+                    className="gap-2 hover:border-primary"
                   >
-                    <Eye className="h-4 w-4" />
+                    <FileText className="h-4 w-4" />
                     Preview
                   </Button>
                   <Button
                     type="button"
-                    variant="outline"
-                    className="flex-1 gap-2"
                     onClick={handleDownload}
-                    disabled={isLoading}
+                    disabled={isLoading || !isFormValid()}
+                    className="gap-2 bg-primary hover:bg-primary/90"
                   >
                     <Download className="h-4 w-4" />
                     Download
@@ -680,18 +679,14 @@ const WarningGenerator = () => {
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-1 gap-2"
                     onClick={handleDiscard}
                     disabled={isLoading}
+                    className="gap-2 hover:border-destructive hover:text-destructive"
                   >
                     <X className="h-4 w-4" />
                     Discard
                   </Button>
                 </div>
-
-                <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
-                  {isLoading ? "Saving..." : "Save & Download Warning"}
-                </Button>
               </form>
             </CardContent>
           </Card>

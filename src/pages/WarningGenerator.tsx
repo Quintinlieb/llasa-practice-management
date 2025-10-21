@@ -151,20 +151,15 @@ const WarningGenerator = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
     const contentWidth = pageWidth - 2 * margin;
-    let yPosition = 25;
+    let yPosition = 15;
 
-    // Modern Header with accent color
-    doc.setFillColor(49, 175, 54);
-    doc.rect(0, 0, pageWidth, 15, "F");
-    
     // Title
-    doc.setFontSize(22);
+    doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 255, 255);
-    doc.text("WRITTEN WARNING", pageWidth / 2, 10, { align: "center" });
-    
     doc.setTextColor(0, 0, 0);
-    yPosition += 5;
+    doc.text("WRITTEN WARNING", pageWidth / 2, yPosition, { align: "center" });
+    
+    yPosition += 10;
 
     // Company Details Section
     if (profile) {
@@ -172,45 +167,45 @@ const WarningGenerator = () => {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(49, 175, 54);
       doc.text("COMPANY INFORMATION", margin, yPosition);
-      yPosition += 7;
+      yPosition += 5;
       
       doc.setFont("helvetica", "normal");
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
       doc.text(`${profile.company_name}`, margin, yPosition);
-      yPosition += 5;
+      yPosition += 4;
       doc.text(`Reg No: ${profile.registration_number}`, margin, yPosition);
-      yPosition += 5;
+      yPosition += 4;
       doc.text(`${profile.physical_address}`, margin, yPosition);
-      yPosition += 10;
+      yPosition += 7;
     }
 
     if (formData.tradingName) {
       doc.setFontSize(9);
       doc.text(`Trading As: ${formData.tradingName}`, margin, yPosition);
-      yPosition += 10;
+      yPosition += 7;
     }
 
     // Divider line
     doc.setDrawColor(49, 175, 54);
     doc.setLineWidth(0.5);
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 8;
+    yPosition += 6;
 
     // Employee Details
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("EMPLOYEE DETAILS", margin, yPosition);
-    yPosition += 7;
+    yPosition += 5;
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     doc.text(`Name: ${formData.employeeName} ${formData.employeeSurname}`, margin, yPosition);
-    yPosition += 5;
+    yPosition += 4;
     doc.text(`ID Number: ${formData.employeeIdNumber}`, margin, yPosition);
-    yPosition += 10;
+    yPosition += 7;
 
     // Warning Details
     const warningTypeText = {
@@ -224,64 +219,64 @@ const WarningGenerator = () => {
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("WARNING DETAILS", margin, yPosition);
-    yPosition += 7;
+    yPosition += 5;
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     doc.text(`Type: ${warningTypeText}`, margin, yPosition);
-    yPosition += 5;
+    yPosition += 4;
     doc.text(`Validity: ${formData.validityMonths} months`, margin, yPosition);
-    yPosition += 5;
+    yPosition += 4;
     doc.text(`Issued By: ${formData.issuedBy}`, margin, yPosition);
-    yPosition += 5;
+    yPosition += 4;
     doc.text(`Date: ${formData.dateIssued}`, margin, yPosition);
-    yPosition += 10;
+    yPosition += 7;
 
     // Divider line
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 8;
+    yPosition += 6;
 
     // Misconduct Types
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("MISCONDUCT TYPE(S)", margin, yPosition);
-    yPosition += 7;
+    yPosition += 5;
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     formData.misconductTypes.forEach((type) => {
       doc.text(`• ${type}`, margin + 2, yPosition);
-      yPosition += 5;
+      yPosition += 4;
     });
-    yPosition += 5;
+    yPosition += 3;
 
     // Description
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("DESCRIPTION OF MISCONDUCT", margin, yPosition);
-    yPosition += 7;
+    yPosition += 5;
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     const descriptionLines = doc.splitTextToSize(formData.description, contentWidth);
     doc.text(descriptionLines, margin, yPosition);
-    yPosition += descriptionLines.length * 5 + 10;
+    yPosition += descriptionLines.length * 4.5 + 7;
 
     // Divider line
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 8;
+    yPosition += 6;
 
     // Consequences
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("CONSEQUENCES", margin, yPosition);
-    yPosition += 7;
+    yPosition += 5;
     
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
@@ -290,24 +285,24 @@ const WarningGenerator = () => {
       "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
     const consequencesLines = doc.splitTextToSize(consequencesText, contentWidth);
     doc.text(consequencesLines, margin, yPosition);
-    yPosition += consequencesLines.length * 5 + 12;
+    yPosition += consequencesLines.length * 4.5 + 8;
 
     // Divider line
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 8;
+    yPosition += 6;
 
     // Signatures Section
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(49, 175, 54);
     doc.text("SIGNATURES", margin, yPosition);
-    yPosition += 12;
+    yPosition += 8;
 
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     
-    const signatureSpacing = 18;
+    const signatureSpacing = 13;
     const signatures = [
       "Employer/Issuer",
       "Employee",
@@ -319,13 +314,13 @@ const WarningGenerator = () => {
     signatures.forEach((label) => {
       doc.text("___________________________________", margin, yPosition);
       doc.text("Date: ______________", 130, yPosition);
-      yPosition += 5;
+      yPosition += 4;
       doc.text(label, margin, yPosition);
       yPosition += signatureSpacing;
     });
 
     // Footer Note
-    yPosition += 5;
+    yPosition += 2;
     doc.setFontSize(8);
     doc.setFont("helvetica", "italic");
     doc.setTextColor(100, 100, 100);

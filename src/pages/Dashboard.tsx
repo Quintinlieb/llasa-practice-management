@@ -6,70 +6,62 @@ import { FileText, Users, Plus } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-
 const Dashboard = () => {
-  const { user, loading } = useAuth();
+  const {
+    user,
+    loading
+  } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     employees: 0,
-    documents: 0,
+    documents: 0
   });
   const [profile, setProfile] = useState<any>(null);
-
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");
     }
   }, [user, loading, navigate]);
-
   useEffect(() => {
     const fetchData = async () => {
       if (!user) return;
 
       // Check if profile exists
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
+      const {
+        data: profileData
+      } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
       if (!profileData) {
         navigate("/company-setup");
         return;
       }
-
       setProfile(profileData);
 
       // Fetch statistics
-      const { count: employeeCount } = await supabase
-        .from("employees")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", user.id);
-
-      const { count: documentCount } = await supabase
-        .from("documents")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", user.id);
-
+      const {
+        count: employeeCount
+      } = await supabase.from("employees").select("*", {
+        count: "exact",
+        head: true
+      }).eq("company_id", user.id);
+      const {
+        count: documentCount
+      } = await supabase.from("documents").select("*", {
+        count: "exact",
+        head: true
+      }).eq("company_id", user.id);
       setStats({
         employees: employeeCount || 0,
-        documents: documentCount || 0,
+        documents: documentCount || 0
       });
     };
-
     fetchData();
   }, [user, navigate]);
-
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
+    return <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
+  return <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
       <Navigation />
       
       <div className="container mx-auto px-6 py-12">
@@ -121,9 +113,7 @@ const Dashboard = () => {
                   <Plus className="h-5 w-5 text-primary" />
                   Generate Written Warning
                 </CardTitle>
-                <CardDescription>
-                  Create a new written warning document for an employee
-                </CardDescription>
+                <CardDescription>Create a new written warning for an employee</CardDescription>
               </CardHeader>
               <CardContent>
                 <Button className="w-full group-hover:scale-105 transition-transform">
@@ -138,9 +128,7 @@ const Dashboard = () => {
                   <Users className="h-5 w-5 text-primary" />
                   Manage Employees
                 </CardTitle>
-                <CardDescription>
-                  Add, edit, or view your employee records
-                </CardDescription>
+                <CardDescription>Add or edit your employee list</CardDescription>
               </CardHeader>
               <CardContent>
                 <Button variant="outline" className="w-full group-hover:scale-105 transition-transform">
@@ -151,8 +139,6 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Dashboard;

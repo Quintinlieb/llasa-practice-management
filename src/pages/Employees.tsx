@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, Upload, Edit, FilePlus, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, Upload, Edit, FilePlus, Eye, EyeOff, Download } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -206,6 +206,28 @@ const Employees = () => {
     setSelectedEmployees(newSelected);
   };
 
+  const downloadTemplate = () => {
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const wsData = [
+      ["Name", "Surname", "ID Number"],
+      ["John", "Doe", "9001015009087"],
+      ["Jane", "Smith", "8505125800082"],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+    
+    // Generate and download file
+    XLSX.writeFile(wb, "employee_upload_template.xlsx");
+    
+    toast({
+      title: "Template Downloaded",
+      description: "Check your downloads folder for the Excel template.",
+    });
+  };
+
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -323,6 +345,14 @@ const Employees = () => {
             >
               <Trash2 className="h-4 w-4" />
               Delete
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={downloadTemplate}
+            >
+              <Download className="h-4 w-4" />
+              Download Template
             </Button>
             <div>
               <input

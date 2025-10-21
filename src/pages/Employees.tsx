@@ -7,13 +7,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Trash2, Upload, Edit, FilePlus } from "lucide-react";
+import { Plus, Trash2, Upload, Edit, FilePlus, Eye, EyeOff } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { employeeSchema, sanitizeText, validateSAIdNumber } from "@/lib/validation";
+import { maskSAIdNumber } from "@/lib/idMasking";
 
 interface Employee {
   id: string;
@@ -33,6 +34,7 @@ const Employees = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     employeeName: "",
     employeeSurname: "",
@@ -457,7 +459,35 @@ const Employees = () => {
                         {employee.employee_name}
                       </TableCell>
                       <TableCell>{employee.employee_surname}</TableCell>
-                      <TableCell>{employee.id_number}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm">
+                            {revealedIds.has(employee.id) ? employee.id_number : maskSAIdNumber(employee.id_number)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newRevealed = new Set(revealedIds);
+                              if (newRevealed.has(employee.id)) {
+                                newRevealed.delete(employee.id);
+                              } else {
+                                newRevealed.add(employee.id);
+                              }
+                              setRevealedIds(newRevealed);
+                            }}
+                            className="h-6 w-6 p-0"
+                            title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
+                          >
+                            {revealedIds.has(employee.id) ? (
+                              <EyeOff className="h-3 w-3" />
+                            ) : (
+                              <Eye className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button

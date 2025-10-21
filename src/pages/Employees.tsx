@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
+import { employeeSchema, sanitizeText, validateSAIdNumber } from "@/lib/validation";
 
 interface Employee {
   id: string;
@@ -89,13 +90,16 @@ const Employees = () => {
     setIsLoading(true);
 
     try {
+      // Validate and sanitize input
+      const validatedData = employeeSchema.parse(formData);
+
       if (editingEmployee) {
         const { error } = await supabase
           .from("employees")
           .update({
-            employee_name: formData.employeeName,
-            employee_surname: formData.employeeSurname,
-            id_number: formData.idNumber,
+            employee_name: validatedData.employeeName,
+            employee_surname: validatedData.employeeSurname,
+            id_number: validatedData.idNumber,
           })
           .eq("id", editingEmployee.id);
 
@@ -108,9 +112,9 @@ const Employees = () => {
       } else {
         const { error } = await supabase.from("employees").insert({
           company_id: user.id,
-          employee_name: formData.employeeName,
-          employee_surname: formData.employeeSurname,
-          id_number: formData.idNumber,
+          employee_name: validatedData.employeeName,
+          employee_surname: validatedData.employeeSurname,
+          id_number: validatedData.idNumber,
         });
 
         if (error) throw error;
@@ -130,7 +134,7 @@ const Employees = () => {
         title: "Error",
         description: error.message.includes("employees_id_number_unique")
           ? "An employee with this ID number already exists."
-          : error.message,
+          : error.errors?.[0]?.message || error.message || "Validation failed",
         variant: "destructive",
       });
     } finally {
@@ -212,24 +216,61 @@ const Employees = () => {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      const employeesToInsert = jsonData.map((row: any) => ({
-        company_id: user.id,
-        employee_name: row["Name"] || row["name"] || row["Employee Name"] || "",
-        employee_surname: row["Surname"] || row["surname"] || row["Employee Surname"] || "",
-        id_number: String(row["ID Number"] || row["id_number"] || row["ID"] || ""),
-      })).filter(emp => emp.employee_name && emp.employee_surname && emp.id_number);
+      // Validate and sanitize each employee record
+      const validatedEmployees: any[] = [];
+      const errors: string[] = [];
 
-      if (employeesToInsert.length === 0) {
+      for (let i = 0; i < jsonData.length; i++) {
+        const row: any = jsonData[i];
+        const rowNumber = i + 2; // Excel row number (accounting for header)
+
+        try {
+          const rawData = {
+            employeeName: sanitizeText(String(row["Name"] || row["name"] || row["Employee Name"] || "")),
+            employeeSurname: sanitizeText(String(row["Surname"] || row["surname"] || row["Employee Surname"] || "")),
+            idNumber: sanitizeText(String(row["ID Number"] || row["id_number"] || row["ID"] || "")),
+          };
+
+          // Validate the data
+          const validatedData = employeeSchema.parse(rawData);
+
+          validatedEmployees.push({
+            company_id: user.id,
+            employee_name: validatedData.employeeName,
+            employee_surname: validatedData.employeeSurname,
+            id_number: validatedData.idNumber,
+          });
+        } catch (err: any) {
+          errors.push(`Row ${rowNumber}: ${err.errors?.[0]?.message || err.message}`);
+        }
+      }
+
+      if (validatedEmployees.length === 0) {
         throw new Error("No valid employee data found. Please ensure your Excel has columns: Name, Surname, ID Number");
       }
 
-      const { error } = await supabase.from("employees").insert(employeesToInsert);
+      if (errors.length > 0 && errors.length < 10) {
+        // Show first few errors
+        toast({
+          title: "Warning",
+          description: `${errors.length} row(s) skipped due to validation errors. First error: ${errors[0]}`,
+          variant: "destructive",
+        });
+      } else if (errors.length >= 10) {
+        toast({
+          title: "Warning",
+          description: `${errors.length} row(s) skipped due to validation errors. Please check your data format.`,
+          variant: "destructive",
+        });
+      }
+
+      const { error } = await supabase.from("employees").insert(validatedEmployees);
 
       if (error) throw error;
 
       toast({
         title: "Success",
-        description: `${employeesToInsert.length} employee(s) imported successfully!`,
+        description: `${validatedEmployees.length} employee(s) imported successfully!${errors.length > 0 ? ` (${errors.length} skipped)` : ""}`,
       });
 
       fetchEmployees();

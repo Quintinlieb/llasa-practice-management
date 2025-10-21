@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { companySetupSchema } from "@/lib/validation";
 
 const CompanySetup = () => {
   const { user } = useAuth();
@@ -49,21 +50,24 @@ const CompanySetup = () => {
     setIsLoading(true);
 
     try {
+      // Validate and sanitize input
+      const validatedData = companySetupSchema.parse(formData);
+
       const { error } = await supabase.from("profiles").insert({
         id: user.id,
-        company_name: formData.companyName,
-        registration_number: formData.registrationNumber,
-        vat_number: formData.vatNumber,
-        physical_address: formData.physicalAddress,
-        postal_address: formData.postalAddress,
-        representative_name: formData.representativeName,
-        representative_surname: formData.representativeSurname,
-        company_contact: formData.companyContact,
-        company_email: formData.companyEmail,
-        user_name: formData.userName,
-        user_surname: formData.userSurname,
-        user_contact: formData.userContact,
-        user_email: formData.userEmail,
+        company_name: validatedData.companyName,
+        registration_number: validatedData.registrationNumber,
+        vat_number: validatedData.vatNumber,
+        physical_address: validatedData.physicalAddress,
+        postal_address: validatedData.postalAddress,
+        representative_name: validatedData.representativeName,
+        representative_surname: validatedData.representativeSurname,
+        company_contact: validatedData.companyContact,
+        company_email: validatedData.companyEmail,
+        user_name: validatedData.userName,
+        user_surname: validatedData.userSurname,
+        user_contact: validatedData.userContact,
+        user_email: validatedData.userEmail,
       });
 
       if (error) throw error;
@@ -77,7 +81,7 @@ const CompanySetup = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.errors?.[0]?.message || error.message || "Validation failed",
         variant: "destructive",
       });
     } finally {

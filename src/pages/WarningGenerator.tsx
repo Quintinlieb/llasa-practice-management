@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { jsPDF } from "jspdf";
+import { warningGeneratorSchema } from "@/lib/validation";
 
 const MISCONDUCT_TYPES = [
   "Unauthorised Absenteeism",
@@ -350,19 +351,33 @@ const WarningGenerator = () => {
     setIsLoading(true);
 
     try {
+      // Validate and sanitize input
+      const validatedData = warningGeneratorSchema.parse({
+        tradingName: formData.tradingName,
+        employeeName: formData.employeeName,
+        employeeSurname: formData.employeeSurname,
+        employeeIdNumber: formData.employeeIdNumber,
+        warningType: formData.warningType,
+        validityMonths: formData.validityMonths,
+        issuedBy: formData.issuedBy,
+        dateIssued: formData.dateIssued,
+        misconductTypes: formData.misconductTypes,
+        description: formData.description,
+      });
+
       const { error } = await supabase.from("documents").insert({
         company_id: user.id,
         employee_id: formData.employeeId || null,
-        trading_name: formData.tradingName,
-        employee_name: formData.employeeName,
-        employee_surname: formData.employeeSurname,
-        employee_id_number: formData.employeeIdNumber,
-        warning_type: formData.warningType as any,
-        validity_months: parseInt(formData.validityMonths),
-        issued_by: formData.issuedBy,
-        date_issued: formData.dateIssued,
-        misconduct: formData.misconductTypes.join(", "),
-        description: formData.description,
+        trading_name: validatedData.tradingName,
+        employee_name: validatedData.employeeName,
+        employee_surname: validatedData.employeeSurname,
+        employee_id_number: validatedData.employeeIdNumber,
+        warning_type: validatedData.warningType as any,
+        validity_months: validatedData.validityMonths,
+        issued_by: validatedData.issuedBy,
+        date_issued: validatedData.dateIssued,
+        misconduct: validatedData.misconductTypes.join(", "),
+        description: validatedData.description,
         dates_committed: "",
       });
 
@@ -379,7 +394,7 @@ const WarningGenerator = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: error.errors?.[0]?.message || error.message || "Validation failed",
         variant: "destructive",
       });
     } finally {

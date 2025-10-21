@@ -244,16 +244,45 @@ const Employees = () => {
       const validatedEmployees: any[] = [];
       const errors: string[] = [];
 
+      // Helper function to find column value with flexible matching
+      const getColumnValue = (row: any, ...possibleNames: string[]): string => {
+        // First try exact matches
+        for (const name of possibleNames) {
+          if (row[name] !== undefined && row[name] !== null) {
+            return String(row[name]).trim();
+          }
+        }
+        
+        // Then try case-insensitive and trimmed matches
+        const rowKeys = Object.keys(row);
+        for (const name of possibleNames) {
+          const normalizedName = name.toLowerCase().trim();
+          const matchingKey = rowKeys.find(key => 
+            key.toLowerCase().trim() === normalizedName
+          );
+          if (matchingKey && row[matchingKey] !== undefined && row[matchingKey] !== null) {
+            return String(row[matchingKey]).trim();
+          }
+        }
+        
+        return "";
+      };
+
       for (let i = 0; i < jsonData.length; i++) {
         const row: any = jsonData[i];
         const rowNumber = i + 2; // Excel row number (accounting for header)
 
         try {
           const rawData = {
-            employeeName: sanitizeText(String(row["Name"] || row["name"] || row["Employee Name"] || "")),
-            employeeSurname: sanitizeText(String(row["Surname"] || row["surname"] || row["Employee Surname"] || "")),
-            idNumber: sanitizeText(String(row["ID Number"] || row["id_number"] || row["ID"] || "")),
+            employeeName: sanitizeText(getColumnValue(row, "Name", "name", "Employee Name", "employee_name", "First Name", "firstname")),
+            employeeSurname: sanitizeText(getColumnValue(row, "Surname", "surname", "Employee Surname", "employee_surname", "Last Name", "lastname")),
+            idNumber: sanitizeText(getColumnValue(row, "ID Number", "id_number", "ID", "id", "IDNumber", "Id Number")),
           };
+
+          // Skip empty rows
+          if (!rawData.employeeName && !rawData.employeeSurname && !rawData.idNumber) {
+            continue;
+          }
 
           // Validate the data
           const validatedData = employeeSchema.parse(rawData);

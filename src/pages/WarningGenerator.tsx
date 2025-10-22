@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, FileText, X, Info } from "lucide-react";
-import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -477,17 +477,14 @@ const WarningGenerator = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
-      <Navigation />
-
-      <div className="container mx-auto px-6 py-12">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Generate Written Warning</h1>
-            <p className="text-muted-foreground">
-              Complete the form below to generate a professional written warning document
-            </p>
-          </div>
+    <DashboardLayout>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Generate Written Warning</h1>
+          <p className="text-muted-foreground">
+            Complete the form below to generate a professional written warning document
+          </p>
+        </div>
 
           <Card className="shadow-xl">
             <CardHeader>
@@ -719,10 +716,9 @@ const WarningGenerator = () => {
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      {/* Preview Dialog */}
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        {/* Preview Dialog */}
+        <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl h-[90vh] p-0">
           <DialogHeader className="px-6 pt-6">
             <DialogTitle>Warning Document Preview</DialogTitle>
@@ -844,7 +840,7 @@ const WarningGenerator = () => {
           </ScrollArea>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardLayout>
   );
 };
 

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FileText, Users, Plus } from "lucide-react";
-import Navigation from "@/components/Navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 const Dashboard = () => {
@@ -61,16 +61,14 @@ const Dashboard = () => {
         <p className="text-muted-foreground">Loading...</p>
       </div>;
   }
-  return <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
-      <Navigation />
-      
-      <div className="container mx-auto px-6 py-12">
-        <div className="mb-8">
+  return <DashboardLayout>
+      <div className="space-y-6">
+        <div>
           <h1 className="text-3xl font-bold mb-2">
             Welcome back{profile ? `, ${profile.user_name}` : ""}
           </h1>
           <p className="text-muted-foreground">
-            {profile ? profile.company_name : "Manage your HR documents and employees"}
+            Manage your HR documents and employees
           </p>
         </div>
 
@@ -139,6 +137,7 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
-    </div>;
+    </DashboardLayout>;
 };
+
 export default Dashboard;

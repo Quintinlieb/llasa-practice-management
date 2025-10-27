@@ -55,7 +55,7 @@ const Employees = () => {
     }
   }, [user]);
   useEffect(() => {
-    const filtered = employees.filter(emp => emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.employee_surname.toLowerCase().includes(searchQuery.toLowerCase()) || emp.id_number.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filtered = employees.filter(emp => emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.employee_surname.toLowerCase().includes(searchQuery.toLowerCase()) || emp.id.toLowerCase().includes(searchQuery.toLowerCase()));
     setFilteredEmployees(filtered);
   }, [employees, searchQuery]);
   const fetchEmployees = async () => {
@@ -319,7 +319,7 @@ const Employees = () => {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={handleBulkDelete} disabled={selectedEmployees.size === 0} className={`gap-2 ${selectedEmployees.size > 0 ? "border-destructive text-destructive hover:bg-destructive/10" : ""}`}>
+            <Button variant="outline" onClick={handleBulkDelete} disabled={selectedEmployees.size === 0} className={`gap-2 ${selectedEmployees.size > 0 ? "border-destructive text-destructive hove[...]
               <Trash2 className="h-4 w-4" />
               Delete
             </Button>
@@ -438,8 +438,8 @@ const Employees = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary bg-slate-50">
-                            <Edit className="h-4 w-4" />
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="group bg-slate-50 hover:bg-[#31af36]/10 transition-colors">
+                            <Edit className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
                       state: {
@@ -447,7 +447,7 @@ const Employees = () => {
                         employeeSurname: employee.employee_surname,
                         employeeIdNumber: employee.id_number
                       }
-                    })} className="group bg-slate-50">
+                    })} className="group bg-slate-50 hover:bg-[#31af36]/10 transition-colors">
                             <FilePlus className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
                           </Button>
                         </div>

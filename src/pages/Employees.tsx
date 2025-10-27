@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, Trash2, Upload, Edit, FilePlus, Eye, EyeOff, Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,7 +55,7 @@ const Employees = () => {
     }
   }, [user]);
   useEffect(() => {
-    const filtered = employees.filter(emp => emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.employee_surname.toLowerCase().includes(searchQuery.toLowerCase()) || emp.id_number.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filtered = employees.filter(emp => emp.employee_name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.employee_surname.toLowerCase().includes(searchQuery.toLowerCase()) || emp.id.toLowerCase().includes(searchQuery.toLowerCase()));
     setFilteredEmployees(filtered);
   }, [employees, searchQuery]);
   const fetchEmployees = async () => {
@@ -191,20 +190,8 @@ const Employees = () => {
   const downloadTemplate = () => {
     // Create workbook and worksheet
     const wb = XLSX.utils.book_new();
-    const wsData = [
-      ["Name", "Surname", "ID Number"], 
-      ["", "", ""], // Empty row for user data
-      ["", "", ""], // Empty row for user data
-      ["", "", ""]  // Empty row for user data
-    ];
+    const wsData = [["Name", "Surname", "ID Number"], ["John", "Doe", "9001015009087"], ["Jane", "Smith", "8505125800082"]];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    // Set column widths for better visibility
-    ws['!cols'] = [
-      { wch: 15 }, // Name column
-      { wch: 15 }, // Surname column  
-      { wch: 20 }  // ID Number column
-    ];
 
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
@@ -213,7 +200,7 @@ const Employees = () => {
     XLSX.writeFile(wb, "employee_upload_template.xlsx");
     toast({
       title: "Template Downloaded",
-      description: "Check your downloads folder for the Excel template. Use the exact column names: Name, Surname, ID Number"
+      description: "Check your downloads folder for the Excel template."
     });
   };
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,10 +212,6 @@ const Employees = () => {
       const workbook = XLSX.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-      // Debug: Log the raw data to see what we're getting
-      console.log("Raw Excel data:", jsonData);
-      console.log("First row keys:", jsonData.length > 0 ? Object.keys(jsonData[0]) : "No data");
 
       // Validate and sanitize each employee record
       const validatedEmployees: any[] = [];
@@ -254,7 +237,6 @@ const Employees = () => {
         }
         return "";
       };
-      
       for (let i = 0; i < jsonData.length; i++) {
         const row: any = jsonData[i];
         const rowNumber = i + 2; // Excel row number (accounting for header)
@@ -266,12 +248,8 @@ const Employees = () => {
             idNumber: sanitizeText(getColumnValue(row, "ID Number", "id_number", "ID", "id", "IDNumber", "Id Number"))
           };
 
-          // Debug: Log each row being processed
-          console.log(`Row ${rowNumber} raw data:`, rawData);
-
           // Skip empty rows
           if (!rawData.employeeName && !rawData.employeeSurname && !rawData.idNumber) {
-            console.log(`Row ${rowNumber} skipped - empty row`);
             continue;
           }
 
@@ -283,20 +261,12 @@ const Employees = () => {
             employee_surname: validatedData.employeeSurname,
             id_number: validatedData.idNumber
           });
-          console.log(`Row ${rowNumber} validated successfully`);
         } catch (err: any) {
-          const errorMsg = `Row ${rowNumber}: ${err.errors?.[0]?.message || err.message}`;
-          errors.push(errorMsg);
-          console.log(`Row ${rowNumber} validation error:`, errorMsg);
+          errors.push(`Row ${rowNumber}: ${err.errors?.[0]?.message || err.message}`);
         }
       }
-      
-      console.log(`Total validated employees: ${validatedEmployees.length}`);
-      console.log(`Total errors: ${errors.length}`);
-      
       if (validatedEmployees.length === 0) {
-        const errorDetails = errors.length > 0 ? `\n\nFirst few errors:\n${errors.slice(0, 3).join('\n')}` : '';
-        throw new Error(`No valid employee data found. Please ensure your Excel has columns: Name, Surname, ID Number.${errorDetails}`);
+        throw new Error("No valid employee data found. Please ensure your Excel has columns: Name, Surname, ID Number");
       }
       if (errors.length > 0 && errors.length < 10) {
         // Show first few errors
@@ -349,7 +319,7 @@ const Employees = () => {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={handleBulkDelete} disabled={selectedEmployees.size === 0} className={`gap-2 ${selectedEmployees.size > 0 ? "border-destructive text-destructive hover:bg-destructive/10" : ""}`}>
+            <Button variant="outline" onClick={handleBulkDelete} disabled={selectedEmployees.size === 0} className={`gap-2 ${selectedEmployees.size > 0 ? "border-destructive text-destructive hove[...]
               <Trash2 className="h-4 w-4" />
               Delete
             </Button>
@@ -435,7 +405,7 @@ const Employees = () => {
                     <TableHead>Name</TableHead>
                     <TableHead>Surname</TableHead>
                     <TableHead>ID Number</TableHead>
-                    <TableHead className="text-right pr-8">Actions</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -467,37 +437,19 @@ const Employees = () => {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary bg-white hover:bg-white">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Edit employee</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
-                            state: {
-                              employeeName: employee.employee_name,
-                              employeeSurname: employee.employee_surname,
-                              employeeIdNumber: employee.id_number
-                            }
-                          })} className="group bg-white hover:bg-white">
-                                  <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Add document for employee</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="group bg-slate-50 hover:bg-[#31af36]/10 transition-colors">
+                            <Edit className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
+                      state: {
+                        employeeName: employee.employee_name,
+                        employeeSurname: employee.employee_surname,
+                        employeeIdNumber: employee.id_number
+                      }
+                    })} className="group bg-slate-50 hover:bg-[#31af36]/10 transition-colors">
+                            <FilePlus className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>)}

@@ -165,7 +165,8 @@ const WarningGenerator = () => {
     if (profile) {
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(49, 175, 54);
+      doc.setTextColor(37, 8, 211);
+
       doc.text("COMPANY INFORMATION", margin, yPosition);
       yPosition += 5;
       
@@ -187,7 +188,8 @@ const WarningGenerator = () => {
     }
 
     // Divider line
-    doc.setDrawColor(49, 175, 54);
+    doc.setDrawColor(37, 8, 211);
+
     doc.setLineWidth(0.5);
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
     yPosition += 6;
@@ -195,7 +197,7 @@ const WarningGenerator = () => {
     // Employee Details
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("EMPLOYEE DETAILS", margin, yPosition);
     yPosition += 5;
     
@@ -217,7 +219,7 @@ const WarningGenerator = () => {
 
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("WARNING DETAILS", margin, yPosition);
     yPosition += 5;
     
@@ -240,7 +242,7 @@ const WarningGenerator = () => {
     // Misconduct Types
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("MISCONDUCT TYPE(S)", margin, yPosition);
     yPosition += 5;
     
@@ -256,7 +258,7 @@ const WarningGenerator = () => {
     // Description
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("DESCRIPTION OF MISCONDUCT", margin, yPosition);
     yPosition += 5;
     
@@ -274,7 +276,7 @@ const WarningGenerator = () => {
     // Consequences
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("CONSEQUENCES", margin, yPosition);
     yPosition += 5;
     
@@ -294,7 +296,7 @@ const WarningGenerator = () => {
     // Signatures Section
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(49, 175, 54);
+    doc.setTextColor(37, 8, 211);
     doc.text("SIGNATURES", margin, yPosition);
     yPosition += 8;
 
@@ -726,14 +728,14 @@ const WarningGenerator = () => {
           <ScrollArea className="h-full px-6 pb-6">
             <div className="bg-white text-black p-8 mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
               {/* Header */}
-              <div className="bg-[#31af36] h-12 -mx-8 -mt-8 mb-6 flex items-center justify-center">
+              <div className="bg-primary h-12 -mx-8 -mt-8 mb-6 flex items-center justify-center">
                 <h1 className="text-2xl font-bold text-white">WRITTEN WARNING</h1>
               </div>
 
               {/* Company Information */}
               {profile && (
                 <div className="mb-6">
-                  <h2 className="text-sm font-bold text-[#31af36] mb-2">COMPANY INFORMATION</h2>
+                  <h2 className="text-sm font-bold text-primary mb-2">COMPANY INFORMATION</h2>
                   <div className="text-xs space-y-1">
                     <p>{profile.company_name}</p>
                     <p>Reg No: {profile.registration_number}</p>
@@ -749,11 +751,11 @@ const WarningGenerator = () => {
               )}
 
               {/* Divider */}
-              <div className="border-t-2 border-[#31af36] mb-6" />
+              <div className="border-t-2 border-primary mb-6" />
 
               {/* Employee Details */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-2">EMPLOYEE DETAILS</h2>
+                <h2 className="text-sm font-bold text-primary mb-2">EMPLOYEE DETAILS</h2>
                 <div className="text-xs space-y-1">
                   <p>Name: {formData.employeeName} {formData.employeeSurname}</p>
                   <p>ID Number: {formData.employeeIdNumber}</p>
@@ -762,7 +764,7 @@ const WarningGenerator = () => {
 
               {/* Warning Details */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-2">WARNING DETAILS</h2>
+                <h2 className="text-sm font-bold text-primary mb-2">WARNING DETAILS</h2>
                 <div className="text-xs space-y-1">
                   <p>Type: {
                     {
@@ -779,11 +781,11 @@ const WarningGenerator = () => {
               </div>
 
               {/* Divider */}
-              <div className="border-t border-[#31af36] mb-6" />
+              <div className="border-t border-primary mb-6" />
 
               {/* Misconduct Types */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-2">MISCONDUCT TYPE(S)</h2>
+                <h2 className="text-sm font-bold text-primary mb-2">MISCONDUCT TYPE(S)</h2>
                 <div className="text-xs space-y-1">
                   {formData.misconductTypes.map((type, idx) => (
                     <p key={idx}>• {type}</p>
@@ -793,16 +795,16 @@ const WarningGenerator = () => {
 
               {/* Description */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-2">DESCRIPTION OF MISCONDUCT</h2>
+                <h2 className="text-sm font-bold text-primary mb-2">DESCRIPTION OF MISCONDUCT</h2>
                 <p className="text-xs whitespace-pre-wrap">{formData.description}</p>
               </div>
 
               {/* Divider */}
-              <div className="border-t border-[#31af36] mb-6" />
+              <div className="border-t border-primary mb-6" />
 
               {/* Consequences */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-2">CONSEQUENCES</h2>
+                <h2 className="text-sm font-bold text-primary mb-2">CONSEQUENCES</h2>
                 <p className="text-xs">
                   You are required to refrain completely from committing any further acts of misconduct. 
                   Should you commit the same or similar act of misconduct within the validity period of this warning, 
@@ -811,11 +813,11 @@ const WarningGenerator = () => {
               </div>
 
               {/* Divider */}
-              <div className="border-t border-[#31af36] mb-6" />
+              <div className="border-t border-primary mb-6" />
 
               {/* Signatures */}
               <div className="mb-6">
-                <h2 className="text-sm font-bold text-[#31af36] mb-3">SIGNATURES</h2>
+                <h2 className="text-sm font-bold text-primary mb-3">SIGNATURES</h2>
                 <div className="space-y-6 text-xs">
                   {["Employer/Issuer", "Employee", "Representative", "Interpreter", "Witness"].map((label, idx) => (
                     <div key={idx}>

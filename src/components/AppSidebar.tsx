@@ -52,15 +52,14 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className={state === "collapsed" ? "w-14" : "w-60"}>
-      <SidebarHeader className="border-b border-sidebar-border p-4">
+      <SidebarHeader className="px-2 py-0">
         {state !== "collapsed" && (
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg">HR DocGen</span>
+          <div className="flex items-start justify-center gap-0">
+            <img src="/logo.png.png" alt="logo" className="h-36 w-36 object-contain" style={{imageRendering: 'crisp-edges'}} />
           </div>
         )}
         {state === "collapsed" && (
-          <FileText className="h-6 w-6 text-primary mx-auto" />
+          <img src="/nudoc_icon.png" alt="logo" className="h-36 w-36 mx-auto object-contain" style={{imageRendering: 'crisp-edges'}} />
         )}
       </SidebarHeader>
 

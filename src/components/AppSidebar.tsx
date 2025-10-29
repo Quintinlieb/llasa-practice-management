@@ -15,7 +15,6 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarHeader,
-  useSidebar,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
@@ -32,7 +31,6 @@ const items = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,18 +53,11 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar collapsible="icon" className={state === "collapsed" ? "w-14" : "w-60"}>
+    <Sidebar collapsible="none" className="w-56 border-r border-sidebar-border">
       <SidebarHeader className="px-2 py-2">
-        {state !== "collapsed" && (
-          <div className="h-14 w-full overflow-hidden flex items-center justify-center">
-            <img src="/logo.png.png" alt="logo" className="h-full w-auto object-cover" style={{ imageRendering: 'crisp-edges' }} />
-          </div>
-        )}
-        {state === "collapsed" && (
-          <div className="h-14 w-full overflow-hidden flex items-center justify-center">
-            <img src="/nudoc_icon.png" alt="logo" className="h-full w-auto object-cover" style={{ imageRendering: 'crisp-edges' }} />
-          </div>
-        )}
+        <div className="h-14 w-full overflow-hidden flex items-center justify-center">
+          <img src="/logo.png.png" alt="logo" className="h-full w-auto object-cover" style={{ imageRendering: 'crisp-edges' }} />
+        </div>
         <SidebarSeparator className="mt-2" />
       </SidebarHeader>
 
@@ -93,7 +84,7 @@ export function AppSidebar() {
                       className="w-full"
                     >
                       <item.icon className="h-4 w-4" />
-                      {state !== "collapsed" && <span>{item.title}</span>}
+                      <span>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -103,12 +94,12 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="mb-3">
+      <SidebarFooter className="p-4 sticky bottom-0 bg-sidebar">
+        <div className="mb-1">
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start gap-2"
+            className="w-full justify-center gap-2 text-primary hover:text-accent-foreground [&>svg]:text-current"
             onClick={async () => {
               const { error } = await signOut();
               if (!error) {
@@ -117,24 +108,23 @@ export function AppSidebar() {
             }}
           >
             <LogOut className="h-4 w-4" />
-            {state !== "collapsed" && <span>Sign Out</span>}
+            <span>Sign Out</span>
           </Button>
         </div>
+        <SidebarSeparator className="mt-2" />
         {profile && (
           <div className="flex items-center gap-3">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
               {getInitials()}
             </div>
-            {state !== "collapsed" && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
-                  {profile.user_name} {profile.user_surname}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {profile.user_email}
-                </p>
-              </div>
-            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {profile.user_name} {profile.user_surname}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {profile.user_email}
+              </p>
+            </div>
           </div>
         )}
       </SidebarFooter>

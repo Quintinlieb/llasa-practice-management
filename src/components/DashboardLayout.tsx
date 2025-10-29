@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,6 +16,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user } = useAuth();
   const [companyName, setCompanyName] = useState("");
   const { toast } = useToast();
+
+  
 
   useEffect(() => {
     if (user) {
@@ -38,9 +40,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <AppSidebar />
         <div className="flex-1 flex flex-col">
           <header className="border-b border-border/50 bg-background/95 backdrop-blur-sm sticky top-0 z-40 h-14">
-            <div className="h-full px-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <SidebarTrigger />
+            <div className="relative h-full px-6 flex items-center justify-between">
+              <div className="flex items-center">
                 {companyName && (
                   <h1 className="text-lg font-semibold">{companyName}</h1>
                 )}

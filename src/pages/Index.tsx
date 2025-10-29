@@ -131,7 +131,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t border-border/50 py-8">
         <div className="container mx-auto px-6 text-center text-muted-foreground text-sm">
-          <p>&copy; 2025 HR DocGen. All rights reserved.</p>
+          <p>© 2025 nudoc. All rights reserved.</p>
         </div>
       </footer>
     </div>;

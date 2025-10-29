@@ -30,11 +30,7 @@ const CompanySetup = () => {
     userEmail: "",
   });
 
-  useEffect(() => {
-    if (!user) {
-      navigate("/auth");
-    }
-  }, [user, navigate]);
+  // Route protection is handled by ProtectedRoute. Avoid redirecting here to prevent loops.
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({

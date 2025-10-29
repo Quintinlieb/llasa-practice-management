@@ -10,14 +10,13 @@ const Index = () => {
       <header className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <span className="font-bold text-xl">HR DocGen</span>
+            <img src="/logo.png.png" alt="nudoc logo" className="h-8 w-auto object-cover" />
           </div>
           <div className="flex gap-3">
             <Link to="/auth">
               <Button variant="outline">Log In</Button>
             </Link>
-            <Link to="/auth">
+            <Link to="/auth?new=1">
               <Button>Get Started</Button>
             </Link>
           </div>
@@ -36,7 +35,7 @@ const Index = () => {
             Create legally compliant written warnings in minutes, not hours.
           </p>
           <div className="pt-4">
-            <Link to="/auth">
+            <Link to="/auth?new=1">
               <Button size="lg" className="text-lg px-8">
                 Start Free Trial
               </Button>
@@ -125,7 +124,7 @@ const Index = () => {
           <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">
             Join companies across South Africa that trust HR DocGen for their disciplinary documentation needs.
           </p>
-          <Link to="/auth">
+          <Link to="/auth?new=1">
             <Button size="lg" className="text-lg px-8">
               Get Started Now
             </Button>

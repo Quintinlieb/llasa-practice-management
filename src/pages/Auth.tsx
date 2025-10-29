@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,13 +27,32 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { signUp, signIn, user } = useAuth();
+  const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // If coming from marketing CTAs with ?new=1, default to Sign Up view and ensure no existing session persists
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const fromMarketing = params.get("new") === "1";
+    if (!fromMarketing) return;
+    setIsLogin(false);
+    // Ensure we are fully signed out before continuing, so we don't auto-redirect away
+    (async () => {
+      if (!loading && user) {
+        await signOut();
+      }
+    })();
+  }, [location.search, loading, user, signOut]);
 
   useEffect(() => {
     const checkProfileAndRedirect = async () => {
-      if (user) {
+      const params = new URLSearchParams(location.search);
+      const fromMarketing = params.get("new") === "1";
+      // Skip auto-redirects when explicitly starting a new flow from marketing
+      if (fromMarketing) return;
+      if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")
           .select("*")
@@ -41,15 +60,15 @@ const Auth = () => {
           .maybeSingle();
 
         if (profile) {
-          navigate("/dashboard");
+          if (location.pathname !== "/dashboard") navigate("/dashboard");
         } else {
-          navigate("/company-setup");
+          if (location.pathname !== "/company-setup") navigate("/company-setup");
         }
       }
     };
 
     checkProfileAndRedirect();
-  }, [user, navigate]);
+  }, [user, loading, navigate, location.pathname]);
 
   const validatePassword = (pwd: string): boolean => {
     if (isLogin) return true; // Skip validation for login
@@ -103,7 +122,7 @@ const Auth = () => {
           });
         }
       } else {
-        const { error } = await signUp(email, password);
+        const { data, error } = await signUp(email, password);
         if (error) {
           toast({
             title: "Error",
@@ -115,6 +134,9 @@ const Auth = () => {
             title: "Success",
             description: "Account created! Please complete your company profile.",
           });
+          if (data?.session) {
+            navigate("/company-setup");
+          }
         }
       }
     } catch (error: any) {
@@ -129,23 +151,25 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/20 p-6">
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader className="space-y-3 text-center">
-          <div className="flex justify-center mb-2">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-              <FileText className="h-6 w-6 text-primary" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/20">
+      <div className="w-full max-w-md px-6">
+        <div className="flex justify-end mb-3">
+          <Link to="/">
+            <Button variant="outline" size="sm">Back to Site</Button>
+          </Link>
+        </div>
+        <Card className="w-full shadow-xl">
+          <CardHeader className="space-y-3 text-center">
+            <div className="flex justify-center mb-2">
+              <img src="/nudoc_icon.png" alt="nudoc logo" className="h-12 w-auto object-cover" />
             </div>
-          </div>
-          <CardTitle className="text-2xl">
-            {isLogin ? "Welcome Back" : "Create Account"}
-          </CardTitle>
-          <CardDescription>
-            {isLogin 
-              ? "Sign in to access your HR documents" 
-              : "Get started with HR DocGen today"}
-          </CardDescription>
-        </CardHeader>
+            <CardTitle className="text-2xl">
+              {isLogin ? "Welcome Back" : "Create Account"}
+            </CardTitle>
+            <CardDescription>
+              {isLogin ? "Sign in to access your HR documents" : "Fill out the form below and get started today"}
+            </CardDescription>
+          </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -237,7 +261,15 @@ const Auth = () => {
 
           <div className="mt-6 text-center text-sm">
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                const toSignup = isLogin;
+                setIsLogin(!isLogin);
+                if (toSignup) {
+                  navigate("/auth?new=1", { replace: true });
+                } else {
+                  navigate("/auth", { replace: true });
+                }
+              }}
               className="text-primary hover:underline"
             >
               {isLogin
@@ -247,6 +279,7 @@ const Auth = () => {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 };

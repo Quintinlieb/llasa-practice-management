@@ -2,10 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FileText, Users, Shield, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
-
 const Index = () => {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
+  return <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/20">
       {/* Header */}
       <header className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-50">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
@@ -121,9 +119,7 @@ const Index = () => {
       <section className="container mx-auto px-6 py-20">
         <Card className="p-12 text-center bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
           <h2 className="text-3xl font-bold mb-4">Ready to streamline your HR processes?</h2>
-          <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">
-            Join companies across South Africa that trust HR DocGen for their disciplinary documentation needs.
-          </p>
+          <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">Join companies across South Africa that trust n for their disciplinary documentation needs.</p>
           <Link to="/auth?new=1">
             <Button size="lg" className="text-lg px-8">
               Get Started Now
@@ -138,8 +134,6 @@ const Index = () => {
           <p>&copy; 2025 HR DocGen. All rights reserved.</p>
         </div>
       </footer>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;

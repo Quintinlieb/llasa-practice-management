@@ -4,8 +4,8 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Settings } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 interface DashboardLayoutProps {
@@ -13,9 +13,8 @@ interface DashboardLayoutProps {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [companyName, setCompanyName] = useState("");
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -31,18 +30,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [user]);
 
-  const handleSignOut = async () => {
-    const { error } = await signOut();
-    if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      navigate("/");
-    }
-  };
+  
 
   return (
     <SidebarProvider>
@@ -57,15 +45,16 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   <h1 className="text-lg font-semibold">{companyName}</h1>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleSignOut}
-                className="gap-2"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </Button>
+              <Link to="/settings">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
             </div>
           </header>
           <main className="flex-1 p-6">{children}</main>

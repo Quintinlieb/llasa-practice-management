@@ -405,7 +405,7 @@ const Employees = () => {
                     <TableHead>Name</TableHead>
                     <TableHead>Surname</TableHead>
                     <TableHead>ID Number</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -436,9 +436,9 @@ const Employees = () => {
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary bg-slate-50">
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary hover:bg-slate-50 bg-slate-50">
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
@@ -447,8 +447,8 @@ const Employees = () => {
                         employeeSurname: employee.employee_surname,
                         employeeIdNumber: employee.id_number
                       }
-                    })} className="group bg-slate-50">
-                            <FilePlus className="h-4 w-4 transition-colors group-hover:text-[#31af36]" />
+                    })} className="group hover:bg-slate-50 bg-slate-50">
+                            <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
                           </Button>
                         </div>
                       </TableCell>

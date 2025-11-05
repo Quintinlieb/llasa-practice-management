@@ -52,6 +52,207 @@ export const southAfricanProvinces = [
   "Western Cape",
 ] as const;
 
+export const contractTypes = ["Permanent", "Temporary", "Part-Time", "Independent", "Locum"] as const;
+export const genderOptions = ["Male", "Female", "Other"] as const;
+export const raceOptions = ["African", "Coloured", "Indian", "White", "Other"] as const;
+
+export const nationalityOptions = [
+  "Afghan",
+  "Albanian",
+  "Algerian",
+  "American",
+  "Andorran",
+  "Angolan",
+  "Antiguan and Barbudan",
+  "Argentine",
+  "Armenian",
+  "Australian",
+  "Austrian",
+  "Azerbaijani",
+  "Bahamian",
+  "Bahraini",
+  "Bangladeshi",
+  "Barbadian",
+  "Belarusian",
+  "Belgian",
+  "Belizean",
+  "Beninese",
+  "Bhutanese",
+  "Bolivian",
+  "Bosnian",
+  "Botswanan",
+  "Brazilian",
+  "British",
+  "Bruneian",
+  "Bulgarian",
+  "Burkinabe",
+  "Burmese",
+  "Burundian",
+  "Cambodian",
+  "Cameroonian",
+  "Canadian",
+  "Cape Verdean",
+  "Central African",
+  "Chadian",
+  "Chilean",
+  "Chinese",
+  "Colombian",
+  "Comoran",
+  "Congolese (Congo-Brazzaville)",
+  "Congolese (Congo-Kinshasa)",
+  "Costa Rican",
+  "Croatian",
+  "Cuban",
+  "Cypriot",
+  "Czech",
+  "Danish",
+  "Djiboutian",
+  "Dominican",
+  "Dutch",
+  "East Timorese",
+  "Ecuadorean",
+  "Egyptian",
+  "Equatorial Guinean",
+  "Eritrean",
+  "Estonian",
+  "Eswatini",
+  "Ethiopian",
+  "Fijian",
+  "Finnish",
+  "French",
+  "Gabonese",
+  "Gambian",
+  "Georgian",
+  "German",
+  "Ghanaian",
+  "Greek",
+  "Grenadian",
+  "Guatemalan",
+  "Guinean",
+  "Bissau-Guinean",
+  "Guyanese",
+  "Haitian",
+  "Honduran",
+  "Hungarian",
+  "Icelandic",
+  "Indian",
+  "Indonesian",
+  "Iranian",
+  "Iraqi",
+  "Irish",
+  "Israeli",
+  "Italian",
+  "Ivorian",
+  "Jamaican",
+  "Japanese",
+  "Jordanian",
+  "Kazakh",
+  "Kenyan",
+  "Kiribati",
+  "Kuwaiti",
+  "Kyrgyz",
+  "Laotian",
+  "Latvian",
+  "Lebanese",
+  "Lesotho",
+  "Liberian",
+  "Libyan",
+  "Liechtensteiner",
+  "Lithuanian",
+  "Luxembourgish",
+  "Malagasy",
+  "Malawian",
+  "Malaysian",
+  "Maldivian",
+  "Malian",
+  "Maltese",
+  "Marshallese",
+  "Mauritanian",
+  "Mauritian",
+  "Mexican",
+  "Micronesian",
+  "Moldovan",
+  "Monégasque",
+  "Mongolian",
+  "Montenegrin",
+  "Moroccan",
+  "Mozambican",
+  "Namibian",
+  "Nauruan",
+  "Nepalese",
+  "New Zealander",
+  "Nicaraguan",
+  "Nigerien",
+  "Nigerian",
+  "North Macedonian",
+  "Norwegian",
+  "Omani",
+  "Pakistani",
+  "Palauan",
+  "Panamanian",
+  "Papua New Guinean",
+  "Paraguayan",
+  "Peruvian",
+  "Philippine",
+  "Polish",
+  "Portuguese",
+  "Qatari",
+  "Romanian",
+  "Russian",
+  "Rwandan",
+  "Saint Lucian",
+  "Salvadoran",
+  "Samoan",
+  "San Marinese",
+  "Sao Tomean",
+  "Saudi",
+  "Scottish",
+  "Senegalese",
+  "Serbian",
+  "Seychellois",
+  "Sierra Leonean",
+  "Singaporean",
+  "Slovak",
+  "Slovenian",
+  "Solomon Islander",
+  "Somali",
+  "South African",
+  "South Korean",
+  "South Sudanese",
+  "Spanish",
+  "Sri Lankan",
+  "Sudanese",
+  "Surinamese",
+  "Swedish",
+  "Swiss",
+  "Syrian",
+  "Taiwanese",
+  "Tajik",
+  "Tanzanian",
+  "Thai",
+  "Togolese",
+  "Tongan",
+  "Trinidadian and Tobagonian",
+  "Tunisian",
+  "Turkish",
+  "Turkmen",
+  "Tuvaluan",
+  "Ugandan",
+  "Ukrainian",
+  "Uruguayan",
+  "Uzbek",
+  "Vanuatu",
+  "Venezuelan",
+  "Vietnamese",
+  "Welsh",
+  "Yemeni",
+  "Zambian",
+  "Zimbabwean",
+  "Other",
+] as const;
+
+export const employeeNumberModes = ["manual", "auto"] as const;
+
 export const companySetupSchema = z.object({
   companyName: z
     .string()
@@ -122,19 +323,169 @@ export const companySetupSchema = z.object({
     .transform(sanitizeText),
 });
 
-// Employee Schema
-export const employeeSchema = z.object({
+const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+const nameRegex = /^[a-zA-Z\s'-]+$/;
+
+export const employeeBasicSchema = z
+  .object({
+    employeeName: z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must not exceed 100 characters")
+      .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    employeeSurname: z
+      .string()
+      .min(2, "Surname must be at least 2 characters")
+      .max(100, "Surname must not exceed 100 characters")
+      .regex(nameRegex, "Surname can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    idNumber: z
+      .string()
+      .refine(validateSAIdNumber, "Invalid South African ID number (must be 13 digits with valid checksum)")
+      .transform(sanitizeText),
+  });
+
+// Employee Profile Schema
+export const employeeProfileSchema = z
+  .object({
+    employeeName: z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must not exceed 100 characters")
+      .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    employeeSurname: z
+      .string()
+      .min(2, "Surname must be at least 2 characters")
+      .max(100, "Surname must not exceed 100 characters")
+      .regex(nameRegex, "Surname can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    idNumber: z
+      .string()
+      .refine(validateSAIdNumber, "Invalid South African ID number (must be 13 digits with valid checksum)")
+      .transform(sanitizeText),
+    startDate: z
+      .string()
+      .regex(dateRegex, "Invalid date format (YYYY-MM-DD)"),
+    contractType: z.enum(contractTypes, {
+      errorMap: () => ({ message: "Please select a contract type" }),
+    }),
+    endDate: z
+      .string()
+      .regex(dateRegex, "Invalid date format (YYYY-MM-DD)")
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? val : "")),
+    gender: z.enum(genderOptions, {
+      errorMap: () => ({ message: "Please select a gender" }),
+    }),
+    race: z.enum(raceOptions, {
+      errorMap: () => ({ message: "Please select a race" }),
+    }),
+    nationality: z.enum(nationalityOptions, {
+      errorMap: () => ({ message: "Please select a nationality" }),
+    }),
+    employeeNumberMode: z.enum(employeeNumberModes),
+    employeeNumberPrefix: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? val.toUpperCase() : ""))
+      .refine((val) => !val || /^[A-Z]$/.test(val), {
+        message: "Prefix must be a single letter (A-Z)",
+      }),
+    employeeNumber: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val.toUpperCase()) : "")),
+    jobTitle: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    physicalAddressLine1: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    physicalAddressLine2: z
+      .string()
+      .min(5, "Address line 2 must be at least 5 characters")
+      .max(200, "Address line 2 must not exceed 200 characters")
+      .transform(sanitizeText),
+    city: z
+      .string()
+      .min(2, "City must be at least 2 characters")
+      .max(100, "City must not exceed 100 characters")
+      .regex(nameRegex, "City can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    province: z.enum(southAfricanProvinces, {
+      errorMap: () => ({ message: "Please select a province" }),
+    }),
+    areaCode: z
+      .string()
+      .regex(/^\d{4}$/, "Area code must be 4 digits")
+      .transform(sanitizeText),
+    cellNumber: z
+      .string()
+      .regex(saPhoneRegex, "Invalid phone number (e.g., 0123456789 or +27123456789)")
+      .transform(sanitizeText),
+    email: z
+      .string()
+      .email("Invalid email address")
+      .max(255, "Email must not exceed 255 characters")
+      .transform(sanitizeText),
+    emergencyContactName: z
+      .string()
+      .min(2, "Contact name must be at least 2 characters")
+      .max(150, "Contact name must not exceed 150 characters")
+      .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
+      .transform(sanitizeText),
+    emergencyContactNumber: z
+      .string()
+      .regex(saPhoneRegex, "Invalid phone number (e.g., 0123456789 or +27123456789)")
+      .transform(sanitizeText),
+  })
+  .superRefine((data, ctx) => {
+    if (data.contractType === "Temporary" && !data.endDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "End date is required for temporary contracts",
+      });
+    }
+
+    if (data.employeeNumberMode === "manual" && !data.employeeNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeNumber"],
+        message: "Employee number is required when using manual entry",
+      });
+    }
+
+    if (data.employeeNumberMode === "auto" && !data.employeeNumberPrefix) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeNumberPrefix"],
+        message: "Please select a prefix letter for auto-generated numbers",
+      });
+    }
+  });
+
+export const employeeImportSchema = z.object({
   employeeName: z
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must not exceed 100 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes")
+    .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
     .transform(sanitizeText),
   employeeSurname: z
     .string()
     .min(2, "Surname must be at least 2 characters")
     .max(100, "Surname must not exceed 100 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, "Surname can only contain letters, spaces, hyphens, and apostrophes")
+    .regex(nameRegex, "Surname can only contain letters, spaces, hyphens, and apostrophes")
     .transform(sanitizeText),
   idNumber: z
     .string()
@@ -200,5 +551,6 @@ export const warningGeneratorSchema = z.object({
 });
 
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
-export type EmployeeFormData = z.infer<typeof employeeSchema>;
+export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;
+export type EmployeeProfileFormData = z.infer<typeof employeeProfileSchema>;
 export type WarningGeneratorFormData = z.infer<typeof warningGeneratorSchema>;

@@ -130,13 +130,17 @@ const Auth = () => {
             variant: "destructive",
           });
         } else {
+          if (data?.session) {
+            await signOut();
+          }
           toast({
             title: "Success",
-            description: "Account created! Please complete your company profile.",
+            description: "Account created! Please confirm your email and then sign in.",
           });
-          if (data?.session) {
-            navigate("/company-setup");
-          }
+          setIsLogin(true);
+          setPassword("");
+          setConfirmPassword("");
+          navigate("/auth", { replace: true });
         }
       }
     } catch (error: any) {

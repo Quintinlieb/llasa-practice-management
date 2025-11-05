@@ -4,10 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { companySetupSchema } from "@/lib/validation";
+import { companySetupSchema, southAfricanProvinces } from "@/lib/validation";
 
 const CompanySetup = () => {
   const { user } = useAuth();
@@ -17,11 +24,12 @@ const CompanySetup = () => {
   const [formData, setFormData] = useState({
     companyName: "",
     registrationNumber: "",
-    vatNumber: "",
-    physicalAddress: "",
+    physicalAddressLine1: "",
+    physicalAddressLine2: "",
+    city: "",
+    province: "",
+    areaCode: "",
     postalAddress: "",
-    representativeName: "",
-    representativeSurname: "",
     companyContact: "",
     companyEmail: "",
     userName: "",
@@ -39,6 +47,13 @@ const CompanySetup = () => {
     });
   };
 
+  const handleProvinceChange = (value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      province: value,
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -49,15 +64,22 @@ const CompanySetup = () => {
       // Validate and sanitize input
       const validatedData = companySetupSchema.parse(formData);
 
+      const physicalAddressParts = [
+        validatedData.physicalAddressLine1,
+        validatedData.physicalAddressLine2,
+        validatedData.city,
+        validatedData.province,
+        validatedData.areaCode,
+      ].filter(Boolean);
+
       const { error } = await supabase.from("profiles").insert({
         id: user.id,
         company_name: validatedData.companyName,
         registration_number: validatedData.registrationNumber,
-        vat_number: validatedData.vatNumber,
-        physical_address: validatedData.physicalAddress,
-        postal_address: validatedData.postalAddress,
-        representative_name: validatedData.representativeName,
-        representative_surname: validatedData.representativeSurname,
+        physical_address: physicalAddressParts.join(", "),
+        postal_address: validatedData.postalAddress || "",
+        representative_name: validatedData.userName,
+        representative_surname: validatedData.userSurname,
         company_contact: validatedData.companyContact,
         company_email: validatedData.companyEmail,
         user_name: validatedData.userName,
@@ -122,16 +144,7 @@ const CompanySetup = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="vatNumber">VAT Number</Label>
-                    <Input
-                      id="vatNumber"
-                      name="vatNumber"
-                      value={formData.vatNumber}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="companyContact">Company Contact *</Label>
+                    <Label htmlFor="companyContact">Contact Number *</Label>
                     <Input
                       id="companyContact"
                       name="companyContact"
@@ -151,51 +164,69 @@ const CompanySetup = () => {
                       required
                     />
                   </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="physicalAddress">Physical Address *</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="physicalAddressLine1">Physical Address Line 1</Label>
                     <Input
-                      id="physicalAddress"
-                      name="physicalAddress"
-                      value={formData.physicalAddress}
+                      id="physicalAddressLine1"
+                      name="physicalAddressLine1"
+                      placeholder="Apartment/suite number and complex name"
+                      value={formData.physicalAddressLine1}
+                      onChange={handleChange}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="physicalAddressLine2">Physical Address Line 2 *</Label>
+                    <Input
+                      id="physicalAddressLine2"
+                      name="physicalAddressLine2"
+                      placeholder="Street name and number"
+                      value={formData.physicalAddressLine2}
+                      onChange={handleChange}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="city">City *</Label>
+                    <Input
+                      id="city"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleChange}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="province">Province *</Label>
+                    <Select value={formData.province} onValueChange={handleProvinceChange}>
+                      <SelectTrigger id="province" aria-label="Province">
+                        <SelectValue placeholder="Choose province" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {southAfricanProvinces.map((province) => (
+                          <SelectItem key={province} value={province}>
+                            {province}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="areaCode">Area Code *</Label>
+                    <Input
+                      id="areaCode"
+                      name="areaCode"
+                      value={formData.areaCode}
                       onChange={handleChange}
                       required
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="postalAddress">Postal Address *</Label>
+                    <Label htmlFor="postalAddress">Postal Address</Label>
                     <Input
                       id="postalAddress"
                       name="postalAddress"
                       value={formData.postalAddress}
                       onChange={handleChange}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Representative Information */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Representative Details</h3>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="representativeName">Name *</Label>
-                    <Input
-                      id="representativeName"
-                      name="representativeName"
-                      value={formData.representativeName}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="representativeSurname">Surname *</Label>
-                    <Input
-                      id="representativeSurname"
-                      name="representativeSurname"
-                      value={formData.representativeSurname}
-                      onChange={handleChange}
-                      required
                     />
                   </div>
                 </div>

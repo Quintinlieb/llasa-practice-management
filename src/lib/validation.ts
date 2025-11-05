@@ -40,6 +40,18 @@ const saVatRegex = /^[0-9]{10}$/;
 const saRegNumberRegex = /^[0-9]{4}\/[0-9]{6}\/[0-9]{2}$|^[0-9]{10}$/;
 
 // Company Setup Schema
+export const southAfricanProvinces = [
+  "Eastern Cape",
+  "Free State",
+  "Gauteng",
+  "KwaZulu-Natal",
+  "Limpopo",
+  "Mpumalanga",
+  "Northern Cape",
+  "North West",
+  "Western Cape",
+] as const;
+
 export const companySetupSchema = z.object({
   companyName: z
     .string()
@@ -50,34 +62,34 @@ export const companySetupSchema = z.object({
     .string()
     .regex(saRegNumberRegex, "Invalid registration number format (e.g., 2023/123456/07 or 2023123456)")
     .transform(sanitizeText),
-  vatNumber: z
+  physicalAddressLine1: z
     .string()
-    .regex(saVatRegex, "VAT number must be 10 digits")
+    .max(200, "Address line 1 must not exceed 200 characters")
     .optional()
-    .or(z.literal(""))
     .transform((val) => (val ? sanitizeText(val) : "")),
-  physicalAddress: z
+  physicalAddressLine2: z
     .string()
-    .min(10, "Physical address must be at least 10 characters")
-    .max(500, "Physical address must not exceed 500 characters")
+    .min(5, "Address line 2 must be at least 5 characters")
+    .max(200, "Address line 2 must not exceed 200 characters")
+    .transform(sanitizeText),
+  city: z
+    .string()
+    .min(2, "City must be at least 2 characters")
+    .max(100, "City must not exceed 100 characters")
+    .regex(/^[a-zA-Z\s'-]+$/, "City can only contain letters, spaces, hyphens, and apostrophes")
+    .transform(sanitizeText),
+  province: z.enum(southAfricanProvinces, {
+    errorMap: () => ({ message: "Please select a province" }),
+  }),
+  areaCode: z
+    .string()
+    .regex(/^\d{4}$/, "Area code must be 4 digits")
     .transform(sanitizeText),
   postalAddress: z
     .string()
-    .min(10, "Postal address must be at least 10 characters")
     .max(500, "Postal address must not exceed 500 characters")
-    .transform(sanitizeText),
-  representativeName: z
-    .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(100, "Name must not exceed 100 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes")
-    .transform(sanitizeText),
-  representativeSurname: z
-    .string()
-    .min(2, "Surname must be at least 2 characters")
-    .max(100, "Surname must not exceed 100 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, "Surname can only contain letters, spaces, hyphens, and apostrophes")
-    .transform(sanitizeText),
+    .optional()
+    .transform((val) => (val ? sanitizeText(val) : "")),
   companyContact: z
     .string()
     .regex(saPhoneRegex, "Invalid phone number (e.g., 0123456789 or +27123456789)")

@@ -27,7 +27,7 @@ interface Profile {
 const items = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
-  { title: "New Warning", url: "/warning-generator", icon: FileText },
+  { title: "Documents", url: "/documents", icon: FileText },
 ];
 
 export function AppSidebar() {

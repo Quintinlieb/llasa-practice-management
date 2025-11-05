@@ -4,6 +4,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,6 +41,7 @@ const Employees = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
@@ -171,6 +178,13 @@ const Employees = () => {
       });
     }
   };
+
+  const handleBulkDialogChange = (open: boolean) => {
+    setIsBulkDialogOpen(open);
+    if (!open && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
   const toggleSelectAll = () => {
     if (selectedEmployees.size === filteredEmployees.length) {
       setSelectedEmployees(new Set());
@@ -291,6 +305,7 @@ const Employees = () => {
         description: `${validatedEmployees.length} employee(s) imported successfully!${errors.length > 0 ? ` (${errors.length} skipped)` : ""}`
       });
       fetchEmployees();
+      setIsBulkDialogOpen(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -318,22 +333,67 @@ const Employees = () => {
               Manage your employee records
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 justify-end">
             <Button variant="outline" onClick={handleBulkDelete} disabled={selectedEmployees.size === 0} className={`gap-2 ${selectedEmployees.size > 0 ? "border-destructive text-destructive hover:bg-destructive/10" : ""}`}>
               <Trash2 className="h-4 w-4" />
               Delete
             </Button>
-            <Button variant="outline" className="gap-2" onClick={downloadTemplate}>
-              <Download className="h-4 w-4" />
-              Download Template
-            </Button>
-            <div>
-              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleBulkUpload} className="hidden" id="bulk-upload" />
-              <Button variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
-                <Upload className="h-4 w-4" />
-                Bulk Upload
-              </Button>
-            </div>
+            <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Upload className="h-4 w-4" />
+                  Bulk Upload
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Upload Bulk Employees</DialogTitle>
+                  <DialogDescription>
+                    Download the template, complete the details, then upload to import employees.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-8">
+                  <div>
+                    <div className="space-y-3">
+                      <div className="h-px bg-muted" />
+                      <h4 className="text-sm font-semibold">Step 1: Download</h4>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Download the spreadsheet to capture your employee information.
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="mt-4 gap-2 w-full text-primary [&_svg]:text-primary"
+                      onClick={downloadTemplate}
+                    >
+                      <Download className="h-4 w-4" />
+                      Download Template
+                    </Button>
+                  </div>
+                  <div>
+                    <div className="space-y-3">
+                      <div className="h-px bg-muted" />
+                      <h4 className="text-sm font-semibold">Step 2: Upload</h4>
+                    </div>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Upload spreadsheet. Accepted formats: .xlsx or .xls
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleBulkUpload}
+                      className="hidden"
+                      id="bulk-upload"
+                    />
+                    <Button className="mt-4 gap-2 w-full" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+                      <Upload className="h-4 w-4" />
+                      Upload File
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
@@ -437,20 +497,32 @@ const Employees = () => {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary hover:bg-muted/50 bg-transparent">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
-                      state: {
-                        employeeName: employee.employee_name,
-                        employeeSurname: employee.employee_surname,
-                        employeeIdNumber: employee.id_number
-                      }
-                    })} className="group hover:bg-muted/50 bg-transparent">
-                            <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
-                          </Button>
-                        </div>
+                        <TooltipProvider delayDuration={0}>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)} className="hover:text-primary hover:bg-muted/50 bg-transparent">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Edit Employee</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => navigate('/warning-generator', {
+                        state: {
+                          employeeName: employee.employee_name,
+                          employeeSurname: employee.employee_surname,
+                          employeeIdNumber: employee.id_number
+                        }
+                      })} className="group hover:bg-muted/50 bg-transparent">
+                                  <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Add Document</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
                       </TableCell>
                     </TableRow>)}
                 </TableBody>

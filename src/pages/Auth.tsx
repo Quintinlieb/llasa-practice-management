@@ -144,7 +144,7 @@ const Auth = () => {
           navigate("/auth", { replace: true });
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Error",
         description: getSafeErrorMessage(error),

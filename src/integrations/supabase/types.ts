@@ -89,7 +89,7 @@ export type Database = {
           employee_name: string
           employee_surname: string
           id: string
-          id_number: string
+          id_number: string | null
           updated_at: string | null
         }
         Insert: {
@@ -98,7 +98,7 @@ export type Database = {
           employee_name: string
           employee_surname: string
           id?: string
-          id_number: string
+          id_number?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -107,7 +107,7 @@ export type Database = {
           employee_name?: string
           employee_surname?: string
           id?: string
-          id_number?: string
+          id_number?: string | null
           updated_at?: string | null
         }
         Relationships: []

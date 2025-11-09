@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, Users, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 const Dashboard = () => {
   const {
     user,
@@ -16,7 +17,7 @@ const Dashboard = () => {
     employees: 0,
     documents: 0
   });
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");

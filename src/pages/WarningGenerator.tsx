@@ -19,6 +19,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { jsPDF } from "jspdf";
 import { warningGeneratorSchema } from "@/lib/validation";
+import type { Tables } from "@/integrations/supabase/types";
+import type { WarningGeneratorFormData } from "@/lib/validation";
 
 const MISCONDUCT_TYPES = [
   "Unauthorised Absenteeism",
@@ -40,22 +42,69 @@ const MISCONDUCT_TYPES = [
   "Breach of Procedure",
 ];
 
+type EmployeePrefillState = {
+  employeeName?: string;
+  employeeSurname?: string;
+  employeeIdNumber?: string;
+};
+
+const isEmployeePrefillState = (value: unknown): value is EmployeePrefillState => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return ["employeeName", "employeeSurname", "employeeIdNumber"].every((key) => {
+    if (!(key in candidate)) return true;
+    return typeof candidate[key] === "string";
+  });
+};
+
+type WarningFormData = {
+  employeeId: string;
+  validityMonths: string;
+} & Pick<
+  WarningGeneratorFormData,
+  | "tradingName"
+  | "employeeName"
+  | "employeeSurname"
+  | "employeeIdNumber"
+  | "warningType"
+  | "issuedBy"
+  | "dateIssued"
+  | "misconductTypes"
+  | "description"
+>;
+
+const extractErrorMessage = (error: unknown): string => {
+  if (error && typeof error === "object" && "errors" in error) {
+    const parsed = error as { errors?: Array<{ message?: string }> };
+    const message = parsed.errors?.[0]?.message;
+    if (message) {
+      return message;
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message || "Something went wrong. Please try again.";
+  }
+
+  return "Something went wrong. Please try again.";
+};
+
 const WarningGenerator = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
-  const [employees, setEmployees] = useState<any[]>([]);
+  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
+  const [employees, setEmployees] = useState<Tables<"employees">[]>([]);
   const [showPreview, setShowPreview] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<WarningFormData>({
     tradingName: "",
     employeeId: "",
     employeeName: "",
     employeeSurname: "",
     employeeIdNumber: "",
-    warningType: "",
+    warningType: "" as WarningGeneratorFormData["warningType"] | "",
     validityMonths: "",
     issuedBy: "",
     dateIssued: new Date().toISOString().split("T")[0],
@@ -78,14 +127,14 @@ const WarningGenerator = () => {
   }, [user]);
 
   useEffect(() => {
-    if (location.state) {
-      const { employeeName, employeeSurname, employeeIdNumber } = location.state as any;
+    if (isEmployeePrefillState(location.state)) {
+      const { employeeName, employeeSurname, employeeIdNumber } = location.state;
       if (employeeName && employeeSurname && employeeIdNumber) {
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           employeeName,
           employeeSurname,
-          employeeIdNumber
+          employeeIdNumber,
         }));
       }
     }
@@ -118,8 +167,8 @@ const WarningGenerator = () => {
     }
   };
 
-  const handleWarningTypeChange = (value: string) => {
-    const validityMap: { [key: string]: string } = {
+  const handleWarningTypeChange = (value: WarningGeneratorFormData["warningType"]) => {
+    const validityMap: Record<WarningGeneratorFormData["warningType"], string> = {
       first: "6",
       second: "6",
       serious: "9",
@@ -141,7 +190,7 @@ const WarningGenerator = () => {
         employeeId,
         employeeName: employee.employee_name,
         employeeSurname: employee.employee_surname,
-        employeeIdNumber: employee.id_number,
+        employeeIdNumber: employee.id_number ?? "",
       });
     }
   };
@@ -369,7 +418,7 @@ const WarningGenerator = () => {
         employee_name: validatedData.employeeName,
         employee_surname: validatedData.employeeSurname,
         employee_id_number: validatedData.employeeIdNumber,
-        warning_type: validatedData.warningType as any,
+        warning_type: validatedData.warningType,
         validity_months: validatedData.validityMonths,
         issued_by: validatedData.issuedBy,
         date_issued: validatedData.dateIssued,
@@ -388,10 +437,10 @@ const WarningGenerator = () => {
       });
 
       handleDiscard();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "Error",
-        description: error.errors?.[0]?.message || error.message || "Validation failed",
+        description: extractErrorMessage(error),
         variant: "destructive",
       });
     } finally {

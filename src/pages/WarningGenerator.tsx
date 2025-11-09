@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, X, Info } from "lucide-react";
+import { Download, FileText, X, Info, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -447,6 +447,7 @@ const WarningGenerator = () => {
       description: "",
     });
     setPdfBlob(null);
+    navigate("/documents/discipline");
   };
 
   const isFormValid = () => {
@@ -481,11 +482,22 @@ const WarningGenerator = () => {
   return (
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Generate Written Warning</h1>
-          <p className="text-muted-foreground">
-            Complete the form below to generate a professional written warning document
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Generate Written Warning</h1>
+            <p className="text-muted-foreground">
+              Complete the form below to generate a professional written warning document
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate("/documents/discipline")}
+            className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+          >
+            <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
+            Back
+          </Button>
         </div>
 
           <Card className="shadow-xl">
@@ -708,7 +720,7 @@ const WarningGenerator = () => {
                     variant="outline"
                     onClick={handleDiscard}
                     disabled={isLoading}
-                    className="gap-2 hover:border-destructive hover:text-destructive"
+                    className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
                   >
                     <X className="h-4 w-4" />
                     Discard

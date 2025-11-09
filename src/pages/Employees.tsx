@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -41,6 +40,7 @@ import {
   Pencil,
   X,
   FileUp,
+  UserCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -61,9 +61,10 @@ import {
 } from "@/lib/validation";
 import { maskSAIdNumber } from "@/lib/idMasking";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
+import { documentCategories } from "@/constants/documentCategories";
 
 type Employee = Tables<"employees">;
-type EmployeeTab = "personal" | "employment" | "documents";
+type EmployeeTab = "personal" | "employment" | "address" | "documents";
 
 const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
 const DEFAULT_PROVINCE = southAfricanProvinces[2] ?? southAfricanProvinces[0];
@@ -135,24 +136,26 @@ const getNextEmployeeNumber = (currentEmployees: Employee[], prefix: string) => 
  };
 
 const formatDisplayDate = (value?: string | null) => {
-   if (!value) return "N/A";
-   const date = new Date(value);
-   if (Number.isNaN(date.getTime())) return value;
-   return date.toLocaleDateString("en-ZA", {
-     year: "numeric",
-     month: "2-digit",
-     day: "2-digit",
-   });
- };
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleDateString("en-ZA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+};
+
 
 const Employees = () => {
    const { user, loading } = useAuth();
    const navigate = useNavigate();
    const { toast } = useToast();
 
-   const [employees, setEmployees] = useState<Employee[]>([]);
-   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
-   const [searchQuery, setSearchQuery] = useState("");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
@@ -160,20 +163,26 @@ const Employees = () => {
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
    const [isLoading, setIsLoading] = useState(false);
    const [isProfileSaving, setIsProfileSaving] = useState(false);
-   const [isEditMode, setIsEditMode] = useState(false);
-   const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
-   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
 
    const [addForm, setAddForm] = useState<EmployeeBasicFormData>(createBlankAddForm());
    const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
    const fileInputRef = useRef<HTMLInputElement>(null);
 
-   const autoNumberPreview = useMemo(() => {
-     if (profileForm.employeeNumberMode === "auto") {
-       return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX);
-     }
-     return "";
-   }, [employees, profileForm.employeeNumberMode, profileForm.employeeNumberPrefix]);
+  const autoNumberPreview = useMemo(() => {
+    if (profileForm.employeeNumberMode === "auto") {
+      return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX);
+    }
+    return "";
+  }, [employees, profileForm.employeeNumberMode, profileForm.employeeNumberPrefix]);
+
+  const handleDocumentCategorySelect = (path: string) => {
+    setDocumentDialogEmployee(null);
+    navigate(path);
+  };
 
   useEffect(() => {
     if (!loading && !user) {
@@ -187,7 +196,8 @@ const Employees = () => {
       .from("employees")
       .select("*")
       .eq("company_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("employee_name", { ascending: true, nullsFirst: false })
+      .order("employee_surname", { ascending: true, nullsFirst: false });
 
     if (error) {
       toast({
@@ -198,8 +208,14 @@ const Employees = () => {
       return;
     }
 
-    setEmployees(data || []);
-    setFilteredEmployees(data || []);
+    const sorted = (data ?? []).sort((a, b) => {
+      const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
+      const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    setEmployees(sorted);
+    setFilteredEmployees(sorted);
   }, [toast, user]);
 
   useEffect(() => {
@@ -208,22 +224,33 @@ const Employees = () => {
     }
   }, [user, fetchEmployees]);
 
-   useEffect(() => {
-     const query = searchQuery.toLowerCase();
+  useEffect(() => {
+    const query = searchQuery.toLowerCase();
     const filtered = employees.filter((emp) => {
       const fullName = `${emp.employee_name ?? ""} ${emp.employee_surname ?? ""}`.trim().toLowerCase();
-       const idNumber = (emp.id_number ?? "").toLowerCase();
-       const employeeNumber = (emp.employee_number ?? "").toLowerCase();
-       const jobTitle = (emp.job_title ?? "").toLowerCase();
-       return (
-         fullName.includes(query) ||
-         idNumber.includes(query) ||
-         employeeNumber.includes(query) ||
-         jobTitle.includes(query)
-       );
-     });
-     setFilteredEmployees(filtered);
-   }, [employees, searchQuery]);
+      const idNumber = (emp.id_number ?? "").toLowerCase();
+      const employeeNumber = (emp.employee_number ?? "").toLowerCase();
+      const jobTitle = (emp.job_title ?? "").toLowerCase();
+      const matchesSearch =
+        fullName.includes(query) || idNumber.includes(query) || employeeNumber.includes(query) || jobTitle.includes(query);
+
+      const contractType = (emp.contract_type ?? "").toLowerCase();
+      const matchesContract =
+        contractFilter === "all" ||
+        (contractFilter === "permanent" && contractType === "permanent") ||
+        (contractFilter === "temporary" && contractType === "temporary");
+
+      return matchesSearch && matchesContract;
+    });
+
+    const sorted = filtered.sort((a, b) => {
+      const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
+      const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    setFilteredEmployees(sorted);
+  }, [employees, searchQuery, contractFilter]);
 
    useEffect(() => {
      if (profileForm.employeeNumberMode === "auto") {
@@ -240,13 +267,13 @@ const Employees = () => {
      if (!user) return;
      setIsLoading(true);
      try {
-       const validated = employeeBasicSchema.parse(addForm);
-       const { error } = await supabase.from("employees").insert({
-         company_id: user.id,
-         employee_name: validated.employeeName,
-         employee_surname: validated.employeeSurname,
-         id_number: validated.idNumber,
-       });
+      const validated = employeeBasicSchema.parse(addForm);
+      const { error } = await supabase.from("employees").insert({
+        company_id: user.id,
+        employee_name: validated.employeeName,
+        employee_surname: validated.employeeSurname,
+        id_number: validated.idNumber || null,
+      });
        if (error) throw error;
 
       toast({
@@ -282,11 +309,11 @@ const Employees = () => {
        const { error } = await supabase
          .from("employees")
          .update({
-           employee_name: validated.employeeName,
-           employee_surname: validated.employeeSurname,
-           id_number: validated.idNumber,
-           start_date: validated.startDate,
-           contract_type: validated.contractType,
+          employee_name: validated.employeeName,
+          employee_surname: validated.employeeSurname,
+          id_number: validated.idNumber || null,
+          start_date: validated.startDate,
+          contract_type: validated.contractType,
            end_date: endDateValue,
            gender: validated.gender,
            race: validated.race,
@@ -368,7 +395,7 @@ const Employees = () => {
        const data = await file.arrayBuffer();
        const workbook = XLSX.read(data);
        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "yyyy-mm-dd", defval: "" });
 
       const validatedEmployees: TablesInsert<"employees">[] = [];
       const errors: string[] = [];
@@ -382,7 +409,7 @@ const Employees = () => {
         const rowKeys = Object.keys(row);
         for (const name of possibleNames) {
           const normalizedName = name.toLowerCase().trim();
-           const matchingKey = rowKeys.find((key) => key.toLowerCase().trim() === normalizedName);
+          const matchingKey = rowKeys.find((key) => key.toLowerCase().trim() === normalizedName);
           if (matchingKey && row[matchingKey] !== undefined && row[matchingKey] !== null) {
             return String(row[matchingKey]).trim();
           }
@@ -390,34 +417,42 @@ const Employees = () => {
         return "";
       };
 
+      const normalizeContractType = (value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) return "";
+        const match = contractTypes.find((type) => type.toLowerCase() === trimmed.toLowerCase());
+        return match ?? trimmed;
+      };
+
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i] as Record<string, unknown>;
         const rowNumber = i + 2;
         try {
           const rawData = {
-            employeeName: sanitizeText(getColumnValue(row, "Name", "First Name", "employee_name")),
-            employeeSurname: sanitizeText(getColumnValue(row, "Surname", "Last Name", "employee_surname")),
-            idNumber: sanitizeText(getColumnValue(row, "ID Number", "ID", "id_number", "Id Number")),
+            employeeName: getColumnValue(row, "Name", "First Name", "employee_name"),
+            employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
+            idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
+            contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
+            jobTitle: getColumnValue(row, "Job Title", "job_title"),
           };
-
-          if (!rawData.employeeName && !rawData.employeeSurname && !rawData.idNumber) {
-            continue;
-          }
 
           const validated = employeeImportSchema.parse(rawData);
           validatedEmployees.push({
             company_id: user.id,
-             employee_name: validated.employeeName,
-             employee_surname: validated.employeeSurname,
-             id_number: validated.idNumber,
-           });
+            employee_name: validated.employeeName,
+            employee_surname: validated.employeeSurname,
+            id_number: validated.idNumber || null,
+            contract_type: validated.contractType || null,
+            job_title: validated.jobTitle || null,
+          });
         } catch (err: unknown) {
           errors.push(`Row ${rowNumber}: ${extractErrorMessage(err) ?? "Unknown validation error"}`);
         }
       }
 
       if (validatedEmployees.length === 0) {
-        throw new Error("No valid employee data found. Please ensure your Excel has columns: Name, Surname, ID Number");
+        const firstError = errors[0] ?? "Each row needs at least a Name and Surname.";
+        throw new Error(`No valid employee data found. ${firstError}`);
       }
 
       if (errors.length > 0) {
@@ -450,19 +485,26 @@ const Employees = () => {
     }
    };
 
-   const downloadTemplate = () => {
-     const wb = XLSX.utils.book_new();
-     const wsData = [
-       ["Name", "Surname", "ID Number"],
-       ["John", "Doe", "9001015009087"],
-       ["Jane", "Smith", "8505125800082"],
-     ];
-     const ws = XLSX.utils.aoa_to_sheet(wsData);
-     XLSX.utils.book_append_sheet(wb, ws, "Employees");
-     XLSX.writeFile(wb, "employee_upload_template.xlsx");
-     toast({
-       title: "Template Downloaded",
-       description: "Check your downloads folder for the Excel template.",
+  const downloadTemplate = () => {
+    const wb = XLSX.utils.book_new();
+    const wsData = [
+      ["Name", "Surname", "ID Number", "Contract Type", "Job Title"],
+      ["John", "Doe", "9001015009087", "Permanent", "Store Manager"],
+      ["Jane", "Smith", "8505125800082", "Temporary", ""],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws["!cols"] = [
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+    XLSX.writeFile(wb, "employee_upload_template.xlsx");
+    toast({
+      title: "Template Downloaded",
+      description: "Check your downloads folder for the Excel template.",
      });
    };
 
@@ -498,24 +540,22 @@ const Employees = () => {
      setIsEditMode(false);
    };
 
-   const renderPersonalTab = () => (
-     <div className="space-y-4">
-       <div className="grid md:grid-cols-2 gap-4">
-         <div className="space-y-1.5">
-           <Label>Name</Label>
-           <Input
-             value={profileForm.employeeName}
-             disabled={!isEditMode}
-             onChange={(e) =>
-               setProfileForm((prev) => ({
-                 ...prev,
-                 employeeName: e.target.value,
-               }))
-             }
-           />
-         </div>
-
-[... truncated ...]
+  const renderPersonalTab = () => (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+        <div className="space-y-1.5">
+          <Label>Name</Label>
+          <Input
+            value={profileForm.employeeName}
+            disabled={!isEditMode}
+            onChange={(e) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                employeeName: e.target.value,
+              }))
+            }
+          />
+        </div>
         <div className="space-y-1.5">
           <Label>Surname</Label>
           <Input
@@ -542,30 +582,8 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Nationality</Label>
-          <Select
-            value={profileForm.nationality}
-            disabled={!isEditMode}
-            onValueChange={(value) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                nationality: value as EmployeeProfileFormData["nationality"],
-              }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select nationality" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {nationalityOptions.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
         <div className="space-y-1.5">
           <Label>Gender</Label>
           <Select
@@ -615,6 +633,32 @@ const Employees = () => {
           </Select>
         </div>
         <div className="space-y-1.5">
+          <Label>Nationality</Label>
+          <Select
+            value={profileForm.nationality}
+            disabled={!isEditMode}
+            onValueChange={(value) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                nationality: value as EmployeeProfileFormData["nationality"],
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select nationality" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {nationalityOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
           <Label>Cell Number</Label>
           <Input
             value={profileForm.cellNumber}
@@ -642,8 +686,41 @@ const Employees = () => {
           />
         </div>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
+          <Label>Emergency Contact</Label>
+          <Input
+            placeholder="Name and surname"
+            value={profileForm.emergencyContactName}
+            disabled={!isEditMode}
+            onChange={(e) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                emergencyContactName: e.target.value,
+              }))
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Emergency Contact Number</Label>
+          <Input
+            value={profileForm.emergencyContactNumber}
+            disabled={!isEditMode}
+            onChange={(e) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                emergencyContactNumber: e.target.value,
+              }))
+            }
+          />
+        </div>
+      </div>
+    </div>
+  );
+  const renderAddressTab = () => (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-1.5 sm:col-span-2 xl:col-span-2">
           <Label>Address Line 1</Label>
           <Input
             placeholder="Apartment/suite number and complex name"
@@ -657,7 +734,7 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 sm:col-span-2 xl:col-span-2">
           <Label>Address Line 2</Label>
           <Input
             placeholder="Street name and number"
@@ -721,40 +798,13 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Emergency Contact</Label>
-          <Input
-            placeholder="Name and surname"
-            value={profileForm.emergencyContactName}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                emergencyContactName: e.target.value,
-              }))
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Emergency Contact Number</Label>
-          <Input
-            value={profileForm.emergencyContactNumber}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                emergencyContactNumber: e.target.value,
-              }))
-            }
-          />
-        </div>
       </div>
     </div>
   );
 
   const renderEmploymentTab = () => (
-    <div className="space-y-4">
-      <div className="grid md:grid-cols-2 gap-4">
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="space-y-1.5">
           <Label>Start Date</Label>
           <Input
@@ -795,7 +845,7 @@ const Employees = () => {
           </Select>
         </div>
         {profileForm.contractType === "Temporary" && (
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
             <Label>End Date</Label>
             <Input
               type="date"
@@ -1047,7 +1097,7 @@ const Employees = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="idNumber">ID Number *</Label>
+                    <Label htmlFor="idNumber">ID Number</Label>
                     <Input
                       id="idNumber"
                       value={addForm.idNumber}
@@ -1057,7 +1107,6 @@ const Employees = () => {
                           idNumber: e.target.value,
                         }))
                       }
-                      required
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
@@ -1075,13 +1124,26 @@ const Employees = () => {
             <CardDescription>
               {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
             </CardDescription>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Input
                 placeholder="Search by name, surname, ID number, employee number, or job title..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="max-w-md"
               />
+              <Select
+                value={contractFilter}
+                onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
+              >
+                <SelectTrigger className="w-full sm:w-52">
+                  <SelectValue placeholder="Filter by contract" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All employees</SelectItem>
+                  <SelectItem value="permanent">Permanent</SelectItem>
+                  <SelectItem value="temporary">Temporary</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
@@ -1094,33 +1156,33 @@ const Employees = () => {
                 </Button>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
-                        onCheckedChange={toggleSelectAll}
-                      />
-                    </TableHead>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>ID Number</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>Contract Type</TableHead>
-                    <TableHead>Job Title</TableHead>
-                    <TableHead className="text-center">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredEmployees.map((employee) => (
-                    <TableRow key={employee.id}>
-                      <TableCell>
+              <div className="rounded-md border">
+                <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  <div className="flex items-center justify-center">
+                    <Checkbox
+                      checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </div>
+                  <div className="flex items-center leading-tight">Employee</div>
+                  <div className="flex items-center gap-2 leading-tight">ID Number</div>
+                  <div className="flex items-center leading-tight">Contract Type</div>
+                  <div className="flex items-center leading-tight">Job Title</div>
+                  <div className="flex items-center justify-center leading-tight text-center">Actions</div>
+                </div>
+                <div className="max-h-[620px] overflow-y-auto divide-y">
+                  {filteredEmployees.slice(0, 15).map((employee) => (
+                    <div
+                      key={employee.id}
+                      className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30"
+                    >
+                      <div className="flex items-center justify-center">
                         <Checkbox
                           checked={selectedEmployees.has(employee.id)}
                           onCheckedChange={() => toggleSelectEmployee(employee.id)}
                         />
-                      </TableCell>
-                      <TableCell className="font-medium">
+                      </div>
+                      <div className="font-medium leading-tight">
                         <button
                           type="button"
                           onClick={() => openProfileDialog(employee)}
@@ -1129,45 +1191,42 @@ const Employees = () => {
                           {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
                         </button>
                         {employee.employee_number && (
-                          <p className="text-xs text-muted-foreground">#{employee.employee_number}</p>
+                          <p className="text-[10px] text-muted-foreground leading-tight">#{employee.employee_number}</p>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm">
-                            {employee.id_number
-                              ? revealedIds.has(employee.id)
-                                ? employee.id_number
-                                : maskSAIdNumber(employee.id_number)
-                              : "N/A"}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const next = new Set(revealedIds);
-                              if (next.has(employee.id)) {
-                                next.delete(employee.id);
-                              } else {
-                                next.add(employee.id);
-                              }
-                              setRevealedIds(next);
-                            }}
-                            className="h-6 w-6 p-0"
-                            title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
-                          >
-                            {revealedIds.has(employee.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatDisplayDate(employee.start_date)}</TableCell>
-                      <TableCell>{employee.contract_type ?? "N/A"}</TableCell>
-                      <TableCell>{employee.job_title ?? "N/A"}</TableCell>
-                      <TableCell className="text-center">
-                        <TooltipProvider delayDuration={0}>
+                      </div>
+                      <div className="flex items-center gap-2 leading-tight">
+                        <span className="font-mono text-sm">
+                          {employee.id_number
+                            ? revealedIds.has(employee.id)
+                              ? employee.id_number
+                              : maskSAIdNumber(employee.id_number)
+                            : "N/A"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = new Set(revealedIds);
+                            if (next.has(employee.id)) {
+                              next.delete(employee.id);
+                            } else {
+                              next.add(employee.id);
+                            }
+                            setRevealedIds(next);
+                          }}
+                          className="h-6 w-6 p-0"
+                          title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
+                        >
+                          {revealedIds.has(employee.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                      <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
+                      <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
+                      <div className="flex items-center justify-center">
+                        <TooltipProvider delayDuration={0} skipDelayDuration={0}>
                           <div className="flex items-center justify-center gap-1.5">
-                            <Tooltip>
+                            <Tooltip disableHoverableContent>
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
@@ -1180,20 +1239,12 @@ const Employees = () => {
                               </TooltipTrigger>
                               <TooltipContent side="top">View Profile</TooltipContent>
                             </Tooltip>
-                            <Tooltip>
+                            <Tooltip disableHoverableContent>
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() =>
-                                    navigate("/warning-generator", {
-                                      state: {
-                                        employeeName: employee.employee_name ?? "",
-                                        employeeSurname: employee.employee_surname ?? "",
-                                        employeeIdNumber: employee.id_number ?? "",
-                                      },
-                                    })
-                                  }
+                                  onClick={() => setDocumentDialogEmployee(employee)}
                                   className="group hover:bg-muted/50 bg-transparent"
                                 >
                                   <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
@@ -1203,86 +1254,134 @@ const Employees = () => {
                             </Tooltip>
                           </div>
                         </TooltipProvider>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
       <Dialog open={isProfileDialogOpen} onOpenChange={(open) => (open ? undefined : closeProfileDialog())}>
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader className="space-y-3">
-            <DialogTitle>Employee Profile</DialogTitle>
-            <DialogDescription>
-              Here you can view, edit, and update this employee&apos;s information.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-[80vw] md:w-[80vw] max-w-[1200px] rounded-xl border border-border/50 bg-background p-0 shadow-lg transition-all duration-300 ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0">
+          <div className="flex flex-col gap-6 p-6">
+            <DialogHeader className="text-left">
+              <div className="flex items-center gap-4">
+                <UserCircle className="h-12 w-12 text-blue-500" />
+                <div className="space-y-1">
+                  <DialogTitle>Employee Profile</DialogTitle>
+                  <DialogDescription>
+                    Here you can view, edit, and update this employee&apos;s information.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
 
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <p className="font-medium">
-                {(selectedEmployee?.employee_name ?? "").trim()} {(selectedEmployee?.employee_surname ?? "").trim()}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Employee #{selectedEmployee?.employee_number ?? "Not assigned"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={isEditMode ? "outline" : "default"}
-                size="sm"
-                className="gap-2"
-                onClick={() => setIsEditMode((prev) => !prev)}
-              >
-                {isEditMode ? (
-                  <>
-                    <X className="h-4 w-4" />
-                    Cancel Editing
-                  </>
-                ) : (
-                  <>
-                    <Pencil className="h-4 w-4" />
-                    Edit Information
-                  </>
-                )}
-              </Button>
-              {isEditMode && (
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-medium">
+                  {(selectedEmployee?.employee_name ?? "").trim()} {(selectedEmployee?.employee_surname ?? "").trim()}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Employee #{selectedEmployee?.employee_number ?? "Not assigned"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
+                  variant={isEditMode ? "outline" : "default"}
                   size="sm"
                   className="gap-2"
-                  onClick={handleProfileSave}
-                  disabled={isProfileSaving}
+                  onClick={() => setIsEditMode((prev) => !prev)}
                 >
-                  {isProfileSaving ? "Saving..." : "Save Changes"}
+                  {isEditMode ? (
+                    <>
+                      <X className="h-4 w-4" />
+                      Cancel Editing
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="h-4 w-4" />
+                      Edit Information
+                    </>
+                  )}
                 </Button>
-              )}
+                {isEditMode && (
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    onClick={handleProfileSave}
+                    disabled={isProfileSaving}
+                  >
+                    {isProfileSaving ? "Saving..." : "Save Changes"}
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
 
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-4">
-            <TabsList className="grid grid-cols-3 max-w-md">
-              <TabsTrigger value="personal">Personal</TabsTrigger>
-              <TabsTrigger value="employment">Employment</TabsTrigger>
-              <TabsTrigger value="documents">Documents</TabsTrigger>
-            </TabsList>
-            <TabsContent value="personal" className="mt-6">
-              {renderPersonalTab()}
-            </TabsContent>
-            <TabsContent value="employment" className="mt-6">
-              {renderEmploymentTab()}
-            </TabsContent>
-            <TabsContent value="documents" className="mt-6">
-              {renderDocumentsTab()}
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
-    </DashboardLayout>
-  );
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
+              <TabsList className="grid gap-2 sm:grid-cols-4 sm:max-w-2xl">
+                <TabsTrigger value="personal">Personal</TabsTrigger>
+                <TabsTrigger value="employment">Employment</TabsTrigger>
+                <TabsTrigger value="address">Address</TabsTrigger>
+                <TabsTrigger value="documents">Documents</TabsTrigger>
+              </TabsList>
+              <TabsContent value="personal" className="mt-6">
+                {renderPersonalTab()}
+              </TabsContent>
+              <TabsContent value="employment" className="mt-6">
+                {renderEmploymentTab()}
+              </TabsContent>
+              <TabsContent value="address" className="mt-6">
+                {renderAddressTab()}
+              </TabsContent>
+              <TabsContent value="documents" className="mt-6">
+                {renderDocumentsTab()}
+              </TabsContent>
+            </Tabs>
+          </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog
+      open={Boolean(documentDialogEmployee)}
+      onOpenChange={(open) => {
+        if (!open) setDocumentDialogEmployee(null);
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
+            Document Category
+          </DialogTitle>
+          <DialogDescription>
+            {documentDialogEmployee
+              ? `Choose a category type for ${(documentDialogEmployee.employee_name ?? "").trim()} ${(documentDialogEmployee.employee_surname ?? "").trim()}.`
+              : "Choose a category type to continue."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          {documentCategories.map((category) => (
+            <Button
+              key={category.slug}
+              variant="outline"
+              className="justify-center text-sm"
+              onClick={() => handleDocumentCategorySelect(category.path)}
+            >
+              {category.label}
+            </Button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  </DashboardLayout>
+);
  };
 
 export default Employees;
+
+
+
+
+

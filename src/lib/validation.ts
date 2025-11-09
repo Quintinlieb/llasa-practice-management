@@ -342,8 +342,9 @@ export const employeeBasicSchema = z
       .transform(sanitizeText),
     idNumber: z
       .string()
-      .refine(validateSAIdNumber, "Invalid South African ID number (must be 13 digits with valid checksum)")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
   });
 
 // Employee Profile Schema
@@ -363,8 +364,9 @@ export const employeeProfileSchema = z
       .transform(sanitizeText),
     idNumber: z
       .string()
-      .refine(validateSAIdNumber, "Invalid South African ID number (must be 13 digits with valid checksum)")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
     startDate: z
       .string()
       .regex(dateRegex, "Invalid date format (YYYY-MM-DD)"),
@@ -412,41 +414,81 @@ export const employeeProfileSchema = z
       .transform((val) => (val ? sanitizeText(val) : "")),
     physicalAddressLine2: z
       .string()
-      .min(5, "Address line 2 must be at least 5 characters")
-      .max(200, "Address line 2 must not exceed 200 characters")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || val.length >= 5, {
+        message: "Address line 2 must be at least 5 characters",
+      })
+      .refine((val) => !val || val.length <= 200, {
+        message: "Address line 2 must not exceed 200 characters",
+      }),
     city: z
       .string()
-      .min(2, "City must be at least 2 characters")
-      .max(100, "City must not exceed 100 characters")
-      .regex(nameRegex, "City can only contain letters, spaces, hyphens, and apostrophes")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || val.length >= 2, {
+        message: "City must be at least 2 characters",
+      })
+      .refine((val) => !val || val.length <= 100, {
+        message: "City must not exceed 100 characters",
+      })
+      .refine((val) => !val || nameRegex.test(val), {
+        message: "City can only contain letters, spaces, hyphens, and apostrophes",
+      }),
     province: z.enum(southAfricanProvinces, {
       errorMap: () => ({ message: "Please select a province" }),
     }),
     areaCode: z
       .string()
-      .regex(/^\d{4}$/, "Area code must be 4 digits")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || /^\d{4}$/.test(val), {
+        message: "Area code must be 4 digits",
+      }),
     cellNumber: z
       .string()
-      .regex(saPhoneRegex, "Invalid phone number (e.g., 0123456789 or +27123456789)")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || saPhoneRegex.test(val), {
+        message: "Invalid phone number (e.g., 0123456789 or +27123456789)",
+      }),
     email: z
       .string()
-      .email("Invalid email address")
-      .max(255, "Email must not exceed 255 characters")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || z.string().email().safeParse(val).success, {
+        message: "Invalid email address",
+      })
+      .refine((val) => !val || val.length <= 255, {
+        message: "Email must not exceed 255 characters",
+      }),
     emergencyContactName: z
       .string()
-      .min(2, "Contact name must be at least 2 characters")
-      .max(150, "Contact name must not exceed 150 characters")
-      .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || val.length >= 2, {
+        message: "Contact name must be at least 2 characters",
+      })
+      .refine((val) => !val || val.length <= 150, {
+        message: "Contact name must not exceed 150 characters",
+      })
+      .refine((val) => !val || nameRegex.test(val), {
+        message: "Name can only contain letters, spaces, hyphens, and apostrophes",
+      }),
     emergencyContactNumber: z
       .string()
-      .regex(saPhoneRegex, "Invalid phone number (e.g., 0123456789 or +27123456789)")
-      .transform(sanitizeText),
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || saPhoneRegex.test(val), {
+        message: "Invalid phone number (e.g., 0123456789 or +27123456789)",
+      }),
   })
   .superRefine((data, ctx) => {
     if (data.contractType === "Temporary" && !data.endDate) {
@@ -477,20 +519,35 @@ export const employeeProfileSchema = z
 export const employeeImportSchema = z.object({
   employeeName: z
     .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(100, "Name must not exceed 100 characters")
-    .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
-    .transform(sanitizeText),
+    .transform((val) => (typeof val === "string" ? val.trim() : ""))
+    .refine((val) => val.length > 0, { message: "Name is required" }),
   employeeSurname: z
     .string()
-    .min(2, "Surname must be at least 2 characters")
-    .max(100, "Surname must not exceed 100 characters")
-    .regex(nameRegex, "Surname can only contain letters, spaces, hyphens, and apostrophes")
-    .transform(sanitizeText),
+    .transform((val) => (typeof val === "string" ? val.trim() : ""))
+    .refine((val) => val.length > 0, { message: "Surname is required" }),
   idNumber: z
     .string()
-    .refine(validateSAIdNumber, "Invalid South African ID number (must be 13 digits with valid checksum)")
-    .transform(sanitizeText),
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  contractType: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => {
+      const trimmed = typeof val === "string" ? val.trim() : "";
+      if (!trimmed) return "";
+      const match = contractTypes.find((type) => type.toLowerCase() === trimmed.toLowerCase());
+      return match ?? trimmed;
+    })
+    .refine((val) => !val || contractTypes.includes(val as (typeof contractTypes)[number]), {
+      message: `Contract type must be one of: ${contractTypes.join(", ")}`,
+    }),
+  jobTitle: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
 });
 
 // Warning Generator Schema

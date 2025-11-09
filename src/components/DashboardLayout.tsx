@@ -37,8 +37,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col">
+        <div className="sticky top-0 h-screen flex-shrink-0">
+          <AppSidebar />
+        </div>
+        <div className="flex-1 flex flex-col overflow-y-auto bg-[#f5f7fa]">
           <header className="border-b border-border/50 bg-background/95 backdrop-blur-sm sticky top-0 z-40 h-14">
             <div className="relative h-full px-6 flex items-center justify-between">
               <div className="flex items-center">

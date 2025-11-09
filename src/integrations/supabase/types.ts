@@ -14,6 +14,32 @@ export type Database = {
   }
   public: {
     Tables: {
+      company_code_of_conduct: {
+        Row: {
+          company_id: string
+          data: Json
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          data: Json
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          data?: Json
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_code_of_conduct_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           company_id: string

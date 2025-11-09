@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, Info, Eye, EyeOff } from "lucide-react";
+import { FileText, Info, Eye, EyeOff, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -158,8 +158,12 @@ const Auth = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/20">
       <div className="w-full max-w-md px-6">
         <div className="flex justify-end mb-3">
-          <Link to="/">
-            <Button variant="outline" size="sm">Back to Site</Button>
+          <Link
+            to="/"
+            aria-label="Close and return home"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-muted-foreground transition hover:text-blue-600 hover:font-semibold hover:ring-1 hover:ring-blue-500"
+          >
+            <X className="h-4 w-4" />
           </Link>
         </div>
         <Card className="w-full shadow-xl">
@@ -209,25 +213,24 @@ const Auth = () => {
                 </button>
               </div>
               {!isLogin && (
-                <div className="space-y-2">
+                <div className="flex items-start justify-between text-xs text-muted-foreground">
+                  <div className="relative group inline-flex items-center gap-2 cursor-help">
+                    <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span className="font-medium">Password requirements</span>
+                    <div className="invisible absolute left-0 top-full z-10 mt-2 w-56 rounded-md border border-border bg-background p-3 text-xs leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+                      <p className="mb-1 font-medium">Include:</p>
+                      <ul className="space-y-0.5 list-disc list-inside">
+                        <li>At least 8 characters</li>
+                        <li>One uppercase letter</li>
+                        <li>One lowercase letter</li>
+                        <li>One number</li>
+                        <li>One special character</li>
+                      </ul>
+                    </div>
+                  </div>
                   {passwordError && (
                     <p className="text-sm text-destructive">{passwordError}</p>
                   )}
-                  <div className="text-xs text-muted-foreground space-y-1 bg-muted/50 p-3 rounded-md">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                      <div>
-                        <p className="font-medium mb-1">Password requirements:</p>
-                        <ul className="space-y-0.5 list-disc list-inside">
-                          <li>At least 8 characters long</li>
-                          <li>One uppercase letter</li>
-                          <li>One lowercase letter</li>
-                          <li>One number</li>
-                          <li>One special character</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>

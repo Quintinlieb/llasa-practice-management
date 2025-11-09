@@ -2,7 +2,7 @@ import { FileText, Users, Home, LogOut } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FocusEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -17,6 +17,8 @@ import {
   SidebarHeader,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
+import { documentCategories } from "@/constants/documentCategories";
 
 interface Profile {
   user_name: string;
@@ -24,17 +26,23 @@ interface Profile {
   user_email: string;
 }
 
-const items = [
+const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
-  { title: "Documents", url: "/documents", icon: FileText },
 ];
+
+export const isActiveCategory = (pathname: string, slug: string) =>
+  pathname.startsWith(`/documents/${slug}`);
+
+export const isAnyDocsChildActive = (pathname: string) =>
+  documentCategories.some((category) => isActiveCategory(pathname, category.slug));
 
 export function AppSidebar() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [isDocsMenuInteracting, setIsDocsMenuInteracting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -52,23 +60,51 @@ export function AppSidebar() {
     return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
   };
 
+  const pathname = location.pathname;
+  const docsCategoryActive = isAnyDocsChildActive(pathname);
+  const isDocsOpen = docsCategoryActive || isDocsMenuInteracting;
+
+  const handleDocsMouseEnter = () => setIsDocsMenuInteracting(true);
+
+  const handleDocsMouseLeave = () => {
+    if (!docsCategoryActive) {
+      setIsDocsMenuInteracting(false);
+    }
+  };
+
+  const handleDocsFocus = () => setIsDocsMenuInteracting(true);
+
+  const handleDocsBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (docsCategoryActive) return;
+    const nextFocusTarget = event.relatedTarget as Node | null;
+    if (nextFocusTarget && event.currentTarget.contains(nextFocusTarget)) {
+      return;
+    }
+    setIsDocsMenuInteracting(false);
+  };
+
   return (
-    <Sidebar collapsible="none" className="w-56 border-r border-sidebar-border">
+    <Sidebar collapsible="none" className="w-56 h-screen border-r border-sidebar-border">
       <SidebarHeader className="px-2 py-2">
         <div className="h-14 w-full overflow-hidden flex items-center justify-center">
-          <img src="/logo.png.png" alt="logo" className="h-full w-auto object-cover" style={{ imageRendering: 'crisp-edges' }} />
+          <img
+            src="/logo.png.png"
+            alt="logo"
+            className="h-[85%] w-auto object-contain"
+            style={{ imageRendering: "crisp-edges" }}
+          />
         </div>
         <SidebarSeparator className="mt-2" />
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="px-4">
         <SidebarGroup className="pt-10">
           <SidebarGroupLabel className="mt-1">
             Menu
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {primaryNavItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -89,6 +125,73 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              <SidebarMenuItem>
+                <div
+                  className="group relative w-full"
+                  onMouseEnter={handleDocsMouseEnter}
+                  onMouseLeave={handleDocsMouseLeave}
+                  onFocus={handleDocsFocus}
+                  onBlur={handleDocsBlur}
+                >
+                  <SidebarMenuButton
+                    type="button"
+                    id="documents-menu-button"
+                    aria-expanded={isDocsOpen}
+                    aria-controls="documents-menu"
+                    aria-haspopup="true"
+                    isActive={docsCategoryActive}
+                    className={cn(
+                      "!bg-transparent w-full",
+                      docsCategoryActive ? "font-semibold text-foreground" : ""
+                    )}
+                  >
+                    <FileText
+                      className={cn(
+                        "h-4 w-4 text-current",
+                        docsCategoryActive && "text-blue-600"
+                      )}
+                    />
+                    <span>Documents</span>
+                  </SidebarMenuButton>
+                  <div
+                    id="documents-menu"
+                    role="presentation"
+                    className={cn(
+                      "mt-[0.21rem] overflow-hidden rounded-md bg-white/80 shadow-sm transition-all duration-150 ease-out",
+                      "max-h-0 opacity-0 group-hover:max-h-screen group-hover:opacity-100",
+                      isDocsOpen && "max-h-screen opacity-100"
+                    )}
+                  >
+                    <nav aria-label="Document categories">
+                      <ul
+                        role="menu"
+                        aria-labelledby="documents-menu-button"
+                        className="flex flex-col gap-[0.11rem] px-[0.63rem] py-[0.32rem]"
+                      >
+                        {documentCategories.map((category) => {
+                          const active = isActiveCategory(pathname, category.slug);
+                          return (
+                            <li key={category.slug}>
+                              <NavLink
+                                to={`/documents/${category.slug}`}
+                                role="menuitem"
+                                className={cn(
+                                  "block rounded-md pl-[1.22rem] pr-4 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+                                  active
+                                    ? "font-medium text-blue-600"
+                                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                )}
+                              >
+                                {category.label}
+                              </NavLink>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </nav>
+                  </div>
+                </div>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

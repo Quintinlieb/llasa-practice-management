@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { companySetupSchema, southAfricanProvinces } from "@/lib/validation";
+import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const CompanySetup = () => {
   const { user } = useAuth();
@@ -99,7 +100,7 @@ const CompanySetup = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.errors?.[0]?.message || error.message || "Validation failed",
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } finally {

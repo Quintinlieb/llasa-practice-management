@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
+import { companySetupSchema } from "@/lib/validation";
+import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -99,48 +101,114 @@ const Settings = () => {
     if (!user) return;
     setSaving(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update(userDetails)
-      .eq("id", user.id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
+    try {
+      // Validate user fields using existing schema
+      const validated = companySetupSchema.pick({
+        userName: true,
+        userSurname: true,
+        userEmail: true,
+        userContact: true
+      }).parse({
+        userName: userDetails.user_name,
+        userSurname: userDetails.user_surname,
+        userEmail: userDetails.user_email,
+        userContact: userDetails.user_contact
       });
-    } else {
+      
+      // Update with validated data
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          user_name: validated.userName,
+          user_surname: validated.userSurname,
+          user_email: validated.userEmail,
+          user_contact: validated.userContact
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
       toast({
         title: "Success",
         description: "User details updated successfully",
       });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleCompanyDetailsUpdate = async () => {
     if (!user) return;
     setSaving(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .update(companyDetails)
-      .eq("id", user.id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
+    try {
+      // Split physical address back into components for validation
+      const addressParts = companyDetails.physical_address.split(", ");
+      
+      // Validate company fields using existing schema
+      const validated = companySetupSchema.parse({
+        companyName: companyDetails.company_name,
+        registrationNumber: companyDetails.registration_number,
+        physicalAddressLine1: addressParts[0] || "",
+        physicalAddressLine2: addressParts[1] || "",
+        city: addressParts[2] || "",
+        province: addressParts[3] || "Gauteng",
+        areaCode: addressParts[4] || "0000",
+        postalAddress: companyDetails.postal_address,
+        companyContact: companyDetails.company_contact,
+        companyEmail: companyDetails.company_email,
+        userName: companyDetails.representative_name,
+        userSurname: companyDetails.representative_surname,
+        userContact: companyDetails.company_contact,
+        userEmail: companyDetails.company_email
       });
-    } else {
+
+      // Reconstruct physical address
+      const physicalAddress = [
+        validated.physicalAddressLine1,
+        validated.physicalAddressLine2,
+        validated.city,
+        validated.province,
+        validated.areaCode
+      ].filter(Boolean).join(", ");
+      
+      // Update with validated data
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          company_name: validated.companyName,
+          registration_number: validated.registrationNumber,
+          vat_number: companyDetails.vat_number || null,
+          physical_address: physicalAddress,
+          postal_address: validated.postalAddress || "",
+          representative_name: validated.userName,
+          representative_surname: validated.userSurname,
+          company_contact: validated.companyContact,
+          company_email: validated.companyEmail
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
       toast({
         title: "Success",
         description: "Company details updated successfully",
       });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handlePasswordReset = async () => {
@@ -169,7 +237,7 @@ const Settings = () => {
     if (error) {
       toast({
         title: "Error",
-        description: error.message,
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } else {

@@ -46,6 +46,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
+import { getSafeErrorMessage } from "@/lib/errorHandling";
 import {
   contractTypes,
   employeeBasicSchema,
@@ -71,26 +72,7 @@ const DEFAULT_PROVINCE = southAfricanProvinces[2] ?? southAfricanProvinces[0];
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
 
-const extractErrorMessage = (error: unknown): string | undefined => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (error && typeof error === "object") {
-    const errorWithMessage = error as { message?: unknown };
-    if (typeof errorWithMessage.message === "string") {
-      return errorWithMessage.message;
-    }
-
-    const errorWithErrors = error as { errors?: Array<{ message?: string }> };
-    const firstMessage = errorWithErrors.errors?.find((item) => typeof item?.message === "string")?.message;
-    if (firstMessage) {
-      return firstMessage;
-    }
-  }
-
-  return undefined;
-};
+// Remove local error extraction - now using centralized error handling
 
 const createBlankAddForm = (): EmployeeBasicFormData => ({
   employeeName: "",
@@ -286,7 +268,7 @@ const Employees = () => {
     } catch (error: unknown) {
       toast({
         title: "Error",
-        description: extractErrorMessage(error) ?? "Unable to add employee. Please check the details and try again.",
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } finally {
@@ -344,7 +326,7 @@ const Employees = () => {
     } catch (error: unknown) {
       toast({
         title: "Error",
-        description: extractErrorMessage(error) ?? "Unable to save changes. Please review the details and try again.",
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } finally {
@@ -446,7 +428,7 @@ const Employees = () => {
             job_title: validated.jobTitle || null,
           });
         } catch (err: unknown) {
-          errors.push(`Row ${rowNumber}: ${extractErrorMessage(err) ?? "Unknown validation error"}`);
+          errors.push(`Row ${rowNumber}: ${getSafeErrorMessage(err)}`);
         }
       }
 

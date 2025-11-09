@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
+import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -117,7 +118,7 @@ const Auth = () => {
         if (error) {
           toast({
             title: "Error",
-            description: error.message,
+            description: getSafeErrorMessage(error),
             variant: "destructive",
           });
         }
@@ -126,7 +127,7 @@ const Auth = () => {
         if (error) {
           toast({
             title: "Error",
-            description: error.message,
+            description: getSafeErrorMessage(error),
             variant: "destructive",
           });
         } else {
@@ -146,7 +147,7 @@ const Auth = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message,
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } finally {

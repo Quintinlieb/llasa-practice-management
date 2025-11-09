@@ -459,7 +459,7 @@ const Employees = () => {
     } catch (error: unknown) {
       toast({
         title: "Error",
-        description: extractErrorMessage(error) ?? "Import failed. Please verify the file and try again.",
+        description: getSafeErrorMessage(error),
         variant: "destructive",
       });
     } finally {

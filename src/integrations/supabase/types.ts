@@ -14,32 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      company_code_of_conduct: {
-        Row: {
-          company_id: string
-          data: Json
-          updated_at: string | null
-        }
-        Insert: {
-          company_id: string
-          data: Json
-          updated_at?: string | null
-        }
-        Update: {
-          company_id?: string
-          data?: Json
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "company_code_of_conduct_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       documents: {
         Row: {
           company_id: string
@@ -112,25 +86,8 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string | null
-          start_date: string | null
-          contract_type: string | null
-          end_date: string | null
-          gender: string | null
-          race: string | null
-          nationality: string | null
-          employee_number: string | null
           employee_name: string
           employee_surname: string
-          job_title: string | null
-          physical_address_line1: string | null
-          physical_address_line2: string | null
-          city: string | null
-          province: string | null
-          area_code: string | null
-          cell_number: string | null
-          email: string | null
-          emergency_contact_name: string | null
-          emergency_contact_number: string | null
           id: string
           id_number: string
           updated_at: string | null
@@ -138,25 +95,8 @@ export type Database = {
         Insert: {
           company_id: string
           created_at?: string | null
-          start_date?: string | null
-          contract_type?: string | null
-          end_date?: string | null
-          gender?: string | null
-          race?: string | null
-          nationality?: string | null
-          employee_number?: string | null
           employee_name: string
           employee_surname: string
-          job_title?: string | null
-          physical_address_line1?: string | null
-          physical_address_line2?: string | null
-          city?: string | null
-          province?: string | null
-          area_code?: string | null
-          cell_number?: string | null
-          email?: string | null
-          emergency_contact_name?: string | null
-          emergency_contact_number?: string | null
           id?: string
           id_number: string
           updated_at?: string | null
@@ -164,25 +104,8 @@ export type Database = {
         Update: {
           company_id?: string
           created_at?: string | null
-          start_date?: string | null
-          contract_type?: string | null
-          end_date?: string | null
-          gender?: string | null
-          race?: string | null
-          nationality?: string | null
-          employee_number?: string | null
           employee_name?: string
           employee_surname?: string
-          job_title?: string | null
-          physical_address_line1?: string | null
-          physical_address_line2?: string | null
-          city?: string | null
-          province?: string | null
-          area_code?: string | null
-          cell_number?: string | null
-          email?: string | null
-          emergency_contact_name?: string | null
-          emergency_contact_number?: string | null
           id?: string
           id_number?: string
           updated_at?: string | null

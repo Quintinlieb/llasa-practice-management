@@ -110,3 +110,11 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+.employee-table-scroll {
+  scrollbar-width: none;
+}
+
+.employee-table-scroll::-webkit-scrollbar {
+  display: none;
+}

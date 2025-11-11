@@ -393,9 +393,11 @@ export const employeeProfileSchema = z
       .string()
       .optional()
       .or(z.literal(""))
-      .transform((val) => (val ? val.toUpperCase() : ""))
-      .refine((val) => !val || /^[A-Z]$/.test(val), {
-        message: "Prefix must be a single letter (A-Z)",
+      .transform((val) =>
+        val ? val.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) : "",
+      )
+      .refine((val) => !val || /^[A-Z]{1,3}$/.test(val), {
+        message: "Prefix must be 1-3 letters (A-Z)",
       }),
     employeeNumber: z
       .string()

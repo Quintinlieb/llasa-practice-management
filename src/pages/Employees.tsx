@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -41,6 +42,7 @@ import {
   X,
   FileUp,
   UserCircle,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,8 +68,35 @@ import { documentCategories } from "@/constants/documentCategories";
 
 type Employee = Tables<"employees">;
 type EmployeeTab = "personal" | "employment" | "address" | "documents";
+type AutoNumberUndoState = {
+  previous: {
+    id: string;
+    company_id: string;
+    employee_name: string;
+    employee_surname: string;
+    employee_number: string | null;
+  }[];
+  expiresAt: number;
+  prefix: string;
+};
+type DeleteUndoState = {
+  deletedEmployees: Employee[];
+  expiresAt: number;
+};
 
 const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
+const MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH = 3;
+
+const cleanPrefixInput = (value?: string | null) =>
+  (value ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH);
+
+const extractPrefixFromNumber = (value?: string | null) => {
+  if (!value) return "";
+  const match = value.toUpperCase().match(/^[A-Z]{1,3}/);
+  return match?.[0] ?? "";
+};
+
+const normalizePrefix = (value?: string | null) => cleanPrefixInput(value) || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
 const DEFAULT_PROVINCE = southAfricanProvinces[2] ?? southAfricanProvinces[0];
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
@@ -91,7 +120,8 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
    race: (employee?.race as EmployeeProfileFormData["race"]) ?? raceOptions[0],
    nationality: (employee?.nationality as EmployeeProfileFormData["nationality"]) ?? DEFAULT_NATIONALITY,
    employeeNumberMode: employee?.employee_number ? "manual" : "auto",
-   employeeNumberPrefix: (employee?.employee_number?.[0]?.toUpperCase() ?? DEFAULT_EMPLOYEE_NUMBER_PREFIX) as string,
+   employeeNumberPrefix:
+     extractPrefixFromNumber(employee?.employee_number) || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
    employeeNumber: employee?.employee_number ?? "",
    jobTitle: employee?.job_title ?? "",
    physicalAddressLine1: employee?.physical_address_line1 ?? "",
@@ -106,16 +136,18 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
  });
 
 const getNextEmployeeNumber = (currentEmployees: Employee[], prefix: string) => {
-  const normalizedPrefix = prefix?.match(/^[A-Z]$/) ? prefix : DEFAULT_EMPLOYEE_NUMBER_PREFIX;
+  const normalizedPrefix = normalizePrefix(prefix);
+  const prefixLength = normalizedPrefix.length;
   const highestSequence = currentEmployees.reduce((max, employee) => {
-    if (!employee.employee_number?.startsWith(normalizedPrefix)) {
+    const currentNumber = (employee.employee_number ?? "").toUpperCase();
+    if (!currentNumber.startsWith(normalizedPrefix)) {
       return max;
     }
-    const sequence = parseInt(employee.employee_number.slice(1), 10);
+    const sequence = parseInt(currentNumber.slice(prefixLength), 10);
     return Number.isNaN(sequence) ? max : Math.max(max, sequence);
-   }, 0);
-   return `${normalizedPrefix}${String(highestSequence + 1).padStart(4, "0")}`;
- };
+  }, 0);
+  return `${normalizedPrefix}${String(highestSequence + 1).padStart(4, "0")}`;
+};
 
 const formatDisplayDate = (value?: string | null) => {
   if (!value) return "--";
@@ -128,6 +160,9 @@ const formatDisplayDate = (value?: string | null) => {
   });
 };
 
+
+const TABLE_MAX_HEIGHT = "calc(100vh - 340px)";
+const TABLE_BODY_MAX_HEIGHT = "calc(100vh - 340px - 56px)";
 
 const Employees = () => {
    const { user, loading } = useAuth();
@@ -148,18 +183,78 @@ const Employees = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [addForm, setAddForm] = useState<EmployeeBasicFormData>(createBlankAddForm());
+  const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
-
-   const [addForm, setAddForm] = useState<EmployeeBasicFormData>(createBlankAddForm());
-   const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
-   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollHint, setShowScrollHint] = useState(false);
+  const [autoNumberPrefixInput, setAutoNumberPrefixInput] = useState(DEFAULT_EMPLOYEE_NUMBER_PREFIX);
+  const [isAutoNumberDialogOpen, setIsAutoNumberDialogOpen] = useState(false);
+  const [isAutoAllocating, setIsAutoAllocating] = useState(false);
+  const [autoNumberUndo, setAutoNumberUndo] = useState<AutoNumberUndoState | null>(null);
+  const [autoNumberUndoCountdown, setAutoNumberUndoCountdown] = useState(0);
+  const autoNumberUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoNumberUndoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<DeleteUndoState | null>(null);
+  const [deleteUndoCountdown, setDeleteUndoCountdown] = useState(0);
+  const deleteUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deleteUndoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoNumberPreview = useMemo(() => {
     if (profileForm.employeeNumberMode === "auto") {
-      return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX);
+      return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix);
     }
     return "";
   }, [employees, profileForm.employeeNumberMode, profileForm.employeeNumberPrefix]);
+
+  const normalizedAutoNumberPrefix = useMemo(
+    () => normalizePrefix(autoNumberPrefixInput),
+    [autoNumberPrefixInput],
+  );
+
+  const getExistingPrefix = useCallback(() => {
+    const existing = employees.find((emp) => extractPrefixFromNumber(emp.employee_number));
+    const derived = existing ? extractPrefixFromNumber(existing.employee_number) : "";
+    return derived || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
+  }, [employees]);
+
+  const handleOpenAutoNumberDialog = () => {
+    setAutoNumberPrefixInput(getExistingPrefix());
+    setIsAutoNumberDialogOpen(true);
+  };
+
+  const clearAutoNumberUndoTimers = useCallback(() => {
+    if (autoNumberUndoTimeoutRef.current) {
+      clearTimeout(autoNumberUndoTimeoutRef.current);
+      autoNumberUndoTimeoutRef.current = null;
+    }
+    if (autoNumberUndoIntervalRef.current) {
+      clearInterval(autoNumberUndoIntervalRef.current);
+      autoNumberUndoIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearAutoNumberUndoState = useCallback(() => {
+    clearAutoNumberUndoTimers();
+    setAutoNumberUndo(null);
+    setAutoNumberUndoCountdown(0);
+  }, [clearAutoNumberUndoTimers]);
+
+  const startAutoNumberUndoTimers = useCallback(
+    (expiresAt: number) => {
+      clearAutoNumberUndoTimers();
+      const updateCountdown = () => {
+        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+        setAutoNumberUndoCountdown(remaining);
+      };
+      updateCountdown();
+      autoNumberUndoIntervalRef.current = setInterval(updateCountdown, 1000);
+      autoNumberUndoTimeoutRef.current = setTimeout(() => {
+        clearAutoNumberUndoState();
+      }, Math.max(0, expiresAt - Date.now()));
+    },
+    [clearAutoNumberUndoTimers, clearAutoNumberUndoState],
+  );
 
   const handleDocumentCategorySelect = (path: string) => {
     setDocumentDialogEmployee(null);
@@ -171,6 +266,109 @@ const Employees = () => {
       navigate("/auth");
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) {
+      setShowScrollHint(false);
+      return;
+    }
+
+    const updateHint = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 1;
+      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
+      setShowScrollHint(canScroll && !atBottom);
+    };
+
+    updateHint();
+    el.addEventListener("scroll", updateHint);
+    window.addEventListener("resize", updateHint);
+
+    return () => {
+      el.removeEventListener("scroll", updateHint);
+      window.removeEventListener("resize", updateHint);
+    };
+  }, [filteredEmployees.length]);
+
+  useEffect(() => {
+    if (autoNumberUndo) {
+      startAutoNumberUndoTimers(autoNumberUndo.expiresAt);
+    } else {
+      clearAutoNumberUndoTimers();
+      setAutoNumberUndoCountdown(0);
+    }
+    return () => {
+      clearAutoNumberUndoTimers();
+    };
+  }, [autoNumberUndo, startAutoNumberUndoTimers, clearAutoNumberUndoTimers]);
+
+  const clearDeleteUndoTimers = useCallback(() => {
+    if (deleteUndoTimeoutRef.current) {
+      clearTimeout(deleteUndoTimeoutRef.current);
+      deleteUndoTimeoutRef.current = null;
+    }
+    if (deleteUndoIntervalRef.current) {
+      clearInterval(deleteUndoIntervalRef.current);
+      deleteUndoIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearDeleteUndoState = useCallback(() => {
+    clearDeleteUndoTimers();
+    setDeleteUndo(null);
+    setDeleteUndoCountdown(0);
+  }, [clearDeleteUndoTimers]);
+
+  const startDeleteUndoTimers = useCallback(
+    (expiresAt: number) => {
+      clearDeleteUndoTimers();
+      const updateCountdown = () => {
+        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+        setDeleteUndoCountdown(remaining);
+      };
+      updateCountdown();
+      deleteUndoIntervalRef.current = setInterval(updateCountdown, 1000);
+      deleteUndoTimeoutRef.current = setTimeout(() => {
+        clearDeleteUndoState();
+      }, Math.max(0, expiresAt - Date.now()));
+    },
+    [clearDeleteUndoTimers, clearDeleteUndoState],
+  );
+
+  useEffect(() => {
+    if (deleteUndo) {
+      startDeleteUndoTimers(deleteUndo.expiresAt);
+    } else {
+      clearDeleteUndoTimers();
+      setDeleteUndoCountdown(0);
+    }
+    return () => {
+      clearDeleteUndoTimers();
+    };
+  }, [deleteUndo, startDeleteUndoTimers, clearDeleteUndoTimers]);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) {
+      setShowScrollHint(false);
+      return;
+    }
+
+    const updateHint = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 1;
+      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
+      setShowScrollHint(canScroll && !atBottom);
+    };
+
+    updateHint();
+    el.addEventListener("scroll", updateHint);
+    window.addEventListener("resize", updateHint);
+
+    return () => {
+      el.removeEventListener("scroll", updateHint);
+      window.removeEventListener("resize", updateHint);
+    };
+  }, [filteredEmployees.length]);
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
@@ -234,15 +432,150 @@ const Employees = () => {
     setFilteredEmployees(sorted);
   }, [employees, searchQuery, contractFilter]);
 
-   useEffect(() => {
-     if (profileForm.employeeNumberMode === "auto") {
-       setProfileForm((prev) => ({
-         ...prev,
-         employeeNumberPrefix: prev.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
-         employeeNumber: autoNumberPreview,
-       }));
-     }
-   }, [profileForm.employeeNumberMode, autoNumberPreview]);
+  useEffect(() => {
+    if (profileForm.employeeNumberMode === "auto") {
+      setProfileForm((prev) => {
+        const sanitizedPrefix =
+          cleanPrefixInput(prev.employeeNumberPrefix) || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
+        return {
+          ...prev,
+          employeeNumberPrefix: sanitizedPrefix,
+          employeeNumber: autoNumberPreview,
+        };
+      });
+    }
+  }, [profileForm.employeeNumberMode, autoNumberPreview]);
+
+  const handleAutoNumberDialogChange = (open: boolean) => {
+    setIsAutoNumberDialogOpen(open);
+    if (!open) {
+      setIsAutoAllocating(false);
+      setAutoNumberPrefixInput(getExistingPrefix());
+    }
+  };
+
+  const handleAutoAllocateEmployeeNumbers = async () => {
+    if (employees.length === 0) {
+      toast({
+        title: "No employees available",
+        description: "Add employees before allocating numbers.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAutoAllocating(true);
+    try {
+      const prefix = normalizedAutoNumberPrefix;
+      const previousNumbers = employees.map((employee) => ({
+        id: employee.id,
+        company_id: employee.company_id,
+        employee_name: employee.employee_name,
+        employee_surname: employee.employee_surname,
+        employee_number: employee.employee_number ?? null,
+      }));
+      const sorted = [...employees].sort((a, b) => {
+        const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
+        const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+
+      const updates = sorted.map((employee, index) => ({
+        id: employee.id,
+        company_id: employee.company_id,
+        employee_name: employee.employee_name,
+        employee_surname: employee.employee_surname,
+        employee_number: `${prefix}${String(index + 1).padStart(4, "0")}`,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase.from("employees").upsert(updates, { onConflict: "id" });
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: "Employee numbers updated",
+        description: `Assigned numbers ${prefix}${String(1).padStart(4, "0")} - ${prefix}${String(sorted.length).padStart(
+          4,
+          "0",
+        )}.`,
+      });
+      handleAutoNumberDialogChange(false);
+      setAutoNumberUndo({
+        previous: previousNumbers,
+        prefix,
+        expiresAt: Date.now() + 20_000,
+      });
+      await fetchEmployees();
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to auto allocate",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsAutoAllocating(false);
+    }
+  };
+
+  const handleUndoAutoNumber = async () => {
+    if (!autoNumberUndo) return;
+    try {
+      const payload = autoNumberUndo.previous.map((entry) => ({
+        id: entry.id,
+        company_id: entry.company_id,
+        employee_name: entry.employee_name,
+        employee_surname: entry.employee_surname,
+        employee_number: entry.employee_number,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("employees").upsert(payload, { onConflict: "id" });
+      if (error) throw error;
+
+      toast({
+        title: "Employee numbers restored",
+        description: "Previous numbers have been reinstated.",
+      });
+      clearAutoNumberUndoState();
+      await fetchEmployees();
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to undo",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleUndoDelete = async () => {
+    if (!deleteUndo) return;
+    try {
+      const payload = deleteUndo.deletedEmployees.map((employee) => ({
+        ...employee,
+        created_at: employee.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("employees").upsert(payload, { onConflict: "id" });
+      if (error) throw error;
+
+      toast({
+        title: "Employees restored",
+        description: `${deleteUndo.deletedEmployees.length} employee(s) were restored.`,
+      });
+      clearDeleteUndoState();
+      await fetchEmployees();
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to undo deletion",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
 
    const handleAddEmployee = async (e: React.FormEvent) => {
      e.preventDefault();
@@ -336,13 +669,23 @@ const Employees = () => {
 
    const handleBulkDelete = async () => {
      if (selectedEmployees.size === 0 || !user) return;
-     const confirmed = confirm(`Are you sure you want to delete ${selectedEmployees.size} employee(s)?`);
-     if (!confirmed) return;
+   const confirmed = confirm(`Are you sure you want to delete ${selectedEmployees.size} employee(s)?`);
+   if (!confirmed) return;
 
-     const { error } = await supabase
-       .from("employees")
-       .delete()
-       .in("id", Array.from(selectedEmployees));
+    const deletedEmployees = employees.filter((emp) => selectedEmployees.has(emp.id));
+    if (deletedEmployees.length === 0) {
+      toast({
+        title: "No matching employees",
+        description: "Could not find the selected employees to delete.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from("employees")
+      .delete()
+      .in("id", Array.from(selectedEmployees));
 
      if (error) {
        toast({
@@ -358,9 +701,13 @@ const Employees = () => {
       description: `${selectedEmployees.size} employee(s) deleted successfully!`,
     });
 
+    setDeleteUndo({
+      deletedEmployees,
+      expiresAt: Date.now() + 20_000,
+    });
     setSelectedEmployees(new Set());
     await fetchEmployees();
-   };
+  };
 
    const handleBulkDialogChange = (open: boolean) => {
      setIsBulkDialogOpen(open);
@@ -579,7 +926,7 @@ const Employees = () => {
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select gender" />
+              <SelectValue placeholder="Choose gender" />
             </SelectTrigger>
             <SelectContent>
               {genderOptions.map((option) => (
@@ -603,7 +950,7 @@ const Employees = () => {
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select race" />
+              <SelectValue placeholder="Choose race" />
             </SelectTrigger>
             <SelectContent>
               {raceOptions.map((option) => (
@@ -627,7 +974,7 @@ const Employees = () => {
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select nationality" />
+              <SelectValue placeholder="Choose nationality" />
             </SelectTrigger>
             <SelectContent className="max-h-72">
               {nationalityOptions.map((option) => (
@@ -642,26 +989,28 @@ const Employees = () => {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Cell Number</Label>
-          <Input
-            value={profileForm.cellNumber}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                cellNumber: e.target.value,
+         <Input
+           value={profileForm.cellNumber}
+            placeholder="Insert cell number"
+           disabled={!isEditMode}
+           onChange={(e) =>
+             setProfileForm((prev) => ({
+               ...prev,
+               cellNumber: e.target.value,
               }))
             }
           />
         </div>
         <div className="space-y-1.5">
           <Label>Email</Label>
-          <Input
-            type="email"
-            value={profileForm.email}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
+         <Input
+           type="email"
+           value={profileForm.email}
+            placeholder="Insert email address"
+           disabled={!isEditMode}
+           onChange={(e) =>
+             setProfileForm((prev) => ({
+               ...prev,
                 email: e.target.value,
               }))
             }
@@ -904,14 +1253,14 @@ const Employees = () => {
                 <Input
                   value={profileForm.employeeNumberPrefix}
                   disabled={!isEditMode}
-                  maxLength={1}
+                  maxLength={MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH}
                   placeholder={DEFAULT_EMPLOYEE_NUMBER_PREFIX}
                   onChange={(e) => {
-                    const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, "");
+                    const value = cleanPrefixInput(e.target.value);
                     setProfileForm((prev) => ({
                       ...prev,
                       employeeNumberPrefix: value,
-                      employeeNumber: getNextEmployeeNumber(employees, value || DEFAULT_EMPLOYEE_NUMBER_PREFIX),
+                      employeeNumber: getNextEmployeeNumber(employees, value),
                     }));
                   }}
                 />
@@ -1102,30 +1451,71 @@ const Employees = () => {
 
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Employee List</CardTitle>
-            <CardDescription>
-              {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
-            </CardDescription>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Input
-                placeholder="Search by name, surname, ID number, employee number, or job title..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-md"
-              />
-              <Select
-                value={contractFilter}
-                onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
-              >
-                <SelectTrigger className="w-full sm:w-52">
-                  <SelectValue placeholder="Filter by contract" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All employees</SelectItem>
-                  <SelectItem value="permanent">Permanent</SelectItem>
-                  <SelectItem value="temporary">Temporary</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:max-w-lg">
+                <Input
+                  placeholder="Search employees..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-12 rounded-xl border-2 border-primary/30 bg-white pr-12 text-sm shadow-md focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
+                />
+                <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <Select
+                  value={contractFilter}
+                  onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
+                >
+                  <SelectTrigger className="w-full sm:w-52">
+                    <SelectValue placeholder="Filter by contract" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      All employees{" "}
+                      <span className="text-primary text-[0.65rem] font-semibold">
+                        ({filteredEmployees.length})
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="permanent">
+                      Permanent{" "}
+                      <span className="text-primary text-[0.65rem] font-semibold">
+                        ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="temporary">
+                      Temporary{" "}
+                      <span className="text-primary text-[0.65rem] font-semibold">
+                        ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleOpenAutoNumberDialog}
+                        className="group w-full gap-2 sm:w-auto"
+                        disabled={employees.length === 0}
+                      >
+                        <Sparkles className="h-4 w-4 text-primary transition-colors group-hover:text-white" />
+                        Auto number
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      align="end"
+                      sideOffset={12}
+                      alignOffset={16}
+                      className="max-w-xs text-xs text-muted-foreground"
+                    >
+                      <span className="text-blue-600 font-semibold">Caution:</span> this function allocates an employee number to all your listed employees irrespective of their start date.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -1138,8 +1528,8 @@ const Employees = () => {
                 </Button>
               </div>
             ) : (
-              <div className="rounded-md border">
-                <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-muted/20 px-3 py-2 text-xs font-semibold text-muted-foreground">
+              <div className="relative rounded-md overflow-hidden" style={{ maxHeight: TABLE_MAX_HEIGHT }}>
+                <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-blue-50 dark:bg-blue-950/20 px-3 py-3 text-xs font-semibold text-muted-foreground">
                   <div className="flex items-center justify-center">
                     <Checkbox
                       checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
@@ -1152,11 +1542,15 @@ const Employees = () => {
                   <div className="flex items-center leading-tight">Job Title</div>
                   <div className="flex items-center justify-center leading-tight text-center">Actions</div>
                 </div>
-                <div className="max-h-[620px] overflow-y-auto divide-y">
-                  {filteredEmployees.slice(0, 15).map((employee) => (
+                <div
+                  ref={tableScrollRef}
+                  className="divide-y employee-table-scroll overflow-y-auto"
+                  style={{ maxHeight: TABLE_BODY_MAX_HEIGHT }}
+                >
+                  {filteredEmployees.map((employee) => (
                     <div
                       key={employee.id}
-                      className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30"
+                      className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-1 text-xs hover:bg-muted/30"
                     >
                       <div className="flex items-center justify-center">
                         <Checkbox
@@ -1177,7 +1571,7 @@ const Employees = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-2 leading-tight">
-                        <span className="font-mono text-sm">
+                        <span className="text-xs font-normal">
                           {employee.id_number
                             ? revealedIds.has(employee.id)
                               ? employee.id_number
@@ -1240,11 +1634,115 @@ const Employees = () => {
                     </div>
                   ))}
                 </div>
+                {showScrollHint && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                    <div className="relative rounded-full border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                      <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
+                      <span className="relative">Scroll down</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {autoNumberUndo && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
+            <div className="pointer-events-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-blue-900 hover:bg-transparent hover:text-blue-900 focus-visible:bg-transparent"
+                onClick={handleUndoAutoNumber}
+              >
+                Undo auto numbering
+                <span className="text-xs text-blue-600">{autoNumberUndoCountdown}s</span>
+              </Button>
+              <button
+                type="button"
+                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                onClick={clearAutoNumberUndoState}
+                aria-label="Dismiss undo notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteUndo && (
+        <div
+          className={`pointer-events-none fixed inset-x-0 ${
+            autoNumberUndo ? "top-20" : "top-4"
+          } z-50 flex justify-center px-4`}
+        >
+          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
+            <div className="pointer-events-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-blue-900 hover:bg-transparent hover:text-blue-900 focus-visible:bg-transparent"
+                onClick={handleUndoDelete}
+              >
+                Undo delete
+                <span className="text-xs text-blue-600">{deleteUndoCountdown}s</span>
+              </Button>
+              <button
+                type="button"
+                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                onClick={clearDeleteUndoState}
+                aria-label="Dismiss undo delete notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={isAutoNumberDialogOpen} onOpenChange={handleAutoNumberDialogChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Auto allocate employee numbers</DialogTitle>
+            <DialogDescription>Apply sequential numbers to every employee in your list.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="auto-number-prefix">Number prefix</Label>
+              <Input
+                id="auto-number-prefix"
+                value={autoNumberPrefixInput}
+                maxLength={MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH}
+                onChange={(e) => setAutoNumberPrefixInput(cleanPrefixInput(e.target.value))}
+                placeholder={DEFAULT_EMPLOYEE_NUMBER_PREFIX}
+                disabled={isAutoAllocating}
+              />
+              <p className="text-xs text-muted-foreground">
+                Numbers will look like {normalizedAutoNumberPrefix}
+                {String(1).padStart(4, "0")} , {normalizedAutoNumberPrefix}
+                {String(Math.max(employees.length, 2)).padStart(4, "0")}…
+              </p>
+            </div>
+            <p className="rounded-md border border-dashed border-blue-200 bg-blue-50/70 px-3 py-2 text-xs text-blue-900">
+              Existing employee numbers will be replaced for all {employees.length} employees.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => handleAutoNumberDialogChange(false)} disabled={isAutoAllocating}>
+              Cancel
+            </Button>
+            <Button onClick={handleAutoAllocateEmployeeNumbers} disabled={isAutoAllocating}>
+              {isAutoAllocating ? "Allocating..." : "Apply"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isProfileDialogOpen} onOpenChange={(open) => (open ? undefined : closeProfileDialog())}>
         <DialogContent className="w-[95vw] sm:max-w-[80vw] md:w-[80vw] max-w-[1200px] rounded-xl border border-border/50 bg-background p-0 shadow-lg transition-all duration-300 ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0">

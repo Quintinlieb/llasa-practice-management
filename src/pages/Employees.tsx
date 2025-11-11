@@ -114,7 +114,6 @@ const formatAutoEmployeeNumber = (prefix: string, sequence: number) => {
   return cleanEmployeeNumberInput(`${normalizedPrefix}${paddedSequence}`);
 };
 
-const DEFAULT_PROVINCE = southAfricanProvinces[2] ?? southAfricanProvinces[0];
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
 
@@ -134,8 +133,8 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
    startDate: employee?.start_date ?? dateToday(),
    contractType: (employee?.contract_type as EmployeeProfileFormData["contractType"]) ?? "Permanent",
    endDate: employee?.end_date ?? "",
-  gender: (employee?.gender as EmployeeProfileFormData["gender"]) ?? genderOptions[0],
-  race: (employee?.race as EmployeeProfileFormData["race"]) ?? raceOptions[0],
+  gender: (employee?.gender as EmployeeProfileFormData["gender"]) ?? "",
+  race: (employee?.race as EmployeeProfileFormData["race"]) ?? "",
   nationality: (employee?.nationality as EmployeeProfileFormData["nationality"]) ?? DEFAULT_NATIONALITY,
   employeeNumberMode: cleanEmployeeNumberInput(employee?.employee_number) ? "manual" : "auto",
   employeeNumberPrefix:
@@ -145,7 +144,7 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
    physicalAddressLine1: employee?.physical_address_line1 ?? "",
    physicalAddressLine2: employee?.physical_address_line2 ?? "",
    city: employee?.city ?? "",
-   province: (employee?.province as EmployeeProfileFormData["province"]) ?? DEFAULT_PROVINCE,
+  province: (employee?.province as EmployeeProfileFormData["province"]) ?? "",
    areaCode: employee?.area_code ?? "",
    cellNumber: employee?.cell_number ?? "",
    email: employee?.email ?? "",
@@ -183,9 +182,9 @@ const TABLE_MAX_HEIGHT = "calc(100vh - 340px)";
 const TABLE_BODY_MAX_HEIGHT = "calc(100vh - 340px - 56px)";
 
 const Employees = () => {
-   const { user, loading } = useAuth();
-   const navigate = useNavigate();
-   const { toast } = useToast();
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
@@ -237,6 +236,16 @@ const Employees = () => {
   const isAddFormComplete =
     addForm.employeeName.trim().length > 0 && addForm.employeeSurname.trim().length > 0;
   const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
+  const fieldWrapperClass = "space-y-1";
+  const fieldLabelClass =
+    "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-900/70";
+  const baseFieldInputClass =
+    "h-9 rounded-lg border border-border/60 bg-background/80 text-sm font-medium text-foreground shadow-sm placeholder:text-xs focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:border-primary/40 disabled:bg-background disabled:text-foreground disabled:border-border/60 disabled:opacity-100 disabled:cursor-default";
+  const viewModeFieldInputExtras =
+    "border-none bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-transparent px-0 py-0 h-auto rounded-none";
+  const fieldInputClass = `${baseFieldInputClass} ${isEditMode ? "" : viewModeFieldInputExtras}`;
+  const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
+  const fieldHelperTextClass = "text-xs text-muted-foreground";
 
   const getExistingPrefix = useCallback(() => {
     const existing = employees.find((emp) => extractPrefixFromNumber(emp.employee_number));
@@ -793,6 +802,7 @@ const Employees = () => {
         const rowNumber = i + 2;
         try {
           const rawData = {
+            employeeNumber: getColumnValue(row, "Employee Number", "employee_number"),
             employeeName: getColumnValue(row, "Name", "First Name", "employee_name"),
             employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
@@ -806,6 +816,7 @@ const Employees = () => {
             employee_name: validated.employeeName,
             employee_surname: validated.employeeSurname,
             id_number: validated.idNumber || null,
+            employee_number: validated.employeeNumber || null,
             contract_type: validated.contractType || null,
             job_title: validated.jobTitle || null,
           });
@@ -852,12 +863,26 @@ const Employees = () => {
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
     const wsData = [
-      ["Name", "Surname", "ID Number", "Contract Type", "Job Title"],
-      ["John", "Doe", "9001015009087", "Permanent", "Store Manager"],
-      ["Jane", "Smith", "8505125800082", "Temporary", ""],
+      ["Employee Number", "Name", "Surname", "ID Number", "Contract Type", "Job Title"],
+      ["A0001", "John", "Doe", "9001015009087", "Permanent", "Store Manager"],
+      ["B0002", "Jane", "Smith", "8505125800082", "Temporary", ""],
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const idNumberColumnIndex = 3;
+    for (let rowIndex = 1; rowIndex < wsData.length; rowIndex++) {
+      const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: idNumberColumnIndex });
+      const cell = ws[cellRef];
+      if (cell) {
+        const numericValue = Number(cell.v);
+        if (!Number.isNaN(numericValue)) {
+          cell.t = "n";
+          cell.v = numericValue;
+          cell.z = "0";
+        }
+      }
+    }
     ws["!cols"] = [
+      { wch: 18 },
       { wch: 18 },
       { wch: 18 },
       { wch: 18 },
@@ -905,11 +930,15 @@ const Employees = () => {
    };
 
   const renderPersonalTab = () => (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label>Name</Label>
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Name
+          </Label>
           <Input
+            className={fieldInputClass}
+            placeholder="Name"
             value={profileForm.employeeName}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -920,9 +949,11 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Surname</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Surname</Label>
           <Input
+            className={fieldInputClass}
+            placeholder="Surname"
             value={profileForm.employeeSurname}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -933,9 +964,11 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>ID Number</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>ID Number</Label>
           <Input
+            className={fieldInputClass}
+            placeholder="ID Number"
             value={profileForm.idNumber}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -947,11 +980,13 @@ const Employees = () => {
           />
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label>Gender</Label>
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Gender
+          </Label>
           <Select
-            value={profileForm.gender}
+            value={profileForm.gender || undefined}
             disabled={!isEditMode}
             onValueChange={(value) =>
               setProfileForm((prev) => ({
@@ -960,8 +995,8 @@ const Employees = () => {
               }))
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose gender" />
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Gender" />
             </SelectTrigger>
             <SelectContent>
               {genderOptions.map((option) => (
@@ -972,10 +1007,10 @@ const Employees = () => {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Race</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Race</Label>
           <Select
-            value={profileForm.race}
+            value={profileForm.race || undefined}
             disabled={!isEditMode}
             onValueChange={(value) =>
               setProfileForm((prev) => ({
@@ -984,8 +1019,8 @@ const Employees = () => {
               }))
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose race" />
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Race" />
             </SelectTrigger>
             <SelectContent>
               {raceOptions.map((option) => (
@@ -996,8 +1031,8 @@ const Employees = () => {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Nationality</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Nationality</Label>
           <Select
             value={profileForm.nationality}
             disabled={!isEditMode}
@@ -1008,8 +1043,8 @@ const Employees = () => {
               }))
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose nationality" />
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Nationality" />
             </SelectTrigger>
             <SelectContent className="max-h-72">
               {nationalityOptions.map((option) => (
@@ -1021,42 +1056,49 @@ const Employees = () => {
           </Select>
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>Cell Number</Label>
-         <Input
-           value={profileForm.cellNumber}
-            placeholder="Insert cell number"
-           disabled={!isEditMode}
-           onChange={(e) =>
-             setProfileForm((prev) => ({
-               ...prev,
-               cellNumber: e.target.value,
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Cell Number
+          </Label>
+          <Input
+            className={fieldInputClass}
+            value={profileForm.cellNumber}
+            placeholder="Insert cell number..."
+            disabled={!isEditMode}
+            onChange={(e) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                cellNumber: e.target.value,
               }))
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Email</Label>
-         <Input
-           type="email"
-           value={profileForm.email}
-            placeholder="Insert email address"
-           disabled={!isEditMode}
-           onChange={(e) =>
-             setProfileForm((prev) => ({
-               ...prev,
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Email</Label>
+          <Input
+            className={fieldInputClass}
+            type="email"
+            value={profileForm.email}
+            placeholder="Insert email address..."
+            disabled={!isEditMode}
+            onChange={(e) =>
+              setProfileForm((prev) => ({
+                ...prev,
                 email: e.target.value,
               }))
             }
           />
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label>Emergency Contact</Label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Emergency Contact
+          </Label>
           <Input
-            placeholder="Name and surname"
+            className={fieldInputClass}
+            placeholder="Insert emergency contact..."
             value={profileForm.emergencyContactName}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -1067,9 +1109,11 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Emergency Contact Number</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Emergency Contact Number</Label>
           <Input
+            className={fieldInputClass}
+            placeholder="Insert emergency contact number..."
             value={profileForm.emergencyContactNumber}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -1084,96 +1128,108 @@ const Employees = () => {
     </div>
   );
   const renderAddressTab = () => (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="space-y-1.5 sm:col-span-2 xl:col-span-2">
-          <Label>Address Line 1</Label>
-          <Input
-            placeholder="Apartment/suite number and complex name"
-            value={profileForm.physicalAddressLine1}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                physicalAddressLine1: e.target.value,
-              }))
-            }
-          />
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
+        <div className="min-w-[140px]">
+          <p className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-900/70">
+            Physical Address:
+          </p>
         </div>
-        <div className="space-y-1.5 sm:col-span-2 xl:col-span-2">
-          <Label>Address Line 2</Label>
-          <Input
-            placeholder="Street name and number"
-            value={profileForm.physicalAddressLine2}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                physicalAddressLine2: e.target.value,
-              }))
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>City</Label>
-          <Input
-            value={profileForm.city}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                city: e.target.value,
-              }))
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Province</Label>
-          <Select
-            value={profileForm.province}
-            disabled={!isEditMode}
-            onValueChange={(value) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                province: value as EmployeeProfileFormData["province"],
-              }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select province" />
-            </SelectTrigger>
-            <SelectContent>
-              {southAfricanProvinces.map((province) => (
-                <SelectItem key={province} value={province}>
-                  {province}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Area Code</Label>
-          <Input
-            value={profileForm.areaCode}
-            disabled={!isEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                areaCode: e.target.value,
-              }))
-            }
-          />
+        <div className="flex-1 space-y-3 sm:ml-4">
+          <div className={fieldWrapperClass}>
+            <Input
+              className={fieldInputClass}
+              placeholder="Address Line 1"
+              value={profileForm.physicalAddressLine1}
+              disabled={!isEditMode}
+              onChange={(e) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  physicalAddressLine1: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className={fieldWrapperClass}>
+            <Input
+              className={fieldInputClass}
+              placeholder="Address Line 2"
+              value={profileForm.physicalAddressLine2}
+              disabled={!isEditMode}
+              onChange={(e) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  physicalAddressLine2: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className={fieldWrapperClass}>
+            <Input
+              className={fieldInputClass}
+              placeholder="City"
+              value={profileForm.city}
+              disabled={!isEditMode}
+              onChange={(e) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  city: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className={fieldWrapperClass}>
+            <Select
+              value={profileForm.province}
+              disabled={!isEditMode}
+              onValueChange={(value) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  province: value as EmployeeProfileFormData["province"],
+                }))
+              }
+            >
+              <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+                <SelectValue placeholder="Province" />
+              </SelectTrigger>
+              <SelectContent>
+                {southAfricanProvinces.map((province) => (
+                  <SelectItem key={province} value={province}>
+                    {province}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={fieldWrapperClass}>
+            <Input
+              className={fieldInputClass}
+              placeholder="Area Code"
+              value={profileForm.areaCode}
+              disabled={!isEditMode}
+              onChange={(e) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  areaCode: e.target.value,
+                }))
+              }
+            />
+          </div>
         </div>
       </div>
     </div>
   );
 
   const renderEmploymentTab = () => (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label>Start Date</Label>
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Start Date
+          </Label>
           <Input
+            className={fieldInputClass}
+            placeholder="Start Date"
             type="date"
             value={profileForm.startDate}
             disabled={!isEditMode}
@@ -1185,8 +1241,10 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Contract Type</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Contract Type
+          </Label>
           <Select
             value={profileForm.contractType}
             disabled={!isEditMode}
@@ -1198,8 +1256,8 @@ const Employees = () => {
               }))
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Select contract type" />
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Contract Type" />
             </SelectTrigger>
             <SelectContent>
               {contractTypes.map((type) => (
@@ -1211,9 +1269,13 @@ const Employees = () => {
           </Select>
         </div>
         {profileForm.contractType === "Temporary" && (
-          <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
-            <Label>End Date</Label>
+          <div className={`${fieldWrapperClass} sm:col-span-2 xl:col-span-1`}>
+            <Label className={fieldLabelClass}>
+              End Date
+            </Label>
             <Input
+              className={fieldInputClass}
+              placeholder="End Date"
               type="date"
               value={profileForm.endDate}
               disabled={!isEditMode}
@@ -1226,9 +1288,13 @@ const Employees = () => {
             />
           </div>
         )}
-        <div className="space-y-1.5">
-          <Label>Job Title</Label>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Job Title
+          </Label>
           <Input
+            className={fieldInputClass}
+            placeholder="Job Title"
             value={profileForm.jobTitle}
             disabled={!isEditMode}
             onChange={(e) =>
@@ -1239,9 +1305,11 @@ const Employees = () => {
             }
           />
         </div>
-        <div className="space-y-1.5">
-          <Label>Employee Number</Label>
-          <div className="grid gap-2">
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>
+            Employee Number
+          </Label>
+          <div className="grid gap-2 rounded-xl border border-dashed border-border/60 bg-muted/20 p-3">
             <div className="flex items-center gap-3">
               <Button
                 type="button"
@@ -1272,21 +1340,23 @@ const Employees = () => {
             </div>
 
             {profileForm.employeeNumberMode === "manual" ? (
-              <div className="space-y-1.5">
+              <div className={fieldWrapperClass}>
                 <Input
+                  className={fieldInputClass}
                   value={profileForm.employeeNumber}
                   disabled={!isEditMode}
                   maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
                   onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
-                  placeholder="Up to 8 letters or numbers"
+                  placeholder={`Up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`}
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className={fieldHelperTextClass}>
                   Maximum of {EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers.
                 </p>
               </div>
             ) : (
               <div className="flex items-center gap-3">
                 <Input
+                  className={fieldInputClass}
                   value={profileForm.employeeNumberPrefix}
                   disabled={!isEditMode}
                   maxLength={MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH}
@@ -1300,7 +1370,7 @@ const Employees = () => {
                     }));
                   }}
                 />
-                <p className="text-sm text-muted-foreground">
+                <p className={fieldHelperTextClass}>
                   Next number: <span className="font-medium text-primary">{autoNumberPreview}</span>
                 </p>
               </div>
@@ -1498,7 +1568,7 @@ const Employees = () => {
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="top">
-                            Up to 8 characters allowed (letters, numbers, or both).
+                            Up to {EMPLOYEE_NUMBER_MAX_LENGTH} characters allowed (letters, numbers, or both).
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -1825,7 +1895,7 @@ const Employees = () => {
       </Dialog>
 
       <Dialog open={isProfileDialogOpen} onOpenChange={(open) => (open ? undefined : closeProfileDialog())}>
-        <DialogContent className="w-[95vw] sm:max-w-[80vw] md:w-[80vw] max-w-[1200px] rounded-xl border border-border/50 bg-background p-0 shadow-lg transition-all duration-300 ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0">
+        <DialogContent className="w-[85vw] max-w-4xl rounded-xl border border-border/50 bg-background p-0 shadow-lg transition-all duration-300 ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0">
           <div className="flex flex-col gap-6 p-6">
             <DialogHeader className="text-left">
               <div className="flex items-center gap-4">
@@ -1858,12 +1928,12 @@ const Employees = () => {
                   {isEditMode ? (
                     <>
                       <X className="h-4 w-4" />
-                      Cancel Editing
+                      Cancel
                     </>
                   ) : (
                     <>
                       <Pencil className="h-4 w-4" />
-                      Edit Information
+                      Edit
                     </>
                   )}
                 </Button>
@@ -1874,14 +1944,14 @@ const Employees = () => {
                     onClick={handleProfileSave}
                     disabled={isProfileSaving}
                   >
-                    {isProfileSaving ? "Saving..." : "Save Changes"}
+                    {isProfileSaving ? "Saving..." : "Save"}
                   </Button>
                 )}
               </div>
             </div>
 
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
-              <TabsList className="grid gap-2 sm:grid-cols-4 sm:max-w-2xl">
+              <TabsList className="grid gap-2 sm:grid-cols-4 w-full">
                 <TabsTrigger value="personal">Personal</TabsTrigger>
                 <TabsTrigger value="employment">Employment</TabsTrigger>
                 <TabsTrigger value="address">Address</TabsTrigger>

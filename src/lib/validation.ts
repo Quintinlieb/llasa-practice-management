@@ -252,7 +252,7 @@ export const nationalityOptions = [
 ] as const;
 
 export const employeeNumberModes = ["manual", "auto"] as const;
-export const EMPLOYEE_NUMBER_MAX_LENGTH = 8;
+export const EMPLOYEE_NUMBER_MAX_LENGTH = 7;
 const employeeNumberRegex = new RegExp(`^[A-Z0-9]{1,${EMPLOYEE_NUMBER_MAX_LENGTH}}$`);
 
 export const sanitizeEmployeeNumber = (value?: string | null): string =>
@@ -289,9 +289,14 @@ export const companySetupSchema = z.object({
     .max(100, "City must not exceed 100 characters")
     .regex(/^[a-zA-Z\s'-]+$/, "City can only contain letters, spaces, hyphens, and apostrophes")
     .transform(sanitizeText),
-  province: z.enum(southAfricanProvinces, {
-    errorMap: () => ({ message: "Please select a province" }),
-  }),
+    province: z
+      .enum(southAfricanProvinces, {
+        errorMap: () => ({ message: "Please select a province" }),
+      })
+      .or(z.literal(""))
+      .refine((val) => val !== "", {
+        message: "Please select a province",
+      }),
   areaCode: z
     .string()
     .regex(/^\d{4}$/, "Area code must be 4 digits")
@@ -397,12 +402,22 @@ export const employeeProfileSchema = z
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? val : "")),
-    gender: z.enum(genderOptions, {
-      errorMap: () => ({ message: "Please select a gender" }),
-    }),
-    race: z.enum(raceOptions, {
-      errorMap: () => ({ message: "Please select a race" }),
-    }),
+    gender: z
+      .enum(genderOptions, {
+        errorMap: () => ({ message: "Please select a gender" }),
+      })
+      .or(z.literal(""))
+      .refine((val) => val !== "", {
+        message: "Please select a gender",
+      }),
+    race: z
+      .enum(raceOptions, {
+        errorMap: () => ({ message: "Please select a race" }),
+      })
+      .or(z.literal(""))
+      .refine((val) => val !== "", {
+        message: "Please select a race",
+      }),
     nationality: z.enum(nationalityOptions, {
       errorMap: () => ({ message: "Please select a nationality" }),
     }),
@@ -460,9 +475,14 @@ export const employeeProfileSchema = z
       .refine((val) => !val || nameRegex.test(val), {
         message: "City can only contain letters, spaces, hyphens, and apostrophes",
       }),
-    province: z.enum(southAfricanProvinces, {
-      errorMap: () => ({ message: "Please select a province" }),
-    }),
+    province: z
+      .enum(southAfricanProvinces, {
+        errorMap: () => ({ message: "Please select a province" }),
+      })
+      .or(z.literal(""))
+      .refine((val) => val !== "", {
+        message: "Please select a province",
+      }),
     areaCode: z
       .string()
       .optional()
@@ -540,6 +560,14 @@ export const employeeProfileSchema = z
   });
 
 export const employeeImportSchema = z.object({
+  employeeNumber: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => sanitizeEmployeeNumber(val))
+    .refine((val) => !val || employeeNumberRegex.test(val), {
+      message: `Employee number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`,
+    }),
   employeeName: z
     .string()
     .transform((val) => (typeof val === "string" ? val.trim() : ""))

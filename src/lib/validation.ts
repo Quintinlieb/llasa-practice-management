@@ -252,6 +252,16 @@ export const nationalityOptions = [
 ] as const;
 
 export const employeeNumberModes = ["manual", "auto"] as const;
+export const EMPLOYEE_NUMBER_MAX_LENGTH = 8;
+const employeeNumberRegex = new RegExp(`^[A-Z0-9]{1,${EMPLOYEE_NUMBER_MAX_LENGTH}}$`);
+
+export const sanitizeEmployeeNumber = (value?: string | null): string =>
+  value
+    ? value
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(0, EMPLOYEE_NUMBER_MAX_LENGTH)
+    : "";
 
 export const companySetupSchema = z.object({
   companyName: z
@@ -345,6 +355,14 @@ export const employeeBasicSchema = z
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? sanitizeText(val) : "")),
+    employeeNumber: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => sanitizeEmployeeNumber(val))
+      .refine((val) => !val || employeeNumberRegex.test(val), {
+        message: `Employee number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`,
+      }),
   });
 
 // Employee Profile Schema
@@ -403,7 +421,10 @@ export const employeeProfileSchema = z
       .string()
       .optional()
       .or(z.literal(""))
-      .transform((val) => (val ? sanitizeText(val.toUpperCase()) : "")),
+      .transform((val) => sanitizeEmployeeNumber(val))
+      .refine((val) => !val || employeeNumberRegex.test(val), {
+        message: `Employee number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`,
+      }),
     jobTitle: z
       .string()
       .optional()

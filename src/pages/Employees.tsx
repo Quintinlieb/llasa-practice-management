@@ -41,7 +41,10 @@ import {
   Pencil,
   X,
   FileUp,
+  User,
   UserCircle,
+  UsersRound,
+  Info,
   Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,11 +53,12 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import {
+  EMPLOYEE_NUMBER_MAX_LENGTH,
   contractTypes,
   employeeBasicSchema,
   employeeImportSchema,
   employeeProfileSchema,
-  sanitizeText,
+  sanitizeEmployeeNumber,
   genderOptions,
   nationalityOptions,
   raceOptions,
@@ -86,6 +90,7 @@ type DeleteUndoState = {
 
 const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
 const MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH = 3;
+const MAX_EMPLOYEE_NUMBER_LENGTH = EMPLOYEE_NUMBER_MAX_LENGTH;
 
 const cleanPrefixInput = (value?: string | null) =>
   (value ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH);
@@ -97,6 +102,18 @@ const extractPrefixFromNumber = (value?: string | null) => {
 };
 
 const normalizePrefix = (value?: string | null) => cleanPrefixInput(value) || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
+const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
+
+const getSequenceLengthForPrefix = (prefix: string) =>
+  Math.max(1, MAX_EMPLOYEE_NUMBER_LENGTH - prefix.length);
+
+const formatAutoEmployeeNumber = (prefix: string, sequence: number) => {
+  const normalizedPrefix = normalizePrefix(prefix);
+  const sequenceLength = getSequenceLengthForPrefix(normalizedPrefix);
+  const paddedSequence = String(sequence).padStart(sequenceLength, "0").slice(-sequenceLength);
+  return cleanEmployeeNumberInput(`${normalizedPrefix}${paddedSequence}`);
+};
+
 const DEFAULT_PROVINCE = southAfricanProvinces[2] ?? southAfricanProvinces[0];
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
@@ -107,23 +124,24 @@ const createBlankAddForm = (): EmployeeBasicFormData => ({
   employeeName: "",
   employeeSurname: "",
   idNumber: "",
- });
+  employeeNumber: "",
+});
 
 const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileFormData => ({
-   employeeName: employee?.employee_name ?? "",
-   employeeSurname: employee?.employee_surname ?? "",
-   idNumber: employee?.id_number ?? "",
+  employeeName: employee?.employee_name ?? "",
+  employeeSurname: employee?.employee_surname ?? "",
+  idNumber: employee?.id_number ?? "",
    startDate: employee?.start_date ?? dateToday(),
    contractType: (employee?.contract_type as EmployeeProfileFormData["contractType"]) ?? "Permanent",
    endDate: employee?.end_date ?? "",
-   gender: (employee?.gender as EmployeeProfileFormData["gender"]) ?? genderOptions[0],
-   race: (employee?.race as EmployeeProfileFormData["race"]) ?? raceOptions[0],
-   nationality: (employee?.nationality as EmployeeProfileFormData["nationality"]) ?? DEFAULT_NATIONALITY,
-   employeeNumberMode: employee?.employee_number ? "manual" : "auto",
-   employeeNumberPrefix:
-     extractPrefixFromNumber(employee?.employee_number) || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
-   employeeNumber: employee?.employee_number ?? "",
-   jobTitle: employee?.job_title ?? "",
+  gender: (employee?.gender as EmployeeProfileFormData["gender"]) ?? genderOptions[0],
+  race: (employee?.race as EmployeeProfileFormData["race"]) ?? raceOptions[0],
+  nationality: (employee?.nationality as EmployeeProfileFormData["nationality"]) ?? DEFAULT_NATIONALITY,
+  employeeNumberMode: cleanEmployeeNumberInput(employee?.employee_number) ? "manual" : "auto",
+  employeeNumberPrefix:
+    extractPrefixFromNumber(employee?.employee_number) || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
+  employeeNumber: cleanEmployeeNumberInput(employee?.employee_number),
+  jobTitle: employee?.job_title ?? "",
    physicalAddressLine1: employee?.physical_address_line1 ?? "",
    physicalAddressLine2: employee?.physical_address_line2 ?? "",
    city: employee?.city ?? "",
@@ -139,14 +157,14 @@ const getNextEmployeeNumber = (currentEmployees: Employee[], prefix: string) => 
   const normalizedPrefix = normalizePrefix(prefix);
   const prefixLength = normalizedPrefix.length;
   const highestSequence = currentEmployees.reduce((max, employee) => {
-    const currentNumber = (employee.employee_number ?? "").toUpperCase();
+    const currentNumber = cleanEmployeeNumberInput(employee.employee_number);
     if (!currentNumber.startsWith(normalizedPrefix)) {
       return max;
     }
     const sequence = parseInt(currentNumber.slice(prefixLength), 10);
     return Number.isNaN(sequence) ? max : Math.max(max, sequence);
   }, 0);
-  return `${normalizedPrefix}${String(highestSequence + 1).padStart(4, "0")}`;
+  return formatAutoEmployeeNumber(normalizedPrefix, highestSequence + 1);
 };
 
 const formatDisplayDate = (value?: string | null) => {
@@ -211,6 +229,14 @@ const Employees = () => {
     () => normalizePrefix(autoNumberPrefixInput),
     [autoNumberPrefixInput],
   );
+  const autoNumberDialogPreviewStart = formatAutoEmployeeNumber(normalizedAutoNumberPrefix, 1);
+  const autoNumberDialogPreviewEnd = formatAutoEmployeeNumber(
+    normalizedAutoNumberPrefix,
+    Math.max(employees.length, 2),
+  );
+  const isAddFormComplete =
+    addForm.employeeName.trim().length > 0 && addForm.employeeSurname.trim().length > 0;
+  const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
 
   const getExistingPrefix = useCallback(() => {
     const existing = employees.find((emp) => extractPrefixFromNumber(emp.employee_number));
@@ -440,11 +466,20 @@ const Employees = () => {
         return {
           ...prev,
           employeeNumberPrefix: sanitizedPrefix,
-          employeeNumber: autoNumberPreview,
+          employeeNumber: cleanEmployeeNumberInput(autoNumberPreview),
         };
       });
     }
   }, [profileForm.employeeNumberMode, autoNumberPreview]);
+
+  const handleCustomEmployeeNumberChange = (value: string) => {
+    const cleaned = cleanEmployeeNumberInput(value);
+    setProfileForm((prev) => ({
+      ...prev,
+      employeeNumber: cleaned,
+      employeeNumberMode: cleaned ? "manual" : prev.employeeNumberMode,
+    }));
+  };
 
   const handleAutoNumberDialogChange = (open: boolean) => {
     setIsAutoNumberDialogOpen(open);
@@ -485,7 +520,7 @@ const Employees = () => {
         company_id: employee.company_id,
         employee_name: employee.employee_name,
         employee_surname: employee.employee_surname,
-        employee_number: `${prefix}${String(index + 1).padStart(4, "0")}`,
+        employee_number: formatAutoEmployeeNumber(prefix, index + 1),
         updated_at: new Date().toISOString(),
       }));
 
@@ -494,12 +529,11 @@ const Employees = () => {
         throw error;
       }
 
+      const firstNumber = formatAutoEmployeeNumber(prefix, 1);
+      const lastNumber = formatAutoEmployeeNumber(prefix, sorted.length);
       toast({
         title: "Employee numbers updated",
-        description: `Assigned numbers ${prefix}${String(1).padStart(4, "0")} - ${prefix}${String(sorted.length).padStart(
-          4,
-          "0",
-        )}.`,
+        description: `Assigned numbers ${firstNumber} - ${lastNumber}.`,
       });
       handleAutoNumberDialogChange(false);
       setAutoNumberUndo({
@@ -588,6 +622,7 @@ const Employees = () => {
         employee_name: validated.employeeName,
         employee_surname: validated.employeeSurname,
         id_number: validated.idNumber || null,
+        employee_number: validated.employeeNumber || null,
       });
        if (error) throw error;
 
@@ -1215,7 +1250,7 @@ const Employees = () => {
                 onClick={() =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    employeeNumberMode: selectedEmployee?.employee_number ? "manual" : "auto",
+                    employeeNumberMode: "manual",
                   }))
                 }
               >
@@ -1237,17 +1272,18 @@ const Employees = () => {
             </div>
 
             {profileForm.employeeNumberMode === "manual" ? (
-              <Input
-                value={profileForm.employeeNumber}
-                disabled={!isEditMode}
-                onChange={(e) =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    employeeNumber: e.target.value.toUpperCase(),
-                  }))
-                }
-                placeholder="Enter employee number"
-              />
+              <div className="space-y-1.5">
+                <Input
+                  value={profileForm.employeeNumber}
+                  disabled={!isEditMode}
+                  maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
+                  onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
+                  placeholder="Up to 8 letters or numbers"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Maximum of {EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers.
+                </p>
+              </div>
             ) : (
               <div className="flex items-center gap-3">
                 <Input
@@ -1341,11 +1377,14 @@ const Employees = () => {
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Upload Bulk Employees</DialogTitle>
-                  <DialogDescription>
-                    Download the template, complete the details, then upload to import employees.
-                  </DialogDescription>
+                <DialogHeader className="flex flex-col gap-2">
+                  <div className="flex items-center gap-4">
+                    <UsersRound className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
+                    <div>
+                      <DialogTitle>Bulk Upload</DialogTitle>
+                      <DialogDescription>Add all your employees with a single upload.</DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <div className="space-y-8">
                   <div>
@@ -1394,9 +1433,14 @@ const Employees = () => {
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add New Employee</DialogTitle>
-                  <DialogDescription>Capture the employee&apos;s basic details to get started.</DialogDescription>
+                <DialogHeader className="flex flex-col gap-2">
+                  <div className="flex items-center gap-4">
+                    <User className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
+                    <div>
+                      <DialogTitle>Add New Employee</DialogTitle>
+                      <DialogDescription>Capture the employee&apos;s basic details to get started.</DialogDescription>
+                    </div>
+                  </div>
                 </DialogHeader>
                 <form onSubmit={handleAddEmployee} className="space-y-4">
                   <div className="space-y-2">
@@ -1440,9 +1484,47 @@ const Employees = () => {
                       }
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Saving..." : "Add Employee"}
-                  </Button>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="addEmployeeNumber">Employee Number (optional)</Label>
+                      <TooltipProvider delayDuration={0}>
+                        <Tooltip disableHoverableContent>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="inline-flex cursor-default text-muted-foreground transition-colors hover:text-foreground"
+                              aria-hidden="true"
+                            >
+                              <Info className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            Up to 8 characters allowed (letters, numbers, or both).
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      id="addEmployeeNumber"
+                      value={addForm.employeeNumber}
+                      maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
+                      onChange={(e) =>
+                        setAddForm((prev) => ({
+                          ...prev,
+                          employeeNumber: sanitizeEmployeeNumber(e.target.value),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">Leave blank to assign later.</p>
+                  </div>
+                  <div className="mt-8 border-t border-dashed border-muted/60 pt-6">
+                    <Button
+                      type="submit"
+                      className="w-full disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:cursor-not-allowed"
+                      disabled={isAddFormSubmitDisabled}
+                    >
+                      {isLoading ? "Saving..." : "Add Employee"}
+                    </Button>
+                  </div>
                 </form>
               </DialogContent>
             </Dialog>
@@ -1724,9 +1806,7 @@ const Employees = () => {
                 disabled={isAutoAllocating}
               />
               <p className="text-xs text-muted-foreground">
-                Numbers will look like {normalizedAutoNumberPrefix}
-                {String(1).padStart(4, "0")} , {normalizedAutoNumberPrefix}
-                {String(Math.max(employees.length, 2)).padStart(4, "0")}…
+                Numbers will look like {autoNumberDialogPreviewStart}, {autoNumberDialogPreviewEnd}.
               </p>
             </div>
             <p className="rounded-md border border-dashed border-blue-200 bg-blue-50/70 px-3 py-2 text-xs text-blue-900">

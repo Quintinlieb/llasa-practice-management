@@ -1432,7 +1432,9 @@ const Employees = () => {
               onClick={handleBulkDelete}
               disabled={selectedEmployees.size === 0}
               className={`gap-2 ${
-                selectedEmployees.size > 0 ? "border-destructive text-destructive hover:bg-destructive/10" : ""
+                selectedEmployees.size > 0
+                  ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
+                  : ""
               }`}
             >
               <Trash2 className="h-4 w-4" />
@@ -1622,21 +1624,21 @@ const Employees = () => {
                     <SelectValue placeholder="Filter by contract" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">
+                    <SelectItem value="all" className="group">
                       All employees{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold">
+                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({filteredEmployees.length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="permanent">
+                    <SelectItem value="permanent" className="group">
                       Permanent{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold">
+                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="temporary">
+                    <SelectItem value="temporary" className="group">
                       Temporary{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold">
+                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
                       </span>
                     </SelectItem>

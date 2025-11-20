@@ -82,6 +82,27 @@ export type Database = {
           },
         ]
       }
+      company_code_of_conduct: {
+        Row: {
+          company_id: string
+          created_at: string | null
+          data: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string | null
+          data?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string | null
+          data?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       employees: {
         Row: {
           company_id: string

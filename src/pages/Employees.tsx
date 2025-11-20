@@ -70,7 +70,45 @@ import { maskSAIdNumber } from "@/lib/idMasking";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { documentCategories } from "@/constants/documentCategories";
 
-type Employee = Tables<"employees">;
+type Employee = Tables<"employees"> & {
+  start_date?: string | null;
+  end_date?: string | null;
+  contract_type?: string | null;
+  gender?: string | null;
+  race?: string | null;
+  nationality?: string | null;
+  employee_number?: string | null;
+  job_title?: string | null;
+  physical_address_line1?: string | null;
+  physical_address_line2?: string | null;
+  city?: string | null;
+  province?: string | null;
+  area_code?: string | null;
+  cell_number?: string | null;
+  email?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_number?: string | null;
+};
+type EmployeeInsert = TablesInsert<"employees"> & {
+  employee_number?: string | null;
+  contract_type?: string | null;
+  job_title?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  gender?: string | null;
+  race?: string | null;
+  nationality?: string | null;
+  physical_address_line1?: string | null;
+  physical_address_line2?: string | null;
+  city?: string | null;
+  province?: string | null;
+  area_code?: string | null;
+  cell_number?: string | null;
+  email?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_number?: string | null;
+};
+type EmployeeUpdate = Partial<Employee>;
 type EmployeeTab = "personal" | "employment" | "address" | "documents";
 type AutoNumberUndoState = {
   previous: {
@@ -91,6 +129,8 @@ type DeleteUndoState = {
 const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
 const MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH = 3;
 const MAX_EMPLOYEE_NUMBER_LENGTH = EMPLOYEE_NUMBER_MAX_LENGTH;
+const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]): T | "" =>
+  options.includes(value as T) ? (value as T) : "";
 
 const cleanPrefixInput = (value?: string | null) =>
   (value ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH);
@@ -130,12 +170,16 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
   employeeName: employee?.employee_name ?? "",
   employeeSurname: employee?.employee_surname ?? "",
   idNumber: employee?.id_number ?? "",
-   startDate: employee?.start_date ?? dateToday(),
-   contractType: (employee?.contract_type as EmployeeProfileFormData["contractType"]) ?? "Permanent",
-   endDate: employee?.end_date ?? "",
-  gender: (employee?.gender as EmployeeProfileFormData["gender"]) ?? "",
-  race: (employee?.race as EmployeeProfileFormData["race"]) ?? "",
-  nationality: (employee?.nationality as EmployeeProfileFormData["nationality"]) ?? DEFAULT_NATIONALITY,
+  startDate: employee?.start_date ?? "",
+  contractType:
+    (coerceEnumValue(employee?.contract_type, contractTypes) as EmployeeProfileFormData["contractType"]) ??
+    "Permanent",
+  endDate: employee?.end_date ?? "",
+  gender: coerceEnumValue(employee?.gender, genderOptions) as EmployeeProfileFormData["gender"],
+  race: coerceEnumValue(employee?.race, raceOptions) as EmployeeProfileFormData["race"],
+  nationality:
+    (coerceEnumValue(employee?.nationality, nationalityOptions) as EmployeeProfileFormData["nationality"]) ??
+    DEFAULT_NATIONALITY,
   employeeNumberMode: cleanEmployeeNumberInput(employee?.employee_number) ? "manual" : "auto",
   employeeNumberPrefix:
     extractPrefixFromNumber(employee?.employee_number) || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
@@ -144,7 +188,7 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
    physicalAddressLine1: employee?.physical_address_line1 ?? "",
    physicalAddressLine2: employee?.physical_address_line2 ?? "",
    city: employee?.city ?? "",
-  province: (employee?.province as EmployeeProfileFormData["province"]) ?? "",
+  province: coerceEnumValue(employee?.province, southAfricanProvinces) as EmployeeProfileFormData["province"],
    areaCode: employee?.area_code ?? "",
    cellNumber: employee?.cell_number ?? "",
    email: employee?.email ?? "",
@@ -323,7 +367,7 @@ const Employees = () => {
       el.removeEventListener("scroll", updateHint);
       window.removeEventListener("resize", updateHint);
     };
-  }, [filteredEmployees.length]);
+  }, [filteredEmployees]);
 
   useEffect(() => {
     if (autoNumberUndo) {
@@ -381,29 +425,6 @@ const Employees = () => {
       clearDeleteUndoTimers();
     };
   }, [deleteUndo, startDeleteUndoTimers, clearDeleteUndoTimers]);
-
-  useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) {
-      setShowScrollHint(false);
-      return;
-    }
-
-    const updateHint = () => {
-      const canScroll = el.scrollHeight > el.clientHeight + 1;
-      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
-      setShowScrollHint(canScroll && !atBottom);
-    };
-
-    updateHint();
-    el.addEventListener("scroll", updateHint);
-    window.addEventListener("resize", updateHint);
-
-    return () => {
-      el.removeEventListener("scroll", updateHint);
-      window.removeEventListener("resize", updateHint);
-    };
-  }, [filteredEmployees.length]);
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
@@ -466,6 +487,16 @@ const Employees = () => {
 
     setFilteredEmployees(sorted);
   }, [employees, searchQuery, contractFilter]);
+
+  useEffect(() => {
+    // Keep selections in sync with the currently filtered list to avoid deleting hidden rows.
+    setSelectedEmployees((prev) => {
+      if (prev.size === 0) return prev;
+      const allowedIds = new Set(filteredEmployees.map((emp) => emp.id));
+      const next = new Set(Array.from(prev).filter((id) => allowedIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredEmployees]);
 
   useEffect(() => {
     if (profileForm.employeeNumberMode === "auto") {
@@ -626,13 +657,16 @@ const Employees = () => {
      setIsLoading(true);
      try {
       const validated = employeeBasicSchema.parse(addForm);
-      const { error } = await supabase.from("employees").insert({
+      const addPayload: EmployeeInsert = {
         company_id: user.id,
         employee_name: validated.employeeName,
         employee_surname: validated.employeeSurname,
         id_number: validated.idNumber || null,
         employee_number: validated.employeeNumber || null,
-      });
+      };
+      const { error } = await supabase
+        .from("employees")
+        .insert(addPayload as TablesInsert<"employees">);
        if (error) throw error;
 
       toast({
@@ -653,11 +687,11 @@ const Employees = () => {
     }
    };
 
-   const handleProfileSave = async () => {
-     if (!selectedEmployee) return;
-     setIsProfileSaving(true);
-     try {
-       const validated = employeeProfileSchema.parse(profileForm);
+  const handleProfileSave = async () => {
+    if (!selectedEmployee) return;
+    setIsProfileSaving(true);
+    try {
+      const validated = employeeProfileSchema.parse(profileForm);
        const endDateValue =
          validated.contractType === "Temporary" && validated.endDate ? validated.endDate : null;
        const finalEmployeeNumber =
@@ -665,30 +699,32 @@ const Employees = () => {
            ? getNextEmployeeNumber(employees, validated.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX)
            : validated.employeeNumber || null;
 
+       const updatePayload: EmployeeUpdate = {
+         employee_name: validated.employeeName,
+         employee_surname: validated.employeeSurname,
+         id_number: validated.idNumber || null,
+         start_date: validated.startDate,
+         contract_type: validated.contractType,
+         end_date: endDateValue,
+         gender: validated.gender,
+         race: validated.race,
+         nationality: validated.nationality,
+         employee_number: finalEmployeeNumber,
+         job_title: validated.jobTitle || null,
+         physical_address_line1: validated.physicalAddressLine1 || null,
+         physical_address_line2: validated.physicalAddressLine2 || null,
+         city: validated.city || null,
+         province: validated.province,
+         area_code: validated.areaCode || null,
+         cell_number: validated.cellNumber || null,
+         email: validated.email || null,
+         emergency_contact_name: validated.emergencyContactName || null,
+       emergency_contact_number: validated.emergencyContactNumber || null,
+      };
+
        const { error } = await supabase
          .from("employees")
-         .update({
-          employee_name: validated.employeeName,
-          employee_surname: validated.employeeSurname,
-          id_number: validated.idNumber || null,
-          start_date: validated.startDate,
-          contract_type: validated.contractType,
-           end_date: endDateValue,
-           gender: validated.gender,
-           race: validated.race,
-           nationality: validated.nationality,
-           employee_number: finalEmployeeNumber,
-           job_title: validated.jobTitle || null,
-           physical_address_line1: validated.physicalAddressLine1 || null,
-           physical_address_line2: validated.physicalAddressLine2 || null,
-           city: validated.city || null,
-           province: validated.province,
-           area_code: validated.areaCode || null,
-           cell_number: validated.cellNumber || null,
-           email: validated.email || null,
-           emergency_contact_name: validated.emergencyContactName || null,
-           emergency_contact_number: validated.emergencyContactNumber || null,
-         })
+         .update(updatePayload as unknown as TablesInsert<"employees">)
          .eq("id", selectedEmployee.id);
 
        if (error) throw error;
@@ -698,6 +734,32 @@ const Employees = () => {
         description: "Employee profile has been saved successfully.",
       });
 
+      const updatedEmployee: Employee = {
+        ...selectedEmployee,
+        employee_name: validated.employeeName,
+        employee_surname: validated.employeeSurname,
+        id_number: validated.idNumber || null,
+        start_date: validated.startDate || null,
+        contract_type: validated.contractType,
+        end_date: endDateValue,
+        gender: validated.gender,
+        race: validated.race,
+        nationality: validated.nationality,
+        employee_number: finalEmployeeNumber,
+        job_title: validated.jobTitle || null,
+        physical_address_line1: validated.physicalAddressLine1 || null,
+        physical_address_line2: validated.physicalAddressLine2 || null,
+        city: validated.city || null,
+        province: validated.province,
+        area_code: validated.areaCode || null,
+        cell_number: validated.cellNumber || null,
+        email: validated.email || null,
+        emergency_contact_name: validated.emergencyContactName || null,
+        emergency_contact_number: validated.emergencyContactNumber || null,
+      };
+
+      setSelectedEmployee(updatedEmployee);
+      setProfileForm(createProfileFormFromEmployee(updatedEmployee));
       setIsEditMode(false);
       await fetchEmployees();
     } catch (error: unknown) {
@@ -770,7 +832,7 @@ const Employees = () => {
        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "yyyy-mm-dd", defval: "" });
 
-      const validatedEmployees: TablesInsert<"employees">[] = [];
+      const validatedEmployees: EmployeeInsert[] = [];
       const errors: string[] = [];
 
       const getColumnValue = (row: Record<string, unknown>, ...possibleNames: string[]): string => {
@@ -838,7 +900,7 @@ const Employees = () => {
         });
        }
 
-      const { error } = await supabase.from("employees").insert(validatedEmployees);
+      const { error } = await supabase.from("employees").insert(validatedEmployees as TablesInsert<"employees">[]);
       if (error) throw error;
 
       toast({

@@ -17,6 +17,7 @@ import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConduct
 import WarningGenerator from "./pages/WarningGenerator";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import CalendarPage from "./pages/Calendar";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
           <Route path="/documents/discipline/warnings" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
           <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE - THE CATCH-ALL ROUTE IS LAST */}
           <Route path="*" element={<NotFound />} />
         </Routes>

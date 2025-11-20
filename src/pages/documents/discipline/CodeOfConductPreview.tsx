@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { Printer, ArrowLeft, Plus, Loader2, Trash2, X } from "lucide-react";
+import { Printer, Save, Edit2, ArrowLeft, Plus, Loader2, Trash2, X } from "lucide-react";
 
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
 
@@ -540,6 +540,9 @@ const gridColumns = [
 export default function CodeOfConductPreviewPage() {
   const { user, loading: authLoading } = useAuth();
   const [sections, setSections] = useState<OffenceSection[]>([]);
+  const [snapshot, setSnapshot] = useState<OffenceSection[] | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [isRemoteLoading, setIsRemoteLoading] = useState(true);
   const [undoState, setUndoState] = useState<UndoAction | null>(null);
@@ -547,7 +550,6 @@ export default function CodeOfConductPreviewPage() {
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
-  const isEditing = false;
 
   const printStyles = useMemo(
     () => `
@@ -613,10 +615,12 @@ export default function CodeOfConductPreviewPage() {
           const defaults = cloneSections(initialSections);
           const savedDefaults = await persistSections(defaults);
           setSections(savedDefaults);
+          setSnapshot(cloneSections(savedDefaults));
           setExpandedSection(null);
         } else {
           const hydrated = normalizeSections(storedSections);
           setSections(hydrated);
+          setSnapshot(cloneSections(hydrated));
           setExpandedSection(null);
         }
       } catch (loadError) {
@@ -709,6 +713,8 @@ export default function CodeOfConductPreviewPage() {
     try {
       const savedSections = await persistSections(updatedSections);
       setSections(savedSections);
+      setSnapshot(cloneSections(savedSections));
+      setIsEditing(false);
     } catch (error) {
       console.error(error);
       toast({
@@ -734,6 +740,65 @@ export default function CodeOfConductPreviewPage() {
     const label = offenceName ? `"${offenceName}"` : "this offence";
     if (window.confirm(`Are you sure you want to delete ${label}?`)) {
       handleDeleteOffence(sectionId, rowIndex);
+    }
+  };
+
+  const handleToggleEdit = () => {
+    if (isRemoteLoading) return;
+    if (isEditing) {
+      if (snapshot) {
+        setSections(cloneSections(snapshot));
+      }
+      setSnapshot(null);
+      setIsEditing(false);
+      clearUndoState();
+    } else {
+      setSnapshot(cloneSections(sections));
+      setIsEditing(true);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    const invalidRows: string[] = [];
+    sections.forEach((section) => {
+      section.offences.forEach((offence) => {
+        const hasName = offence.name?.trim();
+        const hasFirstOutcome = offence.first?.trim();
+        if (!hasName || !hasFirstOutcome) {
+          invalidRows.push(section.title);
+        }
+      });
+    });
+
+    if (invalidRows.length > 0) {
+      toast({
+        title: "Missing information",
+        description: "Each offence needs a name and at least the first outcome.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const savedSections = await persistSections(sections);
+      setSections(savedSections);
+      setSnapshot(cloneSections(savedSections));
+      setIsEditing(false);
+      clearUndoState();
+      toast({
+        title: "Saved",
+        description: "Your Code of Conduct has been updated for this company.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to save",
+        description: "We couldn't save your changes. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -805,6 +870,38 @@ export default function CodeOfConductPreviewPage() {
     });
   };
 
+  const handleSaveRow = async (sectionId: string, rowIndex: number) => {
+    const section = sections.find((item) => item.id === sectionId);
+    if (!section) return;
+    const offence = section.offences[rowIndex];
+    const hasName = offence?.name?.trim();
+    const hasFirstOutcome = offence?.first?.trim();
+    if (!offence || !hasName || !hasFirstOutcome) {
+      toast({
+        title: "Missing information",
+        description: "Offence name and first outcome are required before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const savedSections = await persistSections(sections);
+      setSections(savedSections);
+      setSnapshot(cloneSections(savedSections));
+      toast({
+        title: "Row saved",
+        description: `"${offence.name || "Untitled"}" saved to your company settings.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Unable to save",
+        description: "We couldn't save this offence. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <DashboardLayout>
       <style>{printStyles}</style>
@@ -848,6 +945,29 @@ export default function CodeOfConductPreviewPage() {
                     Back
                   </Link>
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleToggleEdit}
+                  className={cn(
+                    "gap-2 border-blue-600 text-blue-600 hover:bg-blue-500 hover:text-white",
+                    isEditing && "bg-blue-600 text-white hover:bg-blue-500",
+                  )}
+                >
+                  <Edit2 className="h-4 w-4" />
+                  {isEditing ? "Cancel" : "Edit"}
+                </Button>
+                {isEditing && (
+                  <Button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={isSaving}
+                    className="gap-2 bg-blue-600 hover:bg-blue-500 text-white"
+                  >
+                    <Save className="h-4 w-4" />
+                    {isSaving ? "Saving..." : "Save"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -888,9 +1008,8 @@ export default function CodeOfConductPreviewPage() {
                             isEditing && index === 0 && "md:pl-[15px]",
                             isEditing && column.key === "first" && "md:pl-3",
                             isEditing && column.key === "second" && "md:pl-6",
-                            !isEditing && column.key === "second" && "md:ml-0.5",
-                            !isEditing && column.key === "third" && "md:-ml-1",
-                            !isEditing && column.key === "fourth" && "md:-ml-2.5",
+                            isEditing && column.key === "third" && "md:pl-1",
+                            isEditing && column.key === "fourth" && "md:-ml-[10px]",
                             column.key === "name" && "md:pl-4",
                             column.key === "first" && "md:pl-2",
                           )}

@@ -118,3 +118,58 @@ All colors MUST be HSL.
 .employee-table-scroll::-webkit-scrollbar {
   display: none;
 }
+
+/* Homepage animations */
+.animate-floating {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-floating.delay-150 {
+  animation-delay: 1.5s;
+}
+
+.animate-floating.delay-300 {
+  animation-delay: 3s;
+}
+
+.animate-gradient {
+  background: linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(var(--primary-glow)) 50%, hsl(var(--primary)) 100%);
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulseSlow 2.8s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes gradientShift {
+  0%,
+  100% {
+    background-position: left;
+  }
+  50% {
+    background-position: right;
+  }
+}
+
+@keyframes pulseSlow {
+  0%,
+  100% {
+    transform: scale(0.98);
+    box-shadow: 0 0 0 0 hsla(var(--primary), 0.25);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 10px 30px -10px hsla(var(--primary), 0.35);
+  }
+}

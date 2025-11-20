@@ -1,4 +1,4 @@
-import { FileText, Users, Home, LogOut } from "lucide-react";
+import { FileText, Users, Home, LogOut, CalendarClock } from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,6 +29,7 @@ interface Profile {
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
+  { title: "Calendar", url: "/calendar", icon: CalendarClock },
 ];
 
 export const isActiveCategory = (pathname: string, slug: string) =>

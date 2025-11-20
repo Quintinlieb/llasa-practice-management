@@ -1,9 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
@@ -38,11 +40,11 @@ import {
   EyeOff,
   Download,
   Search,
+  ArrowLeft,
   Pencil,
   X,
   FileUp,
   User,
-  UserCircle,
   UsersRound,
   Info,
   Sparkles,
@@ -109,7 +111,18 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   emergency_contact_number?: string | null;
 };
 type EmployeeUpdate = Partial<Employee>;
-type EmployeeTab = "personal" | "employment" | "address" | "documents";
+type EmployeeTab = "personal" | "employment" | "address" | "discipline" | "contracts";
+type EmployeeWarning = {
+  id: string;
+  misconductType: string;
+  warningType: "First" | "Second" | "Serious" | "Final";
+  issueDate: string;
+  expiryDate: string;
+  fileName?: string;
+};
+type OffenceSection = {
+  offences: { name: string }[];
+};
 type AutoNumberUndoState = {
   previous: {
     id: string;
@@ -156,6 +169,79 @@ const formatAutoEmployeeNumber = (prefix: string, sequence: number) => {
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
+const MISCONDUCT_TYPES = [
+  // Minor
+  "Unauthorised absenteeism",
+  "Arriving late for work",
+  "Leaving work early",
+  "Failure to report absence",
+  "Failure to report late arrival",
+  "Failure to report leaving early",
+  "Sleeping on duty",
+  "Failure to clock in/out",
+  "Poor housekeeping",
+  "Horseplay",
+  "Unauthorised use of cell phone",
+  "Breach of Policy or Procedure",
+  "Breach of Rules or Regulations",
+  "Failure to carry out instructions",
+  // Serious
+  "Negligence",
+  "Unauthorised absenteeism > 5 days",
+  "Refusal to work overtime",
+  "Consistent poor time keeping",
+  "Causing inharmonious relationships",
+  "Unbecoming behaviour",
+  "Insolence / Disrespectful behaviour",
+  "Aggressive behaviour",
+  "Insubordination / Refusing instructions",
+  "Refusal to comply with policy/procedure",
+  "Refusal to comply with rule",
+  "Damage to company name",
+  "Unauthorised wastage of materials",
+  "Unauthorised removal",
+  "Unauthorised possession",
+  "Breach of OHS standards / policies",
+  "Private work during working hours",
+  "Unauthorised disclosure of information",
+  "Misappropriation of property / funds",
+  "Testing positive for alcohol",
+  "Testing positive for illegal drugs",
+  "Under the influence of alcohol/drugs",
+  "Possession of alcohol/drugs on duty",
+  "Unauthorised possession of firearm on duty",
+  "Intimidation",
+  "Incitement",
+  "Illegal strike / picketing",
+  "Viewing pornographic material on duty",
+  "Unauthorised access",
+  "Unauthorised use of company property",
+  "Unauthorised use of client property",
+  "Abusive language",
+  "Dishonesty",
+  "Gambling on duty",
+  "Clocking for another employee",
+  // Dismissible
+  "Theft",
+  "Accomplice to theft",
+  "Fraud",
+  "Accomplice to fraud",
+  "Gross dishonesty",
+  "Gross negligence",
+  "Assault",
+  "Sexual harassment",
+  "Viewing illegal pornography on duty",
+  "Racism",
+  "Refusal to obey OHS rules/procedures",
+  "Bribery",
+  "Falsification of records",
+  "Intentional damage to property",
+  "Gross insubordination",
+  "Unauthorised discharge of firearm",
+  "Unsafe use of firearm",
+  "Threatening another employee/client",
+  "Unauthorised possession of a weapon on duty",
+];
 
 // Remove local error extraction - now using centralized error handling
 
@@ -224,11 +310,28 @@ const formatDisplayDate = (value?: string | null) => {
 
 const TABLE_MAX_HEIGHT = "calc(100vh - 340px)";
 const TABLE_BODY_MAX_HEIGHT = "calc(100vh - 340px - 56px)";
+const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
+  First: 6,
+  Second: 6,
+  Serious: 9,
+  Final: 12,
+};
+
+const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issueDate: string) => {
+  const months = warningValidityMonths[warningType] ?? 6;
+  const base = new Date(issueDate);
+  if (Number.isNaN(base.getTime())) {
+    return "";
+  }
+  const expiry = new Date(base);
+  expiry.setMonth(expiry.getMonth() + months);
+  return expiry.toISOString().split("T")[0];
+};
 
 const Employees = () => {
-  const { user, loading } = useAuth();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+ const { user, loading } = useAuth();
+ const navigate = useNavigate();
+ const { toast } = useToast();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
@@ -237,7 +340,7 @@ const Employees = () => {
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
-   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
+ const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
    const [isLoading, setIsLoading] = useState(false);
    const [isProfileSaving, setIsProfileSaving] = useState(false);
@@ -246,6 +349,16 @@ const Employees = () => {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [addForm, setAddForm] = useState<EmployeeBasicFormData>(createBlankAddForm());
   const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
+  const [isWarningDialogOpen, setIsWarningDialogOpen] = useState(false);
+  const [warningForm, setWarningForm] = useState<Omit<EmployeeWarning, "id" | "expiryDate">>({
+    misconductType: "",
+    warningType: "First",
+    issueDate: dateToday(),
+    fileName: "",
+  });
+  const [warningsByEmployee, setWarningsByEmployee] = useState<Record<string, EmployeeWarning[]>>({});
+  const [misconductSearch, setMisconductSearch] = useState("");
+  const [misconductOptions, setMisconductOptions] = useState<string[]>(MISCONDUCT_TYPES);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -426,6 +539,173 @@ const Employees = () => {
     };
   }, [deleteUndo, startDeleteUndoTimers, clearDeleteUndoTimers]);
 
+  const handleAddWarning = () => {
+    if (!selectedEmployee) {
+      toast({
+        title: "No employee selected",
+        description: "Select an employee before adding a warning.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!warningForm.misconductType.trim() || !warningForm.issueDate) {
+      toast({
+        title: "Missing details",
+        description: "Please select misconduct, warning type, and issue date.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const expiryDate = computeWarningExpiry(warningForm.warningType, warningForm.issueDate);
+    const newWarning: EmployeeWarning = {
+      id: crypto.randomUUID(),
+      misconductType: warningForm.misconductType,
+      warningType: warningForm.warningType,
+      issueDate: warningForm.issueDate,
+      expiryDate,
+      fileName: warningForm.fileName,
+    };
+    setWarningsByEmployee((prev) => {
+      const existing = prev[selectedEmployee.id] ?? [];
+      return {
+        ...prev,
+        [selectedEmployee.id]: [...existing, newWarning],
+      };
+    });
+    setWarningForm({
+      misconductType: "",
+      warningType: "First",
+      issueDate: dateToday(),
+      fileName: "",
+    });
+    setIsWarningDialogOpen(false);
+    toast({
+      title: "Warning added",
+      description: "The warning has been logged and will appear in upcoming & expired lists.",
+    });
+  };
+
+  const handleWarningFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setWarningForm((prev) => ({
+      ...prev,
+      fileName: file?.name || "",
+    }));
+  };
+
+  const warningsForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? warningsByEmployee[selectedEmployee.id] ?? [] : []),
+    [selectedEmployee, warningsByEmployee],
+  );
+
+  const warningsByStatus = useMemo(() => {
+    const todayISO = dateToday();
+    const isValid = (warning: EmployeeWarning) => warning.expiryDate && warning.expiryDate >= todayISO;
+    return {
+      valid: warningsForSelectedEmployee.filter(isValid),
+      expired: warningsForSelectedEmployee.filter((w) => !isValid(w)),
+    };
+  }, [warningsForSelectedEmployee]);
+
+  const filteredMisconductTypes = useMemo(() => {
+    const query = misconductSearch.trim().toLowerCase();
+    if (!query) return misconductOptions;
+    return misconductOptions.filter((type) => type.toLowerCase().includes(query));
+  }, [misconductSearch, misconductOptions]);
+
+  const filteredMisconductTypes = useMemo(() => {
+    const query = misconductSearch.trim().toLowerCase();
+    if (!query) return MISCONDUCT_TYPES;
+    return MISCONDUCT_TYPES.filter((type) => type.toLowerCase().includes(query));
+  }, [misconductSearch]);
+
+  const renderProfilePanel = () => {
+    if (!selectedEmployee) return null;
+
+    return (
+      <Card className="shadow-lg">
+        <CardHeader className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-[0.18em] text-primary">Employee Profile</p>
+              <p className="text-lg font-semibold leading-tight">
+                {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Employee #{selectedEmployee.employee_number ?? "Not assigned"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={isEditMode ? "outline" : "ghost"}
+                size="sm"
+                className="gap-2"
+                onClick={() => setIsEditMode((prev) => !prev)}
+              >
+                {isEditMode ? (
+                  <>
+                    <X className="h-4 w-4" />
+                    Cancel
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="h-4 w-4" />
+                    Edit
+                  </>
+                )}
+              </Button>
+              {isEditMode && (
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleProfileSave}
+                  disabled={isProfileSaving}
+                >
+                  {isProfileSaving ? "Saving..." : "Save"}
+                </Button>
+              )}
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-2"
+                onClick={closeProfileDialog}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
+            <TabsList className="grid gap-2 sm:grid-cols-5 w-full">
+              <TabsTrigger value="personal">Personal</TabsTrigger>
+              <TabsTrigger value="employment">Employment</TabsTrigger>
+              <TabsTrigger value="address">Address</TabsTrigger>
+              <TabsTrigger value="discipline">Discipline</TabsTrigger>
+              <TabsTrigger value="contracts">Contract</TabsTrigger>
+            </TabsList>
+            <TabsContent value="personal" className="mt-6">
+              {renderPersonalTab()}
+            </TabsContent>
+            <TabsContent value="employment" className="mt-6">
+              {renderEmploymentTab()}
+            </TabsContent>
+            <TabsContent value="address" className="mt-6">
+              {renderAddressTab()}
+            </TabsContent>
+            <TabsContent value="discipline" className="mt-6">
+              {renderDisciplineTab()}
+            </TabsContent>
+            <TabsContent value="contracts" className="mt-6">
+              {renderContractTab()}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
@@ -454,11 +734,28 @@ const Employees = () => {
     setFilteredEmployees(sorted);
   }, [toast, user]);
 
+  const fetchConductOffences = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("company_code_of_conduct")
+      .select("data")
+      .eq("company_id", user.id)
+      .maybeSingle();
+    if (error) return;
+    const sections = (data?.data as OffenceSection[] | undefined) ?? [];
+    const names = sections.flatMap((section) => section.offences?.map((o) => o.name) ?? []);
+    const unique = Array.from(new Set(names.filter(Boolean)));
+    if (unique.length > 0) {
+      setMisconductOptions(unique);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       void fetchEmployees();
+      void fetchConductOffences();
     }
-  }, [user, fetchEmployees]);
+  }, [user, fetchEmployees, fetchConductOffences]);
 
   useEffect(() => {
     const query = searchQuery.toLowerCase();
@@ -980,15 +1277,15 @@ const Employees = () => {
    const openProfileDialog = (employee: Employee) => {
      setSelectedEmployee(employee);
      setProfileForm(createProfileFormFromEmployee(employee));
-     setActiveTab("personal");
-     setIsEditMode(false);
-     setIsProfileDialogOpen(true);
-   };
+    setActiveTab("personal");
+    setIsEditMode(false);
+    setIsProfilePanelOpen(true);
+  };
 
-   const closeProfileDialog = () => {
-     setIsProfileDialogOpen(false);
-     setSelectedEmployee(null);
-     setIsEditMode(false);
+  const closeProfileDialog = () => {
+    setIsProfilePanelOpen(false);
+    setSelectedEmployee(null);
+    setIsEditMode(false);
    };
 
   const renderPersonalTab = () => (
@@ -1443,7 +1740,98 @@ const Employees = () => {
     </div>
   );
 
-  const renderDocumentsTab = () => (
+  const renderDisciplineTab = () => (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold">Warnings & Discipline</h4>
+          <p className="text-sm text-muted-foreground">
+            Upload warnings with validity tracking. Expiry is auto-calculated based on warning type.
+          </p>
+        </div>
+        <Button variant="outline" className="gap-2" onClick={() => setIsWarningDialogOpen(true)}>
+          <FileUp className="h-4 w-4" />
+          Upload warning
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-border/70">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              Valid warnings
+              <span className="text-xs rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 border border-emerald-200">
+                {warningsByStatus.valid.length}
+              </span>
+            </CardTitle>
+            <CardDescription>Currently active warnings</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {warningsByStatus.valid.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No valid warnings yet.</p>
+            ) : (
+              warningsByStatus.valid.map((warning) => (
+                <div
+                  key={warning.id}
+                  className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold text-emerald-800">{warning.misconductType || "Misconduct"}</div>
+                    <Badge variant="outline" className="border-emerald-300 text-emerald-800">
+                      {warning.warningType}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-emerald-700">
+                    <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
+                    <span>Valid until: {formatDisplayDate(warning.expiryDate)}</span>
+                    {warning.fileName && <span>File: {warning.fileName}</span>}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/70">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              Expired warnings
+              <span className="text-xs rounded-full bg-muted px-2 py-1 text-foreground border border-border/60">
+                {warningsByStatus.expired.length}
+              </span>
+            </CardTitle>
+            <CardDescription>Warnings past their validity window</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {warningsByStatus.expired.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No expired warnings.</p>
+            ) : (
+              warningsByStatus.expired.map((warning) => (
+                <div
+                  key={warning.id}
+                  className="rounded-lg border border-border/70 bg-background px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold">{warning.misconductType || "Misconduct"}</div>
+                    <Badge variant="outline" className="border-border/70 text-muted-foreground">
+                      {warning.warningType}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
+                    <span>Expired: {formatDisplayDate(warning.expiryDate)}</span>
+                    {warning.fileName && <span>File: {warning.fileName}</span>}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+
+  const renderContractTab = () => (
     <div className="space-y-6">
       <div className="space-y-3">
         <div>
@@ -1455,18 +1843,6 @@ const Employees = () => {
         <Button type="button" variant="outline" disabled className="gap-2">
           <FileUp className="h-4 w-4" />
           Upload Contract (coming soon)
-        </Button>
-      </div>
-      <div className="space-y-3">
-        <div>
-          <h4 className="text-sm font-semibold">Warnings & Supporting Documents</h4>
-          <p className="text-sm text-muted-foreground">
-            Store written warnings or supporting documentation for disciplinary matters.
-          </p>
-        </div>
-        <Button type="button" variant="outline" disabled className="gap-2">
-          <FileUp className="h-4 w-4" />
-          Upload Warning (coming soon)
         </Button>
       </div>
     </div>
@@ -1482,7 +1858,8 @@ const Employees = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      {!isProfilePanelOpen ? (
+        <div className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold mb-2">Employees</h1>
@@ -1862,7 +2239,107 @@ const Employees = () => {
             )}
           </CardContent>
         </Card>
-      </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {renderProfilePanel()}
+        </div>
+      )}
+
+      <Dialog open={isWarningDialogOpen} onOpenChange={setIsWarningDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload warning</DialogTitle>
+            <DialogDescription>Add a warning record with auto-calculated validity.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="misconductType">Type of misconduct</Label>
+              <Select
+                value={warningForm.misconductType || undefined}
+                onValueChange={(value) => setWarningForm((prev) => ({ ...prev, misconductType: value }))}
+              >
+                <SelectTrigger id="misconductType">
+                  <SelectValue placeholder="Search or select misconduct type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="px-2 pb-2">
+                    <Input
+                      placeholder="Search misconduct..."
+                      className="h-9"
+                      value={misconductSearch}
+                      onChange={(e) => setMisconductSearch(e.target.value)}
+                    />
+                  </div>
+                  {filteredMisconductTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                  {filteredMisconductTypes.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">No matches</div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Type of warning</Label>
+                <Select
+                  value={warningForm.warningType}
+                  onValueChange={(value) =>
+                    setWarningForm((prev) => ({ ...prev, warningType: value as EmployeeWarning["warningType"] }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select warning type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                <SelectItem value="First">First (6 months)</SelectItem>
+                <SelectItem value="Second">Second (6 months)</SelectItem>
+                <SelectItem value="Serious">Serious (9 months)</SelectItem>
+                <SelectItem value="Final">Final (12 months)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+              <div className="space-y-2">
+                <Label htmlFor="issueDate">Date of issue</Label>
+                <Input
+                  id="issueDate"
+                  type="date"
+                  value={warningForm.issueDate}
+                  onChange={(e) => setWarningForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Validity</span>
+                <Badge variant="outline" className="border-primary/30 text-primary">
+                  {warningValidityMonths[warningForm.warningType]} months
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Auto expiry</span>
+                <span className="font-semibold">
+                  {formatDisplayDate(computeWarningExpiry(warningForm.warningType, warningForm.issueDate))}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="warningFile">Upload signed warning (optional)</Label>
+              <Input id="warningFile" type="file" onChange={handleWarningFileChange} />
+              {warningForm.fileName && <p className="text-xs text-muted-foreground">Attached: {warningForm.fileName}</p>}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsWarningDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddWarning}>Save warning</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {autoNumberUndo && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
@@ -1957,86 +2434,6 @@ const Employees = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={isProfileDialogOpen} onOpenChange={(open) => (open ? undefined : closeProfileDialog())}>
-        <DialogContent className="w-[85vw] max-w-4xl rounded-xl border border-border/50 bg-background p-0 shadow-lg transition-all duration-300 ease-out data-[state=open]:opacity-100 data-[state=closed]:opacity-0">
-          <div className="flex flex-col gap-6 p-6">
-            <DialogHeader className="text-left">
-              <div className="flex items-center gap-4">
-                <UserCircle className="h-12 w-12 text-blue-500" />
-                <div className="space-y-1">
-                  <DialogTitle>Employee Profile</DialogTitle>
-                  <DialogDescription>
-                    Here you can view, edit, and update this employee&apos;s information.
-                  </DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="font-medium">
-                  {(selectedEmployee?.employee_name ?? "").trim()} {(selectedEmployee?.employee_surname ?? "").trim()}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Employee #{selectedEmployee?.employee_number ?? "Not assigned"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={isEditMode ? "outline" : "default"}
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setIsEditMode((prev) => !prev)}
-                >
-                  {isEditMode ? (
-                    <>
-                      <X className="h-4 w-4" />
-                      Cancel
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </>
-                  )}
-                </Button>
-                {isEditMode && (
-                  <Button
-                    size="sm"
-                    className="gap-2"
-                    onClick={handleProfileSave}
-                    disabled={isProfileSaving}
-                  >
-                    {isProfileSaving ? "Saving..." : "Save"}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
-              <TabsList className="grid gap-2 sm:grid-cols-4 w-full">
-                <TabsTrigger value="personal">Personal</TabsTrigger>
-                <TabsTrigger value="employment">Employment</TabsTrigger>
-                <TabsTrigger value="address">Address</TabsTrigger>
-                <TabsTrigger value="documents">Documents</TabsTrigger>
-              </TabsList>
-              <TabsContent value="personal" className="mt-6">
-                {renderPersonalTab()}
-              </TabsContent>
-              <TabsContent value="employment" className="mt-6">
-                {renderEmploymentTab()}
-              </TabsContent>
-              <TabsContent value="address" className="mt-6">
-                {renderAddressTab()}
-              </TabsContent>
-              <TabsContent value="documents" className="mt-6">
-                {renderDocumentsTab()}
-              </TabsContent>
-            </Tabs>
-          </div>
-      </DialogContent>
-    </Dialog>
 
     <Dialog
       open={Boolean(documentDialogEmployee)}

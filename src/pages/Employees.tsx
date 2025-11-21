@@ -70,7 +70,6 @@ import {
 } from "@/lib/validation";
 import { maskSAIdNumber } from "@/lib/idMasking";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
-import { documentCategories } from "@/constants/documentCategories";
 
 type Employee = Tables<"employees"> & {
   start_date?: string | null;
@@ -119,6 +118,7 @@ type EmployeeWarning = {
   issueDate: string;
   expiryDate: string;
   fileName?: string;
+  fileUrl?: string;
 };
 type OffenceSection = {
   offences: { name: string }[];
@@ -137,6 +137,20 @@ type AutoNumberUndoState = {
 type DeleteUndoState = {
   deletedEmployees: Employee[];
   expiresAt: number;
+};
+
+type WarningDeleteUndoState = {
+  warning: EmployeeWarning;
+  employeeId: string;
+  storagePath?: string;
+  expiresAt: number;
+};
+
+type DocumentOption = {
+  label: string;
+  description: string;
+  path: string;
+  active: boolean;
 };
 
 const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
@@ -317,6 +331,21 @@ const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
   Final: 12,
 };
 
+const warningTypeLabels: Record<EmployeeWarning["warningType"], string> = {
+  First: "First Written Warning",
+  Second: "Second Written Warning",
+  Serious: "Serious Written Warning",
+  Final: "Final Written Warning",
+};
+
+const getStoragePathFromUrl = (url?: string) => {
+  if (!url) return "";
+  const marker = "/warnings/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return "";
+  return url.slice(idx + marker.length);
+};
+
 const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issueDate: string) => {
   const months = warningValidityMonths[warningType] ?? 6;
   const base = new Date(issueDate);
@@ -327,6 +356,45 @@ const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issue
   expiry.setMonth(expiry.getMonth() + months);
   return expiry.toISOString().split("T")[0];
 };
+
+const documentOptions: DocumentOption[] = [
+  {
+    label: "Written Warning",
+    description: "Generate a disciplinary warning with company and employee data.",
+    path: "/documents/discipline/warnings",
+    active: true,
+  },
+  {
+    label: "Code of Conduct",
+    description: "Share organisation-specific conduct guidelines (coming soon).",
+    path: "/documents/discipline/code-of-conduct/preview",
+    active: false,
+  },
+  {
+    label: "Notice of Hearing",
+    description: "Prepare notices with hearing details (coming soon).",
+    path: "/documents/discipline/notice-of-hearing",
+    active: false,
+  },
+  {
+    label: "Notice of Termination",
+    description: "Draft termination notices aligned with outcomes (coming soon).",
+    path: "/documents/discipline/notice-of-termination",
+    active: false,
+  },
+  {
+    label: "Notice of Counselling",
+    description: "Document informal counselling conversations (coming soon).",
+    path: "/documents/discipline/notice-of-counselling",
+    active: false,
+  },
+  {
+    label: "Counselling Report",
+    description: "Capture decisions and actions from counselling (coming soon).",
+    path: "/documents/discipline/counselling-report",
+    active: false,
+  },
+];
 
 const Employees = () => {
  const { user, loading } = useAuth();
@@ -356,11 +424,14 @@ const Employees = () => {
     issueDate: dateToday(),
     fileName: "",
   });
+  const [warningFile, setWarningFile] = useState<File | null>(null);
   const [warningsByEmployee, setWarningsByEmployee] = useState<Record<string, EmployeeWarning[]>>({});
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductOptions, setMisconductOptions] = useState<string[]>(MISCONDUCT_TYPES);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
+  const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>(firstActiveDocPath);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [autoNumberPrefixInput, setAutoNumberPrefixInput] = useState(DEFAULT_EMPLOYEE_NUMBER_PREFIX);
@@ -374,6 +445,10 @@ const Employees = () => {
   const [deleteUndoCountdown, setDeleteUndoCountdown] = useState(0);
   const deleteUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deleteUndoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [warningDeleteUndo, setWarningDeleteUndo] = useState<WarningDeleteUndoState | null>(null);
+  const [warningDeleteCountdown, setWarningDeleteCountdown] = useState(0);
+  const warningDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningDeleteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoNumberPreview = useMemo(() => {
     if (profileForm.employeeNumberMode === "auto") {
       return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix);
@@ -449,9 +524,23 @@ const Employees = () => {
   );
 
   const handleDocumentCategorySelect = (path: string) => {
+    const targetEmployee = documentDialogEmployee || selectedEmployee;
+    const state = targetEmployee
+      ? {
+          employeeName: (targetEmployee.employee_name ?? "").trim(),
+          employeeSurname: (targetEmployee.employee_surname ?? "").trim(),
+          employeeIdNumber: targetEmployee.id_number ?? "",
+        }
+      : undefined;
     setDocumentDialogEmployee(null);
-    navigate(path);
+    navigate(path, { state });
   };
+
+  useEffect(() => {
+    if (documentDialogEmployee) {
+      setSelectedDocumentPath(firstActiveDocPath);
+    }
+  }, [documentDialogEmployee, firstActiveDocPath]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -539,8 +628,132 @@ const Employees = () => {
     };
   }, [deleteUndo, startDeleteUndoTimers, clearDeleteUndoTimers]);
 
-  const handleAddWarning = () => {
-    if (!selectedEmployee) {
+  const clearWarningDeleteTimers = useCallback(() => {
+    if (warningDeleteTimeoutRef.current) {
+      clearTimeout(warningDeleteTimeoutRef.current);
+      warningDeleteTimeoutRef.current = null;
+    }
+    if (warningDeleteIntervalRef.current) {
+      clearInterval(warningDeleteIntervalRef.current);
+      warningDeleteIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearWarningDeleteState = useCallback(() => {
+    clearWarningDeleteTimers();
+    setWarningDeleteUndo(null);
+    setWarningDeleteCountdown(0);
+  }, [clearWarningDeleteTimers]);
+
+  const startWarningDeleteTimers = useCallback(
+    (pending: WarningDeleteUndoState) => {
+      clearWarningDeleteTimers();
+      setWarningDeleteUndo(pending);
+      const updateCountdown = () => {
+        const remaining = Math.max(0, Math.ceil((pending.expiresAt - Date.now()) / 1000));
+        setWarningDeleteCountdown(remaining);
+      };
+      updateCountdown();
+      warningDeleteIntervalRef.current = setInterval(updateCountdown, 1000);
+      warningDeleteTimeoutRef.current = setTimeout(async () => {
+        if (pending.storagePath) {
+          await supabase.storage.from("warnings").remove([pending.storagePath]);
+        }
+        clearWarningDeleteState();
+      }, Math.max(0, pending.expiresAt - Date.now()));
+    },
+    [clearWarningDeleteState, clearWarningDeleteTimers, supabase],
+  );
+
+  const handleUndoWarningDelete = async () => {
+    if (!warningDeleteUndo || !selectedEmployee || !user) return;
+    const { warning, employeeId } = warningDeleteUndo;
+    const { error } = await supabase.from("employee_warnings").insert({
+      id: warning.id,
+      company_id: user.id,
+      employee_id: employeeId,
+      misconduct_type: warning.misconductType,
+      warning_type: warning.warningType,
+      issue_date: warning.issueDate,
+      expiry_date: warning.expiryDate,
+      file_url: warning.fileUrl,
+    });
+    if (error) {
+      toast({
+        title: "Unable to restore warning",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    setWarningsByEmployee((prev) => {
+      const existing = prev[employeeId] ?? [];
+      return {
+        ...prev,
+        [employeeId]: [warning, ...existing],
+      };
+    });
+    clearWarningDeleteState();
+    toast({
+      title: "Warning restored",
+      description: "The warning has been restored.",
+    });
+  };
+
+  const isPdfFile = (fileName?: string) => fileName?.toLowerCase().endsWith(".pdf") ?? false;
+
+  const canUploadWarning =
+    !!selectedEmployee &&
+    warningForm.misconductType.trim().length > 0 &&
+    warningForm.issueDate.trim().length > 0 &&
+    isPdfFile(warningForm.fileName) &&
+    !!warningFile;
+  const fetchWarnings = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("employee_warnings")
+        .select("id, misconduct_type, warning_type, issue_date, expiry_date, file_url")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("issue_date", { ascending: false });
+
+      if (error) {
+        toast({
+          title: "Unable to load warnings",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeWarning[] =
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          misconductType: row.misconduct_type,
+          warningType: row.warning_type,
+          issueDate: row.issue_date,
+          expiryDate: row.expiry_date,
+          fileName: row.file_url ? row.file_url.split("/").pop() || "warning.pdf" : "",
+          fileUrl: row.file_url,
+        })) ?? [];
+
+      setWarningsByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchWarnings(selectedEmployee.id);
+    }
+  }, [selectedEmployee, fetchWarnings]);
+
+  const handleAddWarning = async () => {
+    if (!selectedEmployee || !user) {
       toast({
         title: "No employee selected",
         description: "Select an employee before adding a warning.",
@@ -548,49 +761,143 @@ const Employees = () => {
       });
       return;
     }
-    if (!warningForm.misconductType.trim() || !warningForm.issueDate) {
+    if (!warningForm.misconductType.trim() || !warningForm.issueDate || !isPdfFile(warningForm.fileName) || !warningFile) {
       toast({
         title: "Missing details",
-        description: "Please select misconduct, warning type, and issue date.",
+        description: "Please select misconduct, warning type, issue date, and upload a PDF warning.",
         variant: "destructive",
       });
       return;
     }
+
     const expiryDate = computeWarningExpiry(warningForm.warningType, warningForm.issueDate);
-    const newWarning: EmployeeWarning = {
-      id: crypto.randomUUID(),
-      misconductType: warningForm.misconductType,
-      warningType: warningForm.warningType,
-      issueDate: warningForm.issueDate,
-      expiryDate,
-      fileName: warningForm.fileName,
-    };
-    setWarningsByEmployee((prev) => {
-      const existing = prev[selectedEmployee.id] ?? [];
-      return {
-        ...prev,
-        [selectedEmployee.id]: [...existing, newWarning],
-      };
+    const fileExt = warningFile.name.split(".").pop() || "pdf";
+    const safeName = warningFile.name.replace(/\s+/g, "_");
+    const filePath = `warnings/${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+
+    const { error: uploadError } = await supabase.storage.from("warnings").upload(filePath, warningFile, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: warningFile.type || "application/pdf",
     });
+
+    if (uploadError) {
+      toast({
+        title: "Upload failed",
+        description: getSafeErrorMessage(uploadError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("warnings").getPublicUrl(filePath);
+    const fileUrl = publicUrlData.publicUrl;
+
+    const { error: insertError } = await supabase.from("employee_warnings").insert({
+      company_id: user.id,
+      employee_id: selectedEmployee.id,
+      misconduct_type: warningForm.misconductType,
+      warning_type: warningForm.warningType,
+      issue_date: warningForm.issueDate,
+      expiry_date: expiryDate,
+      file_url: fileUrl,
+    });
+
+    if (insertError) {
+      toast({
+        title: "Unable to save warning",
+        description: getSafeErrorMessage(insertError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await fetchWarnings(selectedEmployee.id);
+
     setWarningForm({
       misconductType: "",
       warningType: "First",
       issueDate: dateToday(),
       fileName: "",
     });
+    setWarningFile(null);
     setIsWarningDialogOpen(false);
     toast({
-      title: "Warning added",
-      description: "The warning has been logged and will appear in upcoming & expired lists.",
+      title: "Warning uploaded",
+      description: "The warning has been saved and will appear in the lists below.",
     });
   };
 
   const handleWarningFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    if (file && !isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      setWarningForm((prev) => ({ ...prev, fileName: "" }));
+      setWarningFile(null);
+      return;
+    }
     setWarningForm((prev) => ({
       ...prev,
       fileName: file?.name || "",
     }));
+    setWarningFile(file ?? null);
+  };
+
+  const handleDeleteWarning = async (warningId: string, fileUrl?: string) => {
+    if (!selectedEmployee || !user) return;
+    const confirmed = confirm("Are you sure you want to delete this warning?");
+    if (!confirmed) return;
+    const existing = warningsByEmployee[selectedEmployee.id] ?? [];
+    const warning = existing.find((w) => w.id === warningId);
+    if (!warning) return;
+
+    // Optimistically remove from UI
+    const next = existing.filter((w) => w.id !== warningId);
+    setWarningsByEmployee((prev) => ({
+      ...prev,
+      [selectedEmployee.id]: next,
+    }));
+
+    const storagePath = getStoragePathFromUrl(fileUrl);
+
+    // Delete from DB immediately
+    const { error: deleteError } = await supabase
+      .from("employee_warnings")
+      .delete()
+      .eq("id", warningId)
+      .eq("company_id", user.id);
+
+    if (deleteError) {
+      // revert
+      setWarningsByEmployee((prev) => ({
+        ...prev,
+        [selectedEmployee.id]: existing,
+      }));
+      toast({
+        title: "Unable to delete warning",
+        description: getSafeErrorMessage(deleteError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const expiresAt = Date.now() + 20_000;
+    startWarningDeleteTimers({
+      warning,
+      employeeId: selectedEmployee.id,
+      storagePath,
+      expiresAt,
+    });
+
+    toast({
+      title: "Warning deleted",
+      description: "You can undo this for 20 seconds.",
+    });
   };
 
   const warningsForSelectedEmployee = useMemo(
@@ -613,69 +920,63 @@ const Employees = () => {
     return misconductOptions.filter((type) => type.toLowerCase().includes(query));
   }, [misconductSearch, misconductOptions]);
 
-  const filteredMisconductTypes = useMemo(() => {
-    const query = misconductSearch.trim().toLowerCase();
-    if (!query) return MISCONDUCT_TYPES;
-    return MISCONDUCT_TYPES.filter((type) => type.toLowerCase().includes(query));
-  }, [misconductSearch]);
-
   const renderProfilePanel = () => {
     if (!selectedEmployee) return null;
 
     return (
-      <Card className="shadow-lg">
-        <CardHeader className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-[0.18em] text-primary">Employee Profile</p>
-              <p className="text-lg font-semibold leading-tight">
-                {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Employee #{selectedEmployee.employee_number ?? "Not assigned"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={isEditMode ? "outline" : "ghost"}
-                size="sm"
-                className="gap-2"
-                onClick={() => setIsEditMode((prev) => !prev)}
-              >
-                {isEditMode ? (
-                  <>
-                    <X className="h-4 w-4" />
-                    Cancel
-                  </>
-                ) : (
-                  <>
-                    <Pencil className="h-4 w-4" />
-                    Edit
-                  </>
-                )}
-              </Button>
-              {isEditMode && (
+        <Card className="shadow-lg">
+          <CardHeader className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Employee Profile</p>
+                <h1 className="text-3xl font-bold text-gray-900">
+                  {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
+                </h1>
+                <p className="text-base text-gray-600">
+                  Quickly access this employee’s details and attach important documents such as warnings and contracts.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
+                  variant={isEditMode ? "outline" : "ghost"}
                   size="sm"
                   className="gap-2"
-                  onClick={handleProfileSave}
-                  disabled={isProfileSaving}
+                  onClick={() => setIsEditMode((prev) => !prev)}
                 >
-                  {isProfileSaving ? "Saving..." : "Save"}
+                  {isEditMode ? (
+                    <>
+                      <X className="h-4 w-4" />
+                      Cancel
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </>
+                  )}
                 </Button>
-              )}
-              <Button
-                variant="default"
-                size="sm"
-                className="gap-2"
-                onClick={closeProfileDialog}
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
+                {isEditMode && (
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    onClick={handleProfileSave}
+                    disabled={isProfileSaving}
+                  >
+                    {isProfileSaving ? "Saving..." : "Save"}
+                  </Button>
+                )}
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="gap-2"
+                  onClick={closeProfileDialog}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+              </div>
             </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
         <CardContent className="pt-0">
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
             <TabsList className="grid gap-2 sm:grid-cols-5 w-full">
@@ -742,8 +1043,9 @@ const Employees = () => {
       .eq("company_id", user.id)
       .maybeSingle();
     if (error) return;
-    const sections = (data?.data as OffenceSection[] | undefined) ?? [];
-    const names = sections.flatMap((section) => section.offences?.map((o) => o.name) ?? []);
+      const raw = (data?.data as any) ?? null;
+      const sections = Array.isArray(raw?.sections) ? (raw.sections as OffenceSection[]) : Array.isArray(raw) ? (raw as OffenceSection[]) : [];
+      const names = sections.flatMap((section) => section.offences?.map((o) => o.name) ?? []);
     const unique = Array.from(new Set(names.filter(Boolean)));
     if (unique.length > 0) {
       setMisconductOptions(unique);
@@ -1742,54 +2044,94 @@ const Employees = () => {
 
   const renderDisciplineTab = () => (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h4 className="text-sm font-semibold">Warnings & Discipline</h4>
-          <p className="text-sm text-muted-foreground">
-            Upload warnings with validity tracking. Expiry is auto-calculated based on warning type.
-          </p>
+        <div className="flex flex-col items-center gap-3">
+          <Button
+            variant="outline"
+            className="h-24 w-40 rounded-xl border-dashed border-2 border-primary/50 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary flex items-center justify-center p-0"
+            onClick={() => setIsWarningDialogOpen(true)}
+          >
+            <FileUp
+              className="shrink-0 text-primary"
+              strokeWidth={1.25}
+              style={{ width: "56px", height: "56px" }}
+            />
+            <span className="sr-only">Upload warning</span>
+          </Button>
+          <p className="text-sm text-muted-foreground">Click in the box to upload warnings</p>
         </div>
-        <Button variant="outline" className="gap-2" onClick={() => setIsWarningDialogOpen(true)}>
-          <FileUp className="h-4 w-4" />
-          Upload warning
-        </Button>
-      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-base">
-              Valid warnings
-              <span className="text-xs rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 border border-emerald-200">
-                {warningsByStatus.valid.length}
-              </span>
-            </CardTitle>
-            <CardDescription>Currently active warnings</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {warningsByStatus.valid.length === 0 ? (
+          <Card className="border-border/70">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-base">
+                Valid warnings
+                <span className="text-xs rounded-full bg-blue-50 px-2 py-1 text-blue-700 border border-blue-200">
+                  {warningsByStatus.valid.length}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {warningsByStatus.valid.length === 0 ? (
               <p className="text-sm text-muted-foreground">No valid warnings yet.</p>
-            ) : (
-              warningsByStatus.valid.map((warning) => (
-                <div
-                  key={warning.id}
-                  className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold text-emerald-800">{warning.misconductType || "Misconduct"}</div>
-                    <Badge variant="outline" className="border-emerald-300 text-emerald-800">
-                      {warning.warningType}
-                    </Badge>
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-emerald-700">
-                    <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
-                    <span>Valid until: {formatDisplayDate(warning.expiryDate)}</span>
-                    {warning.fileName && <span>File: {warning.fileName}</span>}
-                  </div>
+      ) : (
+        warningsByStatus.valid.map((warning) => {
+          const openPdf = () => {
+            if (warning.fileUrl) window.open(warning.fileUrl, "_blank", "noopener,noreferrer");
+          };
+          const content = (
+            <div
+              className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2 text-sm cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="font-semibold text-blue-800">{warning.misconductType || "Misconduct"}</div>
+                  <Badge variant="outline" className="border-blue-300 text-blue-800">
+                    {warningTypeLabels[warning.warningType] || warning.warningType}
+                  </Badge>
                 </div>
-              ))
-            )}
-          </CardContent>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-blue-900 hover:text-red-600 hover:bg-transparent focus-visible:bg-transparent"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteWarning(warning.id, warning.fileUrl);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete warning</span>
+                </Button>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-3 text-xs text-blue-700">
+                <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
+                <span>Valid until: {formatDisplayDate(warning.expiryDate)}</span>
+              </div>
+            </div>
+          );
+
+                  return warning.fileUrl ? (
+                    <div
+                      key={warning.id}
+                      onClick={openPdf}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openPdf();
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-lg"
+                    >
+                      {content}
+                    </div>
+                  ) : (
+                    <div key={warning.id}>{content}</div>
+                  );
+                })
+              )}
+            </CardContent>
         </Card>
 
         <Card className="border-border/70">
@@ -1806,27 +2148,44 @@ const Employees = () => {
             {warningsByStatus.expired.length === 0 ? (
               <p className="text-sm text-muted-foreground">No expired warnings.</p>
             ) : (
-              warningsByStatus.expired.map((warning) => (
-                <div
-                  key={warning.id}
-                  className="rounded-lg border border-border/70 bg-background px-3 py-2 text-sm"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-semibold">{warning.misconductType || "Misconduct"}</div>
-                    <Badge variant="outline" className="border-border/70 text-muted-foreground">
-                      {warning.warningType}
-                    </Badge>
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
-                    <span>Expired: {formatDisplayDate(warning.expiryDate)}</span>
-                    {warning.fileName && <span>File: {warning.fileName}</span>}
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                warningsByStatus.expired.map((warning) => {
+                  const content = (
+                    <div
+                      className="rounded-lg border border-border/70 bg-background px-3 py-2 text-sm"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="font-semibold">{warning.misconductType || "Misconduct"}</div>
+                          <Badge variant="outline" className="border-border/70 text-muted-foreground">
+                            {warningTypeLabels[warning.warningType] || warning.warningType}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
+                        <span>Expired: {formatDisplayDate(warning.expiryDate)}</span>
+                      </div>
+                    </div>
+                  );
+
+                  return warning.fileUrl ? (
+                    <a
+                      key={warning.id}
+                      href={warning.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-lg"
+                      title="Open PDF"
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <div key={warning.id}>{content}</div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
       </div>
     </div>
   );
@@ -1861,9 +2220,12 @@ const Employees = () => {
       {!isProfilePanelOpen ? (
         <div className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Employees</h1>
-            <p className="text-muted-foreground">Manage your employee records</p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Employees</p>
+            <h1 className="text-3xl font-bold text-gray-900">Employee List</h1>
+            <p className="text-base text-gray-600">
+              Browse, search, and manage your employees and attach their documents.
+            </p>
           </div>
           <div className="flex flex-wrap gap-3 justify-end">
             <Button
@@ -2327,16 +2689,25 @@ const Employees = () => {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="warningFile">Upload signed warning (optional)</Label>
-              <Input id="warningFile" type="file" onChange={handleWarningFileChange} />
+                <Label htmlFor="warningFile">Upload signed warning (PDF only)</Label>
+                <Input
+                  id="warningFile"
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  required
+                  onChange={handleWarningFileChange}
+                />
               {warningForm.fileName && <p className="text-xs text-muted-foreground">Attached: {warningForm.fileName}</p>}
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setIsWarningDialogOpen(false)}>
-              Cancel
+          <DialogFooter className="flex w-full justify-center sm:flex-row sm:justify-center sm:space-x-0">
+            <Button
+              onClick={handleAddWarning}
+              disabled={!canUploadWarning}
+              className="w-48 justify-center py-3 text-base"
+            >
+              Upload
             </Button>
-            <Button onClick={handleAddWarning}>Save warning</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2399,6 +2770,37 @@ const Employees = () => {
         </div>
       )}
 
+      {warningDeleteUndo && (
+        <div
+          className={`pointer-events-none fixed inset-x-0 ${
+            autoNumberUndo || deleteUndo ? "top-28" : "top-4"
+          } z-50 flex justify-center px-4`}
+        >
+          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
+            <div className="pointer-events-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-blue-900 hover:bg-transparent hover:text-blue-900 focus-visible:bg-transparent"
+                onClick={handleUndoWarningDelete}
+              >
+                Undo warning delete
+                <span className="text-xs text-blue-600">{warningDeleteCountdown}s</span>
+              </Button>
+              <button
+                type="button"
+                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                onClick={clearWarningDeleteState}
+                aria-label="Dismiss undo warning notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Dialog open={isAutoNumberDialogOpen} onOpenChange={handleAutoNumberDialogChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2444,25 +2846,46 @@ const Employees = () => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
-            Document Category
+            Generate Document
           </DialogTitle>
           <DialogDescription>
-            {documentDialogEmployee
-              ? `Choose a category type for ${(documentDialogEmployee.employee_name ?? "").trim()} ${(documentDialogEmployee.employee_surname ?? "").trim()}.`
-              : "Choose a category type to continue."}
+            Select a document to generate for this employee.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          {documentCategories.map((category) => (
-            <Button
-              key={category.slug}
-              variant="outline"
-              className="justify-center text-sm"
-              onClick={() => handleDocumentCategorySelect(category.path)}
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="document-select">Choose a document</Label>
+            <Select
+              value={selectedDocumentPath || ""}
+              onValueChange={setSelectedDocumentPath}
             >
-              {category.label}
-            </Button>
-          ))}
+              <SelectTrigger id="document-select">
+                <SelectValue placeholder="Select a document to generate" />
+              </SelectTrigger>
+              <SelectContent>
+                {documentOptions.map((doc) => (
+                  <SelectItem key={doc.path} value={doc.path} disabled={!doc.active}>
+                    {doc.label} {!doc.active ? "(coming soon)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            className="w-full"
+            onClick={() => {
+              const selected = documentOptions.find((d) => d.path === selectedDocumentPath);
+              if (selected?.active) {
+                handleDocumentCategorySelect(selected.path);
+              }
+            }}
+            disabled={!documentOptions.find((d) => d.path === selectedDocumentPath && d.active)}
+          >
+            Go
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Select a document and click Go. Inactive documents are marked as coming soon.
+          </p>
         </div>
       </DialogContent>
     </Dialog>

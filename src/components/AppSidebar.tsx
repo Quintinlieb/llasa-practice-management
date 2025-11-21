@@ -1,8 +1,18 @@
-import { FileText, Users, Home, LogOut, CalendarClock } from "lucide-react";
+import {
+  FileText,
+  Users,
+  Home,
+  LogOut,
+  CalendarClock,
+  Settings,
+  ArrowLeft,
+  Gavel,
+  LineChart,
+  FileSignature,
+} from "lucide-react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useState, type FocusEvent } from "react";
+import { useState, type FocusEvent, type ComponentType, ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -17,14 +27,11 @@ import {
   SidebarHeader,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { documentCategories } from "@/constants/documentCategories";
 
-interface Profile {
-  user_name: string;
-  user_surname: string;
-  user_email: string;
-}
+const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
@@ -38,28 +45,47 @@ export const isActiveCategory = (pathname: string, slug: string) =>
 export const isAnyDocsChildActive = (pathname: string) =>
   documentCategories.some((category) => isActiveCategory(pathname, category.slug));
 
+const documentCategoryIcons: Record<string, ComponentType<{ className?: string }>> = {
+  discipline: Gavel,
+  performance: LineChart,
+  contracts: FileSignature,
+};
+
 export function AppSidebar() {
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [isDocsMenuInteracting, setIsDocsMenuInteracting] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      supabase
-        .from("profiles")
-        .select("user_name, user_surname, user_email")
-        .eq("id", user.id)
-        .maybeSingle()
-        .then(({ data }) => setProfile(data));
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
     }
-  }, [user]);
+  });
 
-  const getInitials = () => {
-    if (!profile) return "U";
-    return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
+  const setCollapsed = (value: boolean) => {
+    setIsCollapsed(value);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
   };
+
+  const withTooltip = (element: ReactElement, label: string) =>
+    isCollapsed ? (
+      <TooltipProvider delayDuration={0}>
+        <Tooltip>
+          <TooltipTrigger asChild>{element}</TooltipTrigger>
+          <TooltipContent side="right" className="drop-shadow-md">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    ) : (
+      element
+    );
 
   const pathname = location.pathname;
   const docsCategoryActive = isAnyDocsChildActive(pathname);
@@ -85,45 +111,54 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar collapsible="none" className="w-56 h-screen border-r border-sidebar-border">
-      <SidebarHeader className="px-2 py-2">
-        <div className="h-14 w-full overflow-hidden flex items-center justify-center">
-          <img
-            src="/logo.png.png"
-            alt="logo"
-            className="h-[85%] w-auto object-contain"
-            style={{ imageRendering: "crisp-edges" }}
-          />
-        </div>
-        <SidebarSeparator className="mt-2" />
-      </SidebarHeader>
-
-      <SidebarContent className="px-4">
-        <SidebarGroup className="pt-10">
-          <SidebarGroupLabel className="mt-1">
+    <Sidebar
+      collapsible="none"
+      className={cn(
+        "h-[calc(100vh-3.5rem)] flex flex-col border-r border-sidebar-border transition-[width] duration-200",
+        isCollapsed ? "w-16" : "w-56",
+      )}
+    >
+      <div className={cn("py-3 flex", isCollapsed ? "justify-center" : "px-3 justify-end")}>
+        <Button
+          variant="default"
+          size="icon"
+          className="h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+          onClick={() => setCollapsed(!isCollapsed)}
+        >
+          <ArrowLeft className={cn("h-4 w-4 transition-transform", isCollapsed && "rotate-180")} />
+          <span className="sr-only">Collapse sidebar</span>
+        </Button>
+      </div>
+      <SidebarContent className={cn("px-4", isCollapsed && "px-2")}>
+        <SidebarGroup className="pt-6">
+          <SidebarGroupLabel className={cn("mt-1 w-full text-center", isCollapsed && "transform -translate-x-1")}>
             Menu
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {primaryNavItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === item.url}
-                    className={
-                      location.pathname === item.url
-                        ? "!bg-transparent text-primary hover:text-primary data-[active=true]:!bg-transparent [&>svg]:text-primary"
-                        : ""
-                    }
-                  >
-                    <NavLink
-                      to={item.url}
-                      className="w-full"
+                  {withTooltip(
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === item.url}
+                      className={
+                        location.pathname === item.url
+                          ? "!bg-transparent text-primary hover:text-primary data-[active=true]:!bg-transparent [&>svg]:text-primary"
+                          : ""
+                      }
+                      data-collapsed={isCollapsed}
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
+                      <NavLink
+                        to={item.url}
+                        className={cn("w-full", isCollapsed && "justify-center gap-0")}
+                      >
+                        <item.icon className="h-5 w-5" />
+                        <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>,
+                    item.title
+                  )}
                 </SidebarMenuItem>
               ))}
               <SidebarMenuItem>
@@ -133,27 +168,32 @@ export function AppSidebar() {
                   onMouseLeave={handleDocsMouseLeave}
                   onFocus={handleDocsFocus}
                   onBlur={handleDocsBlur}
-                >
-                  <SidebarMenuButton
-                    type="button"
-                    id="documents-menu-button"
-                    aria-expanded={isDocsOpen}
-                    aria-controls="documents-menu"
-                    aria-haspopup="true"
-                    isActive={docsCategoryActive}
-                    className={cn(
-                      "!bg-transparent w-full",
-                      docsCategoryActive ? "font-semibold text-foreground" : ""
-                    )}
                   >
-                    <FileText
+                  {withTooltip(
+                    <SidebarMenuButton
+                      type="button"
+                      id="documents-menu-button"
+                      aria-expanded={isDocsOpen}
+                      aria-controls="documents-menu"
+                      aria-haspopup="true"
+                      isActive={docsCategoryActive}
                       className={cn(
-                        "h-4 w-4 text-current",
-                        docsCategoryActive && "text-blue-600"
+                        "!bg-transparent w-full",
+                        isCollapsed && "justify-center",
+                        docsCategoryActive ? "font-semibold text-foreground" : ""
                       )}
-                    />
-                    <span>Documents</span>
-                  </SidebarMenuButton>
+                      data-collapsed={isCollapsed}
+                    >
+                      <FileText
+                        className={cn(
+                          "h-5 w-5 text-current",
+                          docsCategoryActive && "text-blue-600"
+                        )}
+                      />
+                      <span className={cn(isCollapsed && "sr-only")}>Documents</span>
+                    </SidebarMenuButton>,
+                    "Documents"
+                  )}
                   <div
                     id="documents-menu"
                     role="presentation"
@@ -167,24 +207,33 @@ export function AppSidebar() {
                       <ul
                         role="menu"
                         aria-labelledby="documents-menu-button"
-                        className="flex flex-col gap-[0.11rem] px-[0.63rem] py-[0.32rem]"
+                        className={cn(
+                          "flex flex-col gap-[0.11rem] py-[0.32rem]",
+                          isCollapsed ? "px-0 items-center" : "px-[0.63rem]",
+                        )}
                       >
                         {documentCategories.map((category) => {
                           const active = isActiveCategory(pathname, category.slug);
+                          const CategoryIcon = documentCategoryIcons[category.slug] || FileText;
                           return (
                             <li key={category.slug}>
-                              <NavLink
-                                to={`/documents/${category.slug}`}
-                                role="menuitem"
-                                className={cn(
-                                  "block rounded-md pl-[1.22rem] pr-4 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
-                                  active
-                                    ? "font-medium text-blue-600"
-                                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                                )}
-                              >
-                                {category.label}
-                              </NavLink>
+                              {withTooltip(
+                                <NavLink
+                                  to={`/documents/${category.slug}`}
+                                  role="menuitem"
+                                  className={cn(
+                                    "flex items-center rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+                                    isCollapsed ? "justify-center gap-0 px-0 py-2" : "gap-2 pl-[1.22rem] pr-4 py-2",
+                                    active
+                                      ? "font-medium text-blue-600"
+                                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                  )}
+                                >
+                                  <CategoryIcon className="h-4 w-4" />
+                                  <span className={cn(isCollapsed && "sr-only")}>{category.label}</span>
+                                </NavLink>,
+                                category.label
+                              )}
                             </li>
                           );
                         })}
@@ -193,44 +242,66 @@ export function AppSidebar() {
                   </div>
                 </div>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                {withTooltip(
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === "/settings"}
+                    className={
+                      location.pathname === "/settings"
+                        ? "!bg-transparent text-primary hover:text-primary data-[active=true]:!bg-transparent [&>svg]:text-primary"
+                        : ""
+                    }
+                    data-collapsed={isCollapsed}
+                  >
+                    <NavLink
+                      to="/settings"
+                      className={cn("w-full", isCollapsed && "justify-center gap-0")}
+                    >
+                      <Settings className="h-5 w-5" />
+                      <span className={cn(isCollapsed && "sr-only")}>Settings</span>
+                    </NavLink>
+                  </SidebarMenuButton>,
+                  "Settings"
+                )}
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4 sticky bottom-0 bg-sidebar">
+      <SidebarFooter className="p-4 bg-sidebar mt-auto">
         <div className="mb-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-center gap-2 text-primary hover:text-accent-foreground [&>svg]:text-current"
-            onClick={async () => {
-              const { error } = await signOut();
-              if (!error) {
-                navigate("/");
-              }
-            }}
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Sign Out</span>
-          </Button>
+          {withTooltip(
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "w-full justify-center gap-2 text-primary hover:text-accent-foreground [&>svg]:text-current",
+                isCollapsed && "gap-0",
+              )}
+              onClick={async () => {
+                const { error } = await signOut();
+                if (!error) {
+                  navigate("/");
+                }
+              }}
+            >
+              <LogOut className="h-5 w-5" />
+              <span className={cn(isCollapsed && "sr-only")}>Sign Out</span>
+            </Button>,
+            "Sign Out"
+          )}
         </div>
         <SidebarSeparator className="mt-2" />
-        {profile && (
-          <div className="flex items-center gap-3">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
-              {getInitials()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">
-                {profile.user_name} {profile.user_surname}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                {profile.user_email}
-              </p>
-            </div>
-          </div>
-        )}
+        <div className="mt-3 flex items-center justify-center">
+          <img
+            src={isCollapsed ? "/nudoc_icon.png" : "/logo.png.png"}
+            alt="logo"
+            className="h-10 w-auto object-contain"
+            style={{ imageRendering: "crisp-edges" }}
+          />
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

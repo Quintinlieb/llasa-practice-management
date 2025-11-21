@@ -146,12 +146,12 @@ const WarningGenerator = () => {
   useEffect(() => {
     if (isEmployeePrefillState(location.state)) {
       const { employeeName, employeeSurname, employeeIdNumber } = location.state;
-      if (employeeName && employeeSurname && employeeIdNumber) {
+      if (employeeName || employeeSurname || employeeIdNumber) {
         setFormData((prev) => ({
           ...prev,
-          employeeName,
-          employeeSurname,
-          employeeIdNumber,
+          employeeName: employeeName || "",
+          employeeSurname: employeeSurname || "",
+          employeeIdNumber: employeeIdNumber || "",
         }));
       }
     }

@@ -200,16 +200,13 @@ const CalendarPage = () => {
                     <p className="text-muted-foreground">Reach out to employees whose contracts or warnings approach expiry.</p>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-lg border border-border/70 p-3">
+              <div className="flex items-start gap-3 rounded-lg border border-border/70 p-3">
                   <Shield className="h-4 w-4 text-primary mt-0.5" />
                   <div>
                     <p className="font-semibold">Maintain compliance</p>
                     <p className="text-muted-foreground">Ensure documentation timelines respect progressive discipline.</p>
                   </div>
                 </div>
-                <Button asChild className="w-full">
-                  <a href="/documents">Go to documents</a>
-                </Button>
               </CardContent>
             </Card>
           </div>

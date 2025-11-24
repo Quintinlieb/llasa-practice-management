@@ -47,7 +47,6 @@ import {
   User,
   UsersRound,
   Info,
-  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -70,6 +69,8 @@ import {
 } from "@/lib/validation";
 import { maskSAIdNumber } from "@/lib/idMasking";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
+// Supabase types do not include employee_warnings; cast to any for those calls to avoid type errors.
+const warningTable = () => (supabase as any).from("employee_warnings");
 
 type Employee = Tables<"employees"> & {
   start_date?: string | null;
@@ -123,17 +124,6 @@ type EmployeeWarning = {
 type OffenceSection = {
   offences: { name: string }[];
 };
-type AutoNumberUndoState = {
-  previous: {
-    id: string;
-    company_id: string;
-    employee_name: string;
-    employee_surname: string;
-    employee_number: string | null;
-  }[];
-  expiresAt: number;
-  prefix: string;
-};
 type DeleteUndoState = {
   deletedEmployees: Employee[];
   expiresAt: number;
@@ -153,33 +143,10 @@ type DocumentOption = {
   active: boolean;
 };
 
-const DEFAULT_EMPLOYEE_NUMBER_PREFIX = "A";
-const MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH = 3;
-const MAX_EMPLOYEE_NUMBER_LENGTH = EMPLOYEE_NUMBER_MAX_LENGTH;
 const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]): T | "" =>
   options.includes(value as T) ? (value as T) : "";
 
-const cleanPrefixInput = (value?: string | null) =>
-  (value ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH);
-
-const extractPrefixFromNumber = (value?: string | null) => {
-  if (!value) return "";
-  const match = value.toUpperCase().match(/^[A-Z]{1,3}/);
-  return match?.[0] ?? "";
-};
-
-const normalizePrefix = (value?: string | null) => cleanPrefixInput(value) || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
 const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
-
-const getSequenceLengthForPrefix = (prefix: string) =>
-  Math.max(1, MAX_EMPLOYEE_NUMBER_LENGTH - prefix.length);
-
-const formatAutoEmployeeNumber = (prefix: string, sequence: number) => {
-  const normalizedPrefix = normalizePrefix(prefix);
-  const sequenceLength = getSequenceLengthForPrefix(normalizedPrefix);
-  const paddedSequence = String(sequence).padStart(sequenceLength, "0").slice(-sequenceLength);
-  return cleanEmployeeNumberInput(`${normalizedPrefix}${paddedSequence}`);
-};
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
@@ -280,9 +247,6 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
   nationality:
     (coerceEnumValue(employee?.nationality, nationalityOptions) as EmployeeProfileFormData["nationality"]) ??
     DEFAULT_NATIONALITY,
-  employeeNumberMode: cleanEmployeeNumberInput(employee?.employee_number) ? "manual" : "auto",
-  employeeNumberPrefix:
-    extractPrefixFromNumber(employee?.employee_number) || DEFAULT_EMPLOYEE_NUMBER_PREFIX,
   employeeNumber: cleanEmployeeNumberInput(employee?.employee_number),
   jobTitle: employee?.job_title ?? "",
    physicalAddressLine1: employee?.physical_address_line1 ?? "",
@@ -292,23 +256,9 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
    areaCode: employee?.area_code ?? "",
    cellNumber: employee?.cell_number ?? "",
    email: employee?.email ?? "",
-   emergencyContactName: employee?.emergency_contact_name ?? "",
-   emergencyContactNumber: employee?.emergency_contact_number ?? "",
- });
-
-const getNextEmployeeNumber = (currentEmployees: Employee[], prefix: string) => {
-  const normalizedPrefix = normalizePrefix(prefix);
-  const prefixLength = normalizedPrefix.length;
-  const highestSequence = currentEmployees.reduce((max, employee) => {
-    const currentNumber = cleanEmployeeNumberInput(employee.employee_number);
-    if (!currentNumber.startsWith(normalizedPrefix)) {
-      return max;
-    }
-    const sequence = parseInt(currentNumber.slice(prefixLength), 10);
-    return Number.isNaN(sequence) ? max : Math.max(max, sequence);
-  }, 0);
-  return formatAutoEmployeeNumber(normalizedPrefix, highestSequence + 1);
-};
+  emergencyContactName: employee?.emergency_contact_name ?? "",
+  emergencyContactNumber: employee?.emergency_contact_number ?? "",
+});
 
 const formatDisplayDate = (value?: string | null) => {
   if (!value) return "--";
@@ -434,13 +384,6 @@ const Employees = () => {
   const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>(firstActiveDocPath);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
-  const [autoNumberPrefixInput, setAutoNumberPrefixInput] = useState(DEFAULT_EMPLOYEE_NUMBER_PREFIX);
-  const [isAutoNumberDialogOpen, setIsAutoNumberDialogOpen] = useState(false);
-  const [isAutoAllocating, setIsAutoAllocating] = useState(false);
-  const [autoNumberUndo, setAutoNumberUndo] = useState<AutoNumberUndoState | null>(null);
-  const [autoNumberUndoCountdown, setAutoNumberUndoCountdown] = useState(0);
-  const autoNumberUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoNumberUndoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [deleteUndo, setDeleteUndo] = useState<DeleteUndoState | null>(null);
   const [deleteUndoCountdown, setDeleteUndoCountdown] = useState(0);
   const deleteUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -449,22 +392,6 @@ const Employees = () => {
   const [warningDeleteCountdown, setWarningDeleteCountdown] = useState(0);
   const warningDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningDeleteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const autoNumberPreview = useMemo(() => {
-    if (profileForm.employeeNumberMode === "auto") {
-      return getNextEmployeeNumber(employees, profileForm.employeeNumberPrefix);
-    }
-    return "";
-  }, [employees, profileForm.employeeNumberMode, profileForm.employeeNumberPrefix]);
-
-  const normalizedAutoNumberPrefix = useMemo(
-    () => normalizePrefix(autoNumberPrefixInput),
-    [autoNumberPrefixInput],
-  );
-  const autoNumberDialogPreviewStart = formatAutoEmployeeNumber(normalizedAutoNumberPrefix, 1);
-  const autoNumberDialogPreviewEnd = formatAutoEmployeeNumber(
-    normalizedAutoNumberPrefix,
-    Math.max(employees.length, 2),
-  );
   const isAddFormComplete =
     addForm.employeeName.trim().length > 0 && addForm.employeeSurname.trim().length > 0;
   const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
@@ -478,50 +405,6 @@ const Employees = () => {
   const fieldInputClass = `${baseFieldInputClass} ${isEditMode ? "" : viewModeFieldInputExtras}`;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
   const fieldHelperTextClass = "text-xs text-muted-foreground";
-
-  const getExistingPrefix = useCallback(() => {
-    const existing = employees.find((emp) => extractPrefixFromNumber(emp.employee_number));
-    const derived = existing ? extractPrefixFromNumber(existing.employee_number) : "";
-    return derived || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
-  }, [employees]);
-
-  const handleOpenAutoNumberDialog = () => {
-    setAutoNumberPrefixInput(getExistingPrefix());
-    setIsAutoNumberDialogOpen(true);
-  };
-
-  const clearAutoNumberUndoTimers = useCallback(() => {
-    if (autoNumberUndoTimeoutRef.current) {
-      clearTimeout(autoNumberUndoTimeoutRef.current);
-      autoNumberUndoTimeoutRef.current = null;
-    }
-    if (autoNumberUndoIntervalRef.current) {
-      clearInterval(autoNumberUndoIntervalRef.current);
-      autoNumberUndoIntervalRef.current = null;
-    }
-  }, []);
-
-  const clearAutoNumberUndoState = useCallback(() => {
-    clearAutoNumberUndoTimers();
-    setAutoNumberUndo(null);
-    setAutoNumberUndoCountdown(0);
-  }, [clearAutoNumberUndoTimers]);
-
-  const startAutoNumberUndoTimers = useCallback(
-    (expiresAt: number) => {
-      clearAutoNumberUndoTimers();
-      const updateCountdown = () => {
-        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
-        setAutoNumberUndoCountdown(remaining);
-      };
-      updateCountdown();
-      autoNumberUndoIntervalRef.current = setInterval(updateCountdown, 1000);
-      autoNumberUndoTimeoutRef.current = setTimeout(() => {
-        clearAutoNumberUndoState();
-      }, Math.max(0, expiresAt - Date.now()));
-    },
-    [clearAutoNumberUndoTimers, clearAutoNumberUndoState],
-  );
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
@@ -570,18 +453,6 @@ const Employees = () => {
       window.removeEventListener("resize", updateHint);
     };
   }, [filteredEmployees]);
-
-  useEffect(() => {
-    if (autoNumberUndo) {
-      startAutoNumberUndoTimers(autoNumberUndo.expiresAt);
-    } else {
-      clearAutoNumberUndoTimers();
-      setAutoNumberUndoCountdown(0);
-    }
-    return () => {
-      clearAutoNumberUndoTimers();
-    };
-  }, [autoNumberUndo, startAutoNumberUndoTimers, clearAutoNumberUndoTimers]);
 
   const clearDeleteUndoTimers = useCallback(() => {
     if (deleteUndoTimeoutRef.current) {
@@ -662,13 +533,13 @@ const Employees = () => {
         clearWarningDeleteState();
       }, Math.max(0, pending.expiresAt - Date.now()));
     },
-    [clearWarningDeleteState, clearWarningDeleteTimers, supabase],
+    [clearWarningDeleteState, clearWarningDeleteTimers],
   );
 
   const handleUndoWarningDelete = async () => {
     if (!warningDeleteUndo || !selectedEmployee || !user) return;
     const { warning, employeeId } = warningDeleteUndo;
-    const { error } = await supabase.from("employee_warnings").insert({
+    const { error } = await warningTable().insert({
       id: warning.id,
       company_id: user.id,
       employee_id: employeeId,
@@ -711,8 +582,7 @@ const Employees = () => {
   const fetchWarnings = useCallback(
     async (employeeId: string) => {
       if (!user) return;
-      const { data, error } = await supabase
-        .from("employee_warnings")
+      const { data, error } = await warningTable()
         .select("id, misconduct_type, warning_type, issue_date, expiry_date, file_url")
         .eq("company_id", user.id)
         .eq("employee_id", employeeId)
@@ -793,7 +663,7 @@ const Employees = () => {
     const { data: publicUrlData } = supabase.storage.from("warnings").getPublicUrl(filePath);
     const fileUrl = publicUrlData.publicUrl;
 
-    const { error: insertError } = await supabase.from("employee_warnings").insert({
+    const { error: insertError } = await warningTable().insert({
       company_id: user.id,
       employee_id: selectedEmployee.id,
       misconduct_type: warningForm.misconductType,
@@ -866,8 +736,7 @@ const Employees = () => {
     const storagePath = getStoragePathFromUrl(fileUrl);
 
     // Delete from DB immediately
-    const { error: deleteError } = await supabase
-      .from("employee_warnings")
+    const { error: deleteError } = await warningTable()
       .delete()
       .eq("id", warningId)
       .eq("company_id", user.id);
@@ -1097,130 +966,12 @@ const Employees = () => {
     });
   }, [filteredEmployees]);
 
-  useEffect(() => {
-    if (profileForm.employeeNumberMode === "auto") {
-      setProfileForm((prev) => {
-        const sanitizedPrefix =
-          cleanPrefixInput(prev.employeeNumberPrefix) || DEFAULT_EMPLOYEE_NUMBER_PREFIX;
-        return {
-          ...prev,
-          employeeNumberPrefix: sanitizedPrefix,
-          employeeNumber: cleanEmployeeNumberInput(autoNumberPreview),
-        };
-      });
-    }
-  }, [profileForm.employeeNumberMode, autoNumberPreview]);
-
   const handleCustomEmployeeNumberChange = (value: string) => {
     const cleaned = cleanEmployeeNumberInput(value);
     setProfileForm((prev) => ({
       ...prev,
       employeeNumber: cleaned,
-      employeeNumberMode: cleaned ? "manual" : prev.employeeNumberMode,
     }));
-  };
-
-  const handleAutoNumberDialogChange = (open: boolean) => {
-    setIsAutoNumberDialogOpen(open);
-    if (!open) {
-      setIsAutoAllocating(false);
-      setAutoNumberPrefixInput(getExistingPrefix());
-    }
-  };
-
-  const handleAutoAllocateEmployeeNumbers = async () => {
-    if (employees.length === 0) {
-      toast({
-        title: "No employees available",
-        description: "Add employees before allocating numbers.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsAutoAllocating(true);
-    try {
-      const prefix = normalizedAutoNumberPrefix;
-      const previousNumbers = employees.map((employee) => ({
-        id: employee.id,
-        company_id: employee.company_id,
-        employee_name: employee.employee_name,
-        employee_surname: employee.employee_surname,
-        employee_number: employee.employee_number ?? null,
-      }));
-      const sorted = [...employees].sort((a, b) => {
-        const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
-        const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
-        return nameA.localeCompare(nameB);
-      });
-
-      const updates = sorted.map((employee, index) => ({
-        id: employee.id,
-        company_id: employee.company_id,
-        employee_name: employee.employee_name,
-        employee_surname: employee.employee_surname,
-        employee_number: formatAutoEmployeeNumber(prefix, index + 1),
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase.from("employees").upsert(updates, { onConflict: "id" });
-      if (error) {
-        throw error;
-      }
-
-      const firstNumber = formatAutoEmployeeNumber(prefix, 1);
-      const lastNumber = formatAutoEmployeeNumber(prefix, sorted.length);
-      toast({
-        title: "Employee numbers updated",
-        description: `Assigned numbers ${firstNumber} - ${lastNumber}.`,
-      });
-      handleAutoNumberDialogChange(false);
-      setAutoNumberUndo({
-        previous: previousNumbers,
-        prefix,
-        expiresAt: Date.now() + 20_000,
-      });
-      await fetchEmployees();
-    } catch (error) {
-      console.error(error);
-      toast({
-        title: "Unable to auto allocate",
-        description: getSafeErrorMessage(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsAutoAllocating(false);
-    }
-  };
-
-  const handleUndoAutoNumber = async () => {
-    if (!autoNumberUndo) return;
-    try {
-      const payload = autoNumberUndo.previous.map((entry) => ({
-        id: entry.id,
-        company_id: entry.company_id,
-        employee_name: entry.employee_name,
-        employee_surname: entry.employee_surname,
-        employee_number: entry.employee_number,
-        updated_at: new Date().toISOString(),
-      }));
-      const { error } = await supabase.from("employees").upsert(payload, { onConflict: "id" });
-      if (error) throw error;
-
-      toast({
-        title: "Employee numbers restored",
-        description: "Previous numbers have been reinstated.",
-      });
-      clearAutoNumberUndoState();
-      await fetchEmployees();
-    } catch (error) {
-      console.error(error);
-      toast({
-        title: "Unable to undo",
-        description: getSafeErrorMessage(error),
-        variant: "destructive",
-      });
-    }
   };
 
   const handleUndoDelete = async () => {
@@ -1293,10 +1044,7 @@ const Employees = () => {
       const validated = employeeProfileSchema.parse(profileForm);
        const endDateValue =
          validated.contractType === "Temporary" && validated.endDate ? validated.endDate : null;
-       const finalEmployeeNumber =
-         validated.employeeNumberMode === "auto"
-           ? getNextEmployeeNumber(employees, validated.employeeNumberPrefix || DEFAULT_EMPLOYEE_NUMBER_PREFIX)
-           : validated.employeeNumber || null;
+       const finalEmployeeNumber = validated.employeeNumber || null;
 
        const updatePayload: EmployeeUpdate = {
          employee_name: validated.employeeName,
@@ -1970,72 +1718,18 @@ const Employees = () => {
           <Label className={fieldLabelClass}>
             Employee Number
           </Label>
-          <div className="grid gap-2 rounded-xl border border-dashed border-border/60 bg-muted/20 p-3">
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant={profileForm.employeeNumberMode === "manual" ? "default" : "outline"}
-                disabled={!isEditMode}
-                onClick={() =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    employeeNumberMode: "manual",
-                  }))
-                }
-              >
-                Manual
-              </Button>
-              <Button
-                type="button"
-                variant={profileForm.employeeNumberMode === "auto" ? "default" : "outline"}
-                disabled={!isEditMode}
-                onClick={() =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    employeeNumberMode: "auto",
-                  }))
-                }
-              >
-                Auto-generate
-              </Button>
-            </div>
-
-            {profileForm.employeeNumberMode === "manual" ? (
-              <div className={fieldWrapperClass}>
-                <Input
-                  className={fieldInputClass}
-                  value={profileForm.employeeNumber}
-                  disabled={!isEditMode}
-                  maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
-                  onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
-                  placeholder={`Up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`}
-                />
-                <p className={fieldHelperTextClass}>
-                  Maximum of {EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers.
-                </p>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <Input
-                  className={fieldInputClass}
-                  value={profileForm.employeeNumberPrefix}
-                  disabled={!isEditMode}
-                  maxLength={MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH}
-                  placeholder={DEFAULT_EMPLOYEE_NUMBER_PREFIX}
-                  onChange={(e) => {
-                    const value = cleanPrefixInput(e.target.value);
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      employeeNumberPrefix: value,
-                      employeeNumber: getNextEmployeeNumber(employees, value),
-                    }));
-                  }}
-                />
-                <p className={fieldHelperTextClass}>
-                  Next number: <span className="font-medium text-primary">{autoNumberPreview}</span>
-                </p>
-              </div>
-            )}
+          <div className={fieldWrapperClass}>
+            <Input
+              className={fieldInputClass}
+              value={profileForm.employeeNumber}
+              disabled={!isEditMode}
+              maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
+              onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
+              placeholder={`Enter a custom number (up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers)`}
+            />
+            <p className={fieldHelperTextClass}>
+              Enter the employee&apos;s custom number; leave blank to skip.
+            </p>
           </div>
         </div>
       </div>
@@ -2445,31 +2139,6 @@ const Employees = () => {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleOpenAutoNumberDialog}
-                        className="group w-full gap-2 sm:w-auto"
-                        disabled={employees.length === 0}
-                      >
-                        <Sparkles className="h-4 w-4 text-primary transition-colors group-hover:text-white" />
-                        Auto number
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="top"
-                      align="end"
-                      sideOffset={12}
-                      alignOffset={16}
-                      className="max-w-xs text-xs text-muted-foreground"
-                    >
-                      <span className="text-blue-600 font-semibold">Caution:</span> this function allocates an employee number to all your listed employees irrespective of their start date.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
               </div>
             </div>
           </CardHeader>
@@ -2712,38 +2381,9 @@ const Employees = () => {
         </DialogContent>
       </Dialog>
 
-      {autoNumberUndo && (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
-            <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
-            <div className="pointer-events-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-2 text-blue-900 hover:bg-transparent hover:text-blue-900 focus-visible:bg-transparent"
-                onClick={handleUndoAutoNumber}
-              >
-                Undo auto numbering
-                <span className="text-xs text-blue-600">{autoNumberUndoCountdown}s</span>
-              </Button>
-              <button
-                type="button"
-                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
-                onClick={clearAutoNumberUndoState}
-                aria-label="Dismiss undo notification"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {deleteUndo && (
         <div
-          className={`pointer-events-none fixed inset-x-0 ${
-            autoNumberUndo ? "top-20" : "top-4"
-          } z-50 flex justify-center px-4`}
+          className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4"
         >
           <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
             <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
@@ -2773,7 +2413,7 @@ const Employees = () => {
       {warningDeleteUndo && (
         <div
           className={`pointer-events-none fixed inset-x-0 ${
-            autoNumberUndo || deleteUndo ? "top-28" : "top-4"
+            deleteUndo ? "top-20" : "top-4"
           } z-50 flex justify-center px-4`}
         >
           <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -2800,42 +2440,6 @@ const Employees = () => {
           </div>
         </div>
       )}
-
-      <Dialog open={isAutoNumberDialogOpen} onOpenChange={handleAutoNumberDialogChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Auto allocate employee numbers</DialogTitle>
-            <DialogDescription>Apply sequential numbers to every employee in your list.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="auto-number-prefix">Number prefix</Label>
-              <Input
-                id="auto-number-prefix"
-                value={autoNumberPrefixInput}
-                maxLength={MAX_EMPLOYEE_NUMBER_PREFIX_LENGTH}
-                onChange={(e) => setAutoNumberPrefixInput(cleanPrefixInput(e.target.value))}
-                placeholder={DEFAULT_EMPLOYEE_NUMBER_PREFIX}
-                disabled={isAutoAllocating}
-              />
-              <p className="text-xs text-muted-foreground">
-                Numbers will look like {autoNumberDialogPreviewStart}, {autoNumberDialogPreviewEnd}.
-              </p>
-            </div>
-            <p className="rounded-md border border-dashed border-blue-200 bg-blue-50/70 px-3 py-2 text-xs text-blue-900">
-              Existing employee numbers will be replaced for all {employees.length} employees.
-            </p>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => handleAutoNumberDialogChange(false)} disabled={isAutoAllocating}>
-              Cancel
-            </Button>
-            <Button onClick={handleAutoAllocateEmployeeNumbers} disabled={isAutoAllocating}>
-              {isAutoAllocating ? "Allocating..." : "Apply"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     <Dialog
       open={Boolean(documentDialogEmployee)}

@@ -251,7 +251,6 @@ export const nationalityOptions = [
   "Other",
 ] as const;
 
-export const employeeNumberModes = ["manual", "auto"] as const;
 export const EMPLOYEE_NUMBER_MAX_LENGTH = 7;
 const employeeNumberRegex = new RegExp(`^[A-Z0-9]{1,${EMPLOYEE_NUMBER_MAX_LENGTH}}$`);
 
@@ -421,17 +420,6 @@ export const employeeProfileSchema = z
     nationality: z.enum(nationalityOptions, {
       errorMap: () => ({ message: "Please select a nationality" }),
     }),
-    employeeNumberMode: z.enum(employeeNumberModes),
-    employeeNumberPrefix: z
-      .string()
-      .optional()
-      .or(z.literal(""))
-      .transform((val) =>
-        val ? val.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) : "",
-      )
-      .refine((val) => !val || /^[A-Z]{1,3}$/.test(val), {
-        message: "Prefix must be 1-3 letters (A-Z)",
-      }),
     employeeNumber: z
       .string()
       .optional()
@@ -539,22 +527,6 @@ export const employeeProfileSchema = z
         code: z.ZodIssueCode.custom,
         path: ["endDate"],
         message: "End date is required for temporary contracts",
-      });
-    }
-
-    if (data.employeeNumberMode === "manual" && !data.employeeNumber) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["employeeNumber"],
-        message: "Employee number is required when using manual entry",
-      });
-    }
-
-    if (data.employeeNumberMode === "auto" && !data.employeeNumberPrefix) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["employeeNumberPrefix"],
-        message: "Please select a prefix letter for auto-generated numbers",
       });
     }
   });

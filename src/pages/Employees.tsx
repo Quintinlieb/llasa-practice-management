@@ -147,6 +147,7 @@ const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]
   options.includes(value as T) ? (value as T) : "";
 
 const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
+const normalizeEmployeeNumber = (value?: string | null) => (value || "").trim().toLowerCase();
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const dateToday = () => new Date().toISOString().split("T")[0];
@@ -847,30 +848,51 @@ const Employees = () => {
             </div>
           </CardHeader>
         <CardContent className="pt-0">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EmployeeTab)} className="mt-0">
-            <TabsList className="grid gap-2 sm:grid-cols-5 w-full">
-              <TabsTrigger value="personal">Personal</TabsTrigger>
-              <TabsTrigger value="employment">Employment</TabsTrigger>
-              <TabsTrigger value="address">Address</TabsTrigger>
-              <TabsTrigger value="discipline">Discipline</TabsTrigger>
-              <TabsTrigger value="contracts">Contract</TabsTrigger>
-            </TabsList>
-            <TabsContent value="personal" className="mt-6">
-              {renderPersonalTab()}
-            </TabsContent>
-            <TabsContent value="employment" className="mt-6">
-              {renderEmploymentTab()}
-            </TabsContent>
-            <TabsContent value="address" className="mt-6">
-              {renderAddressTab()}
-            </TabsContent>
-            <TabsContent value="discipline" className="mt-6">
-              {renderDisciplineTab()}
-            </TabsContent>
-            <TabsContent value="contracts" className="mt-6">
-              {renderContractTab()}
-            </TabsContent>
-          </Tabs>
+          <div className="rounded-2xl border border-border/60 bg-white p-4 shadow-sm dark:bg-background/70">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as EmployeeTab)}
+              className="mt-0"
+              orientation="vertical"
+            >
+              <div className="flex flex-col gap-12 lg:flex-row">
+                <TabsList className="h-auto w-full flex-col items-stretch gap-2 rounded-xl bg-white p-3 shadow-none lg:w-56 lg:sticky lg:top-4 self-start">
+                  <TabsTrigger value="personal" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                    Personal
+                  </TabsTrigger>
+                  <TabsTrigger value="employment" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                    Employment
+                  </TabsTrigger>
+                  <TabsTrigger value="address" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                    Address
+                  </TabsTrigger>
+                  <TabsTrigger value="discipline" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                    Discipline
+                  </TabsTrigger>
+                  <TabsTrigger value="contracts" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                    Contract
+                  </TabsTrigger>
+                </TabsList>
+                <div className="flex-1">
+                  <TabsContent value="personal" className="mt-2 lg:mt-0">
+                    {renderPersonalTab()}
+                  </TabsContent>
+                  <TabsContent value="employment" className="mt-2 lg:mt-0">
+                    {renderEmploymentTab()}
+                  </TabsContent>
+                  <TabsContent value="address" className="mt-2 lg:mt-0">
+                    {renderAddressTab()}
+                  </TabsContent>
+                  <TabsContent value="discipline" className="mt-2 lg:mt-0">
+                    {renderDisciplineTab()}
+                  </TabsContent>
+                  <TabsContent value="contracts" className="mt-2 lg:mt-0">
+                    {renderContractTab()}
+                  </TabsContent>
+                </div>
+              </div>
+            </Tabs>
+          </div>
         </CardContent>
       </Card>
     );
@@ -1005,8 +1027,20 @@ const Employees = () => {
      e.preventDefault();
      if (!user) return;
      setIsLoading(true);
-     try {
+    try {
       const validated = employeeBasicSchema.parse(addForm);
+      const normalizedNumber = normalizeEmployeeNumber(validated.employeeNumber);
+      const duplicate = normalizedNumber
+        ? employees.find((emp) => normalizeEmployeeNumber(emp.employee_number) === normalizedNumber)
+        : undefined;
+      if (duplicate) {
+        toast({
+          title: "Duplicate employee number",
+          description: `You already allocated that employee number to ${duplicate.employee_name ?? "Employee"} ${duplicate.employee_surname ?? ""}. Please choose a different employee number.`,
+          variant: "destructive",
+        });
+        return;
+      }
       const addPayload: EmployeeInsert = {
         company_id: user.id,
         employee_name: validated.employeeName,
@@ -1045,6 +1079,23 @@ const Employees = () => {
        const endDateValue =
          validated.contractType === "Temporary" && validated.endDate ? validated.endDate : null;
        const finalEmployeeNumber = validated.employeeNumber || null;
+       const normalizedNumber = normalizeEmployeeNumber(finalEmployeeNumber);
+       const duplicate = normalizedNumber
+         ? employees.find(
+             (emp) =>
+               emp.id !== selectedEmployee.id &&
+               normalizeEmployeeNumber(emp.employee_number) === normalizedNumber,
+           )
+         : undefined;
+       if (duplicate) {
+         toast({
+           title: "Duplicate employee number",
+           description: `You already allocated that employee number to ${duplicate.employee_name ?? "Employee"} ${duplicate.employee_surname ?? ""}. Please choose a different employee number.`,
+           variant: "destructive",
+         });
+         setIsProfileSaving(false);
+         return;
+       }
 
        const updatePayload: EmployeeUpdate = {
          employee_name: validated.employeeName,
@@ -1757,12 +1808,29 @@ const Employees = () => {
       <div className="grid gap-4 lg:grid-cols-2">
           <Card className="border-border/70">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between text-base">
-                Valid warnings
-                <span className="text-xs rounded-full bg-blue-50 px-2 py-1 text-blue-700 border border-blue-200">
-                  {warningsByStatus.valid.length}
-                </span>
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <span>Valid warnings</span>
+                  <span className="text-xs rounded-full bg-blue-50 px-2 py-1 text-blue-700 border border-blue-200">
+                    {warningsByStatus.valid.length}
+                  </span>
+                </CardTitle>
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                        onClick={() => setIsWarningDialogOpen(true)}
+                      >
+                        New warning
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Generate a warning</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {warningsByStatus.valid.length === 0 ? (

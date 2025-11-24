@@ -1,26 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { FileText, Users, Plus, CalendarClock, TrendingUp, Activity } from "lucide-react";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { Activity, AlertTriangle, FileText, Sparkles, Users, CalendarDays } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 
-type Employee = Tables<"employees">;
+type Employee = Tables<"employees"> & {
+  start_date?: string | null;
+  end_date?: string | null;
+  gender?: string | null;
+  race?: string | null;
+  nationality?: string | null;
+  contract_type?: string | null;
+  employment_type?: string | null;
+};
+
 type WarningRow = {
   id: string;
   company_id?: string;
@@ -30,9 +31,23 @@ type WarningRow = {
   issue_date?: string | null;
 };
 
+type DocumentRow = Tables<"documents">;
+
 const warningTable = () => (supabase as any).from("employee_warnings");
 
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const warningValidityMonths: Record<string, number> = {
+  first: 3,
+  second: 6,
+  serious: 12,
+  final: 12,
+};
+
+const addMonths = (date: Date, months: number) => {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+};
 
 const Dashboard = () => {
   const { user, loading } = useAuth();
@@ -40,14 +55,14 @@ const Dashboard = () => {
   const { toast } = useToast();
 
   const [stats, setStats] = useState({ employees: 0, documents: 0 });
-  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
-  const [viewMode, setViewMode] = useState<"annual" | "monthly">("annual");
-  const now = new Date();
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth());
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [warningYear, setWarningYear] = useState<number>(new Date().getFullYear());
+  const [misconductFilter, setMisconductFilter] = useState<string>("all");
+  const [startYear, setStartYear] = useState<number>(new Date().getFullYear());
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!loading && !user) {
@@ -71,15 +86,21 @@ const Dashboard = () => {
           navigate("/company-setup");
           return;
         }
-        setProfile(profileData);
 
-        const [{ count: employeeCount }, { count: documentCount }, employeeResponse, warningResponse] = await Promise.all([
+        const [
+          { count: employeeCount },
+          { count: documentCount },
+          employeeResponse,
+          warningResponse,
+          documentResponse,
+        ] = await Promise.all([
           supabase.from("employees").select("*", { count: "exact", head: true }).eq("company_id", user.id),
           supabase.from("documents").select("*", { count: "exact", head: true }).eq("company_id", user.id),
           supabase.from("employees").select("*").eq("company_id", user.id),
           warningTable()
             .select("id, company_id, employee_id, misconduct_type, warning_type, issue_date")
             .eq("company_id", user.id),
+          supabase.from("documents").select("id, company_id, created_at, document_type").eq("company_id", user.id),
         ]);
 
         setStats({
@@ -89,9 +110,11 @@ const Dashboard = () => {
 
         if (employeeResponse.error) throw employeeResponse.error;
         if (warningResponse.error) throw warningResponse.error;
+        if (documentResponse.error) throw documentResponse.error;
 
         setEmployees(employeeResponse.data ?? []);
         setWarnings((warningResponse.data as WarningRow[]) ?? []);
+        setDocuments((documentResponse.data as DocumentRow[]) ?? []);
       } catch (error: any) {
         console.error(error);
         toast({
@@ -113,32 +136,47 @@ const Dashboard = () => {
     return Number.isNaN(date.getTime()) ? null : date;
   };
 
-  const employeeTrendData = useMemo(() => {
-    if (viewMode === "annual") {
-      return monthLabels.map((label, idx) => {
-        const hires = employees.filter((emp) => {
-          const start = parseDate(emp.start_date);
-          return start && start.getFullYear() === selectedYear && start.getMonth() === idx;
-        }).length;
-        return { label, hires };
-      });
-    }
+  const documentsThisMonth = useMemo(() => {
+    const now = new Date();
+    return documents.filter((doc) => {
+      const created = parseDate(doc.created_at);
+      return created && created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
+    }).length;
+  }, [documents]);
 
-    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
-    return Array.from({ length: daysInMonth }, (_, dayIdx) => {
-      const day = dayIdx + 1;
-      const hires = employees.filter((emp) => {
-        const start = parseDate(emp.start_date);
-        return (
-          start &&
-          start.getFullYear() === selectedYear &&
-          start.getMonth() === selectedMonth &&
-          start.getDate() === day
-        );
-      }).length;
-      return { label: `${day}`, hires };
+  const misconductRisk = useMemo(() => {
+    const employeesWithWarnings = new Set(warnings.map((w) => w.employee_id).filter(Boolean)).size;
+    const ratio = stats.employees ? employeesWithWarnings / stats.employees : 0;
+    if (!stats.employees) return { label: "No data", tone: "text-muted-foreground", helper: "Add employees to see risk." };
+    if (ratio >= 0.3) return { label: "High", tone: "text-destructive", helper: "Many employees have recent warnings." };
+    if (ratio >= 0.12) return { label: "Medium", tone: "text-amber-600", helper: "Monitor active warnings closely." };
+    return { label: "Low", tone: "text-emerald-600", helper: "Healthy - few warning records." };
+  }, [warnings, stats.employees]);
+
+  const employmentTypeData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    employees.forEach((emp) => {
+      const type =
+        (emp.employment_type || emp.contract_type || "Unspecified").toLowerCase().replace(/_/g, " ").trim();
+      const label =
+        type === "permanent"
+          ? "Permanent"
+          : type === "fixed-term" || type === "fixed term"
+            ? "Fixed-term"
+            : type === "temporary"
+              ? "Temporary"
+              : type === "casual"
+                ? "Casual"
+                : type
+                  ? type.charAt(0).toUpperCase() + type.slice(1)
+                  : "Unspecified";
+      counts[label] = (counts[label] || 0) + 1;
     });
-  }, [employees, selectedMonth, selectedYear, viewMode]);
+
+    return Object.entries(counts)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [employees]);
 
   const demographicBlocks = useMemo(() => {
     const raceCounts: Record<string, number> = {};
@@ -154,7 +192,7 @@ const Dashboard = () => {
       genderCounts[gender] = (genderCounts[gender] || 0) + 1;
 
       const nationality = (emp.nationality || "").toLowerCase();
-      if (!nationality || nationality === "south african") {
+      if (!nationality || nationality.includes("south") || nationality === "rsa" || nationality === "sa") {
         saCount += 1;
       } else {
         foreignCount += 1;
@@ -170,49 +208,92 @@ const Dashboard = () => {
       race: toArray(raceCounts),
       gender: toArray(genderCounts),
       citizenship: [
-        { label: "South African", value: saCount },
-        { label: "Foreign National", value: foreignCount },
+        { label: "RSA", value: saCount },
+        { label: "Foreigners", value: foreignCount },
       ],
     };
   }, [employees]);
 
-  const warningCharts = useMemo(() => {
+  const warningsByType = useMemo(() => {
     const misconductCounts: Record<string, number> = {};
-    const warningTypeCounts: Record<string, number> = {};
-
     warnings.forEach((row) => {
       const misconduct = row.misconduct_type || "Unspecified";
       misconductCounts[misconduct] = (misconductCounts[misconduct] || 0) + 1;
-
-      const type = row.warning_type || "Unspecified";
-      warningTypeCounts[type] = (warningTypeCounts[type] || 0) + 1;
     });
 
-    const toSorted = (data: Record<string, number>, limit = 8) =>
-      Object.entries(data)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, limit);
-
-    return {
-      misconduct: toSorted(misconductCounts),
-      types: toSorted(warningTypeCounts, 5),
-    };
+    return Object.entries(misconductCounts)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
   }, [warnings]);
 
-  const yearOptions = useMemo(() => {
-    const years = new Set<number>([
-      now.getFullYear(),
-      now.getFullYear() - 1,
-      now.getFullYear() - 2,
-      ...employees
-        .map((emp) => parseDate(emp.start_date)?.getFullYear())
-        .filter((yr): yr is number => typeof yr === "number"),
-    ]);
-    return Array.from(years).sort((a, b) => b - a);
-  }, [employees, now]);
+  const warningStatusTimeline = useMemo(() => {
+    const now = new Date();
+    const monthly = monthLabels.map((label, idx) => ({ label, active: 0 }));
+    warnings.forEach((row) => {
+      const issued = parseDate(row.issue_date);
+      if (!issued) return;
+      if (issued.getFullYear() !== warningYear) return;
+      if (misconductFilter !== "all" && (row.misconduct_type || "Unspecified") !== misconductFilter) return;
+      const months = warningValidityMonths[(row.warning_type || "").toLowerCase()] ?? 6;
+      const expiry = addMonths(issued, months);
+      if (expiry < now) return;
+      monthly[issued.getMonth()].active += 1;
+    });
+    return monthly;
+  }, [warnings, warningYear, misconductFilter]);
 
-  if (loading) {
+  const warningYearOptions = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    warnings.forEach((row) => {
+      const issued = parseDate(row.issue_date);
+      if (issued) years.add(issued.getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [warnings]);
+
+  const misconductOptions = useMemo(() => {
+    const opts = new Set<string>();
+    warnings.forEach((row) => {
+      if (row.misconduct_type) opts.add(row.misconduct_type);
+    });
+    return Array.from(opts).sort();
+  }, [warnings]);
+
+  const normalizeEmploymentType = (emp: Employee) => {
+    const type = (emp.employment_type || emp.contract_type || "Unspecified").toLowerCase().replace(/_/g, " ").trim();
+    return type || "unspecified";
+  };
+
+  const startsTimeline = useMemo(() => {
+    return monthLabels.map((label, idx) => {
+      const total = employees.filter((emp) => {
+        const start = parseDate(emp.start_date);
+        if (!start || start.getFullYear() !== startYear || start.getMonth() !== idx) return false;
+        if (employmentTypeFilter === "all") return true;
+        return normalizeEmploymentType(emp) === employmentTypeFilter;
+      }).length;
+      return { label, hires: total };
+    });
+  }, [employees, startYear, employmentTypeFilter]);
+
+  const startYearOptions = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    employees.forEach((emp) => {
+      const start = parseDate(emp.start_date);
+      if (start) years.add(start.getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [employees]);
+
+  const employmentTypeOptions = useMemo(() => {
+    const opts = new Set<string>();
+    employees.forEach((emp) => {
+      opts.add(normalizeEmploymentType(emp));
+    });
+    return Array.from(opts).sort();
+  }, [employees]);
+
+  if (loading || isLoadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Loading...</p>
@@ -220,286 +301,380 @@ const Dashboard = () => {
     );
   }
 
+  const pieColors = ["#2563eb", "#22c55e", "#eab308", "#f97316", "#a855f7", "#06b6d4", "#ef4444"];
+
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="space-y-4">
+        <header className="space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold mb-1">Workforce Overview</h1>
-            <p className="text-muted-foreground">
-              Track hiring momentum, demographics, and warning trends at a glance.
+            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Dashboard</p>
+            <h1 className="text-3xl font-bold text-gray-900 leading-snug">Workforce overview</h1>
+            <p className="text-base text-gray-600">
+              Monitor headcount trends, demographics, and disciplinary activity at a glance.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === "annual" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("annual")}
-              className="gap-2"
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1.5 shadow-inner self-start md:self-auto">
+            <Activity className="h-3.5 w-3.5 text-primary" />
+            Live summary
+          </span>
+        </header>
+
+        <div className="rounded-xl border border-border/60 bg-gradient-to-br from-muted/40 via-background to-background p-4 shadow-sm">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            <button
+              onClick={() => navigate("/employees")}
+              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
             >
-              <CalendarClock className="h-4 w-4" />
-              Annual
-            </Button>
-            <Button
-              variant={viewMode === "monthly" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("monthly")}
-              className="gap-2"
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Users className="h-4 w-4" />
+              </span>
+              <div className="flex-1 leading-tight">
+                Employees
+                <p className="text-xs font-normal text-muted-foreground">
+                  Manage and view your <span className="text-primary font-semibold">{stats.employees}</span> employees.
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate("/warning-generator")}
+              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
             >
-              <Activity className="h-4 w-4" />
-              Monthly
-            </Button>
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div className="flex-1 leading-tight">
+                Draft Warning
+                <p className="text-xs font-normal text-muted-foreground">Generate a disciplinary warning.</p>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate("/documents/contracts")}
+              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                <FileText className="h-4 w-4" />
+              </span>
+              <div className="flex-1 leading-tight">
+                Draft Contract
+                <p className="text-xs font-normal text-muted-foreground">Start an employment agreement.</p>
+              </div>
+            </button>
+            <button
+              onClick={() => navigate("/calendar")}
+              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                <CalendarDays className="h-4 w-4" />
+              </span>
+              <div className="flex-1 leading-tight">
+                Calendar
+                <p className="text-xs font-normal text-muted-foreground">
+                  View upcoming expiring documents.
+                </p>
+              </div>
+            </button>
           </div>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5 text-primary" />
-                Employees
-              </CardTitle>
-              <CardDescription>Total registered</CardDescription>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-2 pb-1 space-y-1">
+              <CardTitle className="text-base">Employment</CardTitle>
+              <CardDescription className="text-xs">
+                Total distribution by employment type.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats.employees}</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <FileText className="h-5 w-5 text-primary" />
-                Documents
-              </CardTitle>
-              <CardDescription>Warnings generated</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats.documents}</p>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                Active Filters
-              </CardTitle>
-              <CardDescription>Adjust the timeframe to explore movement</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <Select value={String(selectedYear)} onValueChange={(val) => setSelectedYear(Number(val))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {yearOptions.map((year) => (
-                    <SelectItem key={year} value={String(year)}>
-                      {year}
-                    </SelectItem>
+            <CardContent className="pt-0 pb-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <ChartContainer
+                  config={{ count: { label: "Employees", color: "#2563eb" } }}
+                  className="h-32 w-32 shrink-0"
+                >
+                  <PieChart>
+                    <Pie data={employmentTypeData} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
+                      {employmentTypeData.map((_, idx) => (
+                        <Cell key={idx} fill={pieColors[(idx + 3) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                  </PieChart>
+                </ChartContainer>
+                <div className="flex flex-col gap-1 text-[11px] leading-tight">
+                  {employmentTypeData.map((item, idx) => (
+                    <div key={item.label} className="flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: pieColors[(idx + 3) % pieColors.length] }}
+                      />
+                      <span className="text-foreground">{item.label}</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-              {viewMode === "monthly" && (
-                <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select month" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-2 pb-1 space-y-1">
+              <CardTitle className="text-base">Gender</CardTitle>
+              <CardDescription className="text-xs">
+                Total distribution by gender.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <ChartContainer
+                  config={{ count: { label: "Employees", color: "#2563eb" } }}
+                  className="h-32 w-32 shrink-0"
+                >
+                  <PieChart>
+                    <Pie data={demographicBlocks.gender} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
+                      {demographicBlocks.gender.map((_, idx) => (
+                        <Cell key={idx} fill={pieColors[idx % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                  </PieChart>
+                </ChartContainer>
+                <div className="flex flex-col gap-1 text-[11px] leading-tight">
+                  {demographicBlocks.gender.map((item, idx) => (
+                    <div key={item.label} className="flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: pieColors[idx % pieColors.length] }}
+                      />
+                      <span className="text-foreground">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-2 pb-1 space-y-1">
+              <CardTitle className="text-base">Race</CardTitle>
+              <CardDescription className="text-xs">
+                Total distribution by race.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <ChartContainer
+                  config={{ count: { label: "Employees", color: "#22c55e" } }}
+                  className="h-32 w-32 shrink-0"
+                >
+                  <PieChart>
+                    <Pie data={demographicBlocks.race} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
+                      {demographicBlocks.race.map((_, idx) => (
+                        <Cell key={idx} fill={pieColors[(idx + 1) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                  </PieChart>
+                </ChartContainer>
+                <div className="flex flex-col gap-1 text-[11px] leading-tight">
+                  {demographicBlocks.race.map((item, idx) => (
+                    <div key={item.label} className="flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: pieColors[(idx + 1) % pieColors.length] }}
+                      />
+                      <span className="text-foreground">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-2 pb-1 space-y-1">
+              <CardTitle className="text-base">Nationality</CardTitle>
+              <CardDescription className="text-xs">
+                Total distribution by nationality.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 pb-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <ChartContainer
+                  config={{ count: { label: "Employees", color: "#f97316" } }}
+                  className="h-32 w-32 shrink-0"
+                >
+                  <PieChart>
+                    <Pie data={demographicBlocks.citizenship} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={6}>
+                      {demographicBlocks.citizenship.map((_, idx) => (
+                        <Cell key={idx} fill={pieColors[(idx + 2) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
+                      ))}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                  </PieChart>
+                </ChartContainer>
+                <div className="flex flex-col gap-1 text-[11px] leading-tight">
+                  {demographicBlocks.citizenship.map((item, idx) => (
+                    <div key={item.label} className="flex items-center gap-1.5">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: pieColors[(idx + 2) % pieColors.length] }}
+                      />
+                      <span className="text-foreground">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Workforce</CardTitle>
+                <CardDescription className="text-xs">View total workforce by year and month.</CardDescription>
+              </div>
+              <div className="w-28">
+                <Select value={String(startYear)} onValueChange={(val) => setStartYear(Number(val))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Year" />
                   </SelectTrigger>
                   <SelectContent>
-                    {monthLabels.map((label, idx) => (
-                      <SelectItem key={label} value={String(idx)}>
-                        {label}
+                    {startYearOptions.map((yr) => (
+                      <SelectItem key={yr} value={String(yr)}>
+                        {yr}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2 shadow-lg border border-border/70">
-            <CardHeader>
-              <CardTitle className="text-xl">Hiring momentum</CardTitle>
-              <CardDescription>
-                {viewMode === "annual"
-                  ? `Monthly hires across ${selectedYear}`
-                  : `Daily hires for ${monthLabels[selectedMonth]} ${selectedYear}`}
-              </CardDescription>
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               <ChartContainer
-                config={{
-                  hires: { label: "New starters", color: "hsl(217, 92%, 60%)" },
-                }}
-                className="h-80"
+                config={{ hires: { label: "Hires", color: "hsl(221, 83%, 53%)" } }}
+                className="h-44 w-full aspect-auto"
               >
-                <LineChart data={employeeTrendData} margin={{ left: 10, right: 10, bottom: 10 }}>
+                <BarChart data={startsTimeline} margin={{ left: 0, right: 0, bottom: 8 }} barCategoryGap="10%">
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={24} />
-                  <ChartTooltip cursor={{ opacity: 0.2 }} content={<ChartTooltipContent labelFormatter={(l) => `Period: ${l}`} />} />
-                  <Line
-                    type="monotone"
-                    dataKey="hires"
-                    stroke="var(--color-hires)"
-                    strokeWidth={3}
-                    dot={{ r: 4, strokeWidth: 2, stroke: "white" }}
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                    height={28}
                   />
-                </LineChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border border-border/70">
-            <CardHeader>
-              <CardTitle className="text-xl">Warnings by type</CardTitle>
-              <CardDescription>Top categories across your data</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <ChartContainer
-                config={{
-                  count: { label: "Warnings", color: "hsl(12, 88%, 59%)" },
-                }}
-                className="h-64"
-              >
-                <BarChart data={warningCharts.types} layout="vertical" margin={{ left: 20, right: 10, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" allowDecimals={false} hide />
-                  <YAxis dataKey="label" type="category" tickLine={false} axisLine={false} width={110} />
-                  <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                  <Bar dataKey="value" radius={6} fill="var(--color-count)" />
-                </BarChart>
-              </ChartContainer>
-
-              <ChartContainer
-                config={{
-                  value: { label: "Warnings", color: "hsl(43, 89%, 61%)" },
-                }}
-                className="h-64"
-              >
-                <BarChart data={warningCharts.misconduct} margin={{ left: 0, right: 10, bottom: 10 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} hide />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                  <YAxis
+                    allowDecimals={false}
+                    domain={[0, "dataMax + 2"]}
+                    tickLine={false}
+                    axisLine={false}
+                    width={30}
+                    tick={{ fontSize: 11 }}
+                  />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" radius={6} fill="var(--color-value)" />
-                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="hires" radius={6} fill="var(--color-hires)" />
                 </BarChart>
               </ChartContainer>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Employment type</span>
+                <Select value={employmentTypeFilter} onValueChange={setEmploymentTypeFilter}>
+                  <SelectTrigger className="h-8 w-44 text-xs">
+                    <SelectValue placeholder="Filter employment type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {employmentTypeOptions.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
+
+          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+            <CardHeader className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Active warnings issued</CardTitle>
+                <CardDescription className="text-xs">View total active warnings by year and month.</CardDescription>
+              </div>
+              <div className="w-28">
+                <Select value={String(warningYear)} onValueChange={(val) => setWarningYear(Number(val))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warningYearOptions.map((yr) => (
+                      <SelectItem key={yr} value={String(yr)}>
+                        {yr}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <ChartContainer
+                config={{
+                  active: { label: "Active warnings", color: "hsl(152, 76%, 40%)" },
+                }}
+                className="h-44 w-full aspect-auto"
+              >
+                <BarChart data={warningStatusTimeline} margin={{ left: 0, right: 0, bottom: 8 }} barCategoryGap="10%">
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                    height={28}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    domain={[0, "dataMax + 2"]}
+                    tickLine={false}
+                    axisLine={false}
+                    width={30}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="active" radius={6} fill="var(--color-active)" />
+                </BarChart>
+              </ChartContainer>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Misconduct</span>
+                <Select value={misconductFilter} onValueChange={setMisconductFilter}>
+                  <SelectTrigger className="h-8 w-40 text-xs">
+                    <SelectValue placeholder="Filter misconduct" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All misconduct</SelectItem>
+                    {misconductOptions.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          <Card className="shadow-lg border border-border/70">
-            <CardHeader>
-              <CardTitle>Race distribution</CardTitle>
-              <CardDescription>Snapshot of your current workforce</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  value: { label: "Employees", color: "hsl(220, 80%, 55%)" },
-                }}
-                className="h-64"
-              >
-                <BarChart data={demographicBlocks.race} margin={{ left: 0, right: 10, bottom: 10 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} hide />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" radius={6} fill="var(--color-value)" />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border border-border/70">
-            <CardHeader>
-              <CardTitle>Gender mix</CardTitle>
-              <CardDescription>Balanced view of representation</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  value: { label: "Employees", color: "hsl(141, 70%, 45%)" },
-                }}
-                className="h-64"
-              >
-                <BarChart data={demographicBlocks.gender} margin={{ left: 0, right: 10, bottom: 10 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} hide />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" radius={6} fill="var(--color-value)" />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border border-border/70">
-            <CardHeader>
-              <CardTitle>Citizenship</CardTitle>
-              <CardDescription>South African vs foreign nationals</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer
-                config={{
-                  value: { label: "Employees", color: "hsl(32, 94%, 60%)" },
-                }}
-                className="h-64"
-              >
-                <BarChart data={demographicBlocks.citizenship} margin={{ left: 0, right: 10, bottom: 10 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="value" radius={6} fill="var(--color-value)" />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <h2 className="text-2xl font-semibold">Quick Actions</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card
-              className="shadow-md hover:shadow-lg transition-all cursor-pointer group"
-              onClick={() => navigate("/warning-generator")}
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Plus className="h-5 w-5 text-primary" />
-                  Generate Written Warning
-                </CardTitle>
-                <CardDescription>Create a new written warning for an employee</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button className="w-full group-hover:scale-105 transition-transform">Start Now</Button>
-              </CardContent>
-            </Card>
-
-            <Card
-              className="shadow-md hover:shadow-lg transition-all cursor-pointer group"
-              onClick={() => navigate("/employees")}
-            >
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-primary" />
-                  Manage Employees
-                </CardTitle>
-                <CardDescription>Add or edit your employee list</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button variant="outline" className="w-full group-hover:scale-105 transition-transform">
-                  View Employees
-                </Button>
-              </CardContent>
-            </Card>
+        <div className="rounded-xl border border-dashed border-border/70 bg-card/60 p-3 text-xs text-muted-foreground shadow-inner">
+          <div className="flex items-center gap-2 font-medium text-foreground">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Need a document quickly?
           </div>
+          <p className="mt-1">
+            Generate warnings or manage employees directly from the navigation. Charts use the same underlying data - no extra setup required.
+          </p>
         </div>
       </div>
     </DashboardLayout>

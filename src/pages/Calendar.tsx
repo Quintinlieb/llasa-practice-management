@@ -56,17 +56,20 @@ const CalendarPage = () => {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <header className="space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Expiries & validity</p>
-            <h1 className="text-2xl md:text-3xl font-bold mt-1">Calendar</h1>
+            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Calendar</p>
+            <h1 className="text-3xl font-bold text-gray-900 leading-snug">Expiries & validity</h1>
+            <p className="text-base text-gray-600">
+              Track expiring warnings, contracts, and events by month.
+            </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 self-start md:self-auto">
             <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5">
               Upcoming expiring documents
             </Badge>
           </div>
-        </div>
+        </header>
 
         <div className="grid lg:grid-cols-[320px_1fr] gap-6">
           <Card className="border-border/70">

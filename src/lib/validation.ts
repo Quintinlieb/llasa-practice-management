@@ -289,13 +289,16 @@ export const companySetupSchema = z.object({
     .regex(/^[a-zA-Z\s'-]+$/, "City can only contain letters, spaces, hyphens, and apostrophes")
     .transform(sanitizeText),
     province: z
-      .enum(southAfricanProvinces, {
-        errorMap: () => ({ message: "Please select a province" }),
-      })
+      .string()
+      .optional()
       .or(z.literal(""))
-      .refine((val) => val !== "", {
-        message: "Please select a province",
-      }),
+      .transform((val) => (typeof val === "string" ? val.trim() : ""))
+      .refine(
+        (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
+        {
+          message: "Please select a valid province",
+        },
+      ),
   areaCode: z
     .string()
     .regex(/^\d{4}$/, "Area code must be 4 digits")
@@ -464,13 +467,16 @@ export const employeeProfileSchema = z
         message: "City can only contain letters, spaces, hyphens, and apostrophes",
       }),
     province: z
-      .enum(southAfricanProvinces, {
-        errorMap: () => ({ message: "Please select a province" }),
-      })
+      .string()
+      .optional()
       .or(z.literal(""))
-      .refine((val) => val !== "", {
-        message: "Please select a province",
-      }),
+      .transform((val) => (typeof val === "string" ? val.trim() : ""))
+      .refine(
+        (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
+        {
+          message: "Please select a valid province",
+        },
+      ),
     areaCode: z
       .string()
       .optional()
@@ -565,6 +571,45 @@ export const employeeImportSchema = z.object({
     })
     .refine((val) => !val || contractTypes.includes(val as (typeof contractTypes)[number]), {
       message: `Contract type must be one of: ${contractTypes.join(", ")}`,
+    }),
+  gender: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => {
+      const trimmed = typeof val === "string" ? val.trim() : "";
+      if (!trimmed) return "";
+      const match = genderOptions.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+      return match ?? trimmed;
+    })
+    .refine((val) => !val || genderOptions.includes(val as (typeof genderOptions)[number]), {
+      message: `Gender must be one of: ${genderOptions.join(", ")}`,
+    }),
+  race: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => {
+      const trimmed = typeof val === "string" ? val.trim() : "";
+      if (!trimmed) return "";
+      const match = raceOptions.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+      return match ?? trimmed;
+    })
+    .refine((val) => !val || raceOptions.includes(val as (typeof raceOptions)[number]), {
+      message: `Race must be one of: ${raceOptions.join(", ")}`,
+    }),
+  nationality: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => {
+      const trimmed = typeof val === "string" ? val.trim() : "";
+      if (!trimmed) return "";
+      const match = nationalityOptions.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+      return match ?? trimmed;
+    })
+    .refine((val) => !val || nationalityOptions.includes(val as (typeof nationalityOptions)[number]), {
+      message: `Nationality must be one of: ${nationalityOptions.join(", ")}`,
     }),
   jobTitle: z
     .string()

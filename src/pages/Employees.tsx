@@ -719,6 +719,25 @@ const Employees = () => {
     setWarningFile(file ?? null);
   };
 
+  const goToWarningGenerator = () => {
+    if (!selectedEmployee) {
+      toast({
+        title: "No employee selected",
+        description: "Open an employee profile before generating a warning.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    navigate("/documents/discipline/warnings", {
+      state: {
+        employeeName: selectedEmployee.employee_name ?? "",
+        employeeSurname: selectedEmployee.employee_surname ?? "",
+        employeeIdNumber: selectedEmployee.id_number ?? "",
+      },
+    });
+  };
+
   const handleDeleteWarning = async (warningId: string, fileUrl?: string) => {
     if (!selectedEmployee || !user) return;
     const confirmed = confirm("Are you sure you want to delete this warning?");
@@ -1250,12 +1269,14 @@ const Employees = () => {
         return "";
       };
 
-      const normalizeContractType = (value: string) => {
+      const normalizeEnumValue = (value: string, options: readonly string[]) => {
         const trimmed = value.trim();
         if (!trimmed) return "";
-        const match = contractTypes.find((type) => type.toLowerCase() === trimmed.toLowerCase());
+        const match = options.find((option) => option.toLowerCase() === trimmed.toLowerCase());
         return match ?? trimmed;
       };
+
+      const normalizeContractType = (value: string) => normalizeEnumValue(value, contractTypes);
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i] as Record<string, unknown>;
@@ -1267,6 +1288,9 @@ const Employees = () => {
             employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
             contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
+            gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
+            race: normalizeEnumValue(getColumnValue(row, "Race", "race"), raceOptions),
+            nationality: normalizeEnumValue(getColumnValue(row, "Nationality", "nationality"), nationalityOptions),
             jobTitle: getColumnValue(row, "Job Title", "job_title"),
           };
 
@@ -1278,6 +1302,9 @@ const Employees = () => {
             id_number: validated.idNumber || null,
             employee_number: validated.employeeNumber || null,
             contract_type: validated.contractType || null,
+            gender: validated.gender || null,
+            race: validated.race || null,
+            nationality: validated.nationality || null,
             job_title: validated.jobTitle || null,
           });
         } catch (err: unknown) {
@@ -1323,9 +1350,9 @@ const Employees = () => {
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
     const wsData = [
-      ["Employee Number", "Name", "Surname", "ID Number", "Contract Type", "Job Title"],
-      ["A0001", "John", "Doe", "9001015009087", "Permanent", "Store Manager"],
-      ["B0002", "Jane", "Smith", "8505125800082", "Temporary", ""],
+      ["Employee Number", "Name", "Surname", "ID Number", "Gender", "Race", "Nationality", "Contract Type", "Job Title"],
+      ["A0001", "John", "Doe", "9001015009087", "Male", "African", "South African", "Permanent", "Store Manager"],
+      ["B0002", "Jane", "Smith", "8505125800082", "Female", "Coloured", "Namibian", "Temporary", ""],
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const idNumberColumnIndex = 3;
@@ -1345,6 +1372,9 @@ const Employees = () => {
       { wch: 18 },
       { wch: 18 },
       { wch: 18 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 14 },
       { wch: 18 },
       { wch: 16 },
       { wch: 20 },
@@ -1822,7 +1852,7 @@ const Employees = () => {
                         variant="outline"
                         size="sm"
                         className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
-                        onClick={() => setIsWarningDialogOpen(true)}
+                        onClick={goToWarningGenerator}
                       >
                         New warning
                       </Button>

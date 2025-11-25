@@ -25,8 +25,9 @@ const documents = [
     title: "Employment Contract (Permanent)",
     description: "Create a permanent employment contract tailored to your organisation.",
     icon: FileSignature,
-    actionLabel: "Coming Soon",
-    status: "upcoming" as const,
+    actionLabel: "Generate",
+    onClick: (navigate: ReturnType<typeof useNavigate>) => navigate("/documents/contracts/permanent"),
+    status: "available" as const,
   },
   {
     title: "Employment Contract (Temporary)",

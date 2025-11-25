@@ -13,7 +13,7 @@ const contractDocuments: ContractDocument[] = [
     name: "Permanent Contract",
     description: "Generate a comprehensive permanent employment agreement with company branding.",
     href: "/documents/contracts/permanent",
-    isActive: false,
+    isActive: true,
   },
   {
     name: "Temporary Contract",

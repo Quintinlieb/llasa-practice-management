@@ -65,6 +65,16 @@ const Navigation = () => {
                 New Warning
               </Button>
             </Link>
+            <Link to="/documents/contracts/permanent">
+              <Button 
+                variant={isActive("/documents/contracts/permanent") ? "secondary" : "ghost"} 
+                size="sm"
+                className="gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                New Contract
+              </Button>
+            </Link>
             <Button 
               variant="ghost" 
               size="sm" 

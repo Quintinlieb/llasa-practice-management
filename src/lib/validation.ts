@@ -639,7 +639,7 @@ export const warningGeneratorSchema = z.object({
     .transform(sanitizeText),
   employeeIdNumber: z
     .string()
-    .refine(validateSAIdNumber, "Invalid South African ID number")
+    .min(5, "ID number is required")
     .transform(sanitizeText),
   warningType: z
     .enum(["first", "second", "serious", "final"], {
@@ -675,7 +675,72 @@ export const warningGeneratorSchema = z.object({
     .transform(sanitizeText),
 });
 
+export const salaryFrequencyOptions = ["month", "week", "day", "hour"] as const;
+
+export const permanentContractSchema = z.object({
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
+    .transform((val) => val.trim()),
+  issueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
+    .transform((val) => val.trim()),
+  employeeName: z
+    .string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must not exceed 100 characters")
+    .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes")
+    .transform(sanitizeText),
+  employeeSurname: z
+    .string()
+    .min(2, "Surname must be at least 2 characters")
+    .max(100, "Surname must not exceed 100 characters")
+    .regex(/^[a-zA-Z\s'-]+$/, "Surname can only contain letters, spaces, hyphens, and apostrophes")
+    .transform(sanitizeText),
+  employeeIdNumber: z
+    .string()
+    .min(5, "ID number is required")
+    .transform(sanitizeText),
+  employeeAddress: z
+    .string()
+    .min(10, "Address must be at least 10 characters")
+    .max(300, "Address must not exceed 300 characters")
+    .transform(sanitizeText),
+  employeeCell: z
+    .string()
+    .regex(saPhoneRegex, "Invalid South African phone number")
+    .transform(sanitizeText),
+  employeeEmail: z
+    .string()
+    .email("Invalid email address")
+    .transform((val) => sanitizeText(val.toLowerCase())),
+  jobTitle: z
+    .string()
+    .min(2, "Job title must be at least 2 characters")
+    .max(120, "Job title must not exceed 120 characters")
+    .transform(sanitizeText),
+  salaryAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Salary must be a valid number")
+    .transform((val) => Number(val)),
+  salaryFrequency: z.enum(salaryFrequencyOptions, {
+    errorMap: () => ({ message: "Please select a salary frequency" }),
+  }),
+  reportsTo: z
+    .string()
+    .min(2, "Please specify who the employee reports to")
+    .max(120, "Reports to must not exceed 120 characters")
+    .transform(sanitizeText),
+  additionalNotes: z
+    .string()
+    .max(2000, "Additional notes must not exceed 2000 characters")
+    .optional()
+    .transform((val) => (val ? sanitizeText(val) : "")),
+});
+
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
 export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;
 export type EmployeeProfileFormData = z.infer<typeof employeeProfileSchema>;
 export type WarningGeneratorFormData = z.infer<typeof warningGeneratorSchema>;
+export type PermanentContractFormData = z.infer<typeof permanentContractSchema>;

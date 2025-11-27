@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, Building2, User2, Briefcase, Check, Undo2 } from "lucide-react";
+import { Download, FileText, ArrowLeft, Building2, User2, Briefcase, Check, Undo2, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -84,6 +84,8 @@ const PermanentContractGenerator = () => {
   const [validatedPreview, setValidatedPreview] = useState<PermanentContractFormData | null>(null);
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
+  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
+  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
@@ -123,6 +125,12 @@ const PermanentContractGenerator = () => {
       navigate("/auth");
     }
   }, [loading, navigate, user]);
+
+  useEffect(() => {
+    if (hasDismissedEmployeeHint) return;
+    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    return () => clearTimeout(timer);
+  }, [hasDismissedEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -182,6 +190,13 @@ const PermanentContractGenerator = () => {
     const passportNumber = (employee as Partial<Tables<"employees">> & { passport_number?: string }).passport_number ?? "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
+    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
+    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PermanentContractFormData["race"] }).race || "";
+    const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
+    const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
+    const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
+    const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
+    const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
     const ageFromId = employeeNationality === "South African" ? deriveAgeFromId(employee.id_number ?? "") : "";
 
     setFormData((prev) => ({
@@ -193,6 +208,13 @@ const PermanentContractGenerator = () => {
       passportNumber,
       nationality: employeeNationality,
       alternativeContact: emergencyContact || prev.alternativeContact,
+      gender: genderValue || prev.gender,
+      race: raceValue || prev.race,
+      employeeCell: cellNumber || prev.employeeCell,
+      employeeEmail: emailAddress || prev.employeeEmail,
+      jobTitle: jobTitle || prev.jobTitle,
+      startDate: startDate || prev.startDate,
+      employeeNumber: employeeNumber || prev.employeeNumber,
       age: ageFromId,
     }));
   };
@@ -333,12 +355,24 @@ const PermanentContractGenerator = () => {
 
   const handleStepClick = (index: number) => {
     if (canNavigateToStep(index)) {
+      if (index > 0) {
+        setHasDismissedEmployeeHint(true);
+        if (showEmployeeHint) {
+          setShowEmployeeHint(false);
+        }
+      }
       setActiveStep(index);
     }
   };
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
+      if (activeStep === 0) {
+        setHasDismissedEmployeeHint(true);
+        if (showEmployeeHint) {
+          setShowEmployeeHint(false);
+        }
+      }
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -820,6 +854,46 @@ const PermanentContractGenerator = () => {
 
   return (
     <DashboardLayout>
+      {showEmployeeHint && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <span
+              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse"
+              aria-hidden="true"
+            ></span>
+            <div className="pointer-events-auto flex items-center gap-2">
+              <span className="text-blue-600">
+                TIP!{" "}
+                <span className="text-blue-900">
+                  Add the employee on the Employees page first before generating the contract.
+                </span>
+              </span>
+              <button
+                type="button"
+                className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                onClick={() => {
+                  setHasDismissedEmployeeHint(true);
+                  setShowEmployeeHint(false);
+                  navigate("/employees");
+                }}
+              >
+                Employees page
+              </button>
+              <button
+                type="button"
+                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                onClick={() => {
+                  setHasDismissedEmployeeHint(true);
+                  setShowEmployeeHint(false);
+                }}
+                aria-label="Dismiss employee guidance message"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">

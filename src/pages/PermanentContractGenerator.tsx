@@ -611,14 +611,15 @@ const PermanentContractGenerator = () => {
       doc.setFontSize(10);
       const label = `${index}.`;
       const labelWidth = doc.getTextWidth(`${label} `);
-      const maxWidth = contentWidth - labelWidth;
+      const indent = labelWidth + 2; // small padding so wrapped lines align under text start
+      const maxWidth = contentWidth - indent;
       const lines = doc.splitTextToSize(text, maxWidth);
       const lineHeight = 6;
       const blockHeight = lines.length * lineHeight;
 
       ensureSpace(blockHeight);
       doc.text(label, margin, y);
-      doc.text(text, margin + labelWidth, y, { maxWidth, align: "justify" as any });
+      doc.text(text, margin + indent, y, { maxWidth, align: "justify" as any });
       y += blockHeight;
     };
 
@@ -685,21 +686,114 @@ const PermanentContractGenerator = () => {
 
     addInformationPage();
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.setTextColor(0, 0, 0);
-    doc.text("PERMANENT EMPLOYMENT AGREEMENT", pageWidth / 2, y, { align: "center" });
-    y += 10;
-
-    const introText = `This permanent employment agreement ("Agreement") is entered into between ${valueOrLine(profile?.company_name ?? "the Employer")} ("Employer") and ${data.employeeName} ${data.employeeSurname} ("Employee"). This Agreement is issued on ${formatDate(data.issueDate)} and employment commences on ${formatDate(data.startDate)}.`;
-    y = addWrappedText(doc, introText, margin, y, contentWidth, 6, 10, "normal") + 4;
-
-    addSection(
-      "Remuneration summary",
-      `The Employee will receive ${formattedSalary} before statutory deductions and will report to ${data.reportsTo}. The Employer may review compensation periodically at its discretion.`,
-    );
-
     const clauses = [
+      {
+        title: "Introduction",
+        body: "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily.  The Employee hereby agrees that he/she has been granted the opportunity to peruse and discuss the contract with his/her council and that he/she understands the content that follows.",
+      },
+      {
+        title: "Recordal",
+        body:
+          "The Employer appoints the Employee in a permanent capacity, which the Employee accepts on the terms of this agreement. This agreement records the essential conditions of employment, including duties, remuneration, working hours, leave, and termination, and constitutes the entire understanding between the parties, replacing any prior verbal or written arrangements unless expressly stated otherwise. The employment relationship is governed by this agreement and all applicable labour laws of South Africa.",
+      },
+      {
+        title: "Probation",
+        body:
+          "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employee’s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employer’s discretion.",
+      },
+      {
+        title: "Performance and adaptability",
+        body: [
+          "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employer’s satisfaction.",
+          "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee’s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employee’s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
+        ],
+      },
+      {
+        title: "Guarantee",
+        body:
+          "The Employee warrants that all information, documentation, and credentials submitted to the Employer are true and accurate. If any submission is found to be false, fraudulent, or misleading, the Employer may institute disciplinary action for dishonesty, which may result in summary termination of employment.",
+      },
+      {
+        title: "Remuneration",
+        body: [
+          "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
+          "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+        ],
+      },
+      {
+        title: "Deductions",
+        body:
+          "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employee’s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
+      },
+      {
+        title: "Hours of work",
+        body:
+          "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
+      },
+      {
+        title: "Overtime",
+        body:
+          "The Employee may be required to work overtime, subject to the limits set by the BCEA. Reasonable notice of overtime will be given, except in emergencies where short-notice overtime may be required. Overtime shall be remunerated in accordance with applicable legislation; however, employees earning above the Ministerial earnings threshold and employees classified as top management are not entitled to overtime pay.",
+      },
+      {
+        title: "Retirement",
+        body:
+          "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+      },
+      {
+        title: "Exclusivity of employment",
+        body: "The Employee shall not undertake any outside work or business activity without the Employer’s prior written consent.",
+      },
+      {
+        title: "Annual bonus",
+        body: [
+          "Any annual bonus is ex-gratia and granted entirely at the Employer’s discretion, subject to the Employer’s financial position and the Employee’s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
+          "The Employee agrees that no pro-rata bonus shall be payable in the event of termination of employment for any reason.",
+        ],
+      },
+      {
+        title: "Termination of employment",
+        body: [
+          "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
+          "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
+        ],
+      },
+      {
+        title: "Annual leave",
+        body: [
+          "The Employee is entitled to twenty-one (21) consecutive days’ annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.",
+          "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee’s leave entitlement.",
+        ],
+      },
+      {
+        title: "Sick leave",
+        body: [
+          "The Employee is entitled to sick leave in accordance with the BCEA. The Employee must provide a valid medical certificate when required by law or by the Employer.",
+          "In cases of prolonged or recurring illness, the Employer may initiate a fair incapacity process in line with applicable labour legislation, which may result in termination of employment where the Employee is unable to perform the inherent requirements of the job.",
+          "The Employee must submit a valid medical certificate issued and signed by a registered medical practitioner or any person certified to diagnose and treat patients and registered with a recognised professional council.",
+          "Clinic or hospital attendance notes that merely confirm a visit, and do not expressly declare the Employee unfit for duty for a specific period, shall also not be accepted as proof of sickness.",
+        ],
+      },
+      {
+        title: "Parental leave",
+        body: [
+          "Where both parents are employed, they are jointly entitled to a combined period of four months and ten days of parental leave, which may be shared between them as they agree. The leave may be taken at the same time or one after the other. If the parents cannot agree on the division of leave, it shall be shared equally.",
+          "Where the Employee is a single parent or where only one parent is employed, that parent is entitled to four consecutive months of parental leave.",
+          "A pregnant Employee may commence parental leave at any time from four weeks before the expected date of birth, or earlier if medically required, and may not return to work within six weeks after giving birth unless declared fit for duty by a medical practitioner or midwife.",
+          "Adoptive and commissioning parents are entitled to parental leave on the same basis as biological parents, subject to the statutory notice requirements.",
+          "The Employee must notify the Employer in writing of the intended parental leave dates and return date at least four weeks before the start of the leave.",
+          "Parental leave under this agreement is unpaid and the Employee must claim any available benefits from the Unemployment Insurance Fund.",
+        ],
+      },
+      {
+        title: "Family responsibility leave",
+        body: [
+          "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employee’s child, or in the event of the death of the Employee’s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
+          "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four days’ prior notice.",
+          "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a child’s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employee’s relationship to the deceased.",
+          "Failure to provide notice or proof when requested may result in the leave not being approved and treated as unpaid leave. Family responsibility leave does not accumulate, may not be carried over, and lapses at the end of each annual leave cycle.",
+        ],
+      },
       {
         title: "Appointment and role",
         body: `The Employee is appointed in the position of ${data.jobTitle}. Duties and responsibilities may reasonably evolve in line with operational needs, provided they remain consistent with the role.`,
@@ -709,20 +803,8 @@ const PermanentContractGenerator = () => {
         body: "The Employee will perform duties at the Employer's premises or any other location reasonably required by the Employer. Flexible or remote work arrangements may be agreed in writing, subject to operational needs.",
       },
       {
-        title: "Remuneration",
-        body: `The Employee will receive ${formattedSalary} before statutory deductions. Salary will be reviewed periodically at the Employer's discretion. Any bonuses or incentives are discretionary unless agreed otherwise in writing.`,
-      },
-      {
-        title: "Hours of work",
-        body: "Standard working hours are those prescribed by the Basic Conditions of Employment Act (BCEA) unless varied in writing. Reasonable overtime may be required subject to BCEA limits and applicable compensation or time off in lieu.",
-      },
-      {
         title: "Leave entitlements",
         body: "Annual, sick, family responsibility, and any other applicable leave will accrue and be taken in accordance with the BCEA and company policies. Leave must be scheduled with reasonable notice and operational consideration.",
-      },
-      {
-        title: "Probation and performance",
-        body: "The first three months of employment constitute a probationary period during which performance and suitability will be assessed. Performance standards, feedback, and any required improvements will be communicated. The Employer may extend probation where reasonably necessary.",
       },
       {
         title: "Duties and conduct",
@@ -750,9 +832,14 @@ const PermanentContractGenerator = () => {
       },
     ];
 
-    clauses.forEach((clause, idx) => {
+    let clauseNumber = 1;
+    clauses.forEach((clause) => {
+      const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
       addClauseHeading(clause.title);
-      addNumberedParagraph(idx + 1, clause.body);
+      paragraphs.forEach((text) => {
+        addNumberedParagraph(clauseNumber, text);
+        clauseNumber += 1;
+      });
       y += 3;
     });
 
@@ -1590,6 +1677,114 @@ const PermanentContractGenerator = () => {
 
               const clauses = [
                 {
+                  title: "Introduction",
+                  body:
+                    "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily.  The Employee hereby agrees that he/she has been granted the opportunity to peruse and discuss the contract with his/her council and that he/she understands the content that follows.",
+                },
+                {
+                  title: "Recordal",
+                  body:
+                    "The Employer appoints the Employee in a permanent capacity, which the Employee accepts on the terms of this agreement. This agreement records the essential conditions of employment, including duties, remuneration, working hours, leave, and termination, and constitutes the entire understanding between the parties, replacing any prior verbal or written arrangements unless expressly stated otherwise. The employment relationship is governed by this agreement and all applicable labour laws of South Africa.",
+                },
+                {
+                  title: "Probation",
+                  body:
+                    "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employee’s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employer’s discretion.",
+                },
+                {
+                  title: "Performance and adaptability",
+                  body: [
+                    "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employer’s satisfaction.",
+                    "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee’s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employee’s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
+                  ],
+                },
+                {
+                  title: "Guarantee",
+                  body:
+                    "The Employee warrants that all information, documentation, and credentials submitted to the Employer are true and accurate. If any submission is found to be false, fraudulent, or misleading, the Employer may institute disciplinary action for dishonesty, which may result in summary termination of employment.",
+                },
+                {
+                  title: "Remuneration",
+                  body: [
+                    "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
+                    "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+                  ],
+                },
+                {
+                  title: "Deductions",
+                  body:
+                    "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employee’s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
+                },
+                {
+                  title: "Hours of work",
+                  body:
+                    "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
+                },
+                {
+                  title: "Overtime",
+                  body:
+                    "The Employee may be required to work overtime, subject to the limits set by the BCEA. Reasonable notice of overtime will be given, except in emergencies where short-notice overtime may be required. Overtime shall be remunerated in accordance with applicable legislation; however, employees earning above the Ministerial earnings threshold and employees classified as top management are not entitled to overtime pay.",
+                },
+                {
+                  title: "Retirement",
+                  body:
+                    "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+                },
+                {
+                  title: "Exclusivity of employment",
+                  body: "The Employee shall not undertake any outside work or business activity without the Employer’s prior written consent.",
+                },
+                {
+                  title: "Annual bonus",
+                  body: [
+                    "Any annual bonus is ex-gratia and granted entirely at the Employer’s discretion, subject to the Employer’s financial position and the Employee’s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
+                    "The Employee agrees that no pro-rata bonus shall be payable in the event of termination of employment for any reason.",
+                  ],
+                },
+                {
+                  title: "Termination of employment",
+                  body: [
+                    "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
+                    "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
+                  ],
+                },
+                {
+                  title: "Annual leave",
+                  body: [
+                    "The Employee is entitled to twenty-one (21) consecutive days’ annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.",
+                    "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee’s leave entitlement.",
+                  ],
+                },
+                {
+                  title: "Sick leave",
+                  body: [
+                    "The Employee is entitled to sick leave in accordance with the BCEA. The Employee must provide a valid medical certificate when required by law or by the Employer.",
+                    "In cases of prolonged or recurring illness, the Employer may initiate a fair incapacity process in line with applicable labour legislation, which may result in termination of employment where the Employee is unable to perform the inherent requirements of the job.",
+                    "The Employee must submit a valid medical certificate issued and signed by a registered medical practitioner or any person certified to diagnose and treat patients and registered with a recognised professional council.",
+                    "Clinic or hospital attendance notes that merely confirm a visit, and do not expressly declare the Employee unfit for duty for a specific period, shall also not be accepted as proof of sickness.",
+                  ],
+                },
+                {
+                  title: "Parental leave",
+                  body: [
+                    "Where both parents are employed, they are jointly entitled to a combined period of four months and ten days of parental leave, which may be shared between them as they agree. The leave may be taken at the same time or one after the other. If the parents cannot agree on the division of leave, it shall be shared equally.",
+                    "Where the Employee is a single parent or where only one parent is employed, that parent is entitled to four consecutive months of parental leave.",
+                    "A pregnant Employee may commence parental leave at any time from four weeks before the expected date of birth, or earlier if medically required, and may not return to work within six weeks after giving birth unless declared fit for duty by a medical practitioner or midwife.",
+                    "Adoptive and commissioning parents are entitled to parental leave on the same basis as biological parents, subject to the statutory notice requirements.",
+                    "The Employee must notify the Employer in writing of the intended parental leave dates and return date at least four weeks before the start of the leave.",
+                    "Parental leave under this agreement is unpaid and the Employee must claim any available benefits from the Unemployment Insurance Fund.",
+                  ],
+                },
+                {
+                  title: "Family responsibility leave",
+                  body: [
+                    "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employee’s child, or in the event of the death of the Employee’s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
+                    "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four days’ prior notice.",
+                    "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a child’s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employee’s relationship to the deceased.",
+                    "Failure to provide notice or proof when requested may result in the leave not being approved and treated as unpaid leave. Family responsibility leave does not accumulate, may not be carried over, and lapses at the end of each annual leave cycle.",
+                  ],
+                },
+                {
                   title: "Appointment and role",
                   body: `The Employee is appointed in the position of ${validatedPreview.jobTitle}. Duties and responsibilities may reasonably evolve in line with operational needs, provided they remain consistent with the role.`,
                 },
@@ -1598,20 +1793,8 @@ const PermanentContractGenerator = () => {
                   body: "The Employee will perform duties at the Employer's premises or any other location reasonably required by the Employer. Flexible or remote work arrangements may be agreed in writing, subject to operational needs.",
                 },
                 {
-                  title: "Remuneration",
-                  body: `The Employee will receive ${salaryDisplay} before statutory deductions. Salary will be reviewed periodically at the Employer's discretion. Any bonuses or incentives are discretionary unless agreed otherwise in writing.`,
-                },
-                {
-                  title: "Hours of work",
-                  body: "Standard working hours are those prescribed by the BCEA unless varied in writing. Reasonable overtime may be required subject to BCEA limits and applicable compensation or time off in lieu.",
-                },
-                {
                   title: "Leave entitlements",
                   body: "Annual, sick, family responsibility, and any other applicable leave will accrue and be taken in accordance with the BCEA and company policies. Leave must be scheduled with reasonable notice and operational consideration.",
-                },
-                {
-                  title: "Probation and performance",
-                  body: "The first three months of employment constitute a probationary period during which performance and suitability will be assessed. Performance standards, feedback, and any required improvements will be communicated. The Employer may extend probation where reasonably necessary.",
                 },
                 {
                   title: "Duties and conduct",
@@ -1742,34 +1925,28 @@ const PermanentContractGenerator = () => {
                     className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm"
                     style={{ width: "210mm", minHeight: "297mm" }}
                   >
-                    <div className="bg-slate-900 text-white -mx-8 -mt-8 px-8 py-3 mb-6 flex items-center justify-center">
-                      <h2 className="text-lg font-semibold tracking-wide">PERMANENT EMPLOYMENT AGREEMENT</h2>
-                    </div>
-
                     <div className="text-xs leading-relaxed space-y-5">
-                      <p>
-                        This permanent employment agreement ("Agreement") is entered into between {employerName} ("Employer") and{" "}
-                        {validatedPreview.employeeName} {validatedPreview.employeeSurname} ("Employee"). This Agreement is issued on{" "}
-                        {formatDate(validatedPreview.issueDate)} and employment commences on {formatDate(validatedPreview.startDate)}.
-                      </p>
-
-                      <div className="space-y-1">
-                        <p className="font-semibold text-gray-900">Remuneration summary</p>
-                        <p>
-                          The Employee will receive {salaryDisplay} before statutory deductions and will report to{" "}
-                          {validatedPreview.reportsTo}. The Employer may review compensation periodically at its discretion.
-                        </p>
-                      </div>
-
-                      {clauses.map((clause, idx) => (
-                        <div key={clause.title} className="space-y-1">
-                          <h3 className="font-semibold text-black">{clause.title}</h3>
-                          <div className="grid grid-cols-[auto,1fr] gap-2 text-justify">
-                            <span className="font-semibold">{idx + 1}.</span>
-                            <p className="text-justify">{clause.body}</p>
-                          </div>
-                        </div>
-                      ))}
+                      {(() => {
+                        let clauseNumber = 1;
+                        return clauses.map((clause) => {
+                          const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
+                          return (
+                            <div key={clause.title} className="space-y-1">
+                              <h3 className="font-semibold text-black">{clause.title}</h3>
+                              {paragraphs.map((text) => {
+                                const currentNumber = clauseNumber;
+                                clauseNumber += 1;
+                                return (
+                                  <div key={`${clause.title}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
+                                    <span className="font-semibold">{currentNumber}.</span>
+                                    <p className="text-justify whitespace-pre-line">{text}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        });
+                      })()}
 
                       {validatedPreview.additionalNotes && (
                         <div className="space-y-1">

@@ -6,6 +6,41 @@ export const sanitizeText = (text: string): string => {
   return DOMPurify.sanitize(text, { ALLOWED_TAGS: [] }).trim();
 };
 
+// Extract DOB from South African ID (first 6 digits as YYMMDD). Returns null if invalid.
+export const extractDobFromId = (idNumber: string): Date | null => {
+  const digits = idNumber.replace(/\D/g, "");
+  if (digits.length < 6) return null;
+
+  const yy = Number(digits.slice(0, 2));
+  const mm = Number(digits.slice(2, 4));
+  const dd = Number(digits.slice(4, 6));
+
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+  const now = new Date();
+  const currentYearTwoDigits = now.getFullYear() % 100;
+  let fullYear = 2000 + yy;
+  // If this makes a future date, shift back a century
+  if (fullYear > now.getFullYear()) {
+    fullYear -= 100;
+  }
+
+  const dob = new Date(fullYear, mm - 1, dd);
+  if (dob.getMonth() !== mm - 1 || dob.getDate() !== dd) return null;
+  if (dob > now) return null;
+  return dob;
+};
+
+export const calculateAgeFromDob = (dob: Date): number => {
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age;
+};
+
 // South African ID number validation
 export const validateSAIdNumber = (idNumber: string): boolean => {
   // Remove spaces and check if it's 13 digits
@@ -32,6 +67,7 @@ export const validateSAIdNumber = (idNumber: string): boolean => {
 
 // Phone number validation (South African format)
 const saPhoneRegex = /^(\+27|0)[1-9]\d{8}$/;
+const saTenDigitRegex = /^\d{10}$/;
 
 // VAT number validation (South African format)
 const saVatRegex = /^[0-9]{10}$/;
@@ -700,20 +736,73 @@ export const permanentContractSchema = z.object({
     .transform(sanitizeText),
   employeeIdNumber: z
     .string()
-    .min(5, "ID number is required")
-    .transform(sanitizeText),
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : "")),
+  passportNumber: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : "")),
   employeeAddress: z
     .string()
     .min(10, "Address must be at least 10 characters")
     .max(300, "Address must not exceed 300 characters")
     .transform(sanitizeText),
+  employeePostalAddress: z
+    .string()
+    .max(300, "Postal address must not exceed 300 characters")
+    .optional()
+    .transform((val) => (val ? sanitizeText(val) : "")),
+  employeeNumber: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => sanitizeEmployeeNumber(val))
+    .refine((val) => !val || employeeNumberRegex.test(val), {
+      message: `Employee number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers`,
+    }),
+  nationality: z.enum(nationalityOptions, {
+    errorMap: () => ({ message: "Please select a nationality" }),
+  }),
+  gender: z.enum(genderOptions, {
+    errorMap: () => ({ message: "Please select a gender" }),
+  }),
+  race: z.enum(raceOptions, {
+    errorMap: () => ({ message: "Please select a race" }),
+  }),
   employeeCell: z
     .string()
-    .regex(saPhoneRegex, "Invalid South African phone number")
+    .regex(saTenDigitRegex, "Cell number must be exactly 10 digits with no spaces")
     .transform(sanitizeText),
+  alternativeContact: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : ""))
+    .refine((val) => !val || saTenDigitRegex.test(val), {
+      message: "Alternative contact must be exactly 10 digits with no spaces",
+    }),
   employeeEmail: z
     .string()
-    .email("Invalid email address")
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => !val || z.string().email().safeParse(val).success, {
+      message: "Invalid email address",
+    })
+    .transform((val) => (val ? sanitizeText(val.toLowerCase()) : "")),
+  tradingName: z
+    .string()
+    .max(200, "Trading as must not exceed 200 characters")
+    .optional()
+    .transform((val) => (val ? sanitizeText(val) : "")),
+  employerContact: z
+    .string()
+    .regex(/^\d{10}$/, "Employer contact must be exactly 10 digits")
+    .transform(sanitizeText),
+  employerEmail: z
+    .string()
+    .email("Invalid employer email address")
     .transform((val) => sanitizeText(val.toLowerCase())),
   jobTitle: z
     .string()
@@ -727,6 +816,26 @@ export const permanentContractSchema = z.object({
   salaryFrequency: z.enum(salaryFrequencyOptions, {
     errorMap: () => ({ message: "Please select a salary frequency" }),
   }),
+  probationPeriod: z
+    .enum(["1", "3", "6"], {
+      errorMap: () => ({ message: "Please select a probation period" }),
+    }),
+  department: z
+    .string()
+    .max(120, "Department must not exceed 120 characters")
+    .optional()
+    .transform((val) => (val ? sanitizeText(val) : "")),
+  retirementAge: z.enum(["55", "60", "65"], {
+    errorMap: () => ({ message: "Please select a retirement age" }),
+  }),
+  workplace: z
+    .string()
+    .min(3, "Workplace must be at least 3 characters")
+    .max(300, "Workplace must not exceed 300 characters")
+    .transform(sanitizeText),
+  interpreter: z.enum(["yes", "no"], {
+    errorMap: () => ({ message: "Please indicate if an interpreter is required" }),
+  }),
   reportsTo: z
     .string()
     .min(2, "Please specify who the employee reports to")
@@ -737,6 +846,38 @@ export const permanentContractSchema = z.object({
     .max(2000, "Additional notes must not exceed 2000 characters")
     .optional()
     .transform((val) => (val ? sanitizeText(val) : "")),
+})
+.superRefine((data, ctx) => {
+  const isSA = data.nationality === "South African";
+  if (isSA) {
+    if (!data.employeeIdNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeIdNumber"],
+        message: "ID number is required for South African nationals",
+      });
+    } else if (!extractDobFromId(data.employeeIdNumber)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeIdNumber"],
+        message: "ID must start with a valid date (YYMMDD)",
+      });
+    }
+  } else {
+    if (!data.passportNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["passportNumber"],
+        message: "Passport number is required for non-South African nationals",
+      });
+    } else if (data.passportNumber.length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["passportNumber"],
+        message: "Passport number must be at least 3 characters",
+      });
+    }
+  }
 });
 
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;

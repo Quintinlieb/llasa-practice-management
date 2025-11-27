@@ -44,7 +44,7 @@ const contractDocuments: ContractDocument[] = [
 const ContractsDocumentsPage = () => {
   return (
     <DashboardLayout>
-      <div className="mx-auto max-w-6xl px-6 py-6 md:py-8">
+      <div className="space-y-8">
         <header className="space-y-1">
           <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Contracts</p>
           <h1 className="text-3xl font-bold text-gray-900">Generate contract documents</h1>
@@ -53,7 +53,7 @@ const ContractsDocumentsPage = () => {
           </p>
         </header>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {contractDocuments.map((doc) => (
             <section
               key={doc.name}

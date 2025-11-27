@@ -50,7 +50,7 @@ const disciplineDocuments: DisciplineDocument[] = [
 const DisciplineDocumentsPage = () => {
   return (
     <DashboardLayout>
-      <div className="mx-auto max-w-6xl px-6 py-6 md:py-8">
+      <div className="space-y-8">
         <header className="space-y-1">
           <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Discipline</p>
           <h1 className="text-3xl font-bold text-gray-900">Generate disciplinary documents</h1>

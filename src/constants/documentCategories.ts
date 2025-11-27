@@ -6,6 +6,6 @@ export type DocumentCategory = {
 
 export const documentCategories: DocumentCategory[] = [
   { slug: "discipline", label: "Discipline", path: "/documents/discipline" },
-  { slug: "performance", label: "Performance", path: "/documents/performance" },
   { slug: "contracts", label: "Contracts", path: "/documents/contracts" },
+  { slug: "performance", label: "Performance", path: "/documents/performance" },
 ];

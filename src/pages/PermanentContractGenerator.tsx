@@ -613,14 +613,27 @@ const PermanentContractGenerator = () => {
       const labelWidth = doc.getTextWidth(`${label} `);
       const indent = labelWidth + 2; // small padding so wrapped lines align under text start
       const maxWidth = contentWidth - indent;
-      const lines = doc.splitTextToSize(text, maxWidth);
       const lineHeight = 6;
-      const blockHeight = lines.length * lineHeight;
+      const paragraphSpacing = 2;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      const blockHeight = lines.length * lineHeight + paragraphSpacing;
 
       ensureSpace(blockHeight);
       doc.text(label, margin, y);
-      doc.text(text, margin + indent, y, { maxWidth, align: "justify" as any });
-      y += blockHeight;
+      lines.forEach((line, idx) => {
+        const isLastLine = idx === lines.length - 1;
+        const lineWidth = doc.getTextWidth(line);
+        const extraSpace = maxWidth - lineWidth;
+        const canJustify = !isLastLine && extraSpace > 0 && line.includes(" ");
+        if (canJustify) {
+          // Distribute remaining width across characters; keeps block height unchanged
+          const charSpace = extraSpace / Math.max(line.length - 1, 1);
+          doc.text(line, margin + indent, y + idx * lineHeight, { charSpace });
+        } else {
+          doc.text(line, margin + indent, y + idx * lineHeight);
+        }
+      });
+      y += lines.length * lineHeight + paragraphSpacing;
     };
 
     const addClauseHeading = (title: string) => {
@@ -718,6 +731,7 @@ const PermanentContractGenerator = () => {
         body: [
           "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
           "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+          "The Employee will be remunerated at two times the normal wage for work performed on a public holiday.",
         ],
       },
       {
@@ -795,80 +809,149 @@ const PermanentContractGenerator = () => {
         ],
       },
       {
-        title: "Appointment and role",
-        body: `The Employee is appointed in the position of ${data.jobTitle}. Duties and responsibilities may reasonably evolve in line with operational needs, provided they remain consistent with the role.`,
+        title: "Absence from work",
+        body: [
+          "The Employee must notify the Employer before the start of the shift if unable to attend work. Where an absence is known in advance, the Employee must arrange leave at least 24 hours beforehand. Unjustified absence may result in disciplinary action, and sick leave will be applied in line with the BCEA.",
+          "Attendance at a disciplinary hearing is compulsory. If the Employee is unable to attend due to illness, an affidavit from a medical practitioner confirming incapacity to attend must be provided, and the practitioner must be available to verify it.",
+          "If the Employee fails to comply with these requirements, the hearing may proceed in his or her absence, and the Employee agrees not to dispute the fairness of any outcome, including dismissal.",
+          "Failure to report for work for more than five consecutive workdays without valid reason or notifying the Employer shall be regarded as abscondment.",
+          "In the instance of abscondment, the Employer will send a notice by WhatsApp, SMS, normal post or registered post instructing the Employee to return to work or contact the office and notifying the Employee of the disciplinary enquiry date. Failure to return, make contact, or attend the enquiry will result in dismissal.",
+        ],
       },
       {
-        title: "Place of work",
-        body: "The Employee will perform duties at the Employer's premises or any other location reasonably required by the Employer. Flexible or remote work arrangements may be agreed in writing, subject to operational needs.",
+        title: "Protection of personal information",
+        body: [
+          "The Employee consents to the collection, use and storage of Personal Information and Special Personal Information, as defined in POPIA, for purposes related to the employment relationship. This includes payroll and benefit administration, statutory reporting, security and access control, monitoring for operational and risk-management purposes, internal and external communication, and compliance with legal and contractual obligations.",
+          "The Employee consents to the sharing or transfer of Personal Information, where necessary, to third party service providers such as benefit administrators and insurers, to clients or service providers for operational purposes, and to secure cloud-based or foreign storage platforms that offer adequate data protection in accordance with POPIA.",
+          "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employer’s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
+        ],
       },
       {
-        title: "Leave entitlements",
-        body: "Annual, sick, family responsibility, and any other applicable leave will accrue and be taken in accordance with the BCEA and company policies. Leave must be scheduled with reasonable notice and operational consideration.",
+        title: "Rules and regulations",
+        body: [
+          "The Employee agrees to comply with all rules, policies, procedures and regulations of the Employer, whether communicated in writing, verbally, or arising by reasonable implication from the nature of the workplace and the duties performed.",
+          "The Employee must immediately inform the Employer of any offence, misconduct or breach of company rules committed by himself or herself, or by any other Employee, as soon as he or she becomes aware of it or reasonably ought to have become aware of it.",
+          "Failure to disclose such information shall be regarded as dishonesty and a breach of trust, and may result in disciplinary action, including possible dismissal.",
+        ],
       },
       {
-        title: "Duties and conduct",
-        body: "The Employee undertakes to perform duties diligently, comply with all lawful and reasonable instructions, and uphold company policies, codes, and procedures. Any conflict of interest must be disclosed immediately.",
+        title: "Industrial action",
+        body: [
+          "The Employee may not participate in any unprotected strike, stoppage, or form of industrial action. No strike or picket may be undertaken unless it is protected in terms of the Labour Relations Act and preceded by the required certificate to strike and authorisation to picket.",
+          "The Employee acknowledges and agrees that he/she shall be held liable for any damages to property, financial losses, or other harm suffered by the Employer as a result of his/her involvement in any legal or illegal industrial action, whether directly or indirectly.",
+        ],
       },
       {
-        title: "Confidentiality and intellectual property",
-        body: "All confidential information, trade secrets, and intellectual property developed or accessed during employment remain the exclusive property of the Employer. The Employee may not disclose or use such information except as required for duties, and this obligation survives termination.",
+        title: "Health and fitness",
+        body: [
+          "The Employee confirms that he or she is medically fit to perform the duties of the position. Should the Employee become unable to perform these duties for health reasons, the Employer may follow the applicable incapacity procedures prescribed by the Labour Relations Act, which may result in termination of employment.",
+          "The Employer may require the Employee to undergo a medical assessment, at the Employer’s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
+        ],
       },
       {
-        title: "Health, safety, and compliance",
-        body: "The Employee will follow all health and safety rules, report incidents promptly, and comply with statutory requirements relevant to the role and industry. Failure to do so may result in disciplinary action.",
+        title: "Change of status",
+        body: [
+          "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employer’s records remain accurate and up to date.",
+          "The Employee cannot hold the Employer liable for making use of incorrect details if the Employee breaches this clause.",
+        ],
       },
       {
-        title: "Termination",
-        body: "Either party may terminate employment by giving written notice in accordance with the BCEA or making payment in lieu. The Employer reserves the right to summarily dismiss for gross misconduct in line with disciplinary procedures and substantive fairness.",
+        title: "Domicilium citandi",
+        body: [
+          "The parties choose the physical addresses recorded on Page 1 of this agreement as their domicilium citandi et executandi for all purposes relating to this agreement. Any notice delivered by hand or by any means as agreed to in this agreement shall be deemed duly received.",
+          "The Employee agrees that the Employer may send notices or correspondence by WhatsApp, SMS, email, regular post or registered post, and that proof of transmission or delivery shall constitute sufficient proof that the notice was sent.",
+        ],
       },
       {
-        title: "Return of property",
-        body: "On termination, the Employee will return all company property, including equipment, documents, access cards, and confidential information, and will assist with handover of duties.",
+        title: "Alcohol and drug testing",
+        body: [
+          "The Employee agrees to undergo alcohol or drug testing when reasonably required by the Employer. All testing will be conducted by a competent person in a lawful and reasonable manner, and the Employer maintains a zero tolerance approach to alcohol and drug use in the workplace.",
+          "The Employee further agrees to submit to a blood test where the Employer has reasonable suspicion that the Employee is under the influence of alcohol or drugs. Such testing shall be carried out by a qualified medical professional, and refusal to comply will be regarded as insubordination.",
+          "Unreasonable refusal to undergo a required test may result in a negative inference being drawn, which may be treated as a presumptive positive result and may lead to disciplinary action, including dismissal.",
+        ],
       },
       {
-        title: "Entire agreement",
-        body: "This Agreement, together with any signed annexures and company policies, constitutes the entire understanding between the parties regarding employment. Changes are valid only if recorded in writing and signed by both parties.",
+        title: "Polygraph testing",
+        body: [
+          "The Employee agrees to undergo polygraph testing when reasonably required by the Employer for investigative or security purposes, including matters involving theft, fraud, dishonesty, misconduct or breach of company policies. All tests will be conducted by a qualified and accredited examiner in a fair and lawful manner.",
+          "Refusal to undergo a required polygraph test may result in an adverse inference being drawn.  Such refusal will also be regarded as insubordination and continued refusal could lead to dismissal.",
+        ],
+      },
+      {
+        title: "Temporary lay-off",
+        body: [
+          "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one day’s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
+          "Temporary lay offs may be introduced due to circumstances beyond the Employer’s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
+        ],
+      },
+      {
+        title: "Proof of citizenship",
+        body: [
+          "The Employee must provide proof of South African citizenship upon commencement of employment. If not a South African citizen, the Employee must submit a valid work permit or proof of permanent residency within seven days of request, and must continue to provide updated documentation whenever required.",
+          "It is the Employee’s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
+        ],
+      },
+      {
+        title: "Confidentiality",
+        body:
+          "The Employee shall keep all confidential information, trade secrets, client data and business affairs of the Employer strictly confidential and shall not disclose or use such information for any purpose other than the performance of his or her duties.",
+      },
+      {
+        title: "Entire Agreement and Acknoweldgement",
+        body: [
+          "This agreement constitutes the entire agreement between the parties, and no variation, amendment or addition shall be valid unless reduced to writing and signed by both parties. Any indulgence or leniency granted shall not constitute a waiver of rights.",
+          "By signing this agreement, both parties acknowledge that they have read and understood its contents and agree to be bound by its terms. The Employee confirms that the conditions of employment have been explained where necessary and that he or she voluntarily accepts them.",
+          "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
+        ],
       },
     ];
 
     let clauseNumber = 1;
+    let isFirstClause = true;
     clauses.forEach((clause) => {
+      if (!isFirstClause) {
+        y += 6; // consistent gap before each new clause
+      }
+      isFirstClause = false;
       const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
       addClauseHeading(clause.title);
       paragraphs.forEach((text) => {
         addNumberedParagraph(clauseNumber, text);
         clauseNumber += 1;
       });
-      y += 3;
     });
 
     if (data.additionalNotes) {
       addSection("Additional notes", data.additionalNotes);
     }
 
-    ensureSpace(14);
+    // Leave breathing room after the final clause before the signing line
+    ensureSpace(12);
+    y += 8;
+
+    const signatureLabels = ["For the Employer", "Employer Witness", "Employee", "Employee Witness"];
+
+    // Place signing line on the page above the signature page
+    const signingLine = `Done and Signed at ___________________________ on this _____ day of ____________________ ${issueYear}.`;
+    ensureSpace(12);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
-    doc.text(
-      `Done and Signed at ________________________________________ on this _____ day of ______________________________ ${issueYear}.`,
-      margin,
-      y,
-    );
+    doc.text(signingLine, margin, y);
     y += 16;
 
-    ensureSpace(50);
-    y += 8;
+    // Start a fresh page for the signature block
+    doc.addPage();
+    y = margin;
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
     doc.text("SIGNATURES", margin, y);
-    y += 8;
+    y += 12; // increased gap before first signature line
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
 
-    const signatureLabels = ["For the Employer", "Employee"];
     signatureLabels.forEach((label) => {
       ensureSpace(20);
       doc.text("_______________________________", margin, y);
@@ -883,8 +966,9 @@ const PermanentContractGenerator = () => {
     doc.setFontSize(9);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
-      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, 12, { align: "right" });
-      doc.text("Initial here: ______________________", pageWidth - margin, pageHeight - 10, { align: "right" });
+      const footerY = pageHeight - 10;
+      doc.text(`Page ${i} of ${pageCount}`, margin, footerY, { align: "left" });
+      doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
 
     if (download) {
@@ -930,6 +1014,11 @@ const PermanentContractGenerator = () => {
       setIsGenerating(false);
     }
   };
+
+  const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
+  const previewSubtitle = employeeFullName
+    ? `Review and download the permanent contract for ${employeeFullName}.`
+    : "Review and download the permanent contract.";
 
   if (loading) {
     return (
@@ -1622,9 +1711,13 @@ const PermanentContractGenerator = () => {
 
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl h-[90vh] p-0">
-          <DialogHeader className="px-6 pt-6">
-            <DialogTitle>Permanent contract preview</DialogTitle>
-            <DialogDescription>Review the generated content before downloading.</DialogDescription>
+          <DialogHeader className="px-6 pt-6 pr-10">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <DialogTitle className="text-blue-600">Preview - Permanent Contract</DialogTitle>
+                <DialogDescription>{previewSubtitle}</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea className="h-full px-6 pb-6">
             {validatedPreview ? (() => {
@@ -1708,6 +1801,7 @@ const PermanentContractGenerator = () => {
                   body: [
                     "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
                     "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+                    "The Employee will be remunerated at two times the normal wage for work performed on a public holiday.",
                   ],
                 },
                 {
@@ -1785,40 +1879,100 @@ const PermanentContractGenerator = () => {
                   ],
                 },
                 {
-                  title: "Appointment and role",
-                  body: `The Employee is appointed in the position of ${validatedPreview.jobTitle}. Duties and responsibilities may reasonably evolve in line with operational needs, provided they remain consistent with the role.`,
+                  title: "Absence from work",
+                  body: [
+                    "The Employee must notify the Employer before the start of the shift if unable to attend work. Where an absence is known in advance, the Employee must arrange leave at least 24 hours beforehand. Unjustified absence may result in disciplinary action, and sick leave will be applied in line with the BCEA.",
+                    "Attendance at a disciplinary hearing is compulsory. If the Employee is unable to attend due to illness, an affidavit from a medical practitioner confirming incapacity to attend must be provided, and the practitioner must be available to verify it.",
+                    "If the Employee fails to comply with these requirements, the hearing may proceed in his or her absence, and the Employee agrees not to dispute the fairness of any outcome, including dismissal.",
+                    "Failure to report for work for more than five consecutive workdays without valid reason or notifying the Employer shall be regarded as abscondment.",
+                    "In the instance of abscondment, the Employer will send a notice by WhatsApp, SMS, normal post or registered post instructing the Employee to return to work or contact the office and notifying the Employee of the disciplinary enquiry date. Failure to return, make contact, or attend the enquiry will result in dismissal.",
+                  ],
                 },
                 {
-                  title: "Place of work",
-                  body: "The Employee will perform duties at the Employer's premises or any other location reasonably required by the Employer. Flexible or remote work arrangements may be agreed in writing, subject to operational needs.",
+                  title: "Protection of personal information",
+                  body: [
+                    "The Employee consents to the collection, use and storage of Personal Information and Special Personal Information, as defined in POPIA, for purposes related to the employment relationship. This includes payroll and benefit administration, statutory reporting, security and access control, monitoring for operational and risk-management purposes, internal and external communication, and compliance with legal and contractual obligations.",
+                    "The Employee consents to the sharing or transfer of Personal Information, where necessary, to third party service providers such as benefit administrators and insurers, to clients or service providers for operational purposes, and to secure cloud-based or foreign storage platforms that offer adequate data protection in accordance with POPIA.",
+                    "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employer’s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
+                  ],
                 },
                 {
-                  title: "Leave entitlements",
-                  body: "Annual, sick, family responsibility, and any other applicable leave will accrue and be taken in accordance with the BCEA and company policies. Leave must be scheduled with reasonable notice and operational consideration.",
+                  title: "Rules and regulations",
+                  body: [
+                    "The Employee agrees to comply with all rules, policies, procedures and regulations of the Employer, whether communicated in writing, verbally, or arising by reasonable implication from the nature of the workplace and the duties performed.",
+                    "The Employee must immediately inform the Employer of any offence, misconduct or breach of company rules committed by himself or herself, or by any other Employee, as soon as he or she becomes aware of it or reasonably ought to have become aware of it.",
+                    "Failure to disclose such information shall be regarded as dishonesty and a breach of trust, and may result in disciplinary action, including possible dismissal.",
+                  ],
                 },
                 {
-                  title: "Duties and conduct",
-                  body: "The Employee undertakes to perform duties diligently, comply with all lawful and reasonable instructions, and uphold company policies, codes, and procedures. Any conflict of interest must be disclosed immediately.",
+                  title: "Industrial action",
+                  body: [
+                    "The Employee may not participate in any unprotected strike, stoppage, or form of industrial action. No strike or picket may be undertaken unless it is protected in terms of the Labour Relations Act and preceded by the required certificate to strike and authorisation to picket.",
+                    "The Employee acknowledges and agrees that he/she shall be held liable for any damages to property, financial losses, or other harm suffered by the Employer as a result of his/her involvement in any legal or illegal industrial action, whether directly or indirectly.",
+                  ],
                 },
                 {
-                  title: "Confidentiality and intellectual property",
-                  body: "All confidential information, trade secrets, and intellectual property developed or accessed during employment remain the exclusive property of the Employer. The Employee may not disclose or use such information except as required for duties, and this obligation survives termination.",
+                  title: "Health and fitness",
+                  body: [
+                    "The Employee confirms that he or she is medically fit to perform the duties of the position. Should the Employee become unable to perform these duties for health reasons, the Employer may follow the applicable incapacity procedures prescribed by the Labour Relations Act, which may result in termination of employment.",
+                    "The Employer may require the Employee to undergo a medical assessment, at the Employer’s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
+                  ],
                 },
                 {
-                  title: "Health, safety, and compliance",
-                  body: "The Employee will follow all health and safety rules, report incidents promptly, and comply with statutory requirements relevant to the role and industry. Failure to do so may result in disciplinary action.",
+                  title: "Change of status",
+                  body: [
+                    "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employer’s records remain accurate and up to date.",
+                    "The Employee cannot hold the Employer liable for making use of incorrect details if the Employee breaches this clause.",
+                  ],
                 },
                 {
-                  title: "Termination",
-                  body: "Either party may terminate employment by giving written notice in accordance with the BCEA or making payment in lieu. The Employer reserves the right to summarily dismiss for gross misconduct in line with disciplinary procedures and substantive fairness.",
+                  title: "Domicilium citandi",
+                  body: [
+                    "The parties choose the physical addresses recorded on Page 1 of this agreement as their domicilium citandi et executandi for all purposes relating to this agreement. Any notice delivered by hand or by any means as agreed to in this agreement shall be deemed duly received.",
+                    "The Employee agrees that the Employer may send notices or correspondence by WhatsApp, SMS, email, regular post or registered post, and that proof of transmission or delivery shall constitute sufficient proof that the notice was sent.",
+                  ],
                 },
                 {
-                  title: "Return of property",
-                  body: "On termination, the Employee will return all company property, including equipment, documents, access cards, and confidential information, and will assist with handover of duties.",
+                  title: "Alcohol and drug testing",
+                  body: [
+                    "The Employee agrees to undergo alcohol or drug testing when reasonably required by the Employer. All testing will be conducted by a competent person in a lawful and reasonable manner, and the Employer maintains a zero tolerance approach to alcohol and drug use in the workplace.",
+                    "The Employee further agrees to submit to a blood test where the Employer has reasonable suspicion that the Employee is under the influence of alcohol or drugs. Such testing shall be carried out by a qualified medical professional, and refusal to comply will be regarded as insubordination.",
+                    "Unreasonable refusal to undergo a required test may result in a negative inference being drawn, which may be treated as a presumptive positive result and may lead to disciplinary action, including dismissal.",
+                  ],
                 },
                 {
-                  title: "Entire agreement",
-                  body: "This Agreement, together with any signed annexures and company policies, constitutes the entire understanding between the parties regarding employment. Changes are valid only if recorded in writing and signed by both parties.",
+                  title: "Polygraph testing",
+                  body: [
+                    "The Employee agrees to undergo polygraph testing when reasonably required by the Employer for investigative or security purposes, including matters involving theft, fraud, dishonesty, misconduct or breach of company policies. All tests will be conducted by a qualified and accredited examiner in a fair and lawful manner.",
+                    "Refusal to undergo a required polygraph test may result in an adverse inference being drawn.  Such refusal will also be regarded as insubordination and continued refusal could lead to dismissal.",
+                  ],
+                },
+                {
+                  title: "Temporary lay-off",
+                  body: [
+                    "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one day’s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
+                    "Temporary lay offs may be introduced due to circumstances beyond the Employer’s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
+                  ],
+                },
+                {
+                  title: "Proof of citizenship",
+                  body: [
+                    "The Employee must provide proof of South African citizenship upon commencement of employment. If not a South African citizen, the Employee must submit a valid work permit or proof of permanent residency within seven days of request, and must continue to provide updated documentation whenever required.",
+                    "It is the Employee’s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
+                  ],
+                },
+                {
+                  title: "Confidentiality",
+                  body:
+                    "The Employee shall keep all confidential information, trade secrets, client data and business affairs of the Employer strictly confidential and shall not disclose or use such information for any purpose other than the performance of his or her duties.",
+                },
+                {
+                  title: "Entire Agreement and Acknoweldgement",
+                  body: [
+                    "This agreement constitutes the entire agreement between the parties, and no variation, amendment or addition shall be valid unless reduced to writing and signed by both parties. Any indulgence or leniency granted shall not constitute a waiver of rights.",
+                    "By signing this agreement, both parties acknowledge that they have read and understood its contents and agree to be bound by its terms. The Employee confirms that the conditions of employment have been explained where necessary and that he or she voluntarily accepts them.",
+                    "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
+                  ],
                 },
               ];
 
@@ -1965,7 +2119,7 @@ const PermanentContractGenerator = () => {
                     </div>
 
                     <div className="space-y-6 text-xs mt-10">
-                      {["For the Employer", "Employee"].map((label) => (
+                      {["For the Employer", "Employer Witness", "Employee", "Employee Witness"].map((label) => (
                         <div key={label}>
                           <div className="flex justify-between mb-1">
                             <span className="border-b border-black flex-1 max-w-[60%]" />

@@ -1,4 +1,8 @@
 import { ReactNode, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Settings, LogOut, Bell } from "lucide-react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,7 +33,8 @@ const getStoredProfile = (): Profile | null => {
 };
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const [companyName, setCompanyName] = useState(() => {
     try {
       return sessionStorage.getItem(STORAGE_KEYS.COMPANY) || "";
@@ -75,46 +80,68 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [companyName, profile]);
 
-  const getInitials = () => {
-    if (!profile) return "U";
-    return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
-  };
-
   return (
     <SidebarProvider>
-      <div className="min-h-screen w-screen flex flex-col">
-        <header className="border-b-2 border-border/70 bg-background/95 backdrop-blur-sm shadow-sm sticky top-0 z-40 h-14">
-          <div className="relative h-full px-6 flex items-center justify-between">
-            <div className="flex items-center">
-              {companyName && (
-                <h1 className="text-lg font-semibold">{companyName}</h1>
-              )}
+      <div className="min-h-screen w-screen flex bg-[#eef2f7]">
+        <div className="flex-shrink-0 h-screen sticky top-0 p-4 overflow-y-auto">
+          <AppSidebar profile={profile || undefined} />
+        </div>
+        <div className="flex flex-1 min-h-screen flex-col bg-[#eef2f7]">
+          <header className="sticky top-0 z-40 pl-0 pr-6 pt-4 pb-0 bg-[#eef2f7]">
+            <div className="relative w-full rounded-2xl border border-sidebar-border bg-white shadow-md px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center">
+                {companyName && (
+                  <h1 className="text-lg font-semibold">{companyName}</h1>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-primary/10">
+                      <Bell className="h-5 w-5 text-primary" />
+                      <span className="sr-only">Notifications</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Notifications</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 hover:bg-primary/10"
+                      onClick={() => navigate("/settings")}
+                    >
+                      <Settings className="h-5 w-5 text-primary" />
+                      <span className="sr-only">Settings</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Settings</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 hover:bg-primary/10"
+                      onClick={async () => {
+                        const { error } = await signOut();
+                        if (!error) {
+                          navigate("/");
+                        }
+                      }}
+                    >
+                      <LogOut className="h-5 w-5 text-primary" />
+                      <span className="sr-only">Sign out</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Sign out</TooltipContent>
+                </Tooltip>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              {profile && (
-                <>
-                  <div className="flex flex-col items-end leading-tight">
-                    <span className="text-sm font-semibold text-foreground">
-                      {profile.user_name} {profile.user_surname}
-                    </span>
-                    <span className="text-xs text-muted-foreground truncate max-w-xs">
-                      {profile.user_email}
-                    </span>
-                  </div>
-                  <div className="flex-shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
-                    {getInitials()}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </header>
+          </header>
 
-        <div className="flex flex-1 min-h-0 w-full">
-          <div className="flex-shrink-0 sticky top-14 self-start">
-            <AppSidebar />
-          </div>
-          <div className="flex-1 min-w-0 flex flex-col bg-[#f5f7fa]">
+          <div className="flex-1 min-w-0 flex flex-col bg-[#eef2f7]">
             <main className="flex-1 w-full p-6">{children}</main>
           </div>
         </div>

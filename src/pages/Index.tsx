@@ -20,6 +20,24 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
+declare global {
+  interface Window {
+    nudocDeferredPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
+let installPromptListenerRegistered = false;
+const ensureInstallPromptListener = () => {
+  if (installPromptListenerRegistered) return;
+  installPromptListenerRegistered = true;
+  window.addEventListener("beforeinstallprompt", (event: Event) => {
+    event.preventDefault();
+    window.nudocDeferredPrompt = event as BeforeInstallPromptEvent;
+  });
+};
+
+ensureInstallPromptListener();
+
 const navLinks = [
   { label: "Product", href: "#product" },
   { label: "Features", href: "#features" },
@@ -117,23 +135,22 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      setDeferredPrompt(event as BeforeInstallPromptEvent);
-    };
-
     const installedCheck = () => {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
       setIsInstalled(isStandalone);
     };
 
-    window.addEventListener("beforeinstallprompt", handler as EventListener);
     const onInstalled = () => setIsInstalled(true);
     window.addEventListener("appinstalled", onInstalled);
+
+    // Pick up any cached prompt that may have fired before React mounted
+    if (window.nudocDeferredPrompt) {
+      setDeferredPrompt(window.nudocDeferredPrompt);
+    }
+
     installedCheck();
 
     return () => {
-      window.removeEventListener("beforeinstallprompt", handler as EventListener);
       window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
@@ -180,14 +197,26 @@ const Index = () => {
   };
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) {
+    if (!deferredPrompt && window.nudocDeferredPrompt) {
+      setDeferredPrompt(window.nudocDeferredPrompt);
+    }
+
+    if (!deferredPrompt && !window.nudocDeferredPrompt) {
       setShowInstallHint(true);
       return;
     }
-    deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
+
+    const promptEvent = deferredPrompt ?? window.nudocDeferredPrompt;
+    if (!promptEvent) {
+      setShowInstallHint(true);
+      return;
+    }
+
+    promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
     if (choice.outcome === "accepted") {
       setDeferredPrompt(null);
+      window.nudocDeferredPrompt = null;
     }
   };
 

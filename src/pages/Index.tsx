@@ -1,526 +1,590 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
-  FileText,
-  Users,
-  Shield,
-  Clock,
-  Zap,
+  ArrowRight,
   CheckCircle2,
+  FileText,
   Menu,
+  ScanLine,
+  Shield,
+  Sparkles,
+  Users,
   X,
-  BarChart3,
-  FileCheck,
 } from "lucide-react";
-import { Link } from "react-router-dom";
-import { useState } from "react";
+
+const navLinks = [
+  { label: "Product", href: "#product" },
+  { label: "Features", href: "#features" },
+  { label: "Pricing", href: "#pricing" },
+  { label: "FAQ", href: "#faq" },
+];
+
+const pinnedFeatures = [
+  {
+    title: "Guided incidents",
+    copy: "Capture misconduct with inline hints and policy prompts in under two minutes.",
+    icon: ScanLine,
+  },
+  {
+    title: "Smart clauses",
+    copy: "SA labour-ready language auto-fills warnings, notices, and contracts.",
+    icon: Shield,
+  },
+  {
+    title: "Instant PDFs",
+    copy: "Preview, sign, and export branded PDFs without leaving the flow.",
+    icon: FileText,
+  },
+];
+
+const featureGrid = [
+  {
+    title: "Dynamic doc builder",
+    copy: "Warnings, notices, and contracts adapt to your inputs in real time.",
+    icon: FileText,
+  },
+  {
+    title: "Employee memory",
+    copy: "Profiles carry history, attendance, and contracts into every new doc.",
+    icon: Users,
+  },
+  {
+    title: "Compliance guardrails",
+    copy: "Progressive discipline steps and SA labour alignment baked in.",
+    icon: Shield,
+  },
+  {
+    title: "Audit trail",
+    copy: "Every action is time-stamped so HR can trace decisions quickly.",
+    icon: Sparkles,
+  },
+  {
+    title: "One-click export",
+    copy: "Share, print, or download PDFs with signatures embedded.",
+    icon: ArrowRight,
+  },
+  {
+    title: "Template library",
+    copy: "Save your best letters and reuse them across locations.",
+    icon: CheckCircle2,
+  },
+];
+
+const faqs = [
+  {
+    q: "Do I need legal expertise?",
+    a: "No. Clause suggestions follow South African labour standards so managers can act confidently.",
+  },
+  {
+    q: "Can I reuse employee data?",
+    a: "Yes. Profiles auto-fill every warning, notice, or contract you create.",
+  },
+  {
+    q: "How fast is export?",
+    a: "Most teams generate a PDF with signatures in under three minutes.",
+  },
+  {
+    q: "Is my data secure?",
+    a: "Secure auth, role-aware access, and encrypted storage keep sensitive data safe.",
+  },
+  {
+    q: "Can we standardise templates?",
+    a: "Create, save, and share templates so every manager follows the same playbook.",
+  },
+];
 
 const Index = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activePin, setActivePin] = useState(0);
 
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
-      setMobileMenuOpen(false);
-    }
+  useEffect(() => {
+    const previous = document.documentElement.style.scrollBehavior;
+    document.documentElement.style.scrollBehavior = "smooth";
+    return () => {
+      document.documentElement.style.scrollBehavior = previous;
+    };
+  }, []);
+
+  useEffect(() => {
+    const revealItems = document.querySelectorAll<HTMLElement>(".reveal");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) entry.target.classList.add("show");
+        });
+      },
+      { threshold: 0.14 }
+    );
+    revealItems.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const cards = document.querySelectorAll<HTMLElement>(".pin-card");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const target = entry.target as HTMLElement;
+            const idx = Number(target.dataset.index ?? 0);
+            setActivePin(idx);
+          }
+        });
+      },
+      { threshold: 0.6, rootMargin: "-10% 0px -10% 0px" }
+    );
+    cards.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  const handleNavClick = (href: string) => (
+    event: React.MouseEvent<HTMLAnchorElement>
+  ) => {
+    event.preventDefault();
+    const target = document.querySelector(href);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setMenuOpen(false);
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/40 backdrop-blur-xl bg-background/80">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-white text-slate-900">
+      <header className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/85 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 shadow-lg grid place-items-center text-primary-foreground font-bold text-lg">
-              n
-            </div>
-            <span className="text-xl font-bold tracking-tight">nudoc</span>
+            <img src="/logo.png.png" alt="nudoc full logo" className="h-12 w-auto" />
           </div>
-
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-8">
-            <button
-              onClick={() => scrollToSection("features")}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Features
-            </button>
-            <button
-              onClick={() => scrollToSection("pricing")}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Pricing
-            </button>
-            <button
-              onClick={() => scrollToSection("faq")}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              FAQ
-            </button>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <Link to="/auth" className="hidden md:block">
-              <Button variant="ghost" size="sm">
-                Log In
+          <nav className="hidden items-center gap-8 text-sm font-medium text-slate-700 md:flex">
+            {navLinks.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={handleNavClick(item.href)}
+                className="transition-colors hover:text-blue-700"
+              >
+                {item.label}
+              </a>
+            ))}
+            <Link to="/auth">
+              <Button variant="outline" className="border-blue-200 text-blue-700">
+                Log in
               </Button>
             </Link>
             <Link to="/auth?new=1">
-              <Button size="sm" className="shadow-lg">
-                Get Started
-              </Button>
+              <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
             </Link>
-
-            {/* Mobile menu button */}
-            <button
-              className="md:hidden"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? (
-                <X className="h-6 w-6" />
-              ) : (
-                <Menu className="h-6 w-6" />
-              )}
-            </button>
-          </div>
+          </nav>
+          <button
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm md:hidden"
+            aria-label="Toggle menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur-xl">
-            <div className="container mx-auto px-6 py-4 flex flex-col gap-4">
-              <button
-                onClick={() => scrollToSection("features")}
-                className="text-left text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Features
-              </button>
-              <button
-                onClick={() => scrollToSection("pricing")}
-                className="text-left text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Pricing
-              </button>
-              <button
-                onClick={() => scrollToSection("faq")}
-                className="text-left text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                FAQ
-              </button>
+        {menuOpen && (
+          <div className="border-t border-slate-200 bg-white px-6 pb-4 pt-2 md:hidden">
+            <div className="flex flex-col gap-3 text-sm font-medium text-slate-700">
+              {navLinks.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  onClick={handleNavClick(item.href)}
+                  className="rounded-lg px-3 py-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                >
+                  {item.label}
+                </a>
+              ))}
               <Link to="/auth">
-                <Button variant="ghost" size="sm" className="w-full justify-start">
-                  Log In
+                <Button variant="outline" className="w-full border-blue-200 text-blue-700">
+                  Log in
                 </Button>
+              </Link>
+              <Link to="/auth?new=1">
+                <Button className="w-full bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
               </Link>
             </div>
           </div>
         )}
       </header>
 
-      {/* Hero Section */}
-      <section className="pt-32 pb-20 px-6">
-        <div className="container mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8 animate-fade-in">
-              <div className="space-y-4">
-                <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.1] tracking-tight">
-                  HR documents,
-                  <span className="text-primary block mt-2">done right</span>
-                </h1>
-                <p className="text-xl text-muted-foreground max-w-xl leading-relaxed">
-                  Generate compliant disciplinary documents in minutes. Built for South African businesses who value speed, accuracy, and legal alignment.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-4">
-                <Link to="/auth?new=1">
-                  <Button size="lg" className="text-base px-8 shadow-lg hover:shadow-xl transition-all">
-                    Get Started
-                  </Button>
-                </Link>
-                <Link to="/auth">
-                  <Button variant="outline" size="lg" className="text-base px-8">
-                    Log In
-                  </Button>
-                </Link>
-              </div>
-
-              <div className="flex items-center gap-8 pt-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  <span>SA labour compliant</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  <span>Ready in minutes</span>
-                </div>
-              </div>
+      <main>
+        <section className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-50 via-white to-white" />
+          <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-16 text-center sm:pt-20">
+            <div className="mx-auto mb-6 w-fit rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700">
+              HR documents, simplified
             </div>
-
-            {/* Hero Visual */}
-            <div className="relative animate-fade-in delay-150">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-transparent blur-3xl" />
-              <Card className="relative border-border/50 bg-gradient-to-br from-background to-secondary/30 shadow-2xl overflow-hidden">
-                <div className="p-8 space-y-6">
-                  <div className="flex items-center gap-3 pb-4 border-b border-border/50">
-                    <div className="h-12 w-12 rounded-xl bg-primary/10 grid place-items-center">
-                      <FileText className="h-6 w-6 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wider text-muted-foreground">Document Generator</p>
-                      <p className="font-semibold text-lg">Written Warning</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="rounded-xl border border-border/60 bg-background/50 p-5 backdrop-blur-sm hover:border-primary/30 transition-colors">
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Employee</span>
-                        <span className="text-sm font-medium">A. Mokoena</span>
-                      </div>
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Type</span>
-                        <span className="text-sm font-medium">Final Warning</span>
-                      </div>
-                      <div className="flex justify-between items-start">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Date</span>
-                        <span className="text-sm font-medium">12 Nov 2025</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 backdrop-blur-sm">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Zap className="h-4 w-4 text-primary" />
-                        <span className="text-xs text-primary uppercase tracking-wider font-medium">Auto-Generated</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Legal clauses, policy references, and action plans inserted automatically based on SA labour law.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 flex gap-2">
-                    <div className="flex-1 h-10 rounded-lg bg-secondary/50 grid place-items-center text-xs font-medium">
-                      Preview
-                    </div>
-                    <div className="flex-1 h-10 rounded-lg bg-primary/10 grid place-items-center text-xs font-medium text-primary">
-                      Export PDF
-                    </div>
-                  </div>
-                </div>
-              </Card>
+            <h1 className="mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
+              Generate compliant HR documents with clarity and speed.
+            </h1>
+            <p className="mx-auto mt-4 max-w-3xl text-lg text-slate-600 sm:text-xl">
+              Guided flows, smart clauses, and instant PDFs keep managers on-policy and employees informed.
+            </p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Link to="/auth?new=1">
+                <Button className="h-12 rounded-full bg-blue-600 px-7 text-base text-white hover:bg-blue-700">
+                  Get started
+                </Button>
+              </Link>
+              <Link to="/auth">
+                <Button
+                  variant="outline"
+                  className="h-12 rounded-full border-blue-200 bg-white px-7 text-base text-blue-700 hover:border-blue-300"
+                >
+                  Log in
+                </Button>
+              </Link>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section id="features" className="py-24 px-6 bg-secondary/30">
-        <div className="container mx-auto">
-          <div className="text-center mb-16 space-y-4 animate-fade-in">
-            <p className="text-sm uppercase tracking-wider text-primary font-semibold">Features</p>
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight">
-              Everything you need for compliant HR
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              From incident capture to signed PDFs, we've built the tools you need to handle disciplinary processes with confidence.
+            <p className="mt-4 text-sm text-slate-500">
+              Progressive discipline ready | Instant PDF export | Secure by design
             </p>
           </div>
+        </section>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              {
-                icon: FileText,
-                title: "Instant Document Generation",
-                description: "Create professional written warnings in seconds with guided, validated forms and smart templates.",
-              },
-              {
-                icon: Shield,
-                title: "SA Labour Compliant",
-                description: "Templates aligned with South African labour law and progressive discipline requirements.",
-              },
-              {
-                icon: Users,
-                title: "Employee Management",
-                description: "Store employee information once and auto-populate every document with accurate data.",
-              },
-              {
-                icon: Clock,
-                title: "Save Hours of Work",
-                description: "Reduce document preparation time from hours to minutes with intelligent automation.",
-              },
-              {
-                icon: FileCheck,
-                title: "Document History",
-                description: "Track all warnings and disciplinary actions with a complete, searchable audit trail.",
-              },
-              {
-                icon: BarChart3,
-                title: "Analytics & Insights",
-                description: "Monitor trends, track compliance, and identify areas for improvement across your workforce.",
-              },
-            ].map((feature, index) => (
-              <Card
-                key={index}
-                className="p-8 border-border/50 bg-background hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group"
-              >
-                <div className="h-14 w-14 rounded-2xl bg-primary/10 grid place-items-center mb-6 group-hover:bg-primary/20 transition-colors">
-                  <feature.icon className="h-7 w-7 text-primary" />
+        <section className="mx-auto max-w-6xl px-6 pb-12 reveal">
+          <Card className="mx-auto max-w-5xl border-blue-100 bg-white/80 p-6 shadow-sm backdrop-blur">
+            <div className="text-left sm:text-center">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">The easiest way</p>
+              <h3 className="mt-2 text-2xl font-semibold text-slate-900">
+                Generate HR documents without the admin drag
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                A simple, repeatable flow for warnings, notices, contracts, and more.
+              </p>
+            </div>
+            <div className="mt-6 grid gap-4 sm:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                  <Users className="h-5 w-5" />
                 </div>
-                <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
-                <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
+                <p className="text-sm font-semibold text-slate-900">Step 1</p>
+                <p className="text-sm text-slate-600">Add employee</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                  <ScanLine className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-semibold text-slate-900">Step 2</p>
+                <p className="text-sm text-slate-600">Fill basic details</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-semibold text-slate-900">Step 3</p>
+                <p className="text-sm text-slate-600">Choose HR document</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-semibold text-slate-900">Step 4</p>
+                <p className="text-sm text-slate-600">Preview or print</p>
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        <section className="border-y border-slate-200 bg-white/80">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-6 text-sm text-slate-700">
+            <div className="flex items-center gap-2 font-semibold text-slate-600">
+              <Sparkles className="h-4 w-4 text-blue-600" />
+              Trusted by teams who need compliant HR docs fast
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <div className="rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-blue-700">3 min to PDF</div>
+              <div className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-emerald-700">Progressive discipline baked in</div>
+              <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-700">300+ employees tracked</div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="product"
+          className="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-[0.9fr_1.1fr]"
+        >
+          <div className="reveal lg:sticky lg:top-28 lg:self-start">
+            <Badge className="bg-blue-100 text-blue-800">Product</Badge>
+            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Pinned view of your core flows</h2>
+            <p className="mt-3 text-lg text-slate-600">
+              Keep the overview fixed while you scroll through guided workflows. Every step is clear, compliant, and ready to export.
+            </p>
+            <div className="mt-6 space-y-3">
+              {pinnedFeatures.map((item, idx) => (
+                <div
+                  key={item.title}
+                  className={`flex items-start gap-3 rounded-xl border p-4 transition ${
+                    activePin === idx ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <item.icon
+                    className={`mt-1 h-5 w-5 ${activePin === idx ? "text-blue-700" : "text-slate-500"}`}
+                  />
+                  <div>
+                    <p className="font-semibold text-slate-900">{item.title}</p>
+                    <p className="text-sm text-slate-600">{item.copy}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {pinnedFeatures.map((item, idx) => (
+              <Card
+                key={item.title}
+                data-index={idx}
+                className={`pin-card border ${activePin === idx ? "border-blue-200 shadow-lg" : "border-slate-200 shadow-sm"} bg-white/90 backdrop-blur transition`}
+              >
+                <div className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-blue-50 p-3 text-blue-700">
+                        <item.icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Guided</p>
+                        <h3 className="text-xl font-semibold text-slate-900">{item.title}</h3>
+                      </div>
+                    </div>
+                    <Badge className="bg-orange-100 text-orange-800">Step</Badge>
+                  </div>
+                  <p className="mt-3 text-slate-600">{item.copy}</p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">Inline policy hints</div>
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">Auto clauses added</div>
+                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-slate-700">Export + audit trail</div>
+                  </div>
+                </div>
               </Card>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-24 px-6">
-        <div className="container mx-auto max-w-4xl">
-          <div className="text-center mb-16 space-y-4 animate-fade-in">
-            <p className="text-sm uppercase tracking-wider text-primary font-semibold">Pricing</p>
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Simple, transparent pricing</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              One plan that scales with your business. No hidden fees, no surprises.
-            </p>
+        <section
+          id="features"
+          className="mx-auto max-w-6xl px-6 pb-14 reveal"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Badge className="bg-blue-100 text-blue-800">Features</Badge>
+              <h2 className="mt-3 text-3xl font-bold text-slate-900 sm:text-4xl">Built for modern HR teams</h2>
+              <p className="text-lg text-slate-600">Everything you need to stay compliant without slowing down.</p>
+            </div>
+            <div className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
+              Secure, accurate, fast
+            </div>
+          </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {featureGrid.map((item) => (
+              <Card key={item.title} className="border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900">{item.title}</h3>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">{item.copy}</p>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <section
+          id="pricing"
+          className="mx-auto max-w-6xl px-6 pb-14 reveal"
+        >
+          <Card className="overflow-hidden border border-blue-200 bg-white shadow-md">
+            <div className="grid gap-8 p-8 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-4">
+                <Badge className="bg-orange-100 text-orange-800">Recommended</Badge>
+                <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple pricing</h2>
+                <p className="text-lg text-slate-600">Straightforward billing so you always know the cost.</p>
+                <div className="flex flex-wrap gap-3 text-sm text-slate-600">
+                  <Badge variant="outline" className="border-blue-200 text-blue-700">Unlimited warnings</Badge>
+                  <Badge variant="outline" className="border-emerald-200 text-emerald-700">Contracts & letters</Badge>
+                  <Badge variant="outline" className="border-orange-200 text-orange-700">Live preview</Badge>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-700">Pricing</p>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-slate-900">R250</span>
+                  <span className="text-slate-600">per month</span>
+                </div>
+                <p className="text-slate-700">+ R3 per employee</p>
+                <div className="mt-4 space-y-2 text-sm text-slate-700">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Guided flows for warnings and contracts
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Clause suggestions and live preview
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Employee records and audit trail
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Instant PDF export and sharing
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Link to="/auth?new=1">
+                    <Button className="bg-blue-600 text-white hover:bg-blue-700">Choose nudoc</Button>
+                  </Link>
+                  <Link to="/auth">
+                    <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">Log in</Button>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        <section
+          id="why"
+          className="mx-auto max-w-6xl grid gap-10 px-6 pb-14 reveal lg:grid-cols-2"
+        >
+          <div className="space-y-4">
+            <Badge className="bg-blue-100 text-blue-800">Why nudoc</Badge>
+            <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Built for HR leads, loved by managers</h2>
+            <p className="text-lg text-slate-600">Clarity, compliance, and calm for every disciplinary or contract workflow.</p>
+            <ul className="space-y-3 text-slate-700">
+              <li className="flex items-start gap-3">
+                <CheckCircle2 className="mt-1 h-5 w-5 text-blue-700" />
+                <div>
+                  <p className="font-semibold text-slate-900">Consistent every time</p>
+                  <p className="text-sm text-slate-600">Templates and clause packs aligned to your policy.</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <CheckCircle2 className="mt-1 h-5 w-5 text-orange-700" />
+                <div>
+                  <p className="font-semibold text-slate-900">Fast for busy teams</p>
+                  <p className="text-sm text-slate-600">Auto-fill profiles and export-ready PDFs cut admin to minutes.</p>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <CheckCircle2 className="mt-1 h-5 w-5 text-emerald-700" />
+                <div>
+                  <p className="font-semibold text-slate-900">Transparent for HR</p>
+                  <p className="text-sm text-slate-600">Audit trails keep evidence, notes, and signatures in one place.</p>
+                </div>
+              </li>
+            </ul>
           </div>
 
-          <Card className="p-10 md:p-12 border-border/50 bg-gradient-to-br from-background to-secondary/20 shadow-2xl">
-            <div className="text-center space-y-8">
+          <Card className="border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
               <div>
-                <div className="flex items-baseline justify-center gap-2 mb-2">
-                  <span className="text-5xl md:text-6xl font-bold tracking-tight">R250</span>
-                  <span className="text-2xl text-muted-foreground">/month</span>
-                </div>
-                <p className="text-lg text-primary font-medium">+ R3.00 per employee added</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Control room</p>
+                <h3 className="text-xl font-semibold text-slate-900">Today</h3>
               </div>
-
-              <div className="max-w-md mx-auto space-y-4 text-left">
-                <p className="text-muted-foreground text-center mb-6">
-                  Everything you need to manage HR documentation efficiently
-                </p>
-                {[
-                  "Unlimited document generation",
-                  "Employee database management",
-                  "SA labour law templates",
-                  "PDF export and printing",
-                  "Document history and audit trail",
-                  "Email support",
-                  "Regular template updates",
-                ].map((item, index) => (
-                  <div key={index} className="flex items-center gap-3">
-                    <div className="h-6 w-6 rounded-full bg-primary/10 grid place-items-center flex-shrink-0">
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                    </div>
-                    <span className="text-muted-foreground">{item}</span>
+              <Badge className="bg-emerald-100 text-emerald-800">All clear</Badge>
+            </div>
+            <div className="mt-4 space-y-3">
+              {["Absenteeism warning ready", "Performance review drafted", "New permanent contract"].map((item, idx) => (
+                <div key={item} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className={`mt-1 h-2.5 w-2.5 rounded-full ${idx === 0 ? "bg-blue-600" : idx === 1 ? "bg-orange-500" : "bg-emerald-600"}`} />
+                  <div>
+                    <p className="font-semibold text-slate-900">{item}</p>
+                    <p className="text-sm text-slate-600">Policy aligned | Evidence attached | Signature ready</p>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </section>
 
-              <Link to="/auth?new=1" className="block">
-                <Button size="lg" className="w-full md:w-auto px-12 text-base shadow-lg hover:shadow-xl transition-all">
-                  Get Started Now
+        <section
+          id="faq"
+          className="mx-auto max-w-6xl px-6 pb-14 reveal"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Badge className="bg-blue-100 text-blue-800">FAQ</Badge>
+              <h2 className="mt-3 text-3xl font-bold text-slate-900 sm:text-4xl">Questions, answered</h2>
+              <p className="text-lg text-slate-600">Everything you need to know before rolling out nudoc.</p>
+            </div>
+            <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">
+              Talk to us
+            </Button>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {faqs.map((item) => (
+              <details
+                key={item.q}
+                className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <summary className="flex cursor-pointer items-center justify-between text-base font-semibold text-slate-900">
+                  {item.q}
+                  <ArrowRight className="h-4 w-4 text-blue-700 transition group-open:rotate-90" />
+                </summary>
+                <p className="mt-3 text-sm text-slate-600">{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-6 pb-16">
+          <Card className="reveal border border-blue-200 bg-blue-50/60 p-8 text-center shadow-sm">
+            <h3 className="text-3xl font-bold text-slate-900">Ready to simplify HR documents?</h3>
+            <p className="mt-2 text-lg text-slate-600">
+              Guided flows, compliant clauses, and beautiful exports your team will actually use.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link to="/auth?new=1">
+                <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
+              </Link>
+              <Link to="/auth">
+                <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">
+                  Log in
                 </Button>
               </Link>
             </div>
           </Card>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* Why Choose Section */}
-      <section className="py-24 px-6 bg-secondary/30">
-        <div className="container mx-auto">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="space-y-8 animate-fade-in">
-              <div className="space-y-4">
-                <p className="text-sm uppercase tracking-wider text-primary font-semibold">Why Choose nudoc</p>
-                <h2 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight">
-                  Built for South African businesses
-                </h2>
-                <p className="text-lg text-muted-foreground leading-relaxed">
-                  We understand the unique challenges of managing HR processes in South Africa. That's why we've built a solution that's specifically designed for local compliance and efficiency.
-                </p>
-              </div>
-
-              <div className="space-y-6">
-                {[
-                  {
-                    title: "Legally aligned",
-                    description: "Every template is crafted to meet SA labour law requirements and progressive discipline standards.",
-                  },
-                  {
-                    title: "Save time and money",
-                    description: "Reduce document preparation from hours to minutes, freeing up your team for strategic work.",
-                  },
-                  {
-                    title: "Reduce errors",
-                    description: "Guided forms and validation ensure accuracy and completeness in every document.",
-                  },
-                  {
-                    title: "Complete audit trail",
-                    description: "Track every warning and disciplinary action with a searchable, secure history.",
-                  },
-                ].map((item, index) => (
-                  <div key={index} className="flex gap-4">
-                    <div className="h-6 w-6 rounded-full bg-primary/10 grid place-items-center flex-shrink-0 mt-1">
-                      <CheckCircle2 className="h-4 w-4 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-lg mb-1">{item.title}</h3>
-                      <p className="text-muted-foreground">{item.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6 animate-fade-in delay-150">
-              <Card className="p-6 border-border/50 bg-background hover:shadow-lg transition-shadow">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 grid place-items-center mb-4">
-                  <Clock className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-3xl font-bold mb-1">2 min</div>
-                <div className="text-sm text-muted-foreground">Average time to generate a document</div>
-              </Card>
-
-              <Card className="p-6 border-border/50 bg-background hover:shadow-lg transition-shadow">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 grid place-items-center mb-4">
-                  <FileText className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-3xl font-bold mb-1">100%</div>
-                <div className="text-sm text-muted-foreground">Labour law compliance</div>
-              </Card>
-
-              <Card className="p-6 border-border/50 bg-background hover:shadow-lg transition-shadow">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 grid place-items-center mb-4">
-                  <Shield className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-3xl font-bold mb-1">Secure</div>
-                <div className="text-sm text-muted-foreground">Bank-level data protection</div>
-              </Card>
-
-              <Card className="p-6 border-border/50 bg-background hover:shadow-lg transition-shadow">
-                <div className="h-12 w-12 rounded-xl bg-primary/10 grid place-items-center mb-4">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-3xl font-bold mb-1">Easy</div>
-                <div className="text-sm text-muted-foreground">No training required</div>
-              </Card>
-            </div>
+      <footer className="border-t border-slate-200 bg-white/85">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1 text-sm text-slate-600">
+            <p className="font-semibold text-slate-900">nudoc</p>
+            <p>Guided HR documentation for teams that value compliance.</p>
           </div>
-        </div>
-      </section>
-
-      {/* FAQ Section */}
-      <section id="faq" className="py-24 px-6">
-        <div className="container mx-auto max-w-3xl">
-          <div className="text-center mb-16 space-y-4 animate-fade-in">
-            <p className="text-sm uppercase tracking-wider text-primary font-semibold">FAQ</p>
-            <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Frequently asked questions</h2>
-            <p className="text-lg text-muted-foreground">
-              Got questions? We've got answers.
-            </p>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+            <a href="#pricing" onClick={handleNavClick("#pricing")}>
+              Pricing
+            </a>
+            <a href="#faq" onClick={handleNavClick("#faq")}>
+              Support
+            </a>
+            <a href="#product" onClick={handleNavClick("#product")}>
+              Privacy & Terms
+            </a>
           </div>
-
-          <Accordion type="single" collapsible className="space-y-4">
-            <AccordionItem value="item-1" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">Is nudoc compliant with South African labour law?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                Yes, all our templates are designed to meet South African labour law requirements and progressive discipline standards. We regularly update our templates to reflect any changes in legislation.
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-2" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">How many employees can I add?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                You can add unlimited employees to your account. You'll pay R250/month for the base subscription, plus R3.00 for each employee profile you create in the system.
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-3" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">Can I export documents to PDF?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                Absolutely. Every document can be exported to PDF with one click, ready for printing, signing, or sharing with employees and stakeholders.
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-4" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">What types of documents can I generate?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                Currently, nudoc supports the full range of disciplinary documents including first warnings, second warnings, serious warnings, and final warnings. We're continuously adding new document types based on customer feedback.
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-5" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">Is my data secure?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                Yes, we take security seriously. All data is encrypted in transit and at rest, and we use bank-level security protocols. Your employee information is stored securely and is only accessible by authorized users in your organization.
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="item-6" className="border border-border/50 rounded-xl px-6 bg-background">
-              <AccordionTrigger className="text-left hover:no-underline py-5">
-                <span className="font-semibold">Can I cancel my subscription anytime?</span>
-              </AccordionTrigger>
-              <AccordionContent className="text-muted-foreground pb-5 leading-relaxed">
-                Yes, you can cancel your subscription at any time. There are no long-term contracts or cancellation fees. Your data will remain accessible for 30 days after cancellation.
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </div>
-      </section>
-
-      {/* Final CTA */}
-      <section className="py-24 px-6 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
-        <div className="container mx-auto max-w-4xl text-center space-y-8">
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight">
-            Ready to streamline your HR processes?
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Join South African businesses that trust nudoc for fast, compliant HR documentation.
-          </p>
-          <Link to="/auth?new=1">
-            <Button size="lg" className="text-base px-12 shadow-lg hover:shadow-xl transition-all">
-              Get Started Now
-            </Button>
-          </Link>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border/50 py-12 px-6">
-        <div className="container mx-auto text-center">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 grid place-items-center text-primary-foreground font-bold">
-              n
-            </div>
-            <span className="text-lg font-bold">nudoc</span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            © 2025 nudoc. All rights reserved.
-          </p>
         </div>
       </footer>
+
+      <style>{`
+        .reveal { opacity: 0; transform: translateY(18px); transition: opacity 360ms ease, transform 360ms ease; }
+        .reveal.show { opacity: 1; transform: translateY(0); }
+      `}</style>
     </div>
   );
 };
 
 export default Index;
+
+
+
+
+
+
+
+
+
+
+

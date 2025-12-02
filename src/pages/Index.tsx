@@ -286,7 +286,7 @@ const Index = () => {
                   className="h-12 rounded-full border-emerald-200 bg-white px-7 text-base text-emerald-700 hover:border-emerald-300 disabled:opacity-70"
                   disabled={isInstalled}
                 >
-                  {deferredPrompt ? "Install app" : "Install via browser menu"}
+                  {deferredPrompt ? "Install app" : "Install app"}
                 </Button>
               )}
             </div>

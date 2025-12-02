@@ -1,7 +1,7 @@
 {
   "name": "nudoc",
   "short_name": "nudoc",
-  "start_url": "/",
+  "start_url": "/auth",
   "scope": "/",
   "display": "standalone",
   "theme_color": "#0f172a",

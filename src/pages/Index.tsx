@@ -15,6 +15,11 @@ import {
   X,
 } from "lucide-react";
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
 const navLinks = [
   { label: "Product", href: "#product" },
   { label: "Features", href: "#features" },
@@ -99,12 +104,37 @@ const faqs = [
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activePin, setActivePin] = useState(0);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallHint, setShowInstallHint] = useState(false);
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
     document.documentElement.style.scrollBehavior = "smooth";
     return () => {
       document.documentElement.style.scrollBehavior = previous;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    const installedCheck = () => {
+      const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
+      setIsInstalled(isStandalone);
+    };
+
+    window.addEventListener("beforeinstallprompt", handler as EventListener);
+    const onInstalled = () => setIsInstalled(true);
+    window.addEventListener("appinstalled", onInstalled);
+    installedCheck();
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler as EventListener);
+      window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
 
@@ -147,6 +177,18 @@ const Index = () => {
     const target = document.querySelector(href);
     if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     setMenuOpen(false);
+  };
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) {
+      setShowInstallHint(true);
+      return;
+    }
+    deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    if (choice.outcome === "accepted") {
+      setDeferredPrompt(null);
+    }
   };
 
   return (
@@ -237,7 +279,22 @@ const Index = () => {
                   Log in
                 </Button>
               </Link>
+              {!isInstalled && (
+                <Button
+                  variant="outline"
+                  onClick={handleInstallClick}
+                  className="h-12 rounded-full border-emerald-200 bg-white px-7 text-base text-emerald-700 hover:border-emerald-300 disabled:opacity-70"
+                  disabled={isInstalled}
+                >
+                  {deferredPrompt ? "Install app" : "Install via browser menu"}
+                </Button>
+              )}
             </div>
+            {!isInstalled && showInstallHint && (
+              <p className="mt-2 text-xs text-emerald-700">
+                If the button stays disabled, open your browser menu and choose Install/Add to Home Screen.
+              </p>
+            )}
             <p className="mt-4 text-sm text-slate-500">
               Progressive discipline ready | Instant PDF export | Secure by design
             </p>

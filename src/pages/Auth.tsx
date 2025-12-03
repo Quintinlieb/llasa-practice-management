@@ -207,7 +207,7 @@ const Auth = () => {
         <Card className="w-full shadow-xl">
           <CardHeader className="space-y-3 text-center">
             <div className="flex justify-center mb-2">
-              <img src="/nudoc_icon.png" alt="nudoc logo" className="h-12 w-auto object-cover" />
+              <img src="/thumbnail-logo.svg" alt="thumbnail logo" className="h-12 w-auto object-cover" />
             </div>
             <CardTitle className="text-2xl">
               {isLogin ? "Welcome Back" : "Create Account"}

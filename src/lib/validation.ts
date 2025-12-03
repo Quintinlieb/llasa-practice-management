@@ -833,6 +833,13 @@ export const permanentContractSchema = z.object({
     .min(3, "Workplace must be at least 3 characters")
     .max(300, "Workplace must not exceed 300 characters")
     .transform(sanitizeText),
+  annualLeaveDays: z
+    .string()
+    .regex(/^\d{1,3}$/, "Annual leave days must be a whole number")
+    .transform((val) => Number(val))
+    .refine((val) => val >= 1 && val <= 60, {
+      message: "Annual leave days must be between 1 and 60",
+    }),
   interpreter: z.enum(["yes", "no"], {
     errorMap: () => ({ message: "Please indicate if an interpreter is required" }),
   }),

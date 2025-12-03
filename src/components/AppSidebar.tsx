@@ -125,7 +125,7 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
       <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-white">
         <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
           <img
-            src={isCollapsed ? "/nudoc_icon.png" : "/logo.png.png"}
+            src={isCollapsed ? "/thumbnail-logo.svg" : "/logo.png.png"}
             alt="logo"
             className={cn(isCollapsed ? "h-8" : "h-10", "w-auto object-contain")}
             style={{ imageRendering: "crisp-edges" }}

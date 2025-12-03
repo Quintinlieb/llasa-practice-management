@@ -30,8 +30,9 @@ import type { Tables } from "@/integrations/supabase/types";
 type ContractFormState = {
   employeeId: string;
   age: string;
-} & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race"> & {
+} & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
+  annualLeaveDays: string;
   gender: PermanentContractFormData["gender"] | "";
   race: PermanentContractFormData["race"] | "";
 };
@@ -80,12 +81,24 @@ const PermanentContractGenerator = () => {
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   const [employees, setEmployees] = useState<Tables<"employees">[]>([]);
   const [showPreview, setShowPreview] = useState(false);
+  const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<PermanentContractFormData | null>(null);
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const snippetPaddingTopMm = 2;
+  const snippetVisibleHeightMm = 297 / 2; // show top half of the page
+  const snippetContainerWidthMm = 150;
+  const snippetScale = useMemo(
+    () =>
+      Math.min(
+        (snippetContainerWidthMm - 4) / 210, // small horizontal gutter so full width fits
+        (160 - snippetPaddingTopMm) / snippetVisibleHeightMm,
+      ),
+    [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
+  );
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
@@ -110,10 +123,11 @@ const PermanentContractGenerator = () => {
     employerEmail: "",
     jobTitle: "",
     salaryAmount: "",
+    annualLeaveDays: "15",
     salaryFrequency: "month",
     probationPeriod: "3",
     department: "",
-    retirementAge: "60",
+    retirementAge: "65",
     workplace: "",
     interpreter: "no",
     reportsTo: "",
@@ -243,10 +257,11 @@ const PermanentContractGenerator = () => {
       employerEmail: profile?.company_email || "",
       jobTitle: "",
       salaryAmount: "",
+      annualLeaveDays: "15",
       salaryFrequency: "month",
       probationPeriod: "3",
       department: "",
-      retirementAge: "60",
+      retirementAge: "65",
       workplace: profile?.physical_address || "",
       interpreter: "no",
       reportsTo: "",
@@ -254,6 +269,7 @@ const PermanentContractGenerator = () => {
     });
     setValidatedPreview(null);
     setShowPreview(false);
+    setShowFinalActions(false);
     setActiveStep(0);
   };
 
@@ -306,6 +322,7 @@ const PermanentContractGenerator = () => {
           formData.reportsTo &&
           formData.salaryAmount &&
           formData.salaryFrequency &&
+          formData.annualLeaveDays &&
           formData.probationPeriod &&
           formData.retirementAge &&
           formData.workplace &&
@@ -317,6 +334,7 @@ const PermanentContractGenerator = () => {
       formData.jobTitle,
       formData.reportsTo,
       formData.salaryAmount,
+      formData.annualLeaveDays,
       formData.salaryFrequency,
       formData.probationPeriod,
       formData.retirementAge,
@@ -387,7 +405,120 @@ const PermanentContractGenerator = () => {
     permanentContractSchema.parse({
       ...formData,
       salaryAmount: formData.salaryAmount,
+      annualLeaveDays: formData.annualLeaveDays,
     });
+
+  useEffect(() => {
+    if (!showFinalActions) return;
+    try {
+      const validated = validateData();
+      setValidatedPreview(validated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Please check the required fields.";
+      toast({
+        title: "Validation error",
+        description: message,
+        variant: "destructive",
+      });
+      setShowFinalActions(false);
+    }
+  }, [showFinalActions, formData]);
+
+  const FirstPagePreview = ({ data, compact = false }: { data: PermanentContractFormData; compact?: boolean }) => {
+    const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
+    const salaryDisplay = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
+    const workplace = data.workplace || profile?.physical_address || "";
+    const isSouthAfrican = data.nationality === "South African";
+    const derivedAge = isSouthAfrican ? deriveAgeFromId(data.employeeIdNumber) : "";
+    const idDisplay = isSouthAfrican ? data.employeeIdNumber : "--";
+    const passportDisplay = isSouthAfrican ? "--" : data.passportNumber || "--";
+
+    const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
+      <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
+        <span>{title}</span>
+        {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+      </div>
+    );
+
+    const SingleRow = ({ label, value }: { label: string; value?: string | number | null }) => (
+      <div className="grid grid-cols-[120px_1fr] gap-2 border-b border-slate-200 py-2 px-3 text-[11px]">
+        <span className="font-semibold italic uppercase text-gray-700">{label}:</span>
+        <span className="text-gray-900">{displayValue(value)}</span>
+      </div>
+    );
+
+    const DualRow = ({
+      leftLabel,
+      leftValue,
+      rightLabel,
+      rightValue,
+    }: {
+      leftLabel: string;
+      leftValue?: string | number | null;
+      rightLabel: string;
+      rightValue?: string | number | null;
+    }) => (
+      <div className="grid grid-cols-2 gap-4 border-b border-slate-200 py-2 px-3 text-[11px]">
+        <div className="grid grid-cols-[120px_1fr] gap-2">
+          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
+          <span className="text-gray-900">{displayValue(leftValue)}</span>
+        </div>
+        <div className="grid grid-cols-[120px_1fr] gap-2">
+          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
+          <span className="text-gray-900">{displayValue(rightValue)}</span>
+        </div>
+      </div>
+    );
+
+    return (
+      <div
+        className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
+        style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
+      >
+        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Employment Contract</h1>
+
+        <div className="space-y-6 flex-1">
+          <div>
+            <SectionHeader title="A. Employer details" subtitle='(Hereinafter referred to as "The Employer")' />
+            <div className="border border-slate-200 border-t-0">
+              <SingleRow label="Company name" value={profile?.company_name} />
+              <SingleRow label="Reg. number" value={profile?.registration_number} />
+              <SingleRow label="Address" value={profile?.physical_address} />
+              <SingleRow label="Email" value={profile?.company_email} />
+              <SingleRow label="Contact" value={profile?.company_contact} />
+            </div>
+          </div>
+
+          <div>
+            <SectionHeader title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")' />
+            <div className="border border-slate-200 border-t-0">
+              <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
+              <DualRow leftLabel="ID no." leftValue={idDisplay} rightLabel="Passport no." rightValue={passportDisplay} />
+              <DualRow leftLabel="Age" leftValue={derivedAge} rightLabel="Nationality" rightValue={data.nationality} />
+              <DualRow leftLabel="Race" leftValue={data.race} rightLabel="Gender" rightValue={data.gender} />
+              <DualRow leftLabel="Cell number" leftValue={data.employeeCell} rightLabel="Email" rightValue={data.employeeEmail || "--"} />
+              <DualRow leftLabel="Alt. contact" leftValue={data.alternativeContact || "--"} rightLabel="Employee no." rightValue={data.employeeNumber} />
+              <SingleRow label="Address" value={data.employeeAddress} />
+              <SingleRow label="Postal" value={data.employeePostalAddress} />
+            </div>
+          </div>
+
+          <div>
+            <SectionHeader title="C. Employment details" />
+            <div className="border border-slate-200 border-t-0">
+              <DualRow leftLabel="Type" leftValue="Permanent" rightLabel="Start date" rightValue={formatDate(data.startDate)} />
+              <DualRow leftLabel="Duration" leftValue="Indefinite" rightLabel="Probation" rightValue={probationLabels[data.probationPeriod]} />
+              <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Department" rightValue={data.department} />
+              <DualRow leftLabel="Gross salary" leftValue={salaryDisplay} rightLabel="Retirement" rightValue={data.retirementAge ? `Age ${data.retirementAge}` : ""} />
+              <DualRow leftLabel="Reports to" leftValue={data.reportsTo} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
+              <SingleRow label="Workplace" value={workplace} />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    );
+  };
 
   const addWrappedText = (
     doc: jsPDF,
@@ -699,6 +830,8 @@ const PermanentContractGenerator = () => {
 
     addInformationPage();
 
+    const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
+
     const clauses = [
       {
         title: "Introduction",
@@ -775,8 +908,8 @@ const PermanentContractGenerator = () => {
       {
         title: "Annual leave",
         body: [
-          "The Employee is entitled to twenty-one (21) consecutive days’ annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.",
-          "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee’s leave entitlement.",
+          annualLeaveText,
+          "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee's leave entitlement.",
         ],
       },
       {
@@ -988,6 +1121,7 @@ const PermanentContractGenerator = () => {
       const validated = validateData();
       setValidatedPreview(validated);
       setShowPreview(true);
+      setShowFinalActions(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
       toast({
@@ -1012,6 +1146,21 @@ const PermanentContractGenerator = () => {
       });
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleFinish = () => {
+    try {
+      const validated = validateData();
+      setValidatedPreview(validated);
+      setShowFinalActions(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Please check the required fields.";
+      toast({
+        title: "Validation error",
+        description: message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -1090,62 +1239,72 @@ const PermanentContractGenerator = () => {
           </Button>
         </div>
 
-        <Card className="shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
-          <CardHeader className="space-y-2">
-            <div className="flex items-center justify-center gap-4">
-              {steps.map((step, index) => {
-                const isActive = index === activeStep;
-                const isDone = index < activeStep;
-                const Icon = isDone ? Check : [Building2, User2, Briefcase][index];
-                const circleClasses = isDone
-                  ? "bg-emerald-500 text-white"
-                  : isActive
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-200 text-slate-500";
-                const connectorClasses = isDone ? "bg-emerald-500" : isActive ? "bg-blue-400" : "bg-slate-200";
-                const hoverable = isDone;
-                return (
+        <div className="flex items-center justify-center gap-4">
+          {steps.map((step, index) => {
+            const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
+            const isDone = index < activeStep || isFinalizedCurrent;
+            const isActive = index === activeStep && !isFinalizedCurrent;
+            const Icon = isDone ? Check : [Building2, User2, Briefcase][index];
+            const circleClasses = isDone
+              ? "bg-emerald-500 text-white"
+              : isActive
+                ? "bg-blue-600 text-white"
+                : "bg-slate-200 text-slate-500";
+            const connectorClasses = isDone ? "bg-emerald-500" : isActive ? "bg-blue-400" : "bg-slate-200";
+            const canClick = showFinalActions || index < activeStep;
+            const handleClick = () => {
+              if (showFinalActions) {
+                setShowFinalActions(false);
+                setActiveStep(index);
+              } else if (canNavigateToStep(index)) {
+                handleStepClick(index);
+              }
+            };
+
+            return (
+              <div
+                key={step}
+                className={`flex items-center gap-4 ${canClick ? "cursor-pointer" : "cursor-default opacity-90"}`}
+                role="button"
+                tabIndex={canClick ? 0 : -1}
+                onClick={handleClick}
+                onKeyDown={(e) => {
+                  if ((e.key === "Enter" || e.key === " ") && canClick) {
+                    e.preventDefault();
+                    handleClick();
+                  }
+                }}
+                aria-disabled={!canClick}
+                aria-label={`Go to ${step}`}
+              >
+                <div className={`flex flex-col items-center gap-2 ${canClick ? "group" : ""}`}>
                   <div
-                    key={step}
-                    className={`flex items-center gap-4 ${canNavigateToStep(index) ? "cursor-pointer" : "cursor-default opacity-90"}`}
-                    role="button"
-                    tabIndex={canNavigateToStep(index) ? 0 : -1}
-                    onClick={() => handleStepClick(index)}
-                    onKeyDown={(e) => {
-                      if ((e.key === "Enter" || e.key === " ") && canNavigateToStep(index)) {
-                        e.preventDefault();
-                        handleStepClick(index);
-                      }
-                    }}
-                    aria-disabled={!canNavigateToStep(index)}
-                    aria-label={`Go to ${step}`}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 ease-out transform-gpu ${circleClasses} shadow-sm ${canClick ? "group-hover:scale-105" : ""}`}
                   >
-                    <div className={`flex flex-col items-center gap-2 ${hoverable ? "group" : ""}`}>
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 ease-out transform-gpu ${circleClasses} shadow-sm ${hoverable ? "group-hover:scale-105" : ""}`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <span
-                        className={`text-xs font-semibold text-gray-800 transition-all duration-200 ease-out transform-gpu ${
-                          hoverable ? "group-hover:text-blue-600 group-hover:scale-105" : ""
-                        }`}
-                      >
-                        {step}
-                      </span>
-                    </div>
-                    {index < steps.length - 1 && (
-                      <div
-                        className={`h-1 w-16 rounded-full transition-all duration-300 ${connectorClasses} self-center -mt-5`}
-                        aria-hidden="true"
-                      />
-                    )}
+                    <Icon className="h-5 w-5" />
                   </div>
-                );
-              })}
-            </div>
-          </CardHeader>
-          <CardContent className="[&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+                  <span
+                    className={`text-xs font-semibold text-gray-800 transition-all duration-200 ease-out transform-gpu ${
+                      canClick ? "group-hover:text-blue-600 group-hover:scale-105" : ""
+                    }`}
+                  >
+                    {step}
+                  </span>
+                </div>
+                {index < steps.length - 1 && (
+                  <div
+                    className={`h-1 w-16 rounded-full transition-all duration-300 ${connectorClasses} self-center -mt-5`}
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {!showFinalActions ? (
+          <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+          <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
             <div className="space-y-4">
               {activeStep === 0 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
@@ -1561,6 +1720,23 @@ const PermanentContractGenerator = () => {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
+                      <Label htmlFor="annualLeaveDays">Annual leave days *</Label>
+                      <Input
+                        id="annualLeaveDays"
+                        type="number"
+                        min="1"
+                        max="60"
+                        step="1"
+                        value={formData.annualLeaveDays}
+                        onChange={(e) => {
+                          const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                          setFormData({ ...formData, annualLeaveDays: digitsOnly });
+                        }}
+                        placeholder="15"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="department">Department</Label>
                       <Input
                         id="department"
@@ -1625,88 +1801,175 @@ const PermanentContractGenerator = () => {
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <div className="flex gap-2">
-                  {activeStep > 0 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleBack}
-                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      Back
-                    </Button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {activeStep < steps.length - 1 && (
-                    <Button
-                      type="button"
-                      onClick={handleNext}
-                      disabled={!canGoNext}
-                      className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      Next
-                    </Button>
-                  )}
-                  {activeStep === steps.length - 1 && (
-                    <TooltipProvider delayDuration={0}>
-                      <div className="flex flex-wrap gap-2">
+                {activeStep === steps.length - 1 ? (
+                  <div className="flex w-full items-center gap-3 flex-wrap justify-between">
+                    <div className="flex-none">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBack}
+                        className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back
+                      </Button>
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                      <TooltipProvider delayDuration={0}>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               type="button"
                               variant="ghost"
-                              size="icon"
-                              onClick={handlePreview}
-                              disabled={!isFormComplete || isGenerating}
-                              aria-label="Preview"
-                              className="h-10 w-10 bg-white text-slate-600 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300 [&_svg]:h-7 [&_svg]:w-7"
-                            >
-                              <FileText />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Preview</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              onClick={handleDownload}
-                              disabled={!isFormComplete || isGenerating}
-                              aria-label="Download PDF"
-                              className="h-10 w-10 bg-white text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300 [&_svg]:h-7 [&_svg]:w-7"
-                            >
-                              <Download />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Download</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
                               onClick={resetForm}
                               disabled={isGenerating}
                               aria-label="Reset form"
-                              className="h-10 w-10 bg-white text-slate-600 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300 [&_svg]:h-7 [&_svg]:w-7"
+                              className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                             >
-                              <Undo2 />
+                              <Undo2 className="h-4 w-4" />
+                              Reset form
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent side="top">Reset form</TooltipContent>
+                          <TooltipContent side="top">Clear all fields and start over</TooltipContent>
                         </Tooltip>
-                      </div>
-                    </TooltipProvider>
-                  )}
-                </div>
+                      </TooltipProvider>
+                    </div>
+                    <div className="flex-none relative">
+                      <Button
+                        type="button"
+                        onClick={handleFinish}
+                        disabled={!isFormComplete || isGenerating}
+                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-transform duration-150 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.35)] hover:shadow-[0_12px_28px_-10px_rgba(0,0,0,0.45)] hover:-translate-y-[1px] active:translate-y-[1px] ${
+                          isFormComplete && !isGenerating
+                            ? "bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 border border-emerald-700/70"
+                            : "bg-gradient-to-b from-primary to-primary/90 hover:from-primary/90 hover:to-primary border border-primary/60"
+                        }`}
+                      >
+                        Finish
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                    <div className="flex-none">
+                      {activeStep > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          Back
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex-1" />
+                    <div className="flex-none">
+                      {activeStep < steps.length - 1 && (
+                        <Button
+                          type="button"
+                          onClick={handleNext}
+                          disabled={!canGoNext}
+                          className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          Next
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+          ) : (
+            <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+              <CardHeader className="pt-4 pb-0" />
+              <CardContent className="space-y-6 pt-2">
+                <div className="flex flex-col items-center gap-3">
+                  <div
+                    className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
+                    style={{
+                      width: `${snippetContainerWidthMm}mm`,
+                      height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
+                    }}
+                    >
+                      {validatedPreview ? (
+                        <div className="relative h-full w-full overflow-hidden">
+                          <div
+                            className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
+                            style={{
+                              width: "210mm",
+                              height: `${snippetVisibleHeightMm}mm`,
+                              overflow: "hidden",
+                              marginTop: `${snippetPaddingTopMm}mm`,
+                              transform: `translateX(-50%) scale(${snippetScale})`,
+                              transformOrigin: "top center",
+                            }}
+                          >
+                            <div style={{ height: "297mm", overflow: "hidden" }}>
+                              <FirstPagePreview data={validatedPreview} compact />
+                            </div>
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handlePreview}
+                                disabled={isGenerating}
+                                aria-label="Preview"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <FileText />
+                                  <span className="text-sm font-semibold">Preview</span>
+                                </div>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handleDownload}
+                                disabled={isGenerating}
+                                aria-label="Download PDF"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Download />
+                                  <span className="text-sm font-semibold">Download</span>
+                                </div>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-6 text-sm text-slate-600">Complete the form and click Finish to see the first-page preview.</div>
+                      )}
+                    </div>
+
+                <div className="flex w-full items-center gap-2">
+                  <div className="flex-none">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowFinalActions(false)}
+                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                      Back to form
+                    </Button>
+                  </div>
+                  <div className="flex-1" />
+                  <div className="flex-none opacity-0 pointer-events-none">
+                    <Button variant="outline" className="gap-2 border-transparent">
+                      Placeholder
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
@@ -1730,6 +1993,7 @@ const PermanentContractGenerator = () => {
               const isSouthAfrican = validatedPreview.nationality === "South African";
               const idDisplay = isSouthAfrican ? validatedPreview.employeeIdNumber : "--";
               const passportDisplay = isSouthAfrican ? "--" : validatedPreview.passportNumber || "--";
+              const annualLeaveText = `The Employee is entitled to ${validatedPreview.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
               const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
                 <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
@@ -1845,8 +2109,8 @@ const PermanentContractGenerator = () => {
                 {
                   title: "Annual leave",
                   body: [
-                    "The Employee is entitled to twenty-one (21) consecutive days’ annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.",
-                    "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee’s leave entitlement.",
+                    annualLeaveText,
+                    "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee's leave entitlement.",
                   ],
                 },
                 {
@@ -1978,102 +2242,7 @@ const PermanentContractGenerator = () => {
 
               return (
                 <div className="space-y-8">
-                  <div
-                    className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm"
-                    style={{ width: "210mm", minHeight: "297mm" }}
-                  >
-                    <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Employment Contract</h1>
-
-                    <div className="space-y-6">
-                      <div>
-                        <SectionHeader
-                          title="A. Employer details"
-                          subtitle='(Hereinafter referred to as "The Employer")'
-                        />
-                        <div className="border border-slate-200 border-t-0">
-                          <SingleRow label="Company name" value={profile?.company_name} />
-                          <SingleRow label="Reg. number" value={profile?.registration_number} />
-                          <SingleRow label="Address" value={profile?.physical_address} />
-                          <SingleRow label="Email" value={profile?.company_email} />
-                          <SingleRow label="Contact" value={profile?.company_contact} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <SectionHeader
-                          title="B. Employee details"
-                          subtitle='(Hereinafter referred to as "the Employee")'
-                        />
-                        <div className="border border-slate-200 border-t-0">
-                          <DualRow
-                            leftLabel="Surname"
-                            leftValue={validatedPreview.employeeSurname}
-                            rightLabel="Name(s)"
-                            rightValue={validatedPreview.employeeName}
-                          />
-                          <DualRow
-                            leftLabel="ID no."
-                            leftValue={idDisplay}
-                            rightLabel="Passport no."
-                            rightValue={passportDisplay}
-                          />
-                          <DualRow leftLabel="Age" leftValue={derivedAge} rightLabel="Nationality" rightValue={validatedPreview.nationality} />
-                          <DualRow leftLabel="Race" leftValue={validatedPreview.race} rightLabel="Gender" rightValue={validatedPreview.gender} />
-                          <DualRow
-                            leftLabel="Cell number"
-                            leftValue={validatedPreview.employeeCell}
-                            rightLabel="Email"
-                            rightValue={validatedPreview.employeeEmail || "--"}
-                          />
-                          <DualRow
-                            leftLabel="Alt. contact"
-                            leftValue={validatedPreview.alternativeContact || "--"}
-                            rightLabel="Employee no."
-                            rightValue={validatedPreview.employeeNumber}
-                          />
-                          <SingleRow label="Address" value={validatedPreview.employeeAddress} />
-                          <SingleRow label="Postal" value={validatedPreview.employeePostalAddress} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <SectionHeader title="C. Employment details" />
-                        <div className="border border-slate-200 border-t-0">
-                          <DualRow
-                            leftLabel="Type"
-                            leftValue="Permanent"
-                            rightLabel="Start date"
-                            rightValue={formatDate(validatedPreview.startDate)}
-                          />
-                          <DualRow
-                            leftLabel="Duration"
-                            leftValue="Indefinite"
-                            rightLabel="Probation"
-                            rightValue={probationLabels[validatedPreview.probationPeriod]}
-                          />
-                          <DualRow
-                            leftLabel="Job title"
-                            leftValue={validatedPreview.jobTitle}
-                            rightLabel="Department"
-                            rightValue={validatedPreview.department}
-                          />
-                          <DualRow
-                            leftLabel="Gross salary"
-                            leftValue={salaryDisplay}
-                            rightLabel="Retirement"
-                            rightValue={validatedPreview.retirementAge ? `Age ${validatedPreview.retirementAge}` : ""}
-                          />
-                          <DualRow
-                            leftLabel="Reports to"
-                            leftValue={validatedPreview.reportsTo}
-                            rightLabel="Interpreter"
-                            rightValue={validatedPreview.interpreter === "yes" ? "Yes" : "No"}
-                          />
-                          <SingleRow label="Workplace" value={workplace} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <FirstPagePreview data={validatedPreview} />
 
                   <div
                     className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm"

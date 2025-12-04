@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X } from "lucide-react";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -2371,27 +2371,32 @@ const PermanentContractGenerator = () => {
 
                                   {isEditing ? (
                                     <div className="space-y-2">
+                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
+                                      </p>
                                       <Textarea
                                         value={clauseDraft}
                                         onChange={(e) => setClauseDraft(e.target.value)}
                                         rows={6}
-                                        className="text-xs"
+                                        className="text-xs text-slate-600"
                                         spellCheck={true}
                                         lang="en"
                                         autoCorrect="on"
                                       />
-                                      <p className="text-[11px] text-slate-500">Separate paragraphs with a blank line.</p>
-                                    </div>
-                                  ) : null}
+                                  </div>
+                                ) : null}
 
-                                  <div className="space-y-1">
+                                <div className="space-y-1">
                                     {paragraphs.map((text) => {
                                       const currentNumber = clauseNumber;
                                       clauseNumber += 1;
                                       return (
                                         <div key={`${clause.title}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
                                           <span className="font-semibold">{currentNumber}.</span>
-                                          <p className="text-justify whitespace-pre-line">{text}</p>
+                                          <p className="text-justify whitespace-pre-line text-black">
+                                            {text}
+                                          </p>
                                         </div>
                                       );
                                     })}

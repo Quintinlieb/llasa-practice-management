@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, Building2, User2, Briefcase, Check, Undo2, X } from "lucide-react";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,6 +35,11 @@ type ContractFormState = {
   annualLeaveDays: string;
   gender: PermanentContractFormData["gender"] | "";
   race: PermanentContractFormData["race"] | "";
+};
+
+type ClauseDefinition = {
+  title: string;
+  body: string | string[];
 };
 
 const salaryFrequencyLabels: Record<PermanentContractFormData["salaryFrequency"], string> = {
@@ -84,6 +89,9 @@ const PermanentContractGenerator = () => {
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<PermanentContractFormData | null>(null);
+  const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
+  const [editingClause, setEditingClause] = useState<string | null>(null);
+  const [clauseDraft, setClauseDraft] = useState("");
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
@@ -406,6 +414,16 @@ const PermanentContractGenerator = () => {
       ...formData,
       salaryAmount: formData.salaryAmount,
       annualLeaveDays: formData.annualLeaveDays,
+    });
+
+  const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
+
+  const applyClauseEdits = (clauses: ClauseDefinition[]): ClauseDefinition[] =>
+    clauses.map((clause) => {
+      const edited = clauseEdits[clause.title];
+      if (!edited) return clause;
+      const paragraphs = edited.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+      return { ...clause, body: paragraphs.length ? paragraphs : edited };
     });
 
   useEffect(() => {
@@ -832,7 +850,7 @@ const PermanentContractGenerator = () => {
 
     const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
-    const clauses = [
+    const clauses: ClauseDefinition[] = [
       {
         title: "Introduction",
         body: "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily.  The Employee hereby agrees that he/she has been granted the opportunity to peruse and discuss the contract with his/her council and that he/she understands the content that follows.",
@@ -1039,9 +1057,11 @@ const PermanentContractGenerator = () => {
       },
     ];
 
+    const clausesWithEdits = applyClauseEdits(clauses);
+
     let clauseNumber = 1;
     let isFirstClause = true;
-    clauses.forEach((clause) => {
+    clausesWithEdits.forEach((clause) => {
       if (!isFirstClause) {
         y += 6; // consistent gap before each new clause
       }
@@ -1181,16 +1201,17 @@ const PermanentContractGenerator = () => {
     <DashboardLayout>
       {showEmployeeHint && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+          <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
             <span
-              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse"
+              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
               aria-hidden="true"
             ></span>
             <div className="pointer-events-auto flex items-center gap-2">
-              <span className="text-blue-600">
+              <span className="text-orange-600">
                 TIP!{" "}
-                <span className="text-blue-900">
-                  Add the employee on the Employees page first before generating the contract.
+                <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                  Add the employee to your Employee List before generating a contract
+                  <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
                 </span>
               </span>
               <button
@@ -1246,11 +1267,11 @@ const PermanentContractGenerator = () => {
             const isActive = index === activeStep && !isFinalizedCurrent;
             const Icon = isDone ? Check : [Building2, User2, Briefcase][index];
             const circleClasses = isDone
-              ? "bg-emerald-500 text-white"
+              ? "bg-[#04b81f] text-white"
               : isActive
                 ? "bg-blue-600 text-white"
                 : "bg-slate-200 text-slate-500";
-            const connectorClasses = isDone ? "bg-emerald-500" : isActive ? "bg-blue-400" : "bg-slate-200";
+            const connectorClasses = isDone ? "bg-[#04b81f]" : isActive ? "bg-blue-400" : "bg-slate-200";
             const canClick = showFinalActions || index < activeStep;
             const handleClick = () => {
               if (showFinalActions) {
@@ -1262,22 +1283,27 @@ const PermanentContractGenerator = () => {
             };
 
             return (
-              <div
-                key={step}
-                className={`flex items-center gap-4 ${canClick ? "cursor-pointer" : "cursor-default opacity-90"}`}
-                role="button"
-                tabIndex={canClick ? 0 : -1}
-                onClick={handleClick}
-                onKeyDown={(e) => {
-                  if ((e.key === "Enter" || e.key === " ") && canClick) {
-                    e.preventDefault();
-                    handleClick();
+              <div key={step} className="flex items-center gap-4">
+                <div
+                  className={`flex flex-col items-center gap-2 ${
+                    canClick ? "cursor-pointer group" : "cursor-default opacity-90"
+                  }`}
+                  role={canClick ? "button" : undefined}
+                  tabIndex={canClick ? 0 : -1}
+                  onClick={canClick ? handleClick : undefined}
+                  onKeyDown={
+                    canClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleClick();
+                          }
+                        }
+                      : undefined
                   }
-                }}
-                aria-disabled={!canClick}
-                aria-label={`Go to ${step}`}
-              >
-                <div className={`flex flex-col items-center gap-2 ${canClick ? "group" : ""}`}>
+                  aria-disabled={!canClick}
+                  aria-label={canClick ? `Go to ${step}` : undefined}
+                >
                   <div
                     className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 ease-out transform-gpu ${circleClasses} shadow-sm ${canClick ? "group-hover:scale-105" : ""}`}
                   >
@@ -1839,10 +1865,10 @@ const PermanentContractGenerator = () => {
                         type="button"
                         onClick={handleFinish}
                         disabled={!isFormComplete || isGenerating}
-                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-transform duration-150 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.35)] hover:shadow-[0_12px_28px_-10px_rgba(0,0,0,0.45)] hover:-translate-y-[1px] active:translate-y-[1px] ${
+                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
                           isFormComplete && !isGenerating
-                            ? "bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 border border-emerald-700/70"
-                            : "bg-gradient-to-b from-primary to-primary/90 hover:from-primary/90 hover:to-primary border border-primary/60"
+                            ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
+                            : "bg-primary hover:bg-primary/90 border border-primary/60"
                         }`}
                       >
                         Finish
@@ -2032,7 +2058,7 @@ const PermanentContractGenerator = () => {
                 </div>
               );
 
-              const clauses = [
+              const clauses: ClauseDefinition[] = [
                 {
                   title: "Introduction",
                   body:
@@ -2240,36 +2266,140 @@ const PermanentContractGenerator = () => {
                 },
               ];
 
+              const clausesWithEdits = applyClauseEdits(clauses);
+
+              const startEditingClause = (clause: ClauseDefinition) => {
+                setEditingClause(clause.title);
+                setClauseDraft(clauseEdits[clause.title] ?? serializeClauseBody(clause.body));
+              };
+
+              const saveClauseEdit = (title: string) => {
+                const trimmed = clauseDraft.trim();
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  if (trimmed) {
+                    next[title] = trimmed;
+                  } else {
+                    delete next[title];
+                  }
+                  return next;
+                });
+                setEditingClause(null);
+                setClauseDraft("");
+              };
+
+              const resetClauseEdit = (title: string) => {
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[title];
+                  return next;
+                });
+                setEditingClause(null);
+                setClauseDraft("");
+              };
+
               return (
                 <div className="space-y-8">
                   <FirstPagePreview data={validatedPreview} />
 
-                  <div
-                    className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm"
-                    style={{ width: "210mm", minHeight: "297mm" }}
-                  >
-                    <div className="text-xs leading-relaxed space-y-5">
-                      {(() => {
-                        let clauseNumber = 1;
-                        return clauses.map((clause) => {
-                          const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
-                          return (
-                            <div key={clause.title} className="space-y-1">
-                              <h3 className="font-semibold text-black">{clause.title}</h3>
-                              {paragraphs.map((text) => {
-                                const currentNumber = clauseNumber;
-                                clauseNumber += 1;
-                                return (
-                                  <div key={`${clause.title}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
-                                    <span className="font-semibold">{currentNumber}.</span>
-                                    <p className="text-justify whitespace-pre-line">{text}</p>
+                      <div
+                        className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm"
+                        style={{ width: "210mm", minHeight: "297mm" }}
+                      >
+                        <div className="text-xs leading-relaxed space-y-5">
+                          {(() => {
+                            let clauseNumber = 1;
+                            return clausesWithEdits.map((clause) => {
+                              const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
+                              const isEditing = editingClause === clause.title;
+                              const isEdited = Boolean(clauseEdits[clause.title]);
+                              return (
+                                <div key={clause.title} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <h3 className="font-semibold text-black">{clause.title}</h3>
+                                      {isEdited ? (
+                                        <span className="rounded-full bg-[#04b81f]/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#04b81f]">
+                                          Edited
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isEditing ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                            onClick={() => saveClauseEdit(clause.title)}
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 px-3"
+                                            onClick={() => {
+                                              setEditingClause(null);
+                                              setClauseDraft("");
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          {isEdited ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-8 px-3 text-slate-600 hover:text-slate-800"
+                                              onClick={() => resetClauseEdit(clause.title)}
+                                            >
+                                              Reset
+                                            </Button>
+                                          ) : null}
+                                        </>
+                                      ) : (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-8 px-3"
+                                          onClick={() => startEditingClause(clause)}
+                                        >
+                                          Edit
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        });
-                      })()}
+
+                                  {isEditing ? (
+                                    <div className="space-y-2">
+                                      <Textarea
+                                        value={clauseDraft}
+                                        onChange={(e) => setClauseDraft(e.target.value)}
+                                        rows={6}
+                                        className="text-xs"
+                                        spellCheck={true}
+                                        lang="en"
+                                        autoCorrect="on"
+                                      />
+                                      <p className="text-[11px] text-slate-500">Separate paragraphs with a blank line.</p>
+                                    </div>
+                                  ) : null}
+
+                                  <div className="space-y-1">
+                                    {paragraphs.map((text) => {
+                                      const currentNumber = clauseNumber;
+                                      clauseNumber += 1;
+                                      return (
+                                        <div key={`${clause.title}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
+                                          <span className="font-semibold">{currentNumber}.</span>
+                                          <p className="text-justify whitespace-pre-line">{text}</p>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
 
                       {validatedPreview.additionalNotes && (
                         <div className="space-y-1">

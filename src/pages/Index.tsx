@@ -39,10 +39,8 @@ const ensureInstallPromptListener = () => {
 ensureInstallPromptListener();
 
 const navLinks = [
-  { label: "Product", href: "#product" },
   { label: "Features", href: "#features" },
   { label: "Pricing", href: "#pricing" },
-  { label: "FAQ", href: "#faq" },
 ];
 
 const pinnedFeatures = [
@@ -223,11 +221,11 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <header className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
+          <div className="flex flex-1 items-center gap-3">
             <img src="/logo.png.png" alt="nudoc full logo" className="h-12 w-auto" />
           </div>
-          <nav className="hidden items-center gap-8 text-sm font-medium text-slate-700 md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-700 md:flex">
             {navLinks.map((item) => (
               <a
                 key={item.href}
@@ -238,6 +236,8 @@ const Index = () => {
                 {item.label}
               </a>
             ))}
+          </nav>
+          <div className="hidden flex-1 items-center justify-end gap-3 md:flex">
             <Link to="/auth">
               <Button variant="outline" className="border-blue-200 text-blue-700">
                 Log in
@@ -246,7 +246,7 @@ const Index = () => {
             <Link to="/auth?new=1">
               <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
             </Link>
-          </nav>
+          </div>
           <button
             className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm md:hidden"
             aria-label="Toggle menu"

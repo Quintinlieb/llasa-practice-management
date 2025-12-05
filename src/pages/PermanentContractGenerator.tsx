@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info } from "lucide-react";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,9 +38,12 @@ type ContractFormState = {
 };
 
 type ClauseDefinition = {
+  id: string;
   title: string;
   body: string | string[];
 };
+
+type CustomClause = ClauseDefinition & { insertAfterId: string | null };
 
 const salaryFrequencyLabels: Record<PermanentContractFormData["salaryFrequency"], string> = {
   month: "per month",
@@ -72,6 +75,20 @@ const extractYear = (value: string) => {
   return Number.isNaN(date.getTime()) ? value.slice(0, 4) : String(date.getFullYear());
 };
 
+const makeClauseId = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/(^-|-$)/g, "");
+
+const withClauseIds = (clauses: Array<Omit<ClauseDefinition, "id">>): ClauseDefinition[] =>
+  clauses.map((clause) => ({ ...clause, id: makeClauseId(clause.title) }));
+
+const generateCustomClauseId = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 const deriveAgeFromId = (id: string) => {
   const dob = extractDobFromId(id);
   if (!dob) return "";
@@ -92,6 +109,10 @@ const PermanentContractGenerator = () => {
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
   const [clauseDraft, setClauseDraft] = useState("");
+  const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
+  const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
+  const [newClauseTitle, setNewClauseTitle] = useState("");
+  const [newClauseBody, setNewClauseBody] = useState("");
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
@@ -279,6 +300,13 @@ const PermanentContractGenerator = () => {
     setShowPreview(false);
     setShowFinalActions(false);
     setActiveStep(0);
+    setClauseEdits({});
+    setCustomClauses([]);
+    setEditingClause(null);
+    setClauseDraft("");
+    setAddingAfter(null);
+    setNewClauseTitle("");
+    setNewClauseBody("");
   };
 
   useEffect(() => {
@@ -418,13 +446,32 @@ const PermanentContractGenerator = () => {
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
 
+  const normalizeBodyText = (text: string) => {
+    const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    return paragraphs.length ? paragraphs : text.trim();
+  };
+
   const applyClauseEdits = (clauses: ClauseDefinition[]): ClauseDefinition[] =>
     clauses.map((clause) => {
-      const edited = clauseEdits[clause.title];
+      const edited = clauseEdits[clause.id];
       if (!edited) return clause;
-      const paragraphs = edited.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-      return { ...clause, body: paragraphs.length ? paragraphs : edited };
+      return { ...clause, body: normalizeBodyText(edited) };
     });
+
+  const mergeClauses = useCallback(
+    (baseClauses: ClauseDefinition[]): ClauseDefinition[] => {
+      const merged = [...baseClauses];
+      customClauses.forEach((customClause) => {
+        const insertIndex = customClause.insertAfterId
+          ? merged.findIndex((clause) => clause.id === customClause.insertAfterId) + 1
+          : 0;
+        const safeIndex = Number.isInteger(insertIndex) && insertIndex > 0 ? insertIndex : 0;
+        merged.splice(safeIndex, 0, customClause);
+      });
+      return merged;
+    },
+    [customClauses],
+  );
 
   useEffect(() => {
     if (!showFinalActions) return;
@@ -850,7 +897,8 @@ const PermanentContractGenerator = () => {
 
     const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
-    const clauses: ClauseDefinition[] = [
+    const clauses: ClauseDefinition[] = mergeClauses(
+      withClauseIds([
       {
         title: "Introduction",
         body: "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily.  The Employee hereby agrees that he/she has been granted the opportunity to peruse and discuss the contract with his/her council and that he/she understands the content that follows.",
@@ -1055,7 +1103,8 @@ const PermanentContractGenerator = () => {
           "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
         ],
       },
-    ];
+      ])
+    );
 
     const clausesWithEdits = applyClauseEdits(clauses);
 
@@ -2058,7 +2107,8 @@ const PermanentContractGenerator = () => {
                 </div>
               );
 
-              const clauses: ClauseDefinition[] = [
+              const clauses: ClauseDefinition[] = mergeClauses(
+                withClauseIds([
                 {
                   title: "Introduction",
                   body:
@@ -2264,23 +2314,24 @@ const PermanentContractGenerator = () => {
                     "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
                   ],
                 },
-              ];
+              ])
+            );
 
               const clausesWithEdits = applyClauseEdits(clauses);
 
               const startEditingClause = (clause: ClauseDefinition) => {
-                setEditingClause(clause.title);
-                setClauseDraft(clauseEdits[clause.title] ?? serializeClauseBody(clause.body));
+                setEditingClause(clause.id);
+                setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
               };
 
-              const saveClauseEdit = (title: string) => {
+              const saveClauseEdit = (id: string) => {
                 const trimmed = clauseDraft.trim();
                 setClauseEdits((prev) => {
                   const next = { ...prev };
                   if (trimmed) {
-                    next[title] = trimmed;
+                    next[id] = trimmed;
                   } else {
-                    delete next[title];
+                    delete next[id];
                   }
                   return next;
                 });
@@ -2288,14 +2339,63 @@ const PermanentContractGenerator = () => {
                 setClauseDraft("");
               };
 
-              const resetClauseEdit = (title: string) => {
+              const resetClauseEdit = (id: string) => {
                 setClauseEdits((prev) => {
                   const next = { ...prev };
-                  delete next[title];
+                  delete next[id];
                   return next;
                 });
                 setEditingClause(null);
                 setClauseDraft("");
+              };
+
+              const openAddClauseForm = (afterId: string | null) => {
+                setAddingAfter(afterId);
+                setNewClauseTitle("");
+                setNewClauseBody("");
+              };
+
+              const cancelAddClause = () => {
+                setAddingAfter(undefined);
+                setNewClauseTitle("");
+                setNewClauseBody("");
+              };
+
+              const saveNewClause = () => {
+                const title = newClauseTitle.trim();
+                const body = newClauseBody.trim();
+                if (!title || !body) {
+                  toast({
+                    title: "Add clause",
+                    description: "Please provide both a title and body for the new clause.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                const normalizedBody = normalizeBodyText(body);
+                setCustomClauses((prev) => [
+                  ...prev,
+                  {
+                    id: generateCustomClauseId(),
+                    title,
+                    body: normalizedBody,
+                    insertAfterId: addingAfter,
+                  },
+                ]);
+                cancelAddClause();
+              };
+
+              const deleteCustomClause = (id: string) => {
+                setCustomClauses((prev) => prev.filter((clause) => clause.id !== id));
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
+                if (editingClause === id) {
+                  setEditingClause(null);
+                  setClauseDraft("");
+                }
               };
 
               return (
@@ -2309,18 +2409,89 @@ const PermanentContractGenerator = () => {
                         <div className="text-xs leading-relaxed space-y-5">
                           {(() => {
                             let clauseNumber = 1;
-                            return clausesWithEdits.map((clause) => {
-                              const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
-                              const isEditing = editingClause === clause.title;
-                              const isEdited = Boolean(clauseEdits[clause.title]);
+                            const renderAddClauseControl = (afterId: string | null) => {
+                              const isFormOpen = addingAfter === afterId && addingAfter !== undefined;
                               return (
-                                <div key={clause.title} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
+                                  {isFormOpen ? (
+                                    <div className="w-full rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-4">
+                                      <div className="grid gap-3">
+                                        <Input
+                                          value={newClauseTitle}
+                                          onChange={(e) => setNewClauseTitle(e.target.value)}
+                                          placeholder="Clause title"
+                                          className="text-xs"
+                                        />
+                                        <Textarea
+                                          value={newClauseBody}
+                                          onChange={(e) => setNewClauseBody(e.target.value)}
+                                          rows={4}
+                                          className="text-xs text-slate-600"
+                                          placeholder="Clause body. Separate paragraphs with a blank line."
+                                          spellCheck={true}
+                                          lang="en"
+                                          autoCorrect="on"
+                                        />
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                          <span>Paragraph numbering updates automatically.</span>
+                                          <div className="flex items-center gap-2">
+                                            <Button
+                                              size="sm"
+                                              className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                              onClick={saveNewClause}
+                                            >
+                                              Add clause
+                                            </Button>
+                                            <Button size="sm" variant="ghost" className="h-8 px-3" onClick={cancelAddClause}>
+                                              Cancel
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddClauseForm(afterId)}
+                                      className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    >
+                                      <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                        <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                          <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
+                                        </span>
+                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                          Add
+                                        </span>
+                                      </span>
+                                      <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
+                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                        <span className="w-16" />
+                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            };
+
+                            return clausesWithEdits.flatMap((clause) => {
+                              const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
+                              const isEditing = editingClause === clause.id;
+                              const isEdited = Boolean(clauseEdits[clause.id]);
+                              const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
+                              return [
+                                <div key={clause.id} className="space-y-2 rounded-md border border-slate-100/80 p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                       <h3 className="font-semibold text-black">{clause.title}</h3>
                                       {isEdited ? (
                                         <span className="rounded-full bg-[#04b81f]/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#04b81f]">
                                           Edited
+                                        </span>
+                                      ) : null}
+                                      {isCustomClause ? (
+                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                                          Custom
                                         </span>
                                       ) : null}
                                     </div>
@@ -2330,7 +2501,7 @@ const PermanentContractGenerator = () => {
                                           <Button
                                             size="sm"
                                             className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
-                                            onClick={() => saveClauseEdit(clause.title)}
+                                            onClick={() => saveClauseEdit(clause.id)}
                                           >
                                             Save
                                           </Button>
@@ -2350,21 +2521,33 @@ const PermanentContractGenerator = () => {
                                               size="sm"
                                               variant="ghost"
                                               className="h-8 px-3 text-slate-600 hover:text-slate-800"
-                                              onClick={() => resetClauseEdit(clause.title)}
+                                              onClick={() => resetClauseEdit(clause.id)}
                                             >
                                               Reset
                                             </Button>
                                           ) : null}
                                         </>
                                       ) : (
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-8 px-3"
-                                          onClick={() => startEditingClause(clause)}
-                                        >
-                                          Edit
-                                        </Button>
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 px-3"
+                                            onClick={() => startEditingClause(clause)}
+                                          >
+                                            Edit
+                                          </Button>
+                                          {isCustomClause ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-8 px-3 text-red-600 hover:text-red-700"
+                                              onClick={() => deleteCustomClause(clause.id)}
+                                            >
+                                              Delete
+                                            </Button>
+                                          ) : null}
+                                        </>
                                       )}
                                     </div>
                                   </div>
@@ -2384,15 +2567,15 @@ const PermanentContractGenerator = () => {
                                         lang="en"
                                         autoCorrect="on"
                                       />
-                                  </div>
-                                ) : null}
+                                    </div>
+                                  ) : null}
 
-                                <div className="space-y-1">
+                                  <div className="space-y-1">
                                     {paragraphs.map((text) => {
                                       const currentNumber = clauseNumber;
                                       clauseNumber += 1;
                                       return (
-                                        <div key={`${clause.title}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
+                                        <div key={`${clause.id}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
                                           <span className="font-semibold">{currentNumber}.</span>
                                           <p className="text-justify whitespace-pre-line text-black">
                                             {text}
@@ -2401,8 +2584,9 @@ const PermanentContractGenerator = () => {
                                       );
                                     })}
                                   </div>
-                                </div>
-                              );
+                                </div>,
+                                renderAddClauseControl(clause.id),
+                              ];
                             });
                           })()}
 

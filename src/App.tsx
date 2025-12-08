@@ -13,10 +13,13 @@ import Employees from "./pages/Employees";
 import Documents from "./pages/Documents";
 import DisciplineDocumentsPage from "./pages/documents/discipline/page";
 import PerformanceDocumentsPage from "./pages/documents/performance/page";
+import NoticesDocumentsPage from "./pages/documents/notices/page";
 import ContractsDocumentsPage from "./pages/documents/contracts/page";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
+import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
+import TemporaryContractBatch from "./pages/TemporaryContractBatch";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import CalendarPage from "./pages/Calendar";
@@ -40,9 +43,12 @@ const App = () => (
             <Route path="/documents/discipline" element={<ProtectedRoute><DisciplineDocumentsPage /></ProtectedRoute>} />
             <Route path="/documents/discipline/code-of-conduct/preview" element={<ProtectedRoute><CodeOfConductPreviewPage /></ProtectedRoute>} />
             <Route path="/documents/performance" element={<ProtectedRoute><PerformanceDocumentsPage /></ProtectedRoute>} />
+            <Route path="/documents/notices" element={<ProtectedRoute><NoticesDocumentsPage /></ProtectedRoute>} />
             <Route path="/documents/contracts" element={<ProtectedRoute><ContractsDocumentsPage /></ProtectedRoute>} />
             <Route path="/documents/discipline/warnings" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
             <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
+            <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
+            <Route path="/documents/contracts/temporary/batch" element={<ProtectedRoute><TemporaryContractBatch /></ProtectedRoute>} />
             <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />

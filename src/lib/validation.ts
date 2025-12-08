@@ -713,7 +713,7 @@ export const warningGeneratorSchema = z.object({
 
 export const salaryFrequencyOptions = ["month", "week", "day", "hour"] as const;
 
-export const permanentContractSchema = z.object({
+const baseContractSchema = z.object({
   startDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
@@ -853,8 +853,9 @@ export const permanentContractSchema = z.object({
     .max(2000, "Additional notes must not exceed 2000 characters")
     .optional()
     .transform((val) => (val ? sanitizeText(val) : "")),
-})
-.superRefine((data, ctx) => {
+});
+
+const nationalityRefinement = (data: { nationality: string; employeeIdNumber?: string; passportNumber?: string }, ctx: z.RefinementCtx) => {
   const isSA = data.nationality === "South African";
   if (isSA) {
     if (!data.employeeIdNumber) {
@@ -885,10 +886,20 @@ export const permanentContractSchema = z.object({
       });
     }
   }
-});
+};
+
+export const permanentContractSchema = baseContractSchema.superRefine(nationalityRefinement);
+
+export const temporaryContractSchema = baseContractSchema.extend({
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
+    .transform((val) => val.trim()),
+}).superRefine(nationalityRefinement);
 
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
 export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;
 export type EmployeeProfileFormData = z.infer<typeof employeeProfileSchema>;
 export type WarningGeneratorFormData = z.infer<typeof warningGeneratorSchema>;
 export type PermanentContractFormData = z.infer<typeof permanentContractSchema>;
+export type TemporaryContractFormData = z.infer<typeof temporaryContractSchema>;

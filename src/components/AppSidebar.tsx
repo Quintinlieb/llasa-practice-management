@@ -1,4 +1,4 @@
-import { FileText, Users, Home, CalendarClock, ArrowLeft, Gavel, LineChart, FileSignature } from "lucide-react";
+import { FileText, Users, Home, CalendarClock, ArrowLeft, Gavel, LineChart, FileSignature, AlertTriangle } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useState, type FocusEvent, type ComponentType, ReactElement } from "react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ const documentCategoryIcons: Record<string, ComponentType<{ className?: string }
   discipline: Gavel,
   performance: LineChart,
   contracts: FileSignature,
+  notices: AlertTriangle,
 };
 
 export function AppSidebar({ profile }: { profile?: SidebarProfile }) {

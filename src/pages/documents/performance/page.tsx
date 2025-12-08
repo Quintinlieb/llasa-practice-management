@@ -15,24 +15,6 @@ const performanceDocuments: PerformanceDocument[] = [
     href: "/documents/performance/appraisal-form",
     isActive: false,
   },
-  {
-    name: "Notice of Hearing – Poor Performance",
-    description: "Notify employees of hearings related to ongoing performance shortfalls.",
-    href: "/documents/performance/notice-of-hearing",
-    isActive: false,
-  },
-  {
-    name: "Notice of Demotion",
-    description: "Document demotion decisions tied to sustained performance issues.",
-    href: "/documents/performance/notice-of-demotion",
-    isActive: false,
-  },
-  {
-    name: "Notice of Termination",
-    description: "Formalize termination outcomes for unresolved performance matters.",
-    href: "/documents/performance/notice-of-termination",
-    isActive: false,
-  },
 ];
 
 const PerformanceDocumentsPage = () => {

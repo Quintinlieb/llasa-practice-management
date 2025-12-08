@@ -1,48 +1,66 @@
 import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 
-type DisciplineDocument = {
+type NoticeDocument = {
   name: string;
   description: string;
   href: string;
   isActive: boolean;
 };
 
-const disciplineDocuments: DisciplineDocument[] = [
+const noticeDocuments: NoticeDocument[] = [
   {
-    name: "Warnings",
-    description: "Generate formal warnings with pre-filled employee and company data.",
-    href: "/documents/discipline/warnings",
-    isActive: true,
+    name: "Notice of Hearing - Poor Performance",
+    description: "Notify employees of hearings related to ongoing performance shortfalls.",
+    href: "/documents/notices/notice-of-hearing",
+    isActive: false,
   },
   {
-    name: "Code of Conduct",
-    description: "Share organisation-specific conduct guidelines with your teams.",
-    href: "/documents/discipline/code-of-conduct/preview",
-    isActive: true,
+    name: "Notice of Demotion",
+    description: "Document demotion decisions tied to sustained performance issues.",
+    href: "/documents/notices/notice-of-demotion",
+    isActive: false,
   },
   {
-    name: "Counselling",
-    description: "Document informal counselling sessions with employees.",
-    href: "/documents/discipline/counselling",
+    name: "Notice of Termination",
+    description: "Formalize termination outcomes for unresolved performance matters.",
+    href: "/documents/notices/notice-of-termination",
+    isActive: false,
+  },
+  {
+    name: "Notice of Counselling",
+    description: "Schedule or record counselling sessions for performance or conduct concerns.",
+    href: "/documents/notices/notice-of-counselling",
+    isActive: false,
+  },
+  {
+    name: "Notice of Contract Extension",
+    description: "Extend fixed-term engagements while keeping documentation compliant.",
+    href: "/documents/notices/extension",
+    isActive: false,
+  },
+  {
+    name: "Notice of Contract Renewal",
+    description: "Renew fixed-term agreements without redoing the entire contract.",
+    href: "/documents/notices/renewal",
     isActive: false,
   },
 ];
 
-const DisciplineDocumentsPage = () => {
+const NoticesDocumentsPage = () => {
   return (
     <DashboardLayout>
       <div className="space-y-8">
         <header className="space-y-1">
-          <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Discipline</p>
-          <h1 className="text-3xl font-bold text-gray-900">Disciplinary Documents</h1>
+          <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Notices</p>
+          <h1 className="text-3xl font-bold text-gray-900">Generate notices</h1>
           <p className="text-base text-gray-600">
-            Generate warnings with ease and keep your code of conduct at hand.
+            Access all notice templates in one place.
           </p>
         </header>
 
         <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {disciplineDocuments.map((doc) => (
+          {noticeDocuments.map((doc) => (
             <section
               key={doc.name}
               className="flex h-full flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition duration-150 hover:border-blue-500 hover:shadow-md focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 focus-within:ring-offset-white"
@@ -84,4 +102,4 @@ const DisciplineDocumentsPage = () => {
   );
 };
 
-export default DisciplineDocumentsPage;
+export default NoticesDocumentsPage;

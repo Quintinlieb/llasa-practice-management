@@ -6,37 +6,34 @@ type ContractDocument = {
   description: string;
   href: string;
   isActive: boolean;
+  actions?: {
+    label: string;
+    href: string;
+    isActive: boolean;
+  }[];
 };
 
 const contractDocuments: ContractDocument[] = [
   {
     name: "Permanent Contract",
-    description: "Generate a comprehensive permanent employment agreement with company branding.",
+    description: "Generate a permanent contract for your employees in a few easy steps.",
     href: "/documents/contracts/permanent",
     isActive: true,
   },
   {
     name: "Temporary Contract",
-    description: "Create fixed-term or temporary contracts tailored to the assignment duration.",
+    description: "Generate temporary contracts for a single employee or a batch of employees.",
     href: "/documents/contracts/temporary",
-    isActive: false,
+    isActive: true,
+    actions: [
+      { label: "Single", href: "/documents/contracts/temporary", isActive: true },
+      { label: "Batch", href: "/documents/contracts/temporary/batch", isActive: true },
+    ],
   },
   {
-    name: "Notice of Termination",
-    description: "Formalize the termination of an existing contract with clear conditions.",
-    href: "/documents/contracts/notice-of-termination",
-    isActive: false,
-  },
-  {
-    name: "Extension of Fixed-Term Contract",
-    description: "Extend fixed-term engagements while keeping documentation compliant.",
-    href: "/documents/contracts/extension",
-    isActive: false,
-  },
-  {
-    name: "Renewal of Fixed-Term Contract",
-    description: "Renew fixed-term agreements without redoing the entire contract.",
-    href: "/documents/contracts/renewal",
+    name: "Addendum to Contract",
+    description: "Generate addendums to capture changes or clarifications for existing contracts.",
+    href: "/documents/contracts/addendum",
     isActive: false,
   },
 ];
@@ -47,9 +44,9 @@ const ContractsDocumentsPage = () => {
       <div className="space-y-8">
         <header className="space-y-1">
           <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Contracts</p>
-          <h1 className="text-3xl font-bold text-gray-900">Generate contract documents</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Employment Documents</h1>
           <p className="text-base text-gray-600">
-            Keep employment agreements organized and compliant with ready-made templates.
+            Generate compliant employment contracts and employment-related documents in a few easy steps.
           </p>
         </header>
 
@@ -69,7 +66,32 @@ const ContractsDocumentsPage = () => {
                 </div>
               </div>
               <div className="mt-6 pt-2">
-                {doc.isActive ? (
+                {doc.actions ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {doc.actions.map((action) =>
+                      action.isActive ? (
+                        <Link
+                          key={action.label}
+                          to={action.href}
+                          aria-label={`${action.label} ${doc.name}`}
+                          className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600"
+                        >
+                          {action.label}
+                        </Link>
+                      ) : (
+                        <button
+                          key={action.label}
+                          type="button"
+                          disabled
+                          aria-label={`${action.label} for ${doc.name} currently unavailable`}
+                          className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white opacity-60 cursor-not-allowed"
+                        >
+                          {action.label}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                ) : doc.isActive ? (
                   <Link
                     to={doc.href}
                     aria-label={`Open ${doc.name}`}

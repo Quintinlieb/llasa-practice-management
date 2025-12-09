@@ -46,13 +46,7 @@ const documentCategoryIcons: Record<string, ComponentType<{ className?: string }
 export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
   const location = useLocation();
   const [isDocsMenuInteracting, setIsDocsMenuInteracting] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
 
   const setCollapsed = (value: boolean) => {
     setIsCollapsed(value);

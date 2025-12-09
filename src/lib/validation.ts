@@ -888,14 +888,78 @@ const nationalityRefinement = (data: { nationality: string; employeeIdNumber?: s
   }
 };
 
+const idOrPassportRefinement = (
+  data: { employeeIdNumber?: string | null; passportNumber?: string | null },
+  ctx: z.RefinementCtx,
+) => {
+  const hasId = data.employeeIdNumber && data.employeeIdNumber.trim().length > 0;
+  const hasPassport = data.passportNumber && data.passportNumber.trim().length > 0;
+  if (!hasId && !hasPassport) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["employeeIdNumber"],
+      message: "Provide an ID number or a passport number",
+    });
+  }
+};
+
 export const permanentContractSchema = baseContractSchema.superRefine(nationalityRefinement);
 
-export const temporaryContractSchema = baseContractSchema.extend({
-  endDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
-    .transform((val) => val.trim()),
-}).superRefine(nationalityRefinement);
+export const temporaryContractSchema = baseContractSchema
+  .omit({
+    probationPeriod: true,
+    annualLeaveDays: true,
+    retirementAge: true,
+    reportsTo: true,
+  })
+  .extend({
+    projectScope: z
+      .string()
+      .min(3, "Project/Scope must be at least 3 characters")
+      .max(200, "Project/Scope must not exceed 200 characters")
+      .transform((val) => sanitizeText(val)),
+    nationality: z
+      .enum(nationalityOptions)
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    gender: z
+      .enum(genderOptions)
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    race: z
+      .enum(raceOptions)
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    alternativeContact: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || saTenDigitRegex.test(val), {
+        message: "Alternative contact must be exactly 10 digits with no spaces",
+      }),
+    employeeEmail: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .refine((val) => !val || z.string().email().safeParse(val).success, {
+        message: "Invalid email address",
+      })
+      .transform((val) => (val ? sanitizeText(val.toLowerCase()) : "")),
+    employeePostalAddress: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
+      .transform((val) => val.trim()),
+  })
+  .superRefine(idOrPassportRefinement);
 
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
 export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;

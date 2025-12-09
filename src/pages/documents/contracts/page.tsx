@@ -22,13 +22,9 @@ const contractDocuments: ContractDocument[] = [
   },
   {
     name: "Temporary Contract",
-    description: "Generate temporary contracts for a single employee or a batch of employees.",
+    description: "Generate temporary contracts for a single employee.",
     href: "/documents/contracts/temporary",
     isActive: true,
-    actions: [
-      { label: "Single", href: "/documents/contracts/temporary", isActive: true },
-      { label: "Batch", href: "/documents/contracts/temporary/batch", isActive: true },
-    ],
   },
   {
     name: "Addendum to Contract",

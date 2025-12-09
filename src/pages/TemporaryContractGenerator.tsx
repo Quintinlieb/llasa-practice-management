@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,32 +10,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus } from "lucide-react";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Upload, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
-import {
-  temporaryContractSchema,
-  salaryFrequencyOptions,
-  nationalityOptions,
-  genderOptions,
-  raceOptions,
-  extractDobFromId,
-  calculateAgeFromDob,
-  type TemporaryContractFormData,
-} from "@/lib/validation";
+import JSZip from "jszip";
+import { temporaryContractSchema, salaryFrequencyOptions, type TemporaryContractFormData } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
+import { read, utils, write } from "xlsx";
 
 type ContractFormState = {
   employeeId: string;
-  age: string;
-} & Omit<TemporaryContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
+} & Omit<TemporaryContractFormData, "salaryAmount"> & {
   salaryAmount: string;
-  annualLeaveDays: string;
-  gender: TemporaryContractFormData["gender"] | "";
-  race: TemporaryContractFormData["race"] | "";
 };
+
+type TempEmployeeRow = {
+  id: string;
+  employeeName: string;
+  employeeSurname: string;
+  employeeIdNumber: string;
+  passportNumber: string;
+  employeeCell: string;
+  employeeAddress: string;
+};
+
+const makeRowId = () => `emp-${Math.random().toString(16).slice(2, 8)}`;
 
 type ClauseDefinition = {
   id: string;
@@ -51,15 +52,6 @@ const salaryFrequencyLabels: Record<TemporaryContractFormData["salaryFrequency"]
   day: "per day",
   hour: "per hour",
 };
-
-const probationOptions: TemporaryContractFormData["probationPeriod"][] = ["1", "3", "6"];
-const probationLabels: Record<TemporaryContractFormData["probationPeriod"], string> = {
-  "1": "1 Month",
-  "3": "3 Months",
-  "6": "6 Months",
-};
-
-const retirementAgeOptions: TemporaryContractFormData["retirementAge"][] = ["55", "60", "65"];
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
@@ -89,19 +81,12 @@ const generateCustomClauseId = () =>
     ? crypto.randomUUID()
     : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const deriveAgeFromId = (id: string) => {
-  const dob = extractDobFromId(id);
-  if (!dob) return "";
-  return String(calculateAgeFromDob(dob));
-};
-
 const TemporaryContractGenerator = () => {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
-  const [employees, setEmployees] = useState<Tables<"employees">[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -115,8 +100,23 @@ const TemporaryContractGenerator = () => {
   const [newClauseBody, setNewClauseBody] = useState("");
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
+  const currentYear = new Date().getFullYear();
+  const [issueYear, setIssueYear] = useState<string>(String(currentYear));
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const [tempEmployees, setTempEmployees] = useState<TempEmployeeRow[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [newEmployeeIdType, setNewEmployeeIdType] = useState<"id" | "passport">("id");
+  const [newEmployeeForm, setNewEmployeeForm] = useState<Omit<TempEmployeeRow, "id">>({
+    employeeName: "",
+    employeeSurname: "",
+    employeeIdNumber: "",
+    passportNumber: "",
+    employeeCell: "",
+    employeeAddress: "",
+  });
+  const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
   const snippetContainerWidthMm = 150;
@@ -131,10 +131,9 @@ const TemporaryContractGenerator = () => {
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
-    age: "",
     startDate: new Date().toISOString().split("T")[0],
     endDate: "",
-    issueDate: new Date().toISOString().split("T")[0],
+    issueDate: `${currentYear}-01-01`,
     employeeName: "",
     employeeSurname: "",
     employeeIdNumber: "",
@@ -153,14 +152,10 @@ const TemporaryContractGenerator = () => {
     employerEmail: "",
     jobTitle: "",
     salaryAmount: "",
-    annualLeaveDays: "15",
     salaryFrequency: "month",
-    probationPeriod: "3",
-    department: "",
-    retirementAge: "65",
+    projectScope: "",
     workplace: "",
     interpreter: "no",
-    reportsTo: "",
     additionalNotes: "",
   });
 
@@ -186,22 +181,11 @@ const TemporaryContractGenerator = () => {
     if (data) setProfile(data);
   }, [user]);
 
-  const fetchEmployees = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await supabase.from("employees").select("*").eq("company_id", user.id);
-    if (error) {
-      console.warn("Unable to load employees", error);
-      return;
-    }
-    if (data) setEmployees(data);
-  }, [user]);
-
   useEffect(() => {
     if (user) {
       fetchProfile();
-      fetchEmployees();
     }
-  }, [user, fetchEmployees, fetchProfile]);
+  }, [user, fetchProfile]);
 
   useEffect(() => {
     if (profile) {
@@ -214,62 +198,211 @@ const TemporaryContractGenerator = () => {
     }
   }, [profile]);
 
-  const handleNationalityChange = (value: TemporaryContractFormData["nationality"]) => {
+  const applyEmployeeToFormData = useCallback((employee: TempEmployeeRow | null) => {
     setFormData((prev) => ({
       ...prev,
-      nationality: value,
-      // Clear ID/age when switching away from SA; clear passport when switching to SA
-      employeeIdNumber: value === "South African" ? prev.employeeIdNumber : "",
-      passportNumber: value === "South African" ? "" : prev.passportNumber,
-      age: value === "South African" ? deriveAgeFromId(prev.employeeIdNumber) : "",
+      employeeName: employee?.employeeName ?? "",
+      employeeSurname: employee?.employeeSurname ?? "",
+      employeeIdNumber: employee?.employeeIdNumber ?? "",
+      passportNumber: employee?.passportNumber ?? "",
+      employeeCell: employee?.employeeCell ?? "",
+      employeeAddress: employee?.employeeAddress ?? "",
     }));
+  }, []);
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      issueDate: `${issueYear || currentYear}-01-01`,
+    }));
+  }, [issueYear, currentYear]);
+
+  const resetNewEmployeeForm = () => {
+    setNewEmployeeForm({
+      employeeName: "",
+      employeeSurname: "",
+      employeeIdNumber: "",
+      passportNumber: "",
+      employeeCell: "",
+      employeeAddress: "",
+    });
+    setNewEmployeeIdType("id");
   };
 
-  const handleEmployeeSelect = (employeeId: string) => {
-    const employee = employees.find((emp) => emp.id === employeeId);
-    if (!employee) return;
-    const employeeNationality =
-      (employee as Partial<Tables<"employees">> & { nationality?: TemporaryContractFormData["nationality"] })
-        .nationality || "South African";
-    const passportNumber = (employee as Partial<Tables<"employees">> & { passport_number?: string }).passport_number ?? "";
-    const emergencyContact =
-      (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: TemporaryContractFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: TemporaryContractFormData["race"] }).race || "";
-    const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
-    const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
-    const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
-    const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
-    const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
-    const ageFromId = employeeNationality === "South African" ? deriveAgeFromId(employee.id_number ?? "") : "";
+  const handleAddEmployeeSave = () => {
+    const name = newEmployeeForm.employeeName.trim();
+    const surname = newEmployeeForm.employeeSurname.trim();
+    const cell = newEmployeeForm.employeeCell.trim();
+    const address = newEmployeeForm.employeeAddress.trim();
+    const idNumber = newEmployeeIdType === "id" ? newEmployeeForm.employeeIdNumber.replace(/\D/g, "") : "";
+    const passportNumber = newEmployeeIdType === "passport" ? newEmployeeForm.passportNumber.trim() : "";
+    if (!name || !surname || !cell || !address || (!idNumber && !passportNumber)) {
+      toast({
+        title: "Please complete required fields",
+        description: "Name, surname, ID/Passport, cell number, and address are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const row: TempEmployeeRow = {
+      id: makeRowId(),
+      employeeName: name,
+      employeeSurname: surname,
+      employeeIdNumber: newEmployeeIdType === "id" ? idNumber : "",
+      passportNumber: newEmployeeIdType === "passport" ? passportNumber : "",
+      employeeCell: cell,
+      employeeAddress: address,
+    };
+    setTempEmployees((prev) => [...prev, row]);
+    setSelectedEmployeeIds([row.id]);
+    applyEmployeeToFormData(row);
+    setShowAddEmployee(false);
+    resetNewEmployeeForm();
+  };
 
-    setFormData((prev) => ({
-      ...prev,
-      employeeId,
-      employeeName: employee.employee_name,
-      employeeSurname: employee.employee_surname,
-      employeeIdNumber: employee.id_number ?? "",
-      passportNumber,
-      nationality: employeeNationality,
-      alternativeContact: emergencyContact || prev.alternativeContact,
-      gender: genderValue || prev.gender,
-      race: raceValue || prev.race,
-      employeeCell: cellNumber || prev.employeeCell,
-      employeeEmail: emailAddress || prev.employeeEmail,
-      jobTitle: jobTitle || prev.jobTitle,
-      startDate: startDate || prev.startDate,
-      employeeNumber: employeeNumber || prev.employeeNumber,
-      age: ageFromId,
-    }));
+  const handleBulkUploadClick = () => {
+    bulkUploadInputRef.current?.click();
+  };
+
+  const handleDownloadTemplate = () => {
+    const header = ["Name", "Surname", "ID Number", "Passport Number", "Cell Number", "Residential Address"];
+    const example = ["Jane", "Doe", "9001011234088", "", "0821234567", "123 Main St, Cape Town, WC, 8001"];
+    const blankRows = Array.from({ length: 10 }, () => ["", "", "", "", "", ""]);
+    const rows = [header, example, ...blankRows];
+    const ws = utils.aoa_to_sheet(rows);
+
+    const textCols = [2, 3, 4]; // zero-based column indexes for ID/Passport/Cell
+    for (let r = 1; r < rows.length; r += 1) {
+      textCols.forEach((c) => {
+        const cellRef = utils.encode_cell({ c, r });
+        if (!ws[cellRef]) {
+          ws[cellRef] = { t: "s", v: "" };
+        } else {
+          ws[cellRef].t = "s";
+        }
+        ws[cellRef].z = "@";
+      });
+    }
+
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, "Template");
+    const wbout = write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "temp_contract_employees_template.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
+      const normalizeKey = (key: string) => key.toLowerCase().trim();
+      const getValue = (row: Record<string, string>, keys: string[]) => {
+        for (const key of keys) {
+          const match = Object.entries(row).find(([k]) => normalizeKey(k) === normalizeKey(key));
+          if (match) return String(match[1]).trim();
+        }
+        return "";
+      };
+      const parsed: TempEmployeeRow[] = rows
+        .map((row) => {
+          const employeeName = getValue(row, ["name", "employee name", "first name"]);
+          const employeeSurname = getValue(row, ["surname", "last name"]);
+          const employeeIdNumber = getValue(row, ["id", "id number", "idno"]).replace(/\D/g, "");
+          const passportNumber = getValue(row, ["passport", "passport number"]);
+          const employeeCell = getValue(row, ["cell", "cell number", "phone"]).replace(/\D/g, "").slice(0, 10);
+          const employeeAddress = getValue(row, ["address", "residential address"]);
+          if (!employeeName || !employeeSurname || (!employeeIdNumber && !passportNumber) || !employeeCell || !employeeAddress) {
+            return null;
+          }
+          return {
+            id: makeRowId(),
+            employeeName,
+            employeeSurname,
+            employeeIdNumber,
+            passportNumber,
+            employeeCell,
+            employeeAddress,
+          } as TempEmployeeRow;
+        })
+        .filter(Boolean) as TempEmployeeRow[];
+      if (!parsed.length) {
+        toast({
+          title: "No valid rows found",
+          description: "Ensure the spreadsheet has Name, Surname, ID/Passport, Cell, and Address columns.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setTempEmployees((prev) => [...prev, ...parsed]);
+      setSelectedEmployeeIds(parsed.map((row) => row.id));
+      applyEmployeeToFormData(parsed[0]);
+      toast({
+        title: "Bulk upload added",
+        description: `${parsed.length} employee${parsed.length === 1 ? "" : "s"} added.`,
+      });
+    } catch (error) {
+      console.error("Bulk upload failed", error);
+      toast({
+        title: "Could not read file",
+        description: "Please upload a valid Excel file with the required columns.",
+        variant: "destructive",
+      });
+    } finally {
+      if (event.target) event.target.value = "";
+    }
+  };
+
+  const primaryEmployee = useMemo(() => {
+    if (!tempEmployees.length) return null;
+    const selected = tempEmployees.find((emp) => selectedEmployeeIds.includes(emp.id));
+    return selected ?? tempEmployees[0];
+  }, [selectedEmployeeIds, tempEmployees]);
+
+  useEffect(() => {
+    applyEmployeeToFormData(primaryEmployee);
+  }, [applyEmployeeToFormData, primaryEmployee]);
+
+  const toggleSelectAllEmployees = (checked: boolean) => {
+    if (checked) {
+      setSelectedEmployeeIds(tempEmployees.map((emp) => emp.id));
+    } else {
+      setSelectedEmployeeIds([]);
+    }
+  };
+
+  const toggleSelectEmployee = (employeeId: string, checked: boolean) => {
+    setSelectedEmployeeIds((prev) =>
+      checked ? [...prev, employeeId] : prev.filter((id) => id !== employeeId),
+    );
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedEmployeeIds.length) return;
+    setTempEmployees((prev) => {
+      const updated = prev.filter((emp) => !selectedEmployeeIds.includes(emp.id));
+      applyEmployeeToFormData(updated[0] ?? null);
+      return updated;
+    });
+    setSelectedEmployeeIds([]);
   };
 
   const resetForm = () => {
+    const resetYearValue = new Date().getFullYear();
     setFormData({
       employeeId: "",
-      age: "",
       startDate: new Date().toISOString().split("T")[0],
       endDate: "",
-      issueDate: new Date().toISOString().split("T")[0],
+      issueDate: `${resetYearValue}-01-01`,
       employeeName: "",
       employeeSurname: "",
       employeeIdNumber: "",
@@ -288,16 +421,16 @@ const TemporaryContractGenerator = () => {
       employerEmail: profile?.company_email || "",
       jobTitle: "",
       salaryAmount: "",
-      annualLeaveDays: "15",
       salaryFrequency: "month",
-      probationPeriod: "3",
-      department: "",
-      retirementAge: "65",
+      projectScope: "",
       workplace: profile?.physical_address || "",
       interpreter: "no",
-      reportsTo: "",
       additionalNotes: "",
     });
+    setIssueYear(String(resetYearValue));
+    setTempEmployees([]);
+    setSelectedEmployeeIds([]);
+    applyEmployeeToFormData(null);
     setValidatedPreview(null);
     setShowPreview(false);
     setShowFinalActions(false);
@@ -311,72 +444,31 @@ const TemporaryContractGenerator = () => {
     setNewClauseBody("");
   };
 
-  useEffect(() => {
-    if (formData.nationality === "South African") {
-      const derived = formData.employeeIdNumber.length === 13 ? deriveAgeFromId(formData.employeeIdNumber) : "";
-      setFormData((prev) => (derived !== prev.age ? { ...prev, age: derived } : prev));
-    }
-  }, [formData.employeeIdNumber, formData.nationality]);
-
   const isEmployerStepComplete = useMemo(
     () => Boolean(formData.employerContact && formData.employerEmail),
     [formData.employerContact, formData.employerEmail],
   );
 
-  const isEmployeeStepComplete = useMemo(
-    () =>
-      Boolean(
-        formData.employeeName &&
-          formData.employeeSurname &&
-          formData.employeeAddress &&
-          formData.employeePostalAddress &&
-          formData.nationality &&
-          formData.gender &&
-          formData.race &&
-          ((formData.nationality === "South African" && formData.employeeIdNumber) ||
-            (formData.nationality !== "South African" && formData.passportNumber)) &&
-          formData.employeeCell,
-      ),
-    [
-      formData.employeeName,
-      formData.employeeSurname,
-      formData.employeeAddress,
-      formData.employeePostalAddress,
-      formData.nationality,
-      formData.gender,
-      formData.race,
-      formData.employeeIdNumber,
-      formData.passportNumber,
-      formData.employeeCell,
-    ],
-  );
+  const isEmployeeStepComplete = useMemo(() => tempEmployees.length > 0, [tempEmployees]);
 
   const isEmploymentStepComplete = useMemo(
     () =>
       Boolean(
         formData.startDate &&
           formData.endDate &&
-          formData.issueDate &&
           formData.jobTitle &&
-          formData.reportsTo &&
+          formData.projectScope &&
           formData.salaryAmount &&
           formData.salaryFrequency &&
-          formData.annualLeaveDays &&
-          formData.probationPeriod &&
-          formData.retirementAge &&
           formData.workplace &&
           formData.interpreter,
       ),
     [
       formData.startDate,
-      formData.issueDate,
       formData.jobTitle,
-      formData.reportsTo,
+      formData.projectScope,
         formData.salaryAmount,
-        formData.annualLeaveDays,
         formData.salaryFrequency,
-        formData.probationPeriod,
-        formData.retirementAge,
         formData.workplace,
         formData.interpreter,
         formData.endDate,
@@ -386,19 +478,6 @@ const TemporaryContractGenerator = () => {
   const isFormComplete = useMemo(
     () => isEmployerStepComplete && isEmployeeStepComplete && isEmploymentStepComplete,
     [isEmployerStepComplete, isEmployeeStepComplete, isEmploymentStepComplete],
-  );
-
-  const derivedAgeDisplay = useMemo(
-    () => (formData.nationality === "South African" ? deriveAgeFromId(formData.employeeIdNumber) : formData.age),
-    [formData.age, formData.employeeIdNumber, formData.nationality],
-  );
-
-  const isIdDateInvalid = useMemo(
-    () =>
-      formData.nationality === "South African" &&
-      formData.employeeIdNumber.length === 13 &&
-      !extractDobFromId(formData.employeeIdNumber),
-    [formData.employeeIdNumber, formData.nationality],
   );
 
   const canGoNext = useMemo(() => {
@@ -441,13 +520,19 @@ const TemporaryContractGenerator = () => {
     }
   };
 
-  const validateData = () =>
-    temporaryContractSchema.parse({
+  const validateData = () => {
+    if (!primaryEmployee) {
+      throw new Error("Add at least one employee in Step 2 before continuing.");
+    }
+    const issueDateValue = `${issueYear || currentYear}-01-01`;
+    return temporaryContractSchema.parse({
       ...formData,
+      issueDate: issueDateValue,
+      ...primaryEmployee,
       salaryAmount: formData.salaryAmount,
-      annualLeaveDays: formData.annualLeaveDays,
       endDate: formData.endDate,
     });
+  };
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
 
@@ -492,15 +577,23 @@ const TemporaryContractGenerator = () => {
       });
       setShowFinalActions(false);
     }
-  }, [showFinalActions, formData]);
+  }, [showFinalActions, formData, primaryEmployee]);
+
+  useEffect(() => {
+    if (!showFinalActions) return;
+    try {
+      const validated = validateData();
+      setValidatedPreview(validated);
+    } catch {
+      // ignore until user corrects inputs
+    }
+  }, [issueYear, showFinalActions]);
 
   const FirstPagePreview = ({ data, compact = false }: { data: TemporaryContractFormData; compact?: boolean }) => {
     const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
     const salaryDisplay = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
     const workplace = data.workplace || profile?.physical_address || "";
-    const isSouthAfrican = data.nationality === "South African";
-    const idDisplay = isSouthAfrican ? data.employeeIdNumber : "--";
-    const passportDisplay = isSouthAfrican ? "--" : data.passportNumber || "--";
+    const idOrPassport = data.employeeIdNumber || data.passportNumber || "";
 
     const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
       <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
@@ -562,9 +655,9 @@ const TemporaryContractGenerator = () => {
             <SectionHeader title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")' />
             <div className="border border-slate-200 border-t-0">
               <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
-              <DualRow leftLabel="ID no." leftValue={idDisplay} rightLabel="Passport no." rightValue={passportDisplay} />
+              <SingleRow label="ID / Passport" value={idOrPassport || "--"} />
               <SingleRow label="Contact number" value={data.employeeCell} />
-              <SingleRow label="Email" value={data.employeeEmail || "--"} />
+              <SingleRow label="Address" value={data.employeeAddress} />
             </div>
           </div>
 
@@ -572,11 +665,10 @@ const TemporaryContractGenerator = () => {
             <SectionHeader title="C. Employment details" />
             <div className="border border-slate-200 border-t-0">
               <DualRow leftLabel="Type" leftValue="Temporary" rightLabel="Start date" rightValue={formatDate(data.startDate)} />
-              <DualRow leftLabel="End date" leftValue={formatDate(data.endDate)} rightLabel="Probation" rightValue={probationLabels[data.probationPeriod]} />
-              <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Department" rightValue={data.department} />
-              <DualRow leftLabel="Gross salary" leftValue={salaryDisplay} rightLabel="Retirement" rightValue={data.retirementAge ? `Age ${data.retirementAge}` : ""} />
-              <DualRow leftLabel="Reports to" leftValue={data.reportsTo} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
+              <DualRow leftLabel="End date" leftValue={formatDate(data.endDate)} rightLabel="Gross salary" rightValue={salaryDisplay} />
+              <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
               <SingleRow label="Workplace" value={workplace} />
+              <SingleRow label="Project/Scope" value={data.projectScope} />
             </div>
           </div>
         </div>
@@ -614,7 +706,7 @@ const TemporaryContractGenerator = () => {
     return cursorY;
   };
 
-  const generatePDF = (data: TemporaryContractFormData, download = false) => {
+  const buildPdfDocument = (data: TemporaryContractFormData) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -844,9 +936,7 @@ const TemporaryContractGenerator = () => {
     };
 
     const addInformationPage = () => {
-      const isSouthAfrican = data.nationality === "South African";
-      const idDisplay = isSouthAfrican ? data.employeeIdNumber : "--";
-      const passportDisplay = isSouthAfrican ? "--" : data.passportNumber || "";
+      const idOrPassport = data.employeeIdNumber || data.passportNumber || "";
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
@@ -864,24 +954,17 @@ const TemporaryContractGenerator = () => {
 
       drawSection("B. Employee details", '(Hereinafter referred to as "the Employee")', () => {
         drawDualRow("Surname", data.employeeSurname, "Name(s)", data.employeeName);
-        drawDualRow("ID No.", idDisplay, "Passport No.", passportDisplay || "--");
+        drawSingleRow("ID / Passport", idOrPassport || "--");
         drawSingleRow("Contact number", data.employeeCell);
-        drawSingleRow("Email", data.employeeEmail || "--");
+        drawSingleRow("Address", data.employeeAddress);
       });
 
       drawSection("C. Employment details", undefined, () => {
         drawDualRow("Type", "Temporary", "Start date", formatDate(data.startDate));
-        drawDualRow("End date", formatDate(data.endDate), "Probation", probationLabels[data.probationPeriod]);
-        drawDualRow("Job title", data.jobTitle, "Department", data.department || "");
-        drawDualRowWithMixedLeft(
-          "Gross salary",
-          formatCurrency(data.salaryAmount),
-          salaryFrequencyLabels[data.salaryFrequency],
-          "Retirement",
-          data.retirementAge ? `Age ${data.retirementAge}` : "",
-        );
-        drawDualRow("Reports to", data.reportsTo, "Interpreter", data.interpreter === "yes" ? "Yes" : "No");
+        drawDualRow("End date", formatDate(data.endDate), "Gross salary", `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`);
+        drawDualRow("Job title", data.jobTitle, "Interpreter", data.interpreter === "yes" ? "Yes" : "No");
         drawSingleRow("Workplace", data.workplace || profile?.physical_address || "");
+        drawSingleRow("Project/Scope", data.projectScope);
       });
 
       doc.addPage();
@@ -890,7 +973,8 @@ const TemporaryContractGenerator = () => {
 
     addInformationPage();
 
-    const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
+    const annualLeaveText =
+      "The Employee is entitled to one (1) day of leave for every seventeen (17) days worked. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.";
 
     const clauses: ClauseDefinition[] = mergeClauses(
       withClauseIds([
@@ -946,7 +1030,7 @@ const TemporaryContractGenerator = () => {
       {
         title: "Retirement",
         body:
-          "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+          "The Employee shall retire upon reaching the retirement age prescribed by applicable law or company policy, unless otherwise agreed in writing. If the Employee continues working beyond the normal retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
       },
       {
         title: "Exclusivity of employment",
@@ -1168,16 +1252,7 @@ const TemporaryContractGenerator = () => {
       doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
 
-    if (download) {
-      doc.save(`Temporary_Contract_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
-      toast({
-        title: "Download ready",
-        description: "Temporary employment contract has been generated.",
-      });
-    } else {
-      const blobUrl = doc.output("bloburl");
-      window.open(blobUrl, "_blank");
-    }
+    return doc;
   };
 
   const handlePreview = () => {
@@ -1196,11 +1271,39 @@ const TemporaryContractGenerator = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     try {
       setIsGenerating(true);
-      const validated = validateData();
-      generatePDF(validated, true);
+      if (!tempEmployees.length) {
+        throw new Error("Add at least one employee before downloading.");
+      }
+      const baseData = {
+        ...formData,
+        salaryAmount: formData.salaryAmount,
+        endDate: formData.endDate,
+      };
+      const zip = new JSZip();
+      for (const employee of tempEmployees) {
+        const parsed = temporaryContractSchema.parse({
+          ...baseData,
+          ...employee,
+        });
+        const doc = buildPdfDocument(parsed);
+        const arrayBuffer = doc.output("arraybuffer");
+        const safeName = `${parsed.employeeSurname || "employee"}_${parsed.startDate}`.replace(/[\\/:*?"<>|]+/g, "_");
+        zip.file(`Temporary_Contract_${safeName}.pdf`, arrayBuffer);
+      }
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Temporary_Contracts.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({
+        title: "Download ready",
+        description: `${tempEmployees.length} contract${tempEmployees.length === 1 ? "" : "s"} downloaded as zip.`,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
       toast({
@@ -1230,8 +1333,8 @@ const TemporaryContractGenerator = () => {
 
   const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
   const previewSubtitle = employeeFullName
-    ? `Review and download the permanent contract for ${employeeFullName}.`
-    : "Review and download the permanent contract.";
+    ? `Review and download the temporary contract for ${employeeFullName}.`
+    : "Review and download the temporary contract.";
 
   if (loading) {
     return (
@@ -1453,233 +1556,94 @@ const TemporaryContractGenerator = () => {
                     <h3 className="font-semibold text-lg text-gray-900">Employee details</h3>
                     <span className="text-xs text-slate-500">Step 2 of 3</span>
                   </div>
-                  <div className="space-y-2.5">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="employee">Select Employee (optional)</Label>
-                      <Select onValueChange={handleEmployeeSelect}>
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                          <SelectValue placeholder="Select from saved employees or fill manually" />
-                        </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)]">
-                          {employees.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id}>
-                              {employee.employee_name} {employee.employee_surname}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeName">Employee Name *</Label>
-                        <Input
-                          id="employeeName"
-                          value={formData.employeeName}
-                          onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeSurname">Employee Surname *</Label>
-                        <Input
-                          id="employeeSurname"
-                          value={formData.employeeSurname}
-                          onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="nationality">Nationality *</Label>
-                        <Select
-                          value={formData.nationality}
-                          onValueChange={(value) =>
-                            handleNationalityChange(value as TemporaryContractFormData["nationality"])
-                          }
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" onClick={() => setShowAddEmployee(true)} className="gap-2">
+                          <Plus className="h-4 w-4" />
+                          Add employee
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleBulkUploadClick} className="gap-2">
+                          <Upload className="h-4 w-4" />
+                          Add bulk
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadTemplate}
+                          className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                         >
-                          <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                            <SelectValue placeholder="Select nationality" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-64">
-                            {nationalityOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="idOrPassport">
-                          {formData.nationality === "South African" ? "ID Number *" : "Passport Number *"}
-                        </Label>
-                        <Input
-                          id="idOrPassport"
-                          value={formData.nationality === "South African" ? formData.employeeIdNumber : formData.passportNumber}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (formData.nationality === "South African") {
-                              const digitsOnly = value.replace(/\D/g, "").slice(0, 13);
-                              const derived = deriveAgeFromId(digitsOnly);
-                              setFormData((prev) => ({
-                                ...prev,
-                                employeeIdNumber: digitsOnly,
-                                age: derived,
-                              }));
-                            } else {
-                              setFormData((prev) => ({
-                                ...prev,
-                                passportNumber: value,
-                              }));
-                            }
-                          }}
-                          className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
-                            isIdDateInvalid ? "border-red-500 ring-red-500" : ""
-                          }`}
-                          placeholder={
-                            formData.nationality === "South African" ? "Insert 13-digit ID number" : "Insert passport number"
-                          }
+                          Download template
+                        </button>
+                        <input
+                          ref={bulkUploadInputRef}
+                          type="file"
+                          accept=".xlsx,.xls,.csv"
+                          className="hidden"
+                          onChange={handleBulkUploadFile}
                         />
                       </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="employeeAge">Age</Label>
-                    <Input
-                      id="employeeAge"
-                      value={derivedAgeDisplay}
-                      readOnly={formData.nationality === "South African"}
-                      onChange={(e) => {
-                        if (formData.nationality === "South African") return;
-                        const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
-                        setFormData((prev) => ({ ...prev, age: digitsOnly }));
-                      }}
-                      inputMode={formData.nationality === "South African" ? "text" : "numeric"}
-                      className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
-                        formData.nationality === "South African" ? "bg-slate-50" : ""
-                      }`}
-                      placeholder={
-                        formData.nationality === "South African" ? "Auto-calculated" : "Insert employee age"
-                      }
-                    />
-                  </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeNumber">Employee Number</Label>
-                        <Input
-                          id="employeeNumber"
-                          value={formData.employeeNumber}
-                          onChange={(e) => setFormData({ ...formData, employeeNumber: e.target.value })}
-                          placeholder="E.g. EMP001"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                    <Label htmlFor="gender">Gender *</Label>
-                    <Select
-                      value={formData.gender}
-                      onValueChange={(value) => setFormData({ ...formData, gender: value as TemporaryContractFormData["gender"] })}
-                    >
-                      <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {genderOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                    <Label htmlFor="race">Race *</Label>
-                    <Select
-                      value={formData.race}
-                      onValueChange={(value) => setFormData({ ...formData, race: value as TemporaryContractFormData["race"] })}
-                    >
-                      <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                            <SelectValue placeholder="Select race" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {raceOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {option}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeEmail">Email</Label>
-                        <Input
-                          id="employeeEmail"
-                          type="email"
-                          value={formData.employeeEmail}
-                          onChange={(e) => setFormData({ ...formData, employeeEmail: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeCell">Cell Number *</Label>
-                        <Input
-                          id="employeeCell"
-                          value={formData.employeeCell}
-                          onChange={(e) => {
-                            const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
-                            setFormData({ ...formData, employeeCell: digitsOnly });
-                          }}
-                          placeholder="Insert contact number"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="alternativeContact">Alternative Contact</Label>
-                        <Input
-                          id="alternativeContact"
-                          value={formData.alternativeContact}
-                          onChange={(e) => {
-                            const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
-                            setFormData({ ...formData, alternativeContact: digitsOnly });
-                          }}
-                          placeholder="Insert alternative contact number"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2">
-                        <Label htmlFor="employeeAddress">Residential Address *</Label>
-                        <Textarea
-                          id="employeeAddress"
-                          value={formData.employeeAddress}
-                          onChange={(e) => setFormData({ ...formData, employeeAddress: e.target.value })}
-                          rows={3}
-                          placeholder="Street, suburb, city, province, postal code"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2">
-                        <div className="flex items-center gap-6">
-                          <Label htmlFor="employeePostalAddress">Postal Address *</Label>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setFormData((prev) => ({
-                                ...prev,
-                                employeePostalAddress: prev.employeeAddress,
-                              }))
-                            }
-                            className="h-8 px-3 text-xs border-slate-300 text-gray-700 hover:border-blue-500 hover:bg-white hover:text-blue-600"
-                          >
-                            Copy from Residential
-                          </Button>
-                        </div>
-                        <Textarea
-                          id="employeePostalAddress"
-                          value={formData.employeePostalAddress}
-                          onChange={(e) => setFormData({ ...formData, employeePostalAddress: e.target.value })}
-                          rows={2}
-                          placeholder="PO Box, suburb, city, province, postal code"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                        />
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={!selectedEmployeeIds.length}
+                        onClick={handleDeleteSelected}
+                        className="gap-2 disabled:opacity-60"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </Button>
+                    </div>
+
+                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                      <table className="min-w-full divide-y divide-slate-200">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedEmployeeIds.length === tempEmployees.length && tempEmployees.length > 0}
+                                  onChange={(e) => toggleSelectAllEmployees(e.target.checked)}
+                                />
+                                Select
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Name</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Surname</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">ID / Passport</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Cell Number</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {tempEmployees.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                                Add an employee or upload a file to get started.
+                              </td>
+                            </tr>
+                          ) : (
+                            tempEmployees.map((emp) => {
+                              const isChecked = selectedEmployeeIds.includes(emp.id);
+                              const idValue = emp.employeeIdNumber || emp.passportNumber;
+                              return (
+                                <tr key={emp.id} className="hover:bg-slate-50">
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => toggleSelectEmployee(emp.id, e.target.checked)}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeName}</td>
+                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeSurname}</td>
+                                  <td className="px-3 py-2 text-sm text-slate-900">{idValue}</td>
+                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeCell}</td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -1692,16 +1656,6 @@ const TemporaryContractGenerator = () => {
                     <span className="text-xs text-slate-500">Step 3 of 3</span>
                   </div>
                   <div className="grid md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="issueDate">Issue Date *</Label>
-                      <Input
-                        id="issueDate"
-                        type="date"
-                        value={formData.issueDate}
-                        onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="startDate">Start Date *</Label>
                       <Input
@@ -1719,24 +1673,6 @@ const TemporaryContractGenerator = () => {
                         type="date"
                         value={formData.endDate}
                         onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="jobTitle">Job Title *</Label>
-                      <Input
-                        id="jobTitle"
-                        value={formData.jobTitle}
-                        onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="reportsTo">Reports To *</Label>
-                      <Input
-                        id="reportsTo"
-                        value={formData.reportsTo}
-                        onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value })}
                         className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
@@ -1777,85 +1713,11 @@ const TemporaryContractGenerator = () => {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="probationPeriod">Probation *</Label>
-                      <Select
-                        value={formData.probationPeriod}
-                        onValueChange={(value) =>
-                          setFormData({
-                            ...formData,
-                            probationPeriod: value as TemporaryContractFormData["probationPeriod"],
-                          })
-                        }
-                      >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                          <SelectValue placeholder="Select probation period" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {probationOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {probationLabels[option]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="annualLeaveDays">Annual leave days *</Label>
+                      <Label htmlFor="jobTitle">Job Title *</Label>
                       <Input
-                        id="annualLeaveDays"
-                        type="number"
-                        min="1"
-                        max="60"
-                        step="1"
-                        value={formData.annualLeaveDays}
-                        onChange={(e) => {
-                          const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
-                          setFormData({ ...formData, annualLeaveDays: digitsOnly });
-                        }}
-                        placeholder="15"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="department">Department</Label>
-                      <Input
-                        id="department"
-                        value={formData.department}
-                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                        placeholder="E.g. Finance, Operations"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="retirementAge">Retirement age *</Label>
-                      <Select
-                        value={formData.retirementAge}
-                        onValueChange={(value) =>
-                          setFormData({
-                            ...formData,
-                            retirementAge: value as TemporaryContractFormData["retirementAge"],
-                          })
-                        }
-                      >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                          <SelectValue placeholder="Select retirement age" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {retirementAgeOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              Age {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="workplace">Workplace *</Label>
-                      <Input
-                        id="workplace"
-                        value={formData.workplace}
-                        onChange={(e) => setFormData({ ...formData, workplace: e.target.value })}
-                        placeholder="Primary work location"
+                        id="jobTitle"
+                        value={formData.jobTitle}
+                        onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
                         className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
@@ -1875,6 +1737,38 @@ const TemporaryContractGenerator = () => {
                           <SelectItem value="no">No</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="workplace">Workplace *</Label>
+                      <Input
+                        id="workplace"
+                        value={formData.workplace}
+                        onChange={(e) => setFormData({ ...formData, workplace: e.target.value })}
+                        placeholder="Primary work location"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="projectScope">Project/Scope *</Label>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-4 w-4 text-slate-500" aria-label="Project scope info" />
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs text-sm">
+                              Any temporary contract must be linked to a specific project or scope of work as prescribed by s198B of the Labour Relations Act 66 of 1995. Probation is not an acceptable reason for a fixed term contract.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      <Input
+                        id="projectScope"
+                        value={formData.projectScope}
+                        onChange={(e) => setFormData({ ...formData, projectScope: e.target.value })}
+                        placeholder="Specify the project or scope of work"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
                     </div>
                   </div>
                 </div>
@@ -2052,6 +1946,97 @@ const TemporaryContractGenerator = () => {
         )}
       </div>
 
+      <Dialog open={showAddEmployee} onOpenChange={setShowAddEmployee}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-blue-600">Add employee</DialogTitle>
+            <DialogDescription>Capture the minimum details for a temporary contract.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="newEmployeeName">Name *</Label>
+                <Input
+                  id="newEmployeeName"
+                  value={newEmployeeForm.employeeName}
+                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeName: e.target.value }))}
+                  placeholder="Insert name(s) here..."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newEmployeeSurname">Surname *</Label>
+                <Input
+                  id="newEmployeeSurname"
+                  value={newEmployeeForm.employeeSurname}
+                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeSurname: e.target.value }))}
+                  placeholder="Insert surname here..."
+                />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="newIdOrPassport">ID / Passport *</Label>
+                <div className="grid gap-2 md:grid-cols-[150px_1fr]">
+                  <Select value={newEmployeeIdType} onValueChange={(value) => setNewEmployeeIdType(value as "id" | "passport")}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select document type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="id">ID Number</SelectItem>
+                      <SelectItem value="passport">Passport Number</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    id="newIdOrPassport"
+                    value={newEmployeeIdType === "id" ? newEmployeeForm.employeeIdNumber : newEmployeeForm.passportNumber}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (newEmployeeIdType === "id") {
+                        const digitsOnly = value.replace(/\D/g, "").slice(0, 13);
+                        setNewEmployeeForm((prev) => ({ ...prev, employeeIdNumber: digitsOnly, passportNumber: "" }));
+                      } else {
+                        setNewEmployeeForm((prev) => ({ ...prev, passportNumber: value, employeeIdNumber: "" }));
+                      }
+                    }}
+                    placeholder={
+                      newEmployeeIdType === "id" ? "Insert SA ID number here..." : "Insert passport number here..."
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newEmployeeCell">Cell Number *</Label>
+                <Input
+                  id="newEmployeeCell"
+                  value={newEmployeeForm.employeeCell}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setNewEmployeeForm((prev) => ({ ...prev, employeeCell: digitsOnly }));
+                  }}
+                  placeholder="Insert a contact number..."
+                />
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="newEmployeeAddress">Residential Address *</Label>
+                <Textarea
+                  id="newEmployeeAddress"
+                  value={newEmployeeForm.employeeAddress}
+                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeAddress: e.target.value }))}
+                  rows={3}
+                  placeholder="Street address, city, province, area code..."
+                />
+              </div>
+            </div>
+            <div className="flex justify-center gap-3">
+              <Button variant="outline" onClick={resetNewEmployeeForm} className="min-w-[96px]">
+                Reset
+              </Button>
+              <Button onClick={handleAddEmployeeSave} className="gap-2 min-w-[96px]">
+                Add
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl h-[90vh] p-0">
           <DialogHeader className="px-6 pt-6 pr-10">
@@ -2061,6 +2046,22 @@ const TemporaryContractGenerator = () => {
                 <DialogDescription>{previewSubtitle}</DialogDescription>
               </div>
             </div>
+            <div className="mt-3 flex items-center gap-3 text-sm text-slate-700">
+              <Label htmlFor="previewYear" className="text-slate-700">
+                Year
+              </Label>
+              <Input
+                id="previewYear"
+                value={issueYear}
+                onChange={(e) => {
+                  const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 4);
+                  setIssueYear(digitsOnly || String(currentYear));
+                }}
+                className="w-24"
+                inputMode="numeric"
+              />
+              <span className="text-xs text-slate-500">Used in signature line</span>
+            </div>
           </DialogHeader>
           <ScrollArea className="h-full px-6 pb-6">
             {validatedPreview ? (() => {
@@ -2069,11 +2070,8 @@ const TemporaryContractGenerator = () => {
               const salaryDisplay = `${formatCurrency(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}`;
               const workplace = validatedPreview.workplace || profile?.physical_address || "";
               const employerName = profile?.company_name || "the Employer";
-              const derivedAge = validatedPreview.nationality === "South African" ? deriveAgeFromId(validatedPreview.employeeIdNumber) : "";
-              const isSouthAfrican = validatedPreview.nationality === "South African";
-              const idDisplay = isSouthAfrican ? validatedPreview.employeeIdNumber : "--";
-              const passportDisplay = isSouthAfrican ? "--" : validatedPreview.passportNumber || "--";
-              const annualLeaveText = `The Employee is entitled to ${validatedPreview.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
+              const annualLeaveText =
+                "The Employee is entitled to one (1) day of leave for every seventeen (17) days worked. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.";
 
               const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
                 <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
@@ -2167,7 +2165,7 @@ const TemporaryContractGenerator = () => {
                 {
                   title: "Retirement",
                   body:
-                    "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+                    "The Employee shall retire upon reaching the retirement age prescribed by applicable law or company policy, unless otherwise agreed in writing. If the Employee continues working beyond the normal retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
                 },
                 {
                   title: "Exclusivity of employment",

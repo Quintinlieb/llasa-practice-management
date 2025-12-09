@@ -46,7 +46,13 @@ const documentCategoryIcons: Record<string, ComponentType<{ className?: string }
 export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
   const location = useLocation();
   const [isDocsMenuInteracting, setIsDocsMenuInteracting] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const setCollapsed = (value: boolean) => {
     setIsCollapsed(value);
@@ -105,7 +111,7 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
       collapsible="none"
       className={cn(
         "relative h-full flex flex-col bg-white border border-sidebar-border shadow-md rounded-2xl overflow-visible transition-[width] duration-200",
-        isCollapsed ? "w-16" : "w-52",
+        isCollapsed ? "w-[4.5rem]" : "w-52",
       )}
     >
       <Button
@@ -128,7 +134,7 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
         </div>
         <SidebarContent className={cn("px-4", isCollapsed && "px-2")}>
           <SidebarGroup className="pt-2">
-            <SidebarGroupLabel className={cn("mt-0 w-full text-center", isCollapsed && "transform -translate-x-2.5")}>
+            <SidebarGroupLabel className={cn("mt-0 w-full text-center", isCollapsed && "transform -translate-x-1")}>
               Menu
             </SidebarGroupLabel>
             <SidebarGroupContent>

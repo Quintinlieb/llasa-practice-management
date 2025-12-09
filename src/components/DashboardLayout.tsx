@@ -87,7 +87,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <AppSidebar profile={profile || undefined} />
         </div>
         <div className="flex flex-1 min-h-screen flex-col bg-[#eef2f7]">
-          <header className="sticky top-0 z-40 px-4 pt-4 pb-0 bg-[#eef2f7]">
+          <header className="sticky top-0 z-40 pr-4 pl-0 pt-4 pb-0 bg-[#eef2f7]">
             <div className="relative w-full rounded-2xl border border-sidebar-border bg-white shadow-md px-6 py-3 flex items-center justify-between">
               <div className="flex items-center">
                 {companyName && (

@@ -911,8 +911,18 @@ export const temporaryContractSchema = baseContractSchema
     annualLeaveDays: true,
     retirementAge: true,
     reportsTo: true,
+    endDate: true,
   })
   .extend({
+    endType: z.enum(["date", "completion"]).default("date"),
+    endDate: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? val.trim() : ""))
+      .refine((val) => !val || /^\d{4}-\d{2}-\d{2}$/.test(val), {
+        message: "Invalid date format",
+      }),
     projectScope: z
       .string()
       .min(3, "Project/Scope must be at least 3 characters")
@@ -954,12 +964,20 @@ export const temporaryContractSchema = baseContractSchema
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? sanitizeText(val) : "")),
-    endDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
-      .transform((val) => val.trim()),
   })
-  .superRefine(idOrPassportRefinement);
+  .superRefine((data, ctx) => {
+    idOrPassportRefinement(data, ctx);
+    const hasEndDate = Boolean(data.endDate && data.endDate.trim());
+    if (data.endType === "date") {
+      if (!hasEndDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["endDate"],
+          message: "End date is required when ending on a specific date",
+        });
+      }
+    }
+  });
 
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
 export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;

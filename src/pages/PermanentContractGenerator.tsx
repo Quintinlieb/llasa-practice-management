@@ -1380,13 +1380,15 @@ const PermanentContractGenerator = () => {
         {!showFinalActions ? (
           <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <span className="inline-flex h-8 items-center rounded-md bg-blue-600 px-3 py-0 text-sm font-semibold leading-none text-white shadow-sm">
+                {steps[activeStep]}
+              </span>
+              <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+            </div>
             <div className="space-y-4">
               {activeStep === 0 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employer details</h3>
-                    <span className="text-xs text-slate-500">Step 1 of 3</span>
-                  </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="companyName">Company name</Label>
@@ -1454,10 +1456,6 @@ const PermanentContractGenerator = () => {
 
               {activeStep === 1 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employee details</h3>
-                    <span className="text-xs text-slate-500">Step 2 of 3</span>
-                  </div>
                   <div className="space-y-2.5">
                     <div className="space-y-1.5">
                       <Label htmlFor="employee">Select Employee (optional)</Label>
@@ -1692,10 +1690,6 @@ const PermanentContractGenerator = () => {
 
               {activeStep === 2 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-white p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employment details</h3>
-                    <span className="text-xs text-slate-500">Step 3 of 3</span>
-                  </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="issueDate">Issue Date *</Label>

@@ -16,15 +16,44 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
-import { temporaryContractSchema, salaryFrequencyOptions, type TemporaryContractFormData } from "@/lib/validation";
+import { temporaryContractSchema, salaryFrequencyOptions } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
 import { read, utils, write } from "xlsx";
 
+type SalaryFrequency = (typeof salaryFrequencyOptions)[number];
+type InterpreterOption = "yes" | "no";
 type ContractFormState = {
   employeeId: string;
-} & Omit<TemporaryContractFormData, "salaryAmount"> & {
+  startDate: string;
+  endType: "date" | "completion";
+  endDate: string;
+  issueDate: string;
+  employeeName: string;
+  employeeSurname: string;
+  employeeIdNumber: string;
+  passportNumber: string;
+  employeeAddress: string;
+  employeePostalAddress: string;
+  employeeNumber: string;
+  nationality: string;
+  gender: string;
+  race: string;
+  employeeCell: string;
+  alternativeContact: string;
+  employeeEmail: string;
+  tradingName: string;
+  employerContact: string;
+  employerEmail: string;
+  jobTitle: string;
   salaryAmount: string;
+  salaryFrequency: SalaryFrequency;
+  projectScope: string;
+  workplace: string;
+  interpreter: InterpreterOption;
+  additionalNotes: string;
 };
+
+type ValidatedTempData = Omit<ContractFormState, "salaryAmount"> & { salaryAmount: number };
 
 type TempEmployeeRow = {
   id: string;
@@ -46,7 +75,7 @@ type ClauseDefinition = {
 
 type CustomClause = ClauseDefinition & { insertAfterId: string | null };
 
-const salaryFrequencyLabels: Record<TemporaryContractFormData["salaryFrequency"], string> = {
+const salaryFrequencyLabels: Record<SalaryFrequency, string> = {
   month: "per month",
   week: "per week",
   day: "per day",
@@ -60,6 +89,18 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
+};
+
+const buildTerminationClauseBody = (data: Pick<ValidatedTempData, "endType" | "endDate" | "projectScope">) => {
+  const automaticTermination =
+    data.endType === "completion"
+      ? `This fixed-term employment will automatically terminate upon completion of ${data.projectScope || "the project/scope described above"}, unless ended earlier under this agreement or applicable law.`
+      : `This fixed-term employment will automatically terminate on the End Date stated above${data.endDate ? ` (${formatDate(data.endDate)})` : ""}, unless ended earlier under this agreement or applicable law.`;
+  return [
+    automaticTermination,
+    "Either party may terminate the employment relationship earlier by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice.",
+    "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
+  ];
 };
 
 const extractYear = (value: string) => {
@@ -90,7 +131,7 @@ const TemporaryContractGenerator = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [validatedPreview, setValidatedPreview] = useState<TemporaryContractFormData | null>(null);
+  const [validatedPreview, setValidatedPreview] = useState<ValidatedTempData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
   const [clauseDraft, setClauseDraft] = useState("");
@@ -132,6 +173,7 @@ const TemporaryContractGenerator = () => {
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
     startDate: new Date().toISOString().split("T")[0],
+    endType: "date",
     endDate: "",
     issueDate: `${currentYear}-01-01`,
     employeeName: "",
@@ -211,10 +253,12 @@ const TemporaryContractGenerator = () => {
   }, []);
 
   useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      issueDate: `${issueYear || currentYear}-01-01`,
-    }));
+    const normalizedYear = issueYear.length === 4 ? issueYear : String(currentYear);
+    const nextIssueDate = `${normalizedYear}-01-01`;
+    setFormData((prev) => (prev.issueDate === nextIssueDate ? prev : { ...prev, issueDate: nextIssueDate }));
+    setValidatedPreview((prev) =>
+      prev && prev.issueDate !== nextIssueDate ? { ...prev, issueDate: nextIssueDate } : prev,
+    );
   }, [issueYear, currentYear]);
 
   const resetNewEmployeeForm = () => {
@@ -254,7 +298,7 @@ const TemporaryContractGenerator = () => {
       employeeAddress: address,
     };
     setTempEmployees((prev) => [...prev, row]);
-    setSelectedEmployeeIds([row.id]);
+    setSelectedEmployeeIds([]);
     applyEmployeeToFormData(row);
     setShowAddEmployee(false);
     resetNewEmployeeForm();
@@ -344,7 +388,7 @@ const TemporaryContractGenerator = () => {
         return;
       }
       setTempEmployees((prev) => [...prev, ...parsed]);
-      setSelectedEmployeeIds(parsed.map((row) => row.id));
+      setSelectedEmployeeIds([]);
       applyEmployeeToFormData(parsed[0]);
       toast({
         title: "Bulk upload added",
@@ -401,6 +445,7 @@ const TemporaryContractGenerator = () => {
     setFormData({
       employeeId: "",
       startDate: new Date().toISOString().split("T")[0],
+      endType: "date",
       endDate: "",
       issueDate: `${resetYearValue}-01-01`,
       employeeName: "",
@@ -451,29 +496,29 @@ const TemporaryContractGenerator = () => {
 
   const isEmployeeStepComplete = useMemo(() => tempEmployees.length > 0, [tempEmployees]);
 
-  const isEmploymentStepComplete = useMemo(
-    () =>
-      Boolean(
-        formData.startDate &&
-          formData.endDate &&
-          formData.jobTitle &&
-          formData.projectScope &&
-          formData.salaryAmount &&
-          formData.salaryFrequency &&
-          formData.workplace &&
-          formData.interpreter,
-      ),
-    [
-      formData.startDate,
-      formData.jobTitle,
-      formData.projectScope,
-        formData.salaryAmount,
-        formData.salaryFrequency,
-        formData.workplace,
+  const isEmploymentStepComplete = useMemo(() => {
+    const hasEndDate = formData.endType === "date" ? Boolean(formData.endDate) : true;
+    return Boolean(
+      formData.startDate &&
+        hasEndDate &&
+        formData.jobTitle &&
+        formData.projectScope &&
+        formData.salaryAmount &&
+        formData.salaryFrequency &&
+        formData.workplace &&
         formData.interpreter,
-        formData.endDate,
-      ],
-  );
+    );
+  }, [
+    formData.startDate,
+    formData.endDate,
+    formData.endType,
+    formData.jobTitle,
+    formData.projectScope,
+    formData.salaryAmount,
+    formData.salaryFrequency,
+    formData.workplace,
+    formData.interpreter,
+  ]);
 
   const isFormComplete = useMemo(
     () => isEmployerStepComplete && isEmployeeStepComplete && isEmploymentStepComplete,
@@ -520,18 +565,19 @@ const TemporaryContractGenerator = () => {
     }
   };
 
-  const validateData = () => {
+  const validateData = (): ValidatedTempData => {
     if (!primaryEmployee) {
       throw new Error("Add at least one employee in Step 2 before continuing.");
     }
-    const issueDateValue = `${issueYear || currentYear}-01-01`;
+    const normalizedYear = issueYear.length === 4 ? issueYear : String(currentYear);
+    const issueDateValue = `${normalizedYear}-01-01`;
     return temporaryContractSchema.parse({
       ...formData,
       issueDate: issueDateValue,
       ...primaryEmployee,
       salaryAmount: formData.salaryAmount,
       endDate: formData.endDate,
-    });
+    }) as ValidatedTempData;
   };
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
@@ -589,11 +635,16 @@ const TemporaryContractGenerator = () => {
     }
   }, [issueYear, showFinalActions]);
 
-  const FirstPagePreview = ({ data, compact = false }: { data: TemporaryContractFormData; compact?: boolean }) => {
+  const FirstPagePreview = ({ data, compact = false }: { data: ValidatedTempData; compact?: boolean }) => {
     const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
     const salaryDisplay = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
     const workplace = data.workplace || profile?.physical_address || "";
     const idOrPassport = data.employeeIdNumber || data.passportNumber || "";
+    const endInfoLabel = data.endType === "completion" ? "Ends on completion of" : "End date";
+    const endInfoValue =
+      data.endType === "completion"
+        ? data.projectScope || "completion of the project/scope"
+        : formatDate(data.endDate);
 
     const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
       <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
@@ -665,7 +716,7 @@ const TemporaryContractGenerator = () => {
             <SectionHeader title="C. Employment details" />
             <div className="border border-slate-200 border-t-0">
               <DualRow leftLabel="Type" leftValue="Temporary" rightLabel="Start date" rightValue={formatDate(data.startDate)} />
-              <DualRow leftLabel="End date" leftValue={formatDate(data.endDate)} rightLabel="Gross salary" rightValue={salaryDisplay} />
+              <DualRow leftLabel={endInfoLabel} leftValue={endInfoValue} rightLabel="Gross salary" rightValue={salaryDisplay} />
               <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
               <SingleRow label="Workplace" value={workplace} />
               <SingleRow label="Project/Scope" value={data.projectScope} />
@@ -706,7 +757,7 @@ const TemporaryContractGenerator = () => {
     return cursorY;
   };
 
-  const buildPdfDocument = (data: TemporaryContractFormData) => {
+  const buildPdfDocument = (data: ValidatedTempData) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -937,6 +988,11 @@ const TemporaryContractGenerator = () => {
 
     const addInformationPage = () => {
       const idOrPassport = data.employeeIdNumber || data.passportNumber || "";
+    const endInfoLabel = data.endType === "completion" ? "Ends on completion of" : "End date";
+    const endInfoValue =
+      data.endType === "completion"
+        ? data.projectScope || "completion of the project/scope"
+        : formatDate(data.endDate);
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
@@ -961,7 +1017,12 @@ const TemporaryContractGenerator = () => {
 
       drawSection("C. Employment details", undefined, () => {
         drawDualRow("Type", "Temporary", "Start date", formatDate(data.startDate));
-        drawDualRow("End date", formatDate(data.endDate), "Gross salary", `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`);
+        drawDualRow(
+          endInfoLabel,
+          endInfoValue,
+          "Gross salary",
+          `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`,
+        );
         drawDualRow("Job title", data.jobTitle, "Interpreter", data.interpreter === "yes" ? "Yes" : "No");
         drawSingleRow("Workplace", data.workplace || profile?.physical_address || "");
         drawSingleRow("Project/Scope", data.projectScope);
@@ -1045,10 +1106,7 @@ const TemporaryContractGenerator = () => {
       },
       {
         title: "Termination of employment",
-        body: [
-          "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
-          "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
-        ],
+        body: buildTerminationClauseBody(data),
       },
       {
         title: "Annual leave",
@@ -1287,7 +1345,7 @@ const TemporaryContractGenerator = () => {
         const parsed = temporaryContractSchema.parse({
           ...baseData,
           ...employee,
-        });
+        }) as ValidatedTempData;
         const doc = buildPdfDocument(parsed);
         const arrayBuffer = doc.output("arraybuffer");
         const safeName = `${parsed.employeeSurname || "employee"}_${parsed.startDate}`.replace(/[\\/:*?"<>|]+/g, "_");
@@ -1477,14 +1535,16 @@ const TemporaryContractGenerator = () => {
 
         {!showFinalActions ? (
           <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
-          <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+            <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <span className="inline-flex h-8 items-center rounded-md bg-blue-600 px-3 py-0 text-sm font-semibold leading-none text-white shadow-sm">
+                {steps[activeStep]}
+              </span>
+              <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+            </div>
             <div className="space-y-4">
               {activeStep === 0 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employer details</h3>
-                    <span className="text-xs text-slate-500">Step 1 of 3</span>
-                  </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="companyName">Company name</Label>
@@ -1552,18 +1612,24 @@ const TemporaryContractGenerator = () => {
 
               {activeStep === 1 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employee details</h3>
-                    <span className="text-xs text-slate-500">Step 2 of 3</span>
-                  </div>
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button size="sm" onClick={() => setShowAddEmployee(true)} className="gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowAddEmployee(true)}
+                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                        >
                           <Plus className="h-4 w-4" />
                           Add employee
                         </Button>
-                        <Button size="sm" variant="outline" onClick={handleBulkUploadClick} className="gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleBulkUploadClick}
+                          className="gap-2 hover:border-blue-600 hover:text-blue-600 hover:bg-white"
+                        >
                           <Upload className="h-4 w-4" />
                           Add bulk
                         </Button>
@@ -1602,10 +1668,12 @@ const TemporaryContractGenerator = () => {
                               <div className="flex items-center gap-2">
                                 <input
                                   type="checkbox"
+                                  className="h-4 w-4 rounded border-2 border-blue-600 bg-blue-50 text-blue-600 focus:ring-blue-600 checked:border-blue-600 checked:bg-blue-600 checked:text-white accent-blue-600"
+                                  style={{ accentColor: "#2563eb" }}
                                   checked={selectedEmployeeIds.length === tempEmployees.length && tempEmployees.length > 0}
                                   onChange={(e) => toggleSelectAllEmployees(e.target.checked)}
+                                  aria-label="Select all employees"
                                 />
-                                Select
                               </div>
                             </th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Name</th>
@@ -1617,7 +1685,7 @@ const TemporaryContractGenerator = () => {
                         <tbody className="divide-y divide-slate-100">
                           {tempEmployees.length === 0 ? (
                             <tr>
-                              <td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">
+                              <td colSpan={5} className="px-3 py-6 text-center text-xs text-slate-500">
                                 Add an employee or upload a file to get started.
                               </td>
                             </tr>
@@ -1627,17 +1695,19 @@ const TemporaryContractGenerator = () => {
                               const idValue = emp.employeeIdNumber || emp.passportNumber;
                               return (
                                 <tr key={emp.id} className="hover:bg-slate-50">
-                                  <td className="px-3 py-2">
+                                  <td className="px-3 py-0.5">
                                     <input
                                       type="checkbox"
+                                      className="h-4 w-4 rounded border-2 border-blue-600 bg-white text-blue-600 focus:ring-blue-600 checked:border-blue-600 checked:bg-blue-50 accent-blue-600"
+                                      style={{ accentColor: "#2563eb" }}
                                       checked={isChecked}
                                       onChange={(e) => toggleSelectEmployee(emp.id, e.target.checked)}
                                     />
                                   </td>
-                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeName}</td>
-                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeSurname}</td>
-                                  <td className="px-3 py-2 text-sm text-slate-900">{idValue}</td>
-                                  <td className="px-3 py-2 text-sm text-slate-900">{emp.employeeCell}</td>
+                                  <td className="px-3 py-0.5 text-xs text-slate-900">{emp.employeeName}</td>
+                                  <td className="px-3 py-0.5 text-xs text-slate-900">{emp.employeeSurname}</td>
+                                  <td className="px-3 py-0.5 text-xs text-slate-900">{idValue}</td>
+                                  <td className="px-3 py-0.5 text-xs text-slate-900">{emp.employeeCell}</td>
                                 </tr>
                               );
                             })
@@ -1651,31 +1721,75 @@ const TemporaryContractGenerator = () => {
 
               {activeStep === 2 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-white p-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="font-semibold text-lg text-gray-900">Employment details</h3>
-                    <span className="text-xs text-slate-500">Step 3 of 3</span>
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-3">
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-blue-100 bg-slate-50/80 p-3">
+                      <p className="text-sm font-semibold text-gray-900 mb-2">How will the contract end?</p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <label className="flex items-start gap-2 rounded-lg border border-transparent bg-white p-3 shadow-sm transition hover:border-blue-200 hover:shadow">
+                          <input
+                            type="radio"
+                            name="endType"
+                            value="date"
+                            checked={formData.endType === "date"}
+                            onChange={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                endType: "date",
+                              }))
+                            }
+                            className="mt-1 h-4 w-4 text-blue-600 accent-blue-600"
+                          />
+                          <div>
+                            <div className="font-semibold text-gray-900">On a specific date</div>
+                            <p className="text-sm text-slate-600">Set a fixed end date for the contract.</p>
+                          </div>
+                        </label>
+                        <label className="flex items-start gap-2 rounded-lg border border-transparent bg-white p-3 shadow-sm transition hover:border-blue-200 hover:shadow">
+                          <input
+                            type="radio"
+                            name="endType"
+                            value="completion"
+                            checked={formData.endType === "completion"}
+                            onChange={() =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                endType: "completion",
+                                endDate: "",
+                              }))
+                            }
+                            className="mt-1 h-4 w-4 text-blue-600 accent-blue-600"
+                          />
+                          <div>
+                            <div className="font-semibold text-gray-900">On completion of the project/scope</div>
+                            <p className="text-sm text-slate-600">Ends automatically when the project/scope is completed.</p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="startDate">Start Date *</Label>
                       <Input
                         id="startDate"
                         type="date"
-                        value={formData.startDate}
-                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                          value={formData.startDate}
+                          onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="endDate">End Date *</Label>
-                      <Input
-                        id="endDate"
-                        type="date"
-                        value={formData.endDate}
-                        onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
+                    {formData.endType === "date" ? (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="endDate">End Date *</Label>
+                        <Input
+                          id="endDate"
+                          type="date"
+                          value={formData.endDate}
+                          onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        />
+                      </div>
+                    ) : null}
                     <div className="space-y-1.5">
                       <Label htmlFor="salaryAmount">Salary Amount *</Label>
                       <Input
@@ -1696,7 +1810,7 @@ const TemporaryContractGenerator = () => {
                         onValueChange={(value) =>
                           setFormData({
                             ...formData,
-                            salaryFrequency: value as TemporaryContractFormData["salaryFrequency"],
+                            salaryFrequency: value as SalaryFrequency,
                           })
                         }
                       >
@@ -1706,7 +1820,7 @@ const TemporaryContractGenerator = () => {
                         <SelectContent>
                           {salaryFrequencyOptions.map((option) => (
                             <SelectItem key={option} value={option}>
-                              {salaryFrequencyLabels[option as TemporaryContractFormData["salaryFrequency"]]}
+                              {salaryFrequencyLabels[option as SalaryFrequency]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1726,7 +1840,7 @@ const TemporaryContractGenerator = () => {
                       <Select
                         value={formData.interpreter}
                         onValueChange={(value) =>
-                          setFormData({ ...formData, interpreter: value as TemporaryContractFormData["interpreter"] })
+                          setFormData({ ...formData, interpreter: value as InterpreterOption })
                         }
                       >
                         <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
@@ -1737,16 +1851,6 @@ const TemporaryContractGenerator = () => {
                           <SelectItem value="no">No</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="workplace">Workplace *</Label>
-                      <Input
-                        id="workplace"
-                        value={formData.workplace}
-                        onChange={(e) => setFormData({ ...formData, workplace: e.target.value })}
-                        placeholder="Primary work location"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                       <div className="flex items-center gap-2">
@@ -1770,8 +1874,19 @@ const TemporaryContractGenerator = () => {
                         className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="workplace">Workplace *</Label>
+                      <Input
+                        id="workplace"
+                        value={formData.workplace}
+                        onChange={(e) => setFormData({ ...formData, workplace: e.target.value })}
+                        placeholder="Primary work location"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
+                    </div>
                   </div>
                 </div>
+              </div>
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
@@ -1855,9 +1970,9 @@ const TemporaryContractGenerator = () => {
                 )}
               </div>
             </div>
-          </CardContent>
+            </CardContent>
           </Card>
-          ) : (
+        ) : (
             <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
               <CardHeader className="pt-4 pb-0" />
               <CardContent className="space-y-6 pt-2">
@@ -2046,22 +2161,6 @@ const TemporaryContractGenerator = () => {
                 <DialogDescription>{previewSubtitle}</DialogDescription>
               </div>
             </div>
-            <div className="mt-3 flex items-center gap-3 text-sm text-slate-700">
-              <Label htmlFor="previewYear" className="text-slate-700">
-                Year
-              </Label>
-              <Input
-                id="previewYear"
-                value={issueYear}
-                onChange={(e) => {
-                  const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 4);
-                  setIssueYear(digitsOnly || String(currentYear));
-                }}
-                className="w-24"
-                inputMode="numeric"
-              />
-              <span className="text-xs text-slate-500">Used in signature line</span>
-            </div>
           </DialogHeader>
           <ScrollArea className="h-full px-6 pb-6">
             {validatedPreview ? (() => {
@@ -2180,10 +2279,7 @@ const TemporaryContractGenerator = () => {
                 },
                 {
                   title: "Termination of employment",
-                  body: [
-                    "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
-                    "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
-                  ],
+                  body: buildTerminationClauseBody(validatedPreview),
                 },
                 {
                   title: "Annual leave",
@@ -2602,9 +2698,22 @@ const TemporaryContractGenerator = () => {
 
                       <div>
                         <p className="font-semibold text-black mb-1">Signing</p>
-                        <p>
-                          Done and Signed at ________________________________________ on this _____ day of ______________________________{" "}
-                          {extractYear(validatedPreview.issueDate)}.
+                        <p className="flex flex-wrap items-center gap-2">
+                          <span>Done and Signed at ________________________________________ on this _____ day of ______________________________</span>
+                          <span className="inline-flex">
+                            <Input
+                              aria-label="Issue year"
+                              value={issueYear}
+                              onChange={(e) => {
+                                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 4);
+                                setIssueYear(digitsOnly);
+                              }}
+                              className="h-8 w-20 px-2 py-1 text-sm"
+                              inputMode="numeric"
+                              placeholder={String(currentYear)}
+                            />
+                          </span>
+                          <span>.</span>
                         </p>
                       </div>
                     </div>

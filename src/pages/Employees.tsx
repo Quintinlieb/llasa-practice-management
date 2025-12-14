@@ -919,9 +919,11 @@ const Employees = () => {
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("employees")
-      .select("*")
+      .select(
+        "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+      )
       .eq("company_id", user.id)
       .order("employee_name", { ascending: true, nullsFirst: false })
       .order("employee_surname", { ascending: true, nullsFirst: false });
@@ -947,7 +949,7 @@ const Employees = () => {
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("company_code_of_conduct")
       .select("data")
       .eq("company_id", user.id)

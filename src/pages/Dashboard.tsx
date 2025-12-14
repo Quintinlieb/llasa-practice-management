@@ -96,7 +96,10 @@ const Dashboard = () => {
         ] = await Promise.all([
           supabase.from("employees").select("*", { count: "exact", head: true }).eq("company_id", user.id),
           supabase.from("documents").select("*", { count: "exact", head: true }).eq("company_id", user.id),
-          supabase.from("employees").select("*").eq("company_id", user.id),
+          (supabase as any)
+            .from("employees")
+            .select("id, employment_type, contract_type, start_date, gender, race, nationality")
+            .eq("company_id", user.id),
           warningTable()
             .select("id, company_id, employee_id, misconduct_type, warning_type, issue_date")
             .eq("company_id", user.id),

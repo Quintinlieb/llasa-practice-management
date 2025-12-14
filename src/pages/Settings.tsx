@@ -63,9 +63,11 @@ const Settings = () => {
   const fetchProfile = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("profiles")
-      .select("*")
+      .select(
+        "user_name, user_surname, user_email, user_contact, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email",
+      )
       .eq("id", user.id)
       .maybeSingle();
 

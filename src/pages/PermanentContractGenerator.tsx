@@ -100,8 +100,29 @@ const PermanentContractGenerator = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
-  const [employees, setEmployees] = useState<Tables<"employees">[]>([]);
+  type SlimProfile = Pick<
+    Tables<"profiles">,
+    "id" | "company_name" | "registration_number" | "physical_address" | "company_contact" | "company_email"
+  >;
+  type SlimEmployee = {
+    id: string;
+    id_number: string | null;
+    employee_name: string;
+    employee_surname: string;
+    nationality: string | null;
+    passport_number: string | null;
+    emergency_contact_number: string | null;
+    gender: string | null;
+    race: string | null;
+    cell_number: string | null;
+    email: string | null;
+    job_title: string | null;
+    start_date: string | null;
+    employee_number: string | null;
+  };
+
+  const [profile, setProfile] = useState<SlimProfile | null>(null);
+  const [employees, setEmployees] = useState<SlimEmployee[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -177,22 +198,31 @@ const PermanentContractGenerator = () => {
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, company_name, registration_number, physical_address, company_contact, company_email")
+      .eq("id", user.id)
+      .maybeSingle();
     if (error) {
       console.warn("Unable to load profile", error);
       return;
     }
-    if (data) setProfile(data);
+    if (data) setProfile(data as SlimProfile);
   }, [user]);
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase.from("employees").select("*").eq("company_id", user.id);
+    const { data, error } = await (supabase as any)
+      .from("employees")
+      .select(
+        "id, id_number, employee_name, employee_surname, nationality, passport_number, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number",
+      )
+      .eq("company_id", user.id);
     if (error) {
       console.warn("Unable to load employees", error);
       return;
     }
-    if (data) setEmployees(data);
+    if (data) setEmployees(data as SlimEmployee[]);
   }, [user]);
 
   useEffect(() => {

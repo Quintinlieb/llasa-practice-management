@@ -127,7 +127,12 @@ const TemporaryContractGenerator = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
+  type SlimProfile = Pick<
+    Tables<"profiles">,
+    "id" | "company_name" | "registration_number" | "physical_address" | "company_email" | "company_contact"
+  >;
+
+  const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -215,12 +220,16 @@ const TemporaryContractGenerator = () => {
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, company_name, registration_number, physical_address, company_email, company_contact")
+      .eq("id", user.id)
+      .maybeSingle();
     if (error) {
       console.warn("Unable to load profile", error);
       return;
     }
-    if (data) setProfile(data);
+    if (data) setProfile(data as SlimProfile);
   }, [user]);
 
   useEffect(() => {

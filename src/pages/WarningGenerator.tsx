@@ -72,6 +72,8 @@ type WarningFormData = {
   | "description"
 >;
 
+type WarningEmployee = Pick<Tables<"employees">, "id" | "employee_name" | "employee_surname" | "id_number">;
+
 const extractErrorMessage = (error: unknown): string => {
   if (error && typeof error === "object" && "errors" in error) {
     const parsed = error as { errors?: Array<{ message?: string }> };
@@ -94,7 +96,7 @@ const WarningGenerator = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
-  const [employees, setEmployees] = useState<Tables<"employees">[]>([]);
+  const [employees, setEmployees] = useState<WarningEmployee[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [isMisconductDialogOpen, setIsMisconductDialogOpen] = useState(false);
   const [misconductSearch, setMisconductSearch] = useState("");
@@ -174,9 +176,9 @@ const WarningGenerator = () => {
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
 
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from("employees")
-      .select("*")
+      .select("id, employee_name, employee_surname, id_number")
       .eq("company_id", user.id);
 
     if (data) {
@@ -186,7 +188,7 @@ const WarningGenerator = () => {
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("company_code_of_conduct")
       .select("data")
       .eq("company_id", user.id)

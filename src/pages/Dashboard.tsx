@@ -98,7 +98,7 @@ const Dashboard = () => {
           supabase.from("documents").select("*", { count: "exact", head: true }).eq("company_id", user.id),
           (supabase as any)
             .from("employees")
-            .select("id, employment_type, contract_type, start_date, gender, race, nationality")
+            .select("id, contract_type, start_date, gender, race, nationality")
             .eq("company_id", user.id),
           warningTable()
             .select("id, company_id, employee_id, misconduct_type, warning_type, issue_date")

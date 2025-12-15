@@ -47,6 +47,7 @@ import {
   User,
   UsersRound,
   Info,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -275,6 +276,7 @@ const formatDisplayDate = (value?: string | null) => {
 
 const TABLE_MAX_HEIGHT = "calc(100vh - 340px)";
 const TABLE_BODY_MAX_HEIGHT = "calc(100vh - 340px - 56px)";
+const DEFAULT_PAGE_SIZE = 25;
 const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
   First: 6,
   Second: 6,
@@ -354,6 +356,8 @@ const Employees = () => {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalEmployees, setTotalEmployees] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
@@ -406,6 +410,10 @@ const Employees = () => {
   const fieldInputClass = `${baseFieldInputClass} ${isEditMode ? "" : viewModeFieldInputExtras}`;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
   const fieldHelperTextClass = "text-xs text-muted-foreground";
+  const totalPages = totalEmployees !== null ? Math.ceil(totalEmployees / DEFAULT_PAGE_SIZE) : null;
+  const isFirstPage = currentPage === 1;
+  const isLastPage =
+    totalEmployees !== null ? currentPage >= Math.max(totalPages ?? 1, 1) : employees.length < DEFAULT_PAGE_SIZE;
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
@@ -919,22 +927,42 @@ const Employees = () => {
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await (supabase as any)
+    const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
+    const to = from + DEFAULT_PAGE_SIZE - 1;
+    const { data, error, count } = await (supabase as any)
       .from("employees")
       .select(
         "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        { count: "exact" },
       )
       .eq("company_id", user.id)
       .order("employee_name", { ascending: true, nullsFirst: false })
-      .order("employee_surname", { ascending: true, nullsFirst: false });
+      .order("employee_surname", { ascending: true, nullsFirst: false })
+      .range(from, to);
 
     if (error) {
+      setTotalEmployees(null);
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive",
       });
       return;
+    }
+
+    if (typeof count === "number") {
+      setTotalEmployees(count);
+      if (count === 0 && currentPage !== 1) {
+        setCurrentPage(1);
+        return;
+      }
+      if (count > 0 && from >= count && currentPage > 1) {
+        const lastPage = Math.max(1, Math.ceil(count / DEFAULT_PAGE_SIZE));
+        setCurrentPage(lastPage);
+        return;
+      }
+    } else {
+      setTotalEmployees(null);
     }
 
     const sorted = (data ?? []).sort((a, b) => {
@@ -945,7 +973,7 @@ const Employees = () => {
 
     setEmployees(sorted);
     setFilteredEmployees(sorted);
-  }, [toast, user]);
+  }, [toast, user, currentPage]);
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
@@ -967,9 +995,18 @@ const Employees = () => {
   useEffect(() => {
     if (user) {
       void fetchEmployees();
+    }
+  }, [user, fetchEmployees]);
+
+  useEffect(() => {
+    if (user) {
       void fetchConductOffences();
     }
-  }, [user, fetchEmployees, fetchConductOffences]);
+  }, [user, fetchConductOffences]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [user?.id]);
 
   useEffect(() => {
     const query = searchQuery.toLowerCase();
@@ -1387,6 +1424,16 @@ const Employees = () => {
       title: "Template Downloaded",
       description: "Check your downloads folder for the Excel template.",
      });
+   };
+
+   const goToPreviousPage = () => {
+     if (isFirstPage) return;
+     setCurrentPage((prev) => Math.max(1, prev - 1));
+   };
+
+   const goToNextPage = () => {
+     if (isLastPage) return;
+     setCurrentPage((prev) => prev + 1);
    };
 
    const toggleSelectAll = () => {
@@ -2199,14 +2246,14 @@ const Employees = () => {
         </div>
 
         <Card className="shadow-lg">
-          <CardHeader>
+          <CardHeader className="px-6 py-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full sm:max-w-lg">
                 <Input
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-12 rounded-xl border-2 border-primary/30 bg-white pr-12 text-sm shadow-md focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
+                  className="h-10 rounded-xl border-2 border-primary/30 bg-white pr-12 text-sm shadow-md focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
                 />
                 <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
               </div>
@@ -2242,7 +2289,7 @@ const Employees = () => {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-3">
             {employees.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
@@ -2252,120 +2299,148 @@ const Employees = () => {
                 </Button>
               </div>
             ) : (
-              <div className="relative rounded-md overflow-hidden" style={{ maxHeight: TABLE_MAX_HEIGHT }}>
-                <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-blue-50 dark:bg-blue-950/20 px-3 py-3 text-xs font-semibold text-muted-foreground">
-                  <div className="flex items-center justify-center">
-                    <Checkbox
-                      checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
-                      onCheckedChange={toggleSelectAll}
-                    />
+              <div className="space-y-3">
+                <div className="relative rounded-md overflow-hidden" style={{ maxHeight: TABLE_MAX_HEIGHT }}>
+                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-blue-50 dark:bg-blue-950/20 px-3 py-3 text-xs font-semibold text-muted-foreground">
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </div>
+                    <div className="flex items-center leading-tight">Employee</div>
+                    <div className="flex items-center gap-2 leading-tight">ID Number</div>
+                    <div className="flex items-center leading-tight">Contract Type</div>
+                    <div className="flex items-center leading-tight">Job Title</div>
+                    <div className="flex items-center justify-center leading-tight text-center">Actions</div>
                   </div>
-                  <div className="flex items-center leading-tight">Employee</div>
-                  <div className="flex items-center gap-2 leading-tight">ID Number</div>
-                  <div className="flex items-center leading-tight">Contract Type</div>
-                  <div className="flex items-center leading-tight">Job Title</div>
-                  <div className="flex items-center justify-center leading-tight text-center">Actions</div>
+                  <div
+                    ref={tableScrollRef}
+                    className="divide-y employee-table-scroll overflow-y-auto"
+                    style={{ maxHeight: TABLE_BODY_MAX_HEIGHT }}
+                  >
+                    {filteredEmployees.map((employee) => (
+                      <div
+                        key={employee.id}
+                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-1 text-xs hover:bg-muted/30"
+                      >
+                        <div className="flex items-center justify-center">
+                          <Checkbox
+                            checked={selectedEmployees.has(employee.id)}
+                            onCheckedChange={() => toggleSelectEmployee(employee.id)}
+                          />
+                        </div>
+                        <div className="font-medium leading-tight">
+                          <button
+                            type="button"
+                            onClick={() => openProfileDialog(employee)}
+                            className="text-left hover:text-primary transition-colors"
+                          >
+                            {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
+                          </button>
+                          {employee.employee_number && (
+                            <p className="text-[10px] text-muted-foreground leading-tight">#{employee.employee_number}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 leading-tight">
+                          <span className="text-xs font-normal">
+                            {employee.id_number
+                              ? revealedIds.has(employee.id)
+                                ? employee.id_number
+                                : maskSAIdNumber(employee.id_number)
+                              : "N/A"}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const next = new Set(revealedIds);
+                              if (next.has(employee.id)) {
+                                next.delete(employee.id);
+                              } else {
+                                next.add(employee.id);
+                              }
+                              setRevealedIds(next);
+                            }}
+                            className="h-6 w-6 p-0"
+                            title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
+                          >
+                            {revealedIds.has(employee.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                          </Button>
+                        </div>
+                        <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
+                        <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
+                        <div className="flex items-center justify-center">
+                          <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Tooltip disableHoverableContent>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openProfileDialog(employee)}
+                                    className="hover:text-primary hover:bg-muted/50 bg-transparent"
+                                  >
+                                    <Search className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">View Profile</TooltipContent>
+                              </Tooltip>
+                              <Tooltip disableHoverableContent>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setDocumentDialogEmployee(employee)}
+                                    className="group hover:bg-muted/50 bg-transparent"
+                                  >
+                                    <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">Add Document</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TooltipProvider>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {showScrollHint && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                      <div className="relative rounded-full border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                        <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
+                        <span className="relative">Scroll down</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div
-                  ref={tableScrollRef}
-                  className="divide-y employee-table-scroll overflow-y-auto"
-                  style={{ maxHeight: TABLE_BODY_MAX_HEIGHT }}
-                >
-                  {filteredEmployees.map((employee) => (
-                    <div
-                      key={employee.id}
-                      className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-1 text-xs hover:bg-muted/30"
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-center">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={goToPreviousPage}
+                      disabled={isFirstPage}
+                      aria-label="Previous page"
                     >
-                      <div className="flex items-center justify-center">
-                        <Checkbox
-                          checked={selectedEmployees.has(employee.id)}
-                          onCheckedChange={() => toggleSelectEmployee(employee.id)}
-                        />
-                      </div>
-                      <div className="font-medium leading-tight">
-                        <button
-                          type="button"
-                          onClick={() => openProfileDialog(employee)}
-                          className="text-left hover:text-primary transition-colors"
-                        >
-                          {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
-                        </button>
-                        {employee.employee_number && (
-                          <p className="text-[10px] text-muted-foreground leading-tight">#{employee.employee_number}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 leading-tight">
-                        <span className="text-xs font-normal">
-                          {employee.id_number
-                            ? revealedIds.has(employee.id)
-                              ? employee.id_number
-                              : maskSAIdNumber(employee.id_number)
-                            : "N/A"}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const next = new Set(revealedIds);
-                            if (next.has(employee.id)) {
-                              next.delete(employee.id);
-                            } else {
-                              next.add(employee.id);
-                            }
-                            setRevealedIds(next);
-                          }}
-                          className="h-6 w-6 p-0"
-                          title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
-                        >
-                          {revealedIds.has(employee.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                        </Button>
-                      </div>
-                      <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
-                      <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
-                      <div className="flex items-center justify-center">
-                        <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <Tooltip disableHoverableContent>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openProfileDialog(employee)}
-                                  className="hover:text-primary hover:bg-muted/50 bg-transparent"
-                                >
-                                  <Search className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">View Profile</TooltipContent>
-                            </Tooltip>
-                            <Tooltip disableHoverableContent>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setDocumentDialogEmployee(employee)}
-                                  className="group hover:bg-muted/50 bg-transparent"
-                                >
-                                  <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">Add Document</TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TooltipProvider>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {showScrollHint && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                    <div className="relative rounded-full border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-                      <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
-                      <span className="relative">Scroll down</span>
-                    </div>
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="text-xs font-medium text-primary">
+                      Page {currentPage}
+                      {totalPages !== null && totalPages > 0 ? ` of ${Math.max(totalPages, 1)}` : ""}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={goToNextPage}
+                      disabled={isLastPage}
+                      aria-label="Next page"
+                    >
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </CardContent>
@@ -2598,8 +2673,3 @@ const Employees = () => {
  };
 
 export default Employees;
-
-
-
-
-

@@ -334,10 +334,6 @@ const Index = () => {
             </div>
             <div className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-                <div className="absolute left-4 top-4 z-10 inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm backdrop-blur">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  Employee list
-                </div>
                 <img
                   src="/employee-list.png"
                   onError={(e) => {

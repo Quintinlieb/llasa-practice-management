@@ -333,32 +333,34 @@ const Index = () => {
               </p>
             </div>
             <div className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                <div className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm backdrop-blur">
+              <div className="relative overflow-visible">
+                <div className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm backdrop-blur">
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
                   Live demo
                 </div>
-                <div className="relative h-[360px] w-full overflow-hidden bg-slate-100">
-                  <img
-                    src="/employee-list.png"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = "/placeholder.svg";
-                    }}
-                    alt="Employee list screen"
-                    className="demo-frame demo-frame-list h-full w-full object-cover"
-                  />
-                  <img
-                    src="/employee-add.png"
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = "/placeholder.svg";
-                    }}
-                    alt="Add employee modal"
-                    className="demo-frame demo-frame-modal h-full w-full object-cover"
-                  />
-                  <div className="demo-cursor">
-                    <div className="demo-cursor-dot" />
+                <div className="relative h-[420px] w-full">
+                  <div className="demo-stage">
+                    <img
+                      src="/employee-list.png"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/placeholder.svg";
+                      }}
+                      alt="Employee list screen"
+                      className="demo-card demo-card-list"
+                    />
+                    <img
+                      src="/employee-add.png"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/placeholder.svg";
+                      }}
+                      alt="Add employee modal"
+                      className="demo-card demo-card-modal"
+                    />
+                    <div className="demo-cursor">
+                      <div className="demo-cursor-dot" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -707,23 +709,25 @@ const Index = () => {
       <style>{`
         .reveal { opacity: 0; transform: translateY(18px); transition: opacity 360ms ease, transform 360ms ease; }
         .reveal.show { opacity: 1; transform: translateY(0); }
-        .demo-frame { position: absolute; inset: 0; border-radius: 1rem; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12); }
-        .demo-frame-list { animation: demoListFade 6s ease-in-out infinite; }
-        .demo-frame-modal { animation: demoModalFade 6s ease-in-out infinite; }
-        .demo-cursor { position: absolute; width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(15, 23, 42, 0.18); background: rgba(255, 255, 255, 0.9); box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18); display: grid; place-items: center; animation: demoCursorMove 6s ease-in-out infinite; }
+        .demo-stage { position: absolute; inset: 0; display: grid; place-items: center; }
+        .demo-card { position: absolute; width: 88%; border-radius: 18px; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 18px 50px rgba(15, 23, 42, 0.15), 0 4px 18px rgba(15, 23, 42, 0.12); background: #fff; overflow: hidden; }
+        .demo-card-list { transform: rotate(-0.8deg) translateY(6px); animation: demoListPop 7s ease-in-out infinite; }
+        .demo-card-modal { width: 70%; transform: translate(28%, -6%) scale(0.96); opacity: 0; animation: demoModalPop 7s ease-in-out infinite; }
+        .demo-cursor { position: absolute; width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(15, 23, 42, 0.18); background: rgba(255, 255, 255, 0.9); box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18); display: grid; place-items: center; animation: demoCursorMove 7s ease-in-out infinite; }
         .demo-cursor-dot { width: 10px; height: 10px; border-radius: 9999px; background: #2563eb; box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18); }
-        @keyframes demoListFade {
-          0%, 48% { opacity: 1; transform: scale(1); }
-          58%, 100% { opacity: 0; transform: scale(0.995); }
+        @keyframes demoListPop {
+          0%, 55% { opacity: 1; transform: rotate(-0.8deg) translateY(6px) scale(1); }
+          64%, 100% { opacity: 1; transform: rotate(-0.8deg) translateY(6px) scale(1); }
         }
-        @keyframes demoModalFade {
-          0%, 45% { opacity: 0; transform: translateY(18px) scale(1.01); }
-          60%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes demoModalPop {
+          0%, 55% { opacity: 0; transform: translate(28%, -6%) scale(0.96); }
+          62% { opacity: 1; transform: translate(28%, -6%) scale(1); }
+          100% { opacity: 1; transform: translate(28%, -6%) scale(1); }
         }
         @keyframes demoCursorMove {
-          0%, 10% { transform: translate(24%, 62%); }
-          32%, 45% { transform: translate(76%, 10%); }
-          55%, 100% { transform: translate(68%, 18%); }
+          0%, 8% { transform: translate(-12%, 44%); }
+          30%, 46% { transform: translate(46%, -34%); }
+          58%, 100% { transform: translate(46%, -34%); }
         }
       `}</style>
     </div>

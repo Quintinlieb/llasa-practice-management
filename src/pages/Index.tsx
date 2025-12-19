@@ -300,14 +300,6 @@ const Index = () => {
                   Get started
                 </Button>
               </Link>
-              <Link to="/auth">
-                <Button
-                  variant="outline"
-                  className="h-12 rounded-full border-blue-200 bg-white px-7 text-base text-blue-700 hover:border-blue-300"
-                >
-                  Log in
-                </Button>
-              </Link>
               {!isInstalled && (
                 <Button
                   variant="outline"

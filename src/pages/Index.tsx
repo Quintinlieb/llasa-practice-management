@@ -316,9 +316,6 @@ const Index = () => {
                 If the button stays disabled, open your browser menu and choose Install/Add to Home Screen.
               </p>
             )}
-            <p className="mt-4 text-sm text-slate-500">
-              Progressive discipline ready | Instant PDF export | Secure by design
-            </p>
           </div>
         </section>
 

@@ -319,6 +319,67 @@ const Index = () => {
           </div>
         </section>
 
+        <section className="relative overflow-hidden border-y border-slate-200 bg-gradient-to-b from-white via-blue-50/30 to-white">
+          <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+            <div className="absolute -top-10 left-[-6%] h-48 w-48 rounded-full bg-blue-100/60 blur-3xl" />
+            <div className="absolute bottom-4 right-[-4%] h-52 w-52 rounded-full bg-emerald-100/60 blur-3xl" />
+          </div>
+          <div className="relative mx-auto max-w-6xl px-6 py-16">
+            <div className="max-w-2xl">
+              <p className="text-xs uppercase tracking-[0.2em] text-blue-700">Feature highlight</p>
+              <h2 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">See how adding an employee works</h2>
+              <p className="mt-3 text-lg text-slate-600">
+                A quick, looping illustration: open the list, click add, and start capturing details without leaving the flow.
+              </p>
+            </div>
+            <div className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="absolute left-4 top-4 z-20 inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm backdrop-blur">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Live demo
+                </div>
+                <div className="relative h-[360px] w-full overflow-hidden bg-slate-100">
+                  <img
+                    src="/employee-list.png"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = "/placeholder.svg";
+                    }}
+                    alt="Employee list screen"
+                    className="demo-frame demo-frame-list h-full w-full object-cover"
+                  />
+                  <img
+                    src="/employee-add.png"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = "/placeholder.svg";
+                    }}
+                    alt="Add employee modal"
+                    className="demo-frame demo-frame-modal h-full w-full object-cover"
+                  />
+                  <div className="demo-cursor">
+                    <div className="demo-cursor-dot" />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-5">
+                <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-blue-800">1) Start from your employee list</p>
+                  <p className="text-sm text-slate-700">Browse, search, or filter to find people in seconds.</p>
+                </div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-emerald-800">2) Click “Add Employee”</p>
+                  <p className="text-sm text-slate-700">The guided modal keeps the basics upfront and ready.</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-900">3) Capture details, save, and attach docs</p>
+                  <p className="text-sm text-slate-700">Stay in flow—no redirects, instant records, and ready for contracts.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="mx-auto max-w-6xl px-6 pb-12 reveal">
           <Card className="mx-auto max-w-5xl border-blue-100 bg-white/80 p-6 shadow-sm backdrop-blur">
             <div className="text-left sm:text-center">
@@ -646,6 +707,24 @@ const Index = () => {
       <style>{`
         .reveal { opacity: 0; transform: translateY(18px); transition: opacity 360ms ease, transform 360ms ease; }
         .reveal.show { opacity: 1; transform: translateY(0); }
+        .demo-frame { position: absolute; inset: 0; border-radius: 1rem; border: 1px solid rgba(148, 163, 184, 0.35); box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12); }
+        .demo-frame-list { animation: demoListFade 6s ease-in-out infinite; }
+        .demo-frame-modal { animation: demoModalFade 6s ease-in-out infinite; }
+        .demo-cursor { position: absolute; width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(15, 23, 42, 0.18); background: rgba(255, 255, 255, 0.9); box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18); display: grid; place-items: center; animation: demoCursorMove 6s ease-in-out infinite; }
+        .demo-cursor-dot { width: 10px; height: 10px; border-radius: 9999px; background: #2563eb; box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18); }
+        @keyframes demoListFade {
+          0%, 48% { opacity: 1; transform: scale(1); }
+          58%, 100% { opacity: 0; transform: scale(0.995); }
+        }
+        @keyframes demoModalFade {
+          0%, 45% { opacity: 0; transform: translateY(18px) scale(1.01); }
+          60%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes demoCursorMove {
+          0%, 10% { transform: translate(24%, 62%); }
+          32%, 45% { transform: translate(76%, 10%); }
+          55%, 100% { transform: translate(68%, 18%); }
+        }
       `}</style>
     </div>
   );

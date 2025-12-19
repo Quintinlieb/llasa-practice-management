@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -123,6 +123,8 @@ const Index = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstallHint, setShowInstallHint] = useState(false);
+  const featureRef = useRef<HTMLElement | null>(null);
+  const [featurePinned, setFeaturePinned] = useState(false);
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
@@ -182,6 +184,21 @@ const Index = () => {
       { threshold: 0.6, rootMargin: "-10% 0px -10% 0px" }
     );
     cards.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!featureRef.current) return;
+    const el = featureRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          setFeaturePinned(entry.isIntersecting && entry.intersectionRatio > 0.42);
+        });
+      },
+      { threshold: [0.3, 0.42, 0.6], rootMargin: "-10% 0px -10% 0px" }
+    );
+    observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
@@ -319,7 +336,10 @@ const Index = () => {
           </div>
         </section>
 
-        <section className="relative overflow-hidden border-y border-slate-200 bg-gradient-to-b from-white via-blue-50/30 to-white">
+        <section
+          ref={featureRef}
+          className={`feature-highlight relative overflow-hidden border-y border-slate-200 bg-gradient-to-b from-white via-blue-50/30 to-white ${featurePinned ? "feature-pinned" : ""}`}
+        >
           <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
             <div className="absolute -top-10 left-[-6%] h-48 w-48 rounded-full bg-blue-100/60 blur-3xl" />
             <div className="absolute bottom-4 right-[-4%] h-52 w-52 rounded-full bg-emerald-100/60 blur-3xl" />
@@ -333,7 +353,7 @@ const Index = () => {
               </p>
             </div>
             <div className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+              <div className={`feature-visual relative overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl ${featurePinned ? "is-pinned" : ""}`}>
                 <img
                   src="/employee-list.png"
                   onError={(e) => {
@@ -689,6 +709,9 @@ const Index = () => {
       <style>{`
         .reveal { opacity: 0; transform: translateY(18px); transition: opacity 360ms ease, transform 360ms ease; }
         .reveal.show { opacity: 1; transform: translateY(0); }
+        .feature-highlight { scroll-margin-top: 96px; }
+        .feature-visual { transition: transform 420ms ease, box-shadow 420ms ease, border-radius 420ms ease; }
+        .feature-highlight.feature-pinned .feature-visual { position: sticky; top: clamp(72px, 12vh, 120px); transform: scale(1.08); box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18), 0 6px 24px rgba(15, 23, 42, 0.14); border-radius: 12px; z-index: 10; }
         .demo-image { display: block; width: 100%; height: auto; object-fit: contain; }
       `}</style>
     </div>

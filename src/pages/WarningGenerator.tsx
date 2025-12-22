@@ -801,13 +801,12 @@ const WarningGenerator = () => {
   return (
     <DashboardLayout>
       <style>{pulseShadowStyles}</style>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Generate Written Warning</h1>
-            <p className="text-muted-foreground">
-              Complete the form below to generate a professional written warning document
-            </p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Discipline</p>
+            <h1 className="text-3xl font-bold text-gray-900">Generate Written Warning</h1>
+            <p className="text-base text-gray-600">Complete the form below to generate a compliant written warning.</p>
           </div>
           <Button
             type="button"
@@ -833,7 +832,7 @@ const WarningGenerator = () => {
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Company & Trading Name */}
-                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-blue-200 bg-slate-50/70 p-4 shadow-sm">
                   <div className="space-y-2">
                     <Label htmlFor="tradingName">Trading Name (optional)</Label>
                     <Input
@@ -847,7 +846,7 @@ const WarningGenerator = () => {
                 </div>
 
                 {/* Employee Selection */}
-                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
                   <h3 className="font-semibold text-lg">Employee Information</h3>
                   <div className="space-y-2">
                     <Label htmlFor="employee">Select Employee (optional)</Label>
@@ -899,7 +898,7 @@ const WarningGenerator = () => {
                 </div>
 
                 {/* Warning Details */}
-                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
                   <h3 className="font-semibold text-lg text-gray-900">Warning Information</h3>
                   <div className="space-y-2">
                     <Label>Misconduct Type(s) *</Label>

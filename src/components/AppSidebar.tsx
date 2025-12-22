@@ -1,6 +1,6 @@
-import { FileText, Users, Home, CalendarClock, ArrowLeft, Gavel, LineChart, FileSignature, AlertTriangle } from "lucide-react";
+import { FileText, Users, Home, CalendarClock, ArrowLeft } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useState, type FocusEvent, type ComponentType, ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { documentCategories } from "@/constants/documentCategories";
 
 const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
 type SidebarProfile = {
@@ -27,25 +26,12 @@ type SidebarProfile = {
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
+  { title: "Documents", url: "/documents", icon: FileText },
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
 ];
 
-export const isActiveCategory = (pathname: string, slug: string) =>
-  pathname.startsWith(`/documents/${slug}`);
-
-export const isAnyDocsChildActive = (pathname: string) =>
-  documentCategories.some((category) => isActiveCategory(pathname, category.slug));
-
-const documentCategoryIcons: Record<string, ComponentType<{ className?: string }>> = {
-  discipline: Gavel,
-  performance: LineChart,
-  contracts: FileSignature,
-  notices: AlertTriangle,
-};
-
 export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
   const location = useLocation();
-  const [isDocsMenuInteracting, setIsDocsMenuInteracting] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
@@ -78,29 +64,6 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
     );
 
   const pathname = location.pathname;
-  const docsCategoryActive = isAnyDocsChildActive(pathname);
-  const isDocsOpen = docsCategoryActive || isDocsMenuInteracting;
-
-  const handleDocsMouseEnter = () => setIsDocsMenuInteracting(true);
-
-  const handleDocsMouseLeave = () => {
-    if (!docsCategoryActive) {
-      setIsDocsMenuInteracting(false);
-    }
-  };
-
-  const handleDocsFocus = () => setIsDocsMenuInteracting(true);
-
-  const handleDocsBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (docsCategoryActive) return;
-    const nextFocusTarget = event.relatedTarget as Node | null;
-    if (nextFocusTarget && event.currentTarget.contains(nextFocusTarget)) {
-      return;
-    }
-    setIsDocsMenuInteracting(false);
-  };
-
-  const documentsActive = docsCategoryActive;
   const initials =
     profile?.user_name && profile?.user_surname
       ? `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase()
@@ -139,113 +102,35 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-2">
-                {primaryNavItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    {withTooltip(
-                      <SidebarMenuButton
-                        asChild
-                        isActive={location.pathname === item.url}
-                        className={cn(
-                          "rounded-xl border border-transparent transition-all duration-150 hover:border-primary/10 hover:bg-primary/5",
-                          location.pathname === item.url &&
-                            "bg-primary/10 text-primary border-primary/20 shadow-[0_10px_25px_-15px_hsla(var(--primary),0.6)] data-[active=true]:!bg-primary/10 [&>svg]:text-primary",
-                        )}
-                        data-collapsed={isCollapsed}
-                      >
-                        <NavLink
-                          to={item.url}
-                          className={cn("w-full", isCollapsed && "justify-center gap-0")}
-                        >
-                          <item.icon className="h-5 w-5" />
-                          <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>,
-                      item.title
-                    )}
-                  </SidebarMenuItem>
-                ))}
-                <SidebarMenuItem>
-                  <div
-                    className="group relative w-full"
-                    onMouseEnter={handleDocsMouseEnter}
-                    onMouseLeave={handleDocsMouseLeave}
-                    onFocus={handleDocsFocus}
-                    onBlur={handleDocsBlur}
-                    >
-                    {withTooltip(
-                      <SidebarMenuButton
-                        type="button"
-                        id="documents-menu-button"
-                        aria-expanded={isDocsOpen}
-                        aria-controls="documents-menu"
-                        aria-haspopup="true"
-                        isActive={documentsActive}
-                        className={cn(
-                          "w-full rounded-xl border border-transparent transition-all duration-150 hover:border-primary/10 hover:bg-primary/5",
-                          isCollapsed && "justify-center",
-                          documentsActive &&
-                            "bg-primary/10 text-primary border-primary/20 font-semibold shadow-[0_10px_25px_-15px_hsla(var(--primary),0.6)] data-[active=true]:!bg-primary/10"
-                        )}
-                        data-collapsed={isCollapsed}
-                      >
-                        <FileText
+                {primaryNavItems.map((item) => {
+                  const isActive =
+                    item.url === "/documents" ? pathname.startsWith("/documents") : location.pathname === item.url;
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      {withTooltip(
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive}
                           className={cn(
-                            "h-5 w-5 text-current",
-                            documentsActive && "text-primary"
+                            "rounded-xl border border-transparent transition-all duration-150 hover:border-primary/10 hover:bg-primary/5",
+                            isActive &&
+                              "bg-primary/10 text-primary border-primary/20 shadow-[0_10px_25px_-15px_hsla(var(--primary),0.6)] data-[active=true]:!bg-primary/10 [&>svg]:text-primary",
                           )}
-                        />
-                        <span className={cn(isCollapsed && "sr-only")}>Documents</span>
-                      </SidebarMenuButton>,
-                      "Documents"
-                    )}
-                    <div
-                      id="documents-menu"
-                      role="presentation"
-                      className={cn(
-                        "mt-[0.21rem] overflow-hidden rounded-md bg-white/80 shadow-sm transition-all duration-150 ease-out",
-                        "max-h-0 opacity-0 group-hover:max-h-screen group-hover:opacity-100",
-                        isDocsOpen && "max-h-screen opacity-100"
+                          data-collapsed={isCollapsed}
+                        >
+                          <NavLink
+                            to={item.url}
+                            className={cn("w-full", isCollapsed && "justify-center gap-0")}
+                          >
+                            <item.icon className="h-5 w-5" />
+                            <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
+                          </NavLink>
+                        </SidebarMenuButton>,
+                        item.title
                       )}
-                    >
-                      <nav aria-label="Document categories">
-                        <ul
-                          role="menu"
-                          aria-labelledby="documents-menu-button"
-                          className={cn(
-                            "flex flex-col gap-[0.11rem] py-[0.32rem]",
-                            isCollapsed ? "px-0 items-center" : "px-[0.63rem]"
-                          )}
-                        >
-                          {documentCategories.map((category) => {
-                            const active = isActiveCategory(pathname, category.slug);
-                            const CategoryIcon = documentCategoryIcons[category.slug] || FileText;
-                            return (
-                              <li key={category.slug}>
-                                {withTooltip(
-                                  <NavLink
-                                    to={`/documents/${category.slug}`}
-                                    role="menuitem"
-                                    className={cn(
-                                      "flex items-center rounded-xl text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
-                                      isCollapsed ? "justify-center gap-0 px-0 py-2 ml-1" : "gap-2 pl-[1.22rem] pr-4 py-2",
-                                      active
-                                        ? "font-semibold text-primary"
-                                        : "text-muted-foreground hover:bg-primary/5 hover:text-foreground"
-                                    )}
-                                  >
-                                    <CategoryIcon className={cn("h-4 w-4", active ? "text-primary" : "")} />
-                                    <span className={cn(isCollapsed && "sr-only")}>{category.label}</span>
-                                  </NavLink>,
-                                  category.label
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </nav>
-                    </div>
-                  </div>
-                </SidebarMenuItem>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

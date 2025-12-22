@@ -1335,7 +1335,7 @@ const PermanentContractGenerator = () => {
             className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
           >
             <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
-            Back to contracts
+            Back
           </Button>
         </div>
 

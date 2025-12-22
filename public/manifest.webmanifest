@@ -1,23 +1,23 @@
 {
   "name": "nudoc",
   "short_name": "nudoc",
-  "start_url": "/auth",
-  "scope": "/",
+  "start_url": "https://nudoc.vercel.app/",
+  "scope": "https://nudoc.vercel.app/",
   "display": "standalone",
   "theme_color": "#0f172a",
   "background_color": "#ffffff",
   "icons": [
     {
-      "src": "/icon-512.png",
+      "src": "/thumbnail-logo.svg",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/thumbnail-logo.svg",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

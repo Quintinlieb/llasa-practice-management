@@ -1,7 +1,7 @@
 {
   "name": "nudoc",
   "short_name": "nudoc",
-  "start_url": "https://nudoc.vercel.app/",
+  "start_url": "https://nudoc.vercel.app/auth",
   "scope": "https://nudoc.vercel.app/",
   "display": "standalone",
   "theme_color": "#0f172a",

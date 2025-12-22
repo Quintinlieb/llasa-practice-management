@@ -3,6 +3,7 @@
   "short_name": "nudoc",
   "start_url": "/",
   "scope": "/",
+  "display_override": ["fullscreen", "standalone"],
   "display": "standalone",
   "theme_color": "#0f172a",
   "background_color": "#ffffff",

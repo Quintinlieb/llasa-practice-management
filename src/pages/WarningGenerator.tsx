@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, X, Info, ArrowLeft } from "lucide-react";
+import { Download, FileText, X, Info, ArrowLeft, RotateCcw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -98,9 +99,10 @@ const WarningGenerator = () => {
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   const [employees, setEmployees] = useState<WarningEmployee[]>([]);
   const [showPreview, setShowPreview] = useState(false);
-  const [isMisconductDialogOpen, setIsMisconductDialogOpen] = useState(false);
   const [misconductSearch, setMisconductSearch] = useState("");
-  const [pendingMisconductTypes, setPendingMisconductTypes] = useState<string[]>([]);
+  const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
+  const misconductPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
     { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
   >([]);
@@ -249,6 +251,18 @@ const WarningGenerator = () => {
     return MISCONDUCT_TYPES.map((name) => ({ name, category: "Serious" as const, firstOutcome: "" }));
   }, [conductOffences]);
 
+  const misconductColorClasses = (category: "Minor" | "Serious" | "Dismissible") => {
+    if (category === "Minor") return "text-emerald-700";
+    if (category === "Serious") return "text-amber-700";
+    return "text-red-700";
+  };
+
+  const misconductCheckboxClasses = (category: "Minor" | "Serious" | "Dismissible") => {
+    if (category === "Minor") return "border-emerald-500 data-[state=checked]:bg-emerald-100 data-[state=checked]:border-emerald-600 text-emerald-700";
+    if (category === "Serious") return "border-amber-500 data-[state=checked]:bg-amber-100 data-[state=checked]:border-amber-600 text-amber-700";
+    return "border-red-500 data-[state=checked]:bg-red-100 data-[state=checked]:border-red-600 text-red-700";
+  };
+
   const getMisconductCategory = (name: string): "Minor" | "Serious" | "Dismissible" => {
     const found = conductOffences.find((item) => item.name === name);
     return found?.category ?? "Serious";
@@ -316,25 +330,88 @@ const WarningGenerator = () => {
     }));
   };
 
+  const resetWarningSelection = () => {
+    setFormData((prev) => ({ ...prev, warningType: "", validityMonths: "" }));
+    setWarningSelectResetCount((prev) => prev + 1);
+  };
+
   const confirmOverrideWarning = (accepted: boolean) => {
     if (accepted && warningOverride.next) {
       applyWarningType(warningOverride.next);
+    } else {
+      resetWarningSelection();
     }
     setWarningOverride({ open: false, message: "", next: "" });
+    setWarningSelectOpen(false);
+  };
+
+  const updateMisconductTypes = (updater: (prev: string[]) => string[]) => {
+    setFormData((prev) => {
+      const next = updater(prev.misconductTypes);
+      const shouldResetWarning = next.length === 0;
+      return {
+        ...prev,
+        misconductTypes: next,
+        warningType: shouldResetWarning ? "" : prev.warningType,
+        validityMonths: shouldResetWarning ? "" : prev.validityMonths,
+      };
+    });
   };
 
   const handleConfirmDismissible = (accept: boolean) => {
     if (accept && dismissibleOverride.pending) {
-      setPendingMisconductTypes((prev) => {
-        const hasCategory = prev.length > 0 ? getMisconductCategory(prev[0]) : getMisconductCategory(dismissibleOverride.pending);
-        if (hasCategory === "Dismissible") {
-          // keep consistent; but disallow mixing with others already enforced
-          return [...prev, dismissibleOverride.pending!];
-        }
+      updateMisconductTypes((prev) => {
+        if (prev.includes(dismissibleOverride.pending!)) return prev;
         return [...prev, dismissibleOverride.pending!];
       });
     }
     setDismissibleOverride({ open: false, pending: null });
+  };
+
+  const handleMisconductMenuOpenChange = (open: boolean) => {
+    setIsMisconductMenuOpen(open);
+    if (!open) {
+      setMisconductSearch("");
+    }
+  };
+
+  useEffect(() => {
+    if (!isMisconductMenuOpen) return;
+    const handleScrollClose = (event: Event) => {
+      const target = event.target as Node | null;
+      if (target && misconductPopoverRef.current?.contains(target)) {
+        return; // allow internal scrolling without closing
+      }
+      handleMisconductMenuOpenChange(false);
+    };
+    window.addEventListener("scroll", handleScrollClose, true);
+    return () => window.removeEventListener("scroll", handleScrollClose, true);
+  }, [isMisconductMenuOpen]);
+
+  const handleMisconductSelect = (type: string) => {
+    const isSelected = formData.misconductTypes.includes(type);
+    if (isSelected) {
+      updateMisconductTypes((prev) => prev.filter((item) => item !== type));
+      return;
+    }
+
+    const newCategory = getMisconductCategory(type);
+    const currentCategory =
+      formData.misconductTypes.length > 0 ? getMisconductCategory(formData.misconductTypes[0]) : null;
+    if (newCategory === "Dismissible") {
+      setDismissibleOverride({ open: true, pending: type });
+      return;
+    }
+    if (currentCategory && newCategory !== currentCategory) {
+      toast({
+        title: "Choose one category",
+        description: "Select misconduct types from the same category only.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateMisconductTypes((prev) => [...prev, type]);
   };
 
   const handleWarningSelectOpenChange = (open: boolean) => {
@@ -376,6 +453,8 @@ const WarningGenerator = () => {
 
     if (selectionRequirement && newSeverity > 0 && selectionRequirement.severity > newSeverity) {
       const prescribed = selectionRequirement.outcome || "a higher warning";
+      resetWarningSelection();
+      setWarningSelectOpen(false);
       setWarningOverride({
         open: true,
         message: `The Code of Conduct prescribes "${prescribed}" for ${selectionRequirement.type}. Override and use "${value}" instead?`,
@@ -690,7 +769,7 @@ const WarningGenerator = () => {
     generatePDF(true);
   };
 
-  const handleDiscard = () => {
+  const handleResetForm = () => {
     setFormData({
       tradingName: "",
       employeeId: "",
@@ -705,7 +784,12 @@ const WarningGenerator = () => {
       description: "",
     });
     setPdfBlob(null);
-    navigate("/documents/discipline");
+    setWarningSelectOpen(false);
+    setIsMisconductMenuOpen(false);
+    resetWarningSelection();
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   const isFormValid = () => {
@@ -721,71 +805,7 @@ const WarningGenerator = () => {
   };
 
   const toggleMisconductType = (type: string) => {
-    setFormData(prev => {
-      const next = prev.misconductTypes.includes(type)
-        ? prev.misconductTypes.filter(t => t !== type)
-        : [...prev.misconductTypes, type];
-
-      const shouldResetWarning = next.length === 0;
-
-      return {
-        ...prev,
-        misconductTypes: next,
-        warningType: shouldResetWarning ? "" : prev.warningType,
-        validityMonths: shouldResetWarning ? "" : prev.validityMonths,
-      };
-    });
-  };
-
-  const togglePendingMisconductType = (type: string) => {
-    setPendingMisconductTypes((prev) => {
-      const isSelected = prev.includes(type);
-      if (isSelected) {
-        return prev.filter((item) => item !== type);
-      }
-
-      const newCategory = getMisconductCategory(type);
-      const currentCategory = prev.length > 0 ? getMisconductCategory(prev[0]) : null;
-      if (newCategory === "Dismissible") {
-        setDismissibleOverride({ open: true, pending: type });
-        return prev;
-      }
-      if (currentCategory && newCategory !== currentCategory) {
-        toast({
-          title: "Choose one category",
-          description: "Select misconduct types from the same category only.",
-          variant: "destructive",
-        });
-        return prev;
-      }
-
-      return [...prev, type];
-    });
-  };
-
-  const openMisconductDialog = () => {
-    setPendingMisconductTypes(formData.misconductTypes);
-    setMisconductSearch("");
-    setIsMisconductDialogOpen(true);
-  };
-
-  const closeMisconductDialog = () => {
-    setIsMisconductDialogOpen(false);
-    setMisconductSearch("");
-  };
-
-  const applyMisconductSelection = () => {
-    setFormData((prev) => {
-      const next = [...pendingMisconductTypes];
-      const shouldResetWarning = next.length === 0;
-      return {
-        ...prev,
-        misconductTypes: next,
-        warningType: shouldResetWarning ? "" : prev.warningType,
-        validityMonths: shouldResetWarning ? "" : prev.validityMonths,
-      };
-    });
-    closeMisconductDialog();
+    updateMisconductTypes((prev) => prev.filter((t) => t !== type));
   };
 
   if (loading) {
@@ -796,7 +816,7 @@ const WarningGenerator = () => {
     );
   }
 
-  const warningSelectKey = formData.misconductTypes.join("|") || "empty";
+  const warningSelectKey = `${formData.misconductTypes.join("|") || "empty"}-${formData.warningType || "none"}-${warningSelectResetCount}`;
 
   return (
     <DashboardLayout>
@@ -902,20 +922,95 @@ const WarningGenerator = () => {
                   <h3 className="font-semibold text-lg text-gray-900">Warning Information</h3>
                   <div className="space-y-2">
                     <Label>Misconduct Type(s) *</Label>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start text-left font-normal border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-900"
-                      type="button"
-                      onClick={openMisconductDialog}
-                    >
-                      {formData.misconductTypes.length === 0
-                        ? "Select misconduct type(s)"
-                        : `${formData.misconductTypes.length} type(s) selected`}
-                    </Button>
-                      {formData.misconductTypes.length > 0 && (
+                    <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-900"
+                          type="button"
+                        >
+                          {formData.misconductTypes.length === 0
+                            ? "Select misconduct type(s)"
+                            : `${formData.misconductTypes.length} type(s) selected`}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent ref={misconductPopoverRef} className="w-[420px] p-4" align="start">
+                        <div className="space-y-3">
+                          <Input
+                            placeholder="Search misconduct types"
+                            value={misconductSearch}
+                            onChange={(e) => setMisconductSearch(e.target.value)}
+                          />
+                          <ScrollArea className="h-56 rounded-md border border-muted">
+                            <div className="space-y-2 p-3">
+                              {filteredMisconductTypes.length === 0 && (
+                                <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
+                              )}
+                              {["Minor", "Serious", "Dismissible"].map((category) => {
+                                const bucket = filteredMisconductTypes.filter((item) => item.category === category);
+                                if (bucket.length === 0) return null;
+                                return (
+                                  <div key={category} className="space-y-1">
+                                    <p
+                                      className={`text-xs font-semibold uppercase px-2 py-1 rounded-sm ${
+                                        category === "Minor"
+                                          ? "bg-emerald-600 text-white"
+                                          : category === "Serious"
+                                            ? "bg-amber-600 text-white"
+                                            : "bg-red-600 text-white"
+                                      }`}
+                                    >
+                                      {category} Offences
+                                    </p>
+                                    {bucket.map((item) => (
+                                      <label
+                                        key={`${category}-${item.name}`}
+                                        className={`flex items-center gap-2 text-sm cursor-pointer ${misconductColorClasses(item.category)}`}
+                                      >
+                                        <Checkbox
+                                          checked={formData.misconductTypes.includes(item.name)}
+                                          onCheckedChange={() => handleMisconductSelect(item.name)}
+                                          className={misconductCheckboxClasses(item.category)}
+                                        />
+                                        <span className="flex-1">{item.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </ScrollArea>
+                          {formData.misconductTypes.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Selected</p>
+                              <div className="flex flex-wrap gap-2">
+                                {formData.misconductTypes.map((type) => {
+                                  const category = getMisconductCategory(type);
+                                  return (
+                                    <Badge
+                                      key={type}
+                                      variant="secondary"
+                                      className={`gap-1 ${misconductColorClasses(category)}`}
+                                    >
+                                      {type}
+                                      <X className="h-3 w-3 cursor-pointer" onClick={() => toggleMisconductType(type)} />
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    {formData.misconductTypes.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {formData.misconductTypes.map((type) => (
-                          <Badge key={type} variant="secondary" className="gap-1 bg-blue-50 text-blue-800 border border-blue-100">
+                          <Badge
+                            key={type}
+                            variant="secondary"
+                            className={`gap-1 ${misconductColorClasses(getMisconductCategory(type))}`}
+                          >
                             {type}
                             <X
                               className="h-3 w-3 cursor-pointer"
@@ -926,80 +1021,6 @@ const WarningGenerator = () => {
                       </div>
                     )}
                   </div>
-
-                  <Dialog open={isMisconductDialogOpen} onOpenChange={(open) => (open ? openMisconductDialog() : closeMisconductDialog())}>
-                    <DialogContent className="sm:max-w-lg">
-                      <DialogHeader>
-                        <DialogTitle>Select misconduct type(s)</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-3">
-                        <Input
-                          placeholder="Search misconduct types"
-                          value={misconductSearch}
-                          onChange={(e) => setMisconductSearch(e.target.value)}
-                        />
-                        <ScrollArea className="h-56 rounded-md border border-muted">
-                          <div className="space-y-2 p-3">
-                            {filteredMisconductTypes.length === 0 && (
-                              <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
-                            )}
-                            {["Minor", "Serious", "Dismissible"].map((category) => {
-                              const bucket = filteredMisconductTypes.filter((item) => item.category === category);
-                              if (bucket.length === 0) return null;
-                              return (
-                                <div key={category} className="space-y-1">
-                                  <p className="text-xs font-semibold uppercase text-muted-foreground">{category} Offences</p>
-                                  {bucket.map((item) => (
-                                    <label key={`${category}-${item.name}`} className="flex items-center gap-2 text-sm cursor-pointer">
-                                      <Checkbox
-                                        checked={pendingMisconductTypes.includes(item.name)}
-                                        onCheckedChange={() => togglePendingMisconductType(item.name)}
-                                      />
-                                      <span>{item.name}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </ScrollArea>
-                        {pendingMisconductTypes.length > 0 && (
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">Selected</p>
-                            <div className="flex flex-wrap gap-2">
-                              {pendingMisconductTypes.map((type) => {
-                                const category = getMisconductCategory(type);
-                                const bgClass =
-                                  category === "Minor"
-                                    ? "bg-orange-100 text-orange-800"
-                                    : category === "Serious"
-                                      ? "bg-red-100 text-red-800"
-                                      : "bg-slate-200 text-slate-800";
-                                return (
-                                  <Badge
-                                    key={type}
-                                    variant="secondary"
-                                    className={`gap-1 ${bgClass}`}
-                                  >
-                                    {type}
-                                    <X className="h-3 w-3 cursor-pointer" onClick={() => togglePendingMisconductType(type)} />
-                                  </Badge>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <DialogFooter className="gap-2">
-                        <Button type="button" variant="outline" onClick={closeMisconductDialog}>
-                          Cancel
-                        </Button>
-                        <Button type="button" onClick={applyMisconductSelection} className="bg-blue-600 text-white hover:bg-blue-500">
-                          Add selected
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
                   <div className="space-y-2">
                     <Label htmlFor="description">Description of Misconduct *</Label>
                     <Textarea
@@ -1093,12 +1114,12 @@ const WarningGenerator = () => {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={handleDiscard}
+                    onClick={handleResetForm}
                     disabled={isLoading}
                     className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
                   >
-                    <X className="h-4 w-4" />
-                    Discard
+                    <RotateCcw className="h-4 w-4" />
+                    Reset
                   </Button>
                 </div>
               </form>

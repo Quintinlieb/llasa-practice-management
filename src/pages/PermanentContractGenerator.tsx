@@ -110,7 +110,6 @@ const PermanentContractGenerator = () => {
     employee_name: string;
     employee_surname: string;
     nationality: string | null;
-    passport_number: string | null;
     emergency_contact_number: string | null;
     gender: string | null;
     race: string | null;
@@ -215,7 +214,7 @@ const PermanentContractGenerator = () => {
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, passport_number, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number",
+        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number",
       )
       .eq("company_id", user.id);
     if (error) {
@@ -260,7 +259,7 @@ const PermanentContractGenerator = () => {
     const employeeNationality =
       (employee as Partial<Tables<"employees">> & { nationality?: PermanentContractFormData["nationality"] })
         .nationality || "South African";
-    const passportNumber = (employee as Partial<Tables<"employees">> & { passport_number?: string }).passport_number ?? "";
+    const passportNumber = employeeNationality === "South African" ? "" : employee.id_number ?? "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
     const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
@@ -270,14 +269,15 @@ const PermanentContractGenerator = () => {
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
     const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
     const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
-    const ageFromId = employeeNationality === "South African" ? deriveAgeFromId(employee.id_number ?? "") : "";
+    const idNumber = employeeNationality === "South African" ? employee.id_number ?? "" : "";
+    const ageFromId = employeeNationality === "South African" ? deriveAgeFromId(idNumber) : "";
 
     setFormData((prev) => ({
       ...prev,
       employeeId,
       employeeName: employee.employee_name,
       employeeSurname: employee.employee_surname,
-      employeeIdNumber: employee.id_number ?? "",
+      employeeIdNumber: idNumber,
       passportNumber,
       nationality: employeeNationality,
       alternativeContact: emergencyContact || prev.alternativeContact,

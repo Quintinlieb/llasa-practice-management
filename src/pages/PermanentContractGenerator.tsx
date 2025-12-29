@@ -1677,11 +1677,10 @@ const PermanentContractGenerator = () => {
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
                         <Label htmlFor="employeeAddress">Residential Address *</Label>
-                        <Textarea
+                        <Input
                           id="employeeAddress"
                           value={formData.employeeAddress}
                           onChange={(e) => setFormData({ ...formData, employeeAddress: e.target.value })}
-                          rows={3}
                           placeholder="Street, suburb, city, province, postal code"
                           className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                         />
@@ -1704,11 +1703,10 @@ const PermanentContractGenerator = () => {
                             Copy from Residential
                           </Button>
                         </div>
-                        <Textarea
+                        <Input
                           id="employeePostalAddress"
                           value={formData.employeePostalAddress}
                           onChange={(e) => setFormData({ ...formData, employeePostalAddress: e.target.value })}
-                          rows={2}
                           placeholder="PO Box, suburb, city, province, postal code"
                           className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                         />

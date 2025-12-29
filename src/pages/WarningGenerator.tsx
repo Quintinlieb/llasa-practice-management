@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+﻿import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -494,179 +494,132 @@ const WarningGenerator = () => {
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
-    doc.text("WRITTEN WARNING", pageWidth / 2, yPosition, { align: "center" });
+    doc.text("DISCIPLINARY WARNING NOTICE", pageWidth / 2, yPosition, { align: "center" });
     
     yPosition += 10;
 
-    // Company Details Section
-    if (profile) {
-      doc.setFontSize(10);
+        // Company Details Section
+    const labelWidth = 40; // bring value column closer to labels
+    const lineHeight = 5;
+    const drawSectionTitle = (label: string) => {
+      const sectionHeight = 8;
+      doc.setFillColor(240, 240, 240);
+      doc.setDrawColor(200, 200, 200);
+      doc.roundedRect(margin, yPosition, contentWidth, sectionHeight, 2, 2, "FD");
+      doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(37, 8, 211);
-
-      doc.text("COMPANY INFORMATION", margin, yPosition);
-      yPosition += 5;
-      
-      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80, 80, 80);
+      doc.text(label, margin + 4, yPosition + sectionHeight - 2);
+      yPosition += sectionHeight + 6;
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
-      doc.text(`${profile.company_name}`, margin, yPosition);
+    };
+
+    const renderLabelValue = (label: string, value: string) => {
+      doc.setFont("helvetica", "bold");
+      doc.text(label, margin, yPosition);
+      doc.setFont("helvetica", "normal");
+      const text = value || "-";
+      const lines = doc.splitTextToSize(text, contentWidth - labelWidth - 4);
+      doc.text(lines, margin + labelWidth, yPosition);
+      yPosition += Math.max(lines.length * lineHeight, lineHeight);
+    };
+
+    const formatDateForPdf = (value: string) => {
+      if (!value) return "-";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+    };
+
+    if (profile) {
+      drawSectionTitle("A. EMPLOYER DETAILS");
+      renderLabelValue("Company Name:", profile.company_name || "-");
+      renderLabelValue("Reg No:", profile.registration_number || "-");
+      renderLabelValue("Company Address:", profile.physical_address || "-");
+      if (formData.tradingName) {
+        renderLabelValue("Trading As:", formData.tradingName);
+      }
       yPosition += 4;
-      doc.text(`Reg No: ${profile.registration_number}`, margin, yPosition);
-      yPosition += 4;
-      doc.text(`${profile.physical_address}`, margin, yPosition);
-      yPosition += 7;
     }
 
-    if (formData.tradingName) {
-      doc.setFontSize(9);
-      doc.text(`Trading As: ${formData.tradingName}`, margin, yPosition);
-      yPosition += 7;
-    }
-
-    // Divider line
-    doc.setDrawColor(37, 8, 211);
-
-    doc.setLineWidth(0.5);
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 6;
-
-    // Employee Details
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("EMPLOYEE DETAILS", margin, yPosition);
-    yPosition += 5;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    doc.text(`Name: ${formData.employeeName} ${formData.employeeSurname}`, margin, yPosition);
+    drawSectionTitle("B. EMPLOYEE DETAILS");
+    renderLabelValue("Employee Name:", `${formData.employeeName} ${formData.employeeSurname}`.trim() || "-");
+    renderLabelValue("ID Number:", formData.employeeIdNumber || "-");
     yPosition += 4;
-    doc.text(`ID Number: ${formData.employeeIdNumber}`, margin, yPosition);
-    yPosition += 7;
 
-    // Warning Details
     const warningTypeText = {
       first: "First Written Warning",
       second: "Second Written Warning",
       serious: "Serious Written Warning",
       final: "Final Written Warning",
-    }[formData.warningType] || formData.warningType;
+    }[formData.warningType] || formData.warningType || "-";
 
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("WARNING DETAILS", margin, yPosition);
-    yPosition += 5;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    doc.text(`Type: ${warningTypeText}`, margin, yPosition);
+    drawSectionTitle("C. WARNING DETAILS");
+    const offenceText = formData.misconductTypes.length > 0 ? formData.misconductTypes.join(", ") : "-";
+    renderLabelValue("Offence(s):", offenceText);
+    renderLabelValue("Description:", formData.description || "-");
+    renderLabelValue("Warning Type:", warningTypeText);
+    renderLabelValue("Validity Period:", formData.validityMonths ? `${formData.validityMonths} months` : "-");
+    renderLabelValue("Issued By:", formData.issuedBy || "-");
+    renderLabelValue("Date:", formatDateForPdf(formData.dateIssued));
     yPosition += 4;
-    doc.text(`Validity: ${formData.validityMonths} months`, margin, yPosition);
-    yPosition += 4;
-    doc.text(`Issued By: ${formData.issuedBy}`, margin, yPosition);
-    yPosition += 4;
-    doc.text(`Date: ${formData.dateIssued}`, margin, yPosition);
-    yPosition += 7;
 
-    // Divider line
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 6;
-
-    // Misconduct Types
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("MISCONDUCT TYPE(S)", margin, yPosition);
-    yPosition += 5;
-    
+    drawSectionTitle("D. CONSEQUENCES");
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    formData.misconductTypes.forEach((type) => {
-      doc.text(`• ${type}`, margin + 2, yPosition);
-      yPosition += 4;
-    });
-    yPosition += 3;
-
-    // Description
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("DESCRIPTION OF MISCONDUCT", margin, yPosition);
-    yPosition += 5;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    const descriptionLines = doc.splitTextToSize(formData.description, contentWidth);
-    doc.text(descriptionLines, margin, yPosition);
-    yPosition += descriptionLines.length * 4.5 + 7;
-
-    // Divider line
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 6;
-
-    // Consequences
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("CONSEQUENCES", margin, yPosition);
-    yPosition += 5;
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
     doc.setFontSize(9);
     const consequencesText =
       "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
     const consequencesLines = doc.splitTextToSize(consequencesText, contentWidth);
     doc.text(consequencesLines, margin, yPosition);
-    yPosition += consequencesLines.length * 4.5 + 8;
+    yPosition += consequencesLines.length * 4.5 + 4;
 
-    // Divider line
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 6;
-
-    // Signatures Section
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(37, 8, 211);
-    doc.text("SIGNATURES", margin, yPosition);
-    yPosition += 8;
-
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
+    drawSectionTitle("E. SIGNATURES");
+    yPosition += 6; // add space above first signature line
     
-    const signatureSpacing = 13;
-    const signatures = [
-      "Employer/Issuer",
-      "Employee",
-      "Representative",
-      "Interpreter",
-      "Witness"
+    const signaturePairs: [string, string][] = [
+      ["Employer/Issuer", "Employee"],
+      ["Representative", "Interpreter"],
+      ["Witness 1 (optional)", "Witness 2 (optional)"],
     ];
+    const colGap = 20; // smaller gap to bring the right column left
+    const colWidth = (contentWidth - colGap) / 2;
+    const rowHeight = 18;
+    const sigLineLength = 39; // reduced ~40%
+    const dateLineLength = 22; // reduced further
+    const lineOffset = 0;
 
-    signatures.forEach((label) => {
-      doc.text("___________________________________", margin, yPosition);
-      doc.text("Date: ______________", 130, yPosition);
-      yPosition += 4;
-      doc.text(label, margin, yPosition);
-      yPosition += signatureSpacing;
+    const drawSignatureBlock = (label: string, x: number, y: number) => {
+      const dateX = x + sigLineLength + 12;
+      doc.setDrawColor(170, 170, 170); // lighter grey lines
+      doc.line(x, y, x + sigLineLength, y);
+      doc.line(dateX, y, dateX + dateLineLength, y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0); // labels in black
+      doc.text(label, x, y + lineOffset + 3);
+      doc.text("Date", dateX, y + lineOffset + 3);
+    };
+
+    signaturePairs.forEach((pair, row) => {
+      const yRow = yPosition + row * rowHeight;
+      drawSignatureBlock(pair[0], margin, yRow);
+      drawSignatureBlock(pair[1], margin + colWidth + colGap, yRow);
     });
 
-    // Footer Note
-    yPosition += 2;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "italic");
-    doc.setTextColor(100, 100, 100);
+    yPosition += signaturePairs.length * rowHeight - 4; // tighten spacing before refusal box
     const footerText =
       "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
-    const footerLines = doc.splitTextToSize(footerText, contentWidth);
-    doc.text(footerLines, margin, yPosition);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(70, 74, 78);
+    const footerPaddingX = 4;
+    const footerPaddingY = 2;
+    const footerLines = doc.splitTextToSize(footerText, contentWidth - footerPaddingX * 2);
+    const footerBoxHeight = footerLines.length * 4 + footerPaddingY * 2;
+    doc.setFillColor(247, 249, 251);
+    doc.setDrawColor(200, 200, 200);
+    doc.roundedRect(margin, yPosition, contentWidth, footerBoxHeight, 2, 2, "FD");
+    doc.text(footerLines, margin + footerPaddingX, yPosition + footerPaddingY + 3);
 
     if (download) {
       doc.save(`Warning_${formData.employeeSurname}_${formData.dateIssued}.pdf`);
@@ -724,7 +677,7 @@ const WarningGenerator = () => {
         description: "Warning document generated and saved!",
       });
 
-      handleDiscard();
+      handleResetForm();
     } catch (error: unknown) {
       toast({
         title: "Error",
@@ -1136,116 +1089,146 @@ const WarningGenerator = () => {
           <ScrollArea className="h-full px-6 pb-6">
             <div className="bg-white text-black p-8 mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
               {/* Header */}
-              <div className="bg-primary h-12 -mx-8 -mt-8 mb-6 flex items-center justify-center">
-                <h1 className="text-2xl font-bold text-white">WRITTEN WARNING</h1>
+              <div className="mb-6 flex items-center justify-center">
+                <h1 className="text-2xl font-bold text-black">DISCIPLINARY WARNING NOTICE</h1>
               </div>
 
-              {/* Company Information */}
-              {profile && (
-                <div className="mb-6">
-                  <h2 className="text-sm font-bold text-primary mb-2">COMPANY INFORMATION</h2>
+              <div className="space-y-5 text-sm text-black">
+                {/* Employer Details */}
+                {profile && (
+                  <div className="space-y-2">
+                  <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+                    A. Employer Details
+                  </div>
+                    <div className="text-xs space-y-1">
+                      <div className="grid grid-cols-[140px,1fr] gap-2">
+                        <span className="font-semibold">Company Name:</span>
+                        <span>{profile.company_name}</span>
+                      </div>
+                      <div className="grid grid-cols-[140px,1fr] gap-2">
+                        <span className="font-semibold">Reg No:</span>
+                        <span>{profile.registration_number}</span>
+                      </div>
+                      <div className="grid grid-cols-[140px,1fr] gap-2">
+                        <span className="font-semibold">Company Address:</span>
+                        <span>{profile.physical_address}</span>
+                      </div>
+                      {formData.tradingName && (
+                        <div className="grid grid-cols-[140px,1fr] gap-2">
+                          <span className="font-semibold">Trading As:</span>
+                          <span>{formData.tradingName}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Employee Details */}
+                <div className="space-y-2">
+                  <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+                    B. Employee Details
+                  </div>
                   <div className="text-xs space-y-1">
-                    <p>{profile.company_name}</p>
-                    <p>Reg No: {profile.registration_number}</p>
-                    <p>{profile.physical_address}</p>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Employee Name:</span>
+                      <span>{formData.employeeName} {formData.employeeSurname}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">ID Number:</span>
+                      <span>{formData.employeeIdNumber}</span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {formData.tradingName && (
-                <div className="text-xs mb-6">
-                  <p>Trading As: {formData.tradingName}</p>
-                </div>
-              )}
-
-              {/* Divider */}
-              <div className="border-t-2 border-primary mb-6" />
-
-              {/* Employee Details */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-2">EMPLOYEE DETAILS</h2>
-                <div className="text-xs space-y-1">
-                  <p>Name: {formData.employeeName} {formData.employeeSurname}</p>
-                  <p>ID Number: {formData.employeeIdNumber}</p>
-                </div>
-              </div>
-
-              {/* Warning Details */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-2">WARNING DETAILS</h2>
-                <div className="text-xs space-y-1">
-                  <p>Type: {
-                    {
-                      first: "First Written Warning",
-                      second: "Second Written Warning",
-                      serious: "Serious Written Warning",
-                      final: "Final Written Warning",
-                    }[formData.warningType] || formData.warningType
-                  }</p>
-                  <p>Validity: {formData.validityMonths} months</p>
-                  <p>Issued By: {formData.issuedBy}</p>
-                  <p>Date: {formData.dateIssued}</p>
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-primary mb-6" />
-
-              {/* Misconduct Types */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-2">MISCONDUCT TYPE(S)</h2>
-                <div className="text-xs space-y-1">
-                  {formData.misconductTypes.map((type, idx) => (
-                    <p key={idx}>• {type}</p>
-                  ))}
-                </div>
-              </div>
-
-              {/* Description */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-2">DESCRIPTION OF MISCONDUCT</h2>
-                <p className="text-xs whitespace-pre-wrap">{formData.description}</p>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-primary mb-6" />
-
-              {/* Consequences */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-2">CONSEQUENCES</h2>
-                <p className="text-xs">
-                  You are required to refrain completely from committing any further acts of misconduct. 
-                  Should you commit the same or similar act of misconduct within the validity period of this warning, 
-                  progressive disciplinary action will be taken which could lead to your dismissal.
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-primary mb-6" />
-
-              {/* Signatures */}
-              <div className="mb-6">
-                <h2 className="text-sm font-bold text-primary mb-3">SIGNATURES</h2>
-                <div className="space-y-6 text-xs">
-                  {["Employer/Issuer", "Employee", "Representative", "Interpreter", "Witness"].map((label, idx) => (
-                    <div key={idx}>
-                      <div className="flex justify-between mb-1">
-                        <span className="border-b border-black flex-1 max-w-[60%]"></span>
-                        <span className="ml-4">Date: <span className="border-b border-black inline-block w-32"></span></span>
-                      </div>
-                      <p className="mt-1">{label}</p>
+                {/* Warning Details */}
+                <div className="space-y-2">
+                  <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+                    C. Warning Details
+                  </div>
+                  <div className="text-xs space-y-2">
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Offence(s):</span>
+                      <span>{formData.misconductTypes.length > 0 ? formData.misconductTypes.join(", ") : "-"}</span>
                     </div>
-                  ))}
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Description:</span>
+                      <span className="whitespace-pre-wrap">{formData.description || "-"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Warning Type:</span>
+                      <span>
+                        {{
+                          first: "First Written Warning",
+                          second: "Second Written Warning",
+                          serious: "Serious Written Warning",
+                          final: "Final Written Warning",
+                        }[formData.warningType] || formData.warningType || "-"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Validity Period:</span>
+                      <span>{formData.validityMonths ? `${formData.validityMonths} months` : "-"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Issued By:</span>
+                      <span>{formData.issuedBy || "-"}</span>
+                    </div>
+                    <div className="grid grid-cols-[140px,1fr] gap-2">
+                      <span className="font-semibold">Date:</span>
+                      <span>
+                        {(() => {
+                          if (!formData.dateIssued) return "-";
+                          const parsed = new Date(formData.dateIssued);
+                          if (Number.isNaN(parsed.getTime())) return formData.dateIssued;
+                          return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Consequences */}
+                <div className="space-y-2">
+                  <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+                    D. Consequences
+                  </div>
+                  <p className="text-xs leading-5">
+                    You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.
+                  </p>
+                </div>
+
+                {/* Signatures */}
+                <div className="space-y-6">
+                  <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+                    E. Signatures
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-xs mt-4">
+                    {[
+                      "Employer/Issuer",
+                      "Employee",
+                      "Representative",
+                      "Interpreter",
+                      "Witness 1 (optional)",
+                      "Witness 2 (optional)",
+                    ].map((label, idx) => (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex items-center gap-8">
+                          <span className="flex-1 border-b border-black"></span>
+                          <span className="w-24 border-b border-black"></span>
+                        </div>
+                        <div className="flex items-center gap-8 text-[11px]">
+                          <span className="flex-1">{label}</span>
+                          <span className="w-24">Date</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-[10px] italic text-gray-700">
+                    If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.
+                  </div>
                 </div>
               </div>
 
-              {/* Footer Note */}
-              <div className="mt-8">
-                <p className="text-[10px] text-gray-600 italic">
-                  If the employee refuses to sign this warning, the witness's signature will confirm that the employee 
-                  did receive the warning and that the contents were explained to him/her.
-                </p>
-              </div>
             </div>
           </ScrollArea>
         </DialogContent>
@@ -1315,3 +1298,6 @@ const WarningGenerator = () => {
 };
 
 export default WarningGenerator;
+
+
+

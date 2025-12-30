@@ -14,6 +14,7 @@ import Documents from "./pages/Documents";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
+import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/documents/notices" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
             <Route path="/documents/contracts" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
             <Route path="/documents/discipline/warnings" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
+            <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
             <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
             <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
             <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />

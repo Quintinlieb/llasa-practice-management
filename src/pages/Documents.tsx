@@ -40,7 +40,7 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { label: "Permanent Contract", href: "/documents/contracts/permanent", active: true },
       { label: "Temporary Contract", href: "/documents/contracts/temporary", active: true },
-      { label: "Addendum to Contract", active: false },
+      { label: "Addendum to Contract", href: "/documents/contracts/addendum", active: true },
     ],
   },
   {

@@ -181,46 +181,45 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
   const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
   const usesId = data.idType === "id";
   const idDisplay = usesId ? data.employeeIdNumber : data.passportNumber || "--";
-  const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-  const companyNameDisplay = displayValue(profile?.company_name);
+  const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")).toUpperCase();
+  const companyNameDisplay = displayValue(profile?.company_name).toUpperCase();
   const regNumberDisplay = displayValue(profile?.registration_number);
   const documentTitle = data.addendumType === "extension" ? "Temporary Contract Extension" : "Addendum to Employment Contract";
-  const employerLabel = "Hereinafter referred to as the Employer";
-  const employeeLabel = "Hereinafter referred to as the Employee";
+  const employerLabel = 'Hereinafter referred to as "the Employer"';
+  const employeeLabel = 'Hereinafter referred to as "the Employee"';
 
   return (
     <div
       className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
       style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
     >
-      <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">{documentTitle}</h1>
+      <h1 className="text-xl font-bold text-center text-gray-900 mb-8 uppercase tracking-wide">{documentTitle}</h1>
 
-      <div className="space-y-5 flex-1 text-sm text-gray-900">
-        <p className="text-xs uppercase tracking-wide text-gray-600">Entered into by and between:</p>
+      <div className="relative top-2 space-y-5 flex-1 text-sm text-gray-900">
+        <p className="text-xs tracking-wide text-black">Entered into by and between:</p>
 
-        <div className="space-y-3">
-          <div className="flex items-start justify-between gap-4">
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4 pt-1">
             <div className="space-y-1">
-              <p className="text-base font-semibold text-black">{companyNameDisplay}</p>
+              <p className="text-sm font-semibold text-black">{companyNameDisplay}</p>
               <p className="text-xs text-gray-600">Reg. number: {regNumberDisplay}</p>
             </div>
-            <p className="text-[11px] uppercase tracking-wide text-gray-600 text-right">{employerLabel}</p>
+            <p className="text-xs tracking-wide text-black text-right">{employerLabel}</p>
           </div>
 
-          <div className="text-center text-xs font-semibold text-gray-500">and</div>
+          <div className="text-left text-xs font-semibold text-black mt-2 mb-2">and</div>
 
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
-              <p className="text-base font-semibold text-black">{employeeNameDisplay}</p>
+              <p className="text-sm font-semibold text-black">{employeeNameDisplay}</p>
               <p className="text-xs text-gray-600">
                 {usesId ? "ID no." : "Passport no."}: {displayValue(idDisplay)}
               </p>
             </div>
-            <p className="text-[11px] uppercase tracking-wide text-gray-600 text-right">{employeeLabel}</p>
+            <p className="text-xs tracking-wide text-black text-right">{employeeLabel}</p>
           </div>
         </div>
 
-        <div className="border-t border-slate-200" />
       </div>
 
       {children ? <div className="mt-6">{children}</div> : null}
@@ -1006,9 +1005,10 @@ const AddendumGenerator = () => {
       const effectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
       const usesId = data.idType === "id";
       const idDisplay = usesId ? data.employeeIdNumber : data.passportNumber || "";
-      const companyName = profile?.company_name || "________________________";
+      const companyName = (profile?.company_name || "________________________").toUpperCase();
       const regNumber = profile?.registration_number || "________________________";
-      const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ") || "________________________";
+      const employeeFullName =
+        ([data.employeeName, data.employeeSurname].filter(Boolean).join(" ") || "________________________").toUpperCase();
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
@@ -1016,60 +1016,66 @@ const AddendumGenerator = () => {
       const documentTitle =
         data.addendumType === "extension" ? "TEMPORARY CONTRACT EXTENSION" : "ADDENDUM TO EMPLOYMENT CONTRACT";
       doc.text(documentTitle, pageWidth / 2, y, { align: "center" });
-      y += 12;
+      y += 10;
+
+      const blockOffset = 4;
+      let blockY = y + blockOffset;
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text("Entered into by and between:", margin, y);
-      y += 8;
+      doc.text("Entered into by and between:", margin, blockY);
+      blockY += 8;
 
       // Employer block
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text(companyName, margin, y);
+      doc.setFontSize(9);
+      blockY += 2;
+      doc.text(companyName, margin, blockY);
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(8);
-      doc.text("Hereinafter referred to as the Employer", margin + contentWidth, y, { align: "right" });
-      y += 5;
+      doc.setFontSize(9);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Hereinafter referred to as "the Employer"', margin + contentWidth, blockY, { align: "right" });
+      blockY += 5;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
-      doc.text(`Reg. number: ${valueOrLine(regNumber)}`, margin, y);
-      y += 10;
+      doc.text(`Reg. number: ${valueOrLine(regNumber)}`, margin, blockY);
+      blockY += 10;
 
       // Separator
       doc.setFont("helvetica", "italic");
       doc.setFontSize(8);
-      doc.text("and", margin + contentWidth / 2, y, { align: "center" });
-      y += 8;
+      doc.setTextColor(0, 0, 0);
+      blockY += 2; // extra spacing above "and"
+      doc.text("and", margin, blockY);
+      blockY += 10; // extra spacing below "and"
 
       // Employee block
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text(valueOrLine(employeeFullName), margin, y);
+      doc.setFontSize(9);
+      doc.text(valueOrLine(employeeFullName), margin, blockY);
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(8);
-      doc.text("Hereinafter referred to as the Employee", margin + contentWidth, y, { align: "right" });
-      y += 5;
+      doc.setFontSize(9);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Hereinafter referred to as "the Employee"', margin + contentWidth, blockY, { align: "right" });
+      blockY += 5;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       const idLabel = usesId ? "ID no." : "Passport no.";
-      doc.text(`${idLabel}: ${valueOrLine(idDisplay)}`, margin, y);
-      y += 10;
+      doc.text(`${idLabel}: ${valueOrLine(idDisplay)}`, margin, blockY);
+      blockY += 10;
 
-      // Divider
-      doc.setDrawColor(226, 232, 240);
-      doc.line(margin, y, margin + contentWidth, y);
-      y += 10;
+      // Spacing before clauses (divider added later); keep overall flow unchanged
+      y = blockY - blockOffset + 4;
     };
 
     addInformationPage();
 
     const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
-    ensureSpace(6);
+    ensureSpace(0);
     doc.setDrawColor(226, 232, 240); // slate-200
     doc.line(margin, y, margin + contentWidth, y);
-    y += 12; // larger gap before first clause heading
+    y += 10; // gap before first clause heading
 
     ensureSpace(24);
 

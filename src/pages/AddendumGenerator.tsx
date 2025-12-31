@@ -1,49 +1,142 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
-import { extractDobFromId, calculateAgeFromDob, type PermanentContractFormData } from "@/lib/validation";
+import {
+  salaryFrequencyOptions,
+  extractDobFromId,
+  calculateAgeFromDob,
+  type PermanentContractFormData,
+} from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
-
-type AddendumFormData = Omit<PermanentContractFormData, "gender" | "race" | "nationality"> & {
-  gender: string;
-  race: string;
-  nationality: string;
-  idType: "id" | "passport";
-  originalContractDate: string;
-  effectiveDate: string;
-  addendumType: "general" | "temporary-extension" | "temporary-renewal";
-};
 
 type ContractFormState = {
   employeeId: string;
   age: string;
-} & Omit<AddendumFormData, "salaryAmount" | "annualLeaveDays"> & {
+} & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
+  gender: PermanentContractFormData["gender"] | "";
+  race: PermanentContractFormData["race"] | "";
+  contractReference: string;
+  addendumType: AddendumType | "";
+  effectiveDate: string;
+  idType: "id" | "passport";
 };
 
+type AmendmentType = "add" | "amend";
+type AddendumType = "general" | "renewal" | "extension";
+
+type AddendumData = PermanentContractFormData & {
+  contractReference: string;
+  addendumType: AddendumType;
+  effectiveDate: string;
+  idType: "id" | "passport";
+};
+
+type SlimProfile = Pick<
+  Tables<"profiles">,
+  "id" | "company_name" | "registration_number" | "physical_address" | "company_contact" | "company_email"
+>;
+type SlimEmployee = {
+  id: string;
+  id_number: string | null;
+  employee_name: string;
+  employee_surname: string;
+  nationality: string | null;
+  emergency_contact_number: string | null;
+  gender: string | null;
+  race: string | null;
+  cell_number: string | null;
+  email: string | null;
+  job_title: string | null;
+  start_date: string | null;
+  employee_number: string | null;
+};
 type ClauseDefinition = {
   id: string;
   title: string;
   body: string | string[];
+  amendmentType?: AmendmentType;
 };
 
-type CustomClause = ClauseDefinition & { insertAfterId: string | null };
+type CustomClause = ClauseDefinition & { insertAfterId: string | null; amendmentType: AmendmentType };
+
+const salaryFrequencyLabels: Record<PermanentContractFormData["salaryFrequency"], string> = {
+  month: "per month",
+  week: "per week",
+  day: "per day",
+  hour: "per hour",
+};
+
+const probationOptions: PermanentContractFormData["probationPeriod"][] = ["1", "3", "6"];
+const probationLabels: Record<PermanentContractFormData["probationPeriod"], string> = {
+  "1": "1 Month",
+  "3": "3 Months",
+  "6": "6 Months",
+};
+
+const retirementAgeOptions: PermanentContractFormData["retirementAge"][] = ["55", "60", "65"];
+
+const addendumTypeOptions: Array<{ value: AddendumType; label: string }> = [
+  { value: "general", label: "General Addendum" },
+  { value: "renewal", label: "Contract Renewal" },
+  { value: "extension", label: "Contract Extension" },
+];
+
+const addendumTypeLabels: Record<AddendumType, string> = {
+  general: "General Addendum",
+  renewal: "Contract Renewal",
+  extension: "Contract Extension",
+};
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
 
 const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+};
+
+const toDisplayDate = (value: string) => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+};
+
+const toIsoDate = (value: string) => {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, d, m, y] = match;
+  const day = d.padStart(2, "0");
+  const month = m.padStart(2, "0");
+  const iso = `${y}-${month}-${day}`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : iso;
+};
+
+const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string) => {
+  const replaceText = (text: string) =>
+    text
+      .replace("[contract reference]", contractRef)
+      .replace("[effective date]", effectiveDate);
+  return Array.isArray(body) ? body.map(replaceText) : replaceText(body);
 };
 
 const extractYear = (value: string) => {
@@ -71,35 +164,116 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
+type FirstPagePreviewProps = {
+  data: AddendumData;
+  compact?: boolean;
+  children?: ReactNode;
+  profile: SlimProfile | null;
+};
+
+const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPagePreviewProps) => {
+  const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
+  const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
+  const effectiveDateDisplay = formatDate(data.effectiveDate || data.issueDate);
+  const usesId = data.idType === "id";
+  const idDisplay = usesId ? data.employeeIdNumber : "--";
+  const passportDisplay = usesId ? "--" : data.passportNumber || "--";
+
+  const SectionBlock = ({
+    title,
+    subtitle,
+    children: sectionChildren,
+  }: {
+    title: string;
+    subtitle?: string;
+    children: ReactNode;
+  }) => (
+    <div className="space-y-2">
+      <div className="w-full flex items-center justify-between rounded-md bg-slate-100 border border-slate-300 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+        <span>{title}</span>
+        {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+      </div>
+      <div className="space-y-1.5 px-1 text-[11px] text-gray-900">
+        {sectionChildren}
+      </div>
+    </div>
+  );
+
+  const Row = ({ label, value }: { label: string; value?: string | number | null }) => (
+    <div className="grid grid-cols-[120px_1fr] gap-2 text-[11px]">
+      <span className="font-semibold uppercase text-gray-700">{label}:</span>
+      <span className="text-gray-900">{displayValue(value)}</span>
+    </div>
+  );
+
+  const DualRow = ({
+    leftLabel,
+    leftValue,
+    rightLabel,
+    rightValue,
+  }: {
+    leftLabel: string;
+    leftValue?: string | number | null;
+    rightLabel: string;
+    rightValue?: string | number | null;
+  }) => (
+    <div className="grid grid-cols-2 gap-4 text-[11px]">
+      <div className="grid grid-cols-[120px_1fr] gap-2">
+        <span className="font-semibold uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
+        <span className="text-gray-900">{displayValue(leftValue)}</span>
+      </div>
+      <div className="grid grid-cols-[120px_1fr] gap-2">
+        <span className="font-semibold uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
+        <span className="text-gray-900">{displayValue(rightValue)}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
+      style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
+    >
+      <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Addendum to Employment Contract</h1>
+
+      <div className="space-y-6 flex-1">
+        <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
+          <Row label="Company name" value={profile?.company_name} />
+          <Row label="Reg. number" value={profile?.registration_number} />
+        </SectionBlock>
+
+        <SectionBlock title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")'>
+          <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
+          <DualRow leftLabel="ID no." leftValue={idDisplay} rightLabel="Passport no." rightValue={passportDisplay} />
+        </SectionBlock>
+
+        <SectionBlock title="C. Addendum details" subtitle='(Hereinafter referred to as "this Addendum")'>
+          <DualRow
+            leftLabel="Type"
+            leftValue={addendumTypeDisplay}
+            rightLabel="Effective date"
+            rightValue={effectiveDateDisplay}
+          />
+        </SectionBlock>
+      </div>
+
+      {children ? <div className="mt-6">{children}</div> : null}
+    </div>
+  );
+};
+
 const AddendumGenerator = () => {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  type SlimProfile = Pick<
-    Tables<"profiles">,
-    "id" | "company_name" | "registration_number" | "physical_address" | "company_contact" | "company_email"
-  >;
-  type SlimEmployee = {
-    id: string;
-    id_number: string | null;
-    employee_name: string;
-    employee_surname: string;
-    nationality: string | null;
-    emergency_contact_number: string | null;
-    gender: string | null;
-    race: string | null;
-    cell_number: string | null;
-    email: string | null;
-    job_title: string | null;
-    start_date: string | null;
-    employee_number: string | null;
-  };
-
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
-  const [validatedPreview, setValidatedPreview] = useState<AddendumFormData | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
   const [clauseDraft, setClauseDraft] = useState("");
@@ -107,20 +281,37 @@ const AddendumGenerator = () => {
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
   const [newClauseTitle, setNewClauseTitle] = useState("");
   const [newClauseBody, setNewClauseBody] = useState("");
+  const [newClauseAmendmentType, setNewClauseAmendmentType] = useState<AmendmentType | "">("");
   const steps = ["Employer Details", "Employee Details", "Addendum Details"] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
+  const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
+  const previewScrollRef = useRef<HTMLDivElement | null>(null);
+  const previewScrollTop = useRef(0);
+  const snippetPaddingTopMm = 2;
+  const snippetVisibleHeightMm = 297 / 2; // show top half of the page
+  const snippetContainerWidthMm = 150;
+  const snippetScale = useMemo(
+    () =>
+      Math.min(
+        (snippetContainerWidthMm - 4) / 210, // small horizontal gutter so full width fits
+        (160 - snippetPaddingTopMm) / snippetVisibleHeightMm,
+      ),
+    [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
+  );
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
     age: "",
+    contractReference: "",
+    addendumType: "",
+    effectiveDate: "",
     idType: "id",
     startDate: new Date().toISOString().split("T")[0],
     issueDate: new Date().toISOString().split("T")[0],
-    originalContractDate: new Date().toISOString().split("T")[0],
-    effectiveDate: new Date().toISOString().split("T")[0],
-    addendumType: "general",
     employeeName: "",
     employeeSurname: "",
     employeeIdNumber: "",
@@ -128,7 +319,7 @@ const AddendumGenerator = () => {
     employeeAddress: "",
     employeePostalAddress: "",
     employeeNumber: "",
-    nationality: "",
+    nationality: "South African",
     gender: "",
     race: "",
     employeeCell: "",
@@ -210,27 +401,45 @@ const AddendumGenerator = () => {
   }, [profile]);
 
   const handleEmployeeSelect = (employeeId: string) => {
+    setSelectedEmployeeId(employeeId);
     const employee = employees.find((emp) => emp.id === employeeId);
     if (!employee) return;
-    const sanitizedId = (employee.id_number || "").replace(/\D/g, "");
-    const isId = sanitizedId.length === 13;
-    const derivedAge = isId ? deriveAgeFromId(sanitizedId) : "";
+    const employeeNationality =
+      (employee as Partial<Tables<"employees">> & { nationality?: PermanentContractFormData["nationality"] })
+        .nationality || "South African";
+    const hasIdNumber = Boolean(employee.id_number);
+    const passportNumber = !hasIdNumber ? employee.id_number ?? "" : "";
+    const emergencyContact =
+      (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
+    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
+    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PermanentContractFormData["race"] }).race || "";
+    const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
+    const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
     const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
     const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
+    const idNumber = hasIdNumber ? employee.id_number ?? "" : "";
+    const ageFromId = hasIdNumber ? deriveAgeFromId(idNumber) : "";
+    const nextIdType: "id" | "passport" = hasIdNumber ? "id" : "passport";
 
     setFormData((prev) => ({
       ...prev,
       employeeId,
       employeeName: employee.employee_name,
       employeeSurname: employee.employee_surname,
-      employeeIdNumber: isId ? sanitizedId : "",
-      passportNumber: isId ? "" : employee.id_number ?? "",
-      idType: isId ? "id" : "passport",
+      employeeIdNumber: idNumber,
+      passportNumber: passportNumber || prev.passportNumber,
+      nationality: employeeNationality,
+      alternativeContact: emergencyContact || prev.alternativeContact,
+      gender: genderValue || prev.gender,
+      race: raceValue || prev.race,
+      employeeCell: cellNumber || prev.employeeCell,
+      employeeEmail: emailAddress || prev.employeeEmail,
       jobTitle: jobTitle || prev.jobTitle,
       startDate: startDate || prev.startDate,
       employeeNumber: employeeNumber || prev.employeeNumber,
-      age: derivedAge,
+      age: ageFromId,
+      idType: nextIdType,
     }));
   };
 
@@ -238,12 +447,12 @@ const AddendumGenerator = () => {
     setFormData({
       employeeId: "",
       age: "",
+      contractReference: "",
+      addendumType: "",
+      effectiveDate: "",
       idType: "id",
       startDate: new Date().toISOString().split("T")[0],
       issueDate: new Date().toISOString().split("T")[0],
-      originalContractDate: new Date().toISOString().split("T")[0],
-      effectiveDate: new Date().toISOString().split("T")[0],
-      addendumType: "general",
       employeeName: "",
       employeeSurname: "",
       employeeIdNumber: "",
@@ -251,7 +460,7 @@ const AddendumGenerator = () => {
       employeeAddress: "",
       employeePostalAddress: "",
     employeeNumber: "",
-    nationality: "",
+    nationality: "South African",
     gender: "",
     race: "",
       employeeCell: "",
@@ -272,7 +481,9 @@ const AddendumGenerator = () => {
       reportsTo: "",
       additionalNotes: "",
     });
+    setSelectedEmployeeId("");
     setValidatedPreview(null);
+    setShowPreview(false);
     setShowFinalActions(false);
     setActiveStep(0);
     setClauseEdits({});
@@ -304,28 +515,18 @@ const AddendumGenerator = () => {
           ((formData.idType === "id" && formData.employeeIdNumber) ||
             (formData.idType === "passport" && formData.passportNumber)),
       ),
-    [
-      formData.employeeName,
-      formData.employeeSurname,
-      formData.idType,
-      formData.employeeIdNumber,
-      formData.passportNumber,
-    ],
+    [formData.employeeName, formData.employeeSurname, formData.employeeIdNumber, formData.passportNumber, formData.idType],
   );
 
   const isEmploymentStepComplete = useMemo(
     () =>
       Boolean(
-        formData.originalContractDate &&
-        formData.effectiveDate &&
-        formData.addendumType &&
-        formData.issueDate,
+        formData.addendumType && formData.effectiveDate && formData.contractReference,
       ),
     [
-      formData.issueDate,
-      formData.originalContractDate,
-      formData.effectiveDate,
       formData.addendumType,
+      formData.effectiveDate,
+      formData.contractReference,
     ],
   );
 
@@ -382,44 +583,107 @@ const AddendumGenerator = () => {
     }
   };
 
-  const validateData = (): AddendumFormData => {
-    const errors: string[] = [];
-    const isValidEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
+  const resetEmployeeStepFields = () => {
+    setFormData((prev) => ({
+      ...prev,
+      employeeId: "",
+      employeeName: "",
+      employeeSurname: "",
+      idType: "id",
+      employeeIdNumber: "",
+      passportNumber: "",
+      age: "",
+    }));
+    setSelectedEmployeeId("");
+  };
 
-    if (!formData.employeeName.trim()) errors.push("Employee name is required.");
-    if (!formData.employeeSurname.trim()) errors.push("Employee surname is required.");
-    if (!formData.originalContractDate) errors.push("Original contract date is required.");
-    if (!formData.effectiveDate) errors.push("Effective date is required.");
-    if (!formData.addendumType) errors.push("Addendum type is required.");
-    if (!formData.issueDate) errors.push("Issue date is required.");
-    if (!formData.employerContact || formData.employerContact.replace(/\D/g, "").length < 10)
-      errors.push("Employer contact must be 10 digits.");
-    if (!formData.employerEmail || !isValidEmail(formData.employerEmail)) errors.push("Employer email is invalid.");
+  const getPreviewScrollElement = useCallback(
+    () =>
+      (previewScrollRef.current?.querySelector("[data-radix-scroll-area-viewport]") as HTMLDivElement | null) ?? null,
+    [],
+  );
 
-    if (!formData.idType) {
-      errors.push("Select an ID type.");
-    } else if (formData.idType === "id") {
-      if (!formData.employeeIdNumber || !/^\d{13}$/.test(formData.employeeIdNumber)) {
-        errors.push("ID number must be 13 digits.");
-      } else if (!extractDobFromId(formData.employeeIdNumber)) {
-        errors.push("ID must start with a valid date (YYMMDD).");
+  const rememberClauseFieldFocus = (el: HTMLElement | null) => {
+    if (el) clauseFieldFocusRef.current = el;
+  };
+
+  const rememberPreviewScroll = () => {
+    const scrollEl = getPreviewScrollElement();
+    if (scrollEl) {
+      previewScrollTop.current = scrollEl.scrollTop;
+    }
+  };
+
+  useEffect(() => {
+    const target = clauseFieldFocusRef.current;
+    if (target && document.activeElement !== target) {
+      target.focus({ preventScroll: true } as FocusOptions);
+    }
+    const scrollEl = getPreviewScrollElement();
+    if (scrollEl && scrollEl.scrollTop !== previewScrollTop.current) {
+      scrollEl.scrollTop = previewScrollTop.current;
+    }
+  }, [addingAfter, editingClause, showPreview, getPreviewScrollElement]);
+
+  const openEffectiveDatePicker = () => {
+    const picker = effectiveDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
+  const openContractReferencePicker = () => {
+    const picker = contractReferencePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
+  const validateData = () => {
+    const missingFields: string[] = [];
+    const checkRequired = (value: string | undefined | null, label: string) => {
+      if (!value || !value.toString().trim()) {
+        missingFields.push(label);
       }
-    } else if (!formData.passportNumber?.trim()) {
-      errors.push("Passport number is required.");
+    };
+
+    checkRequired(formData.employerContact, "Employer contact");
+    checkRequired(formData.employerEmail, "Employer email");
+    checkRequired(formData.employeeName, "Employee name");
+    checkRequired(formData.employeeSurname, "Employee surname");
+    checkRequired(formData.idType, "ID/Passport selection");
+    if (formData.idType === "id") {
+      checkRequired(formData.employeeIdNumber, "ID number");
+    } else {
+      checkRequired(formData.passportNumber, "Passport number");
     }
 
-    const salaryAmount = Number(formData.salaryAmount || 0);
-    const annualLeaveDays = Number(formData.annualLeaveDays || 0);
+    checkRequired(formData.addendumType, "Addendum type");
+    checkRequired(formData.effectiveDate, "Effective date");
+    checkRequired(formData.contractReference, "Contract reference");
 
-    if (errors.length) {
-      throw new Error(errors[0]);
+    if (missingFields.length) {
+      throw new Error(`Please fill in the following required fields: ${missingFields.join(", ")}`);
     }
+
+    const issueDate = formData.issueDate || formData.effectiveDate || new Date().toISOString().split("T")[0];
 
     return {
       ...formData,
-      salaryAmount,
-      annualLeaveDays,
-    };
+      issueDate,
+      salaryAmount: Number(formData.salaryAmount) || 0,
+      annualLeaveDays: Number(formData.annualLeaveDays) || 0,
+      addendumType: formData.addendumType as AddendumType,
+      gender: formData.gender as PermanentContractFormData["gender"],
+      race: formData.race as PermanentContractFormData["race"],
+      idType: formData.idType,
+    } as AddendumData;
   };
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
@@ -467,101 +731,6 @@ const AddendumGenerator = () => {
     }
   }, [showFinalActions, formData]);
 
-  const FirstPagePreview = ({ data, compact = false }: { data: AddendumFormData; compact?: boolean }) => {
-    const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
-    const isId = data.idType === "id";
-    const idDisplay = isId ? data.employeeIdNumber : "";
-    const passportDisplay = isId ? "" : data.passportNumber || "";
-
-    const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-      <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
-        <span>{title}</span>
-        {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
-      </div>
-    );
-
-    const SingleRow = ({ label, value }: { label: string; value?: string | number | null }) => (
-      <div className="grid grid-cols-[120px_1fr] gap-2 border-b border-slate-200 py-2 px-3 text-[11px]">
-        <span className="font-semibold italic uppercase text-gray-700">{label}:</span>
-        <span className="text-gray-900">{displayValue(value)}</span>
-      </div>
-    );
-
-    const DualRow = ({
-      leftLabel,
-      leftValue,
-      rightLabel,
-      rightValue,
-    }: {
-      leftLabel: string;
-      leftValue?: string | number | null;
-      rightLabel: string;
-      rightValue?: string | number | null;
-    }) => (
-      <div className="grid grid-cols-2 gap-4 border-b border-slate-200 py-2 px-3 text-[11px]">
-        <div className="grid grid-cols-[120px_1fr] gap-2">
-          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
-          <span className="text-gray-900">{displayValue(leftValue)}</span>
-        </div>
-        <div className="grid grid-cols-[120px_1fr] gap-2">
-          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
-          <span className="text-gray-900">{displayValue(rightValue)}</span>
-        </div>
-      </div>
-    );
-
-    return (
-      <div
-        className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
-        style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
-      >
-        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Contract Addendum</h1>
-
-        <div className="space-y-6 flex-1">
-          <div>
-            <SectionHeader title="A. Employer details" subtitle='(Hereinafter referred to as "The Employer")' />
-            <div className="border border-slate-200 border-t-0">
-              <SingleRow label="Company name" value={profile?.company_name} />
-              <SingleRow label="Reg. number" value={profile?.registration_number} />
-              <SingleRow label="Address" value={profile?.physical_address} />
-              <SingleRow label="Email" value={profile?.company_email} />
-              <SingleRow label="Contact" value={profile?.company_contact} />
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")' />
-            <div className="border border-slate-200 border-t-0">
-              <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
-              <DualRow leftLabel="ID type" leftValue={isId ? "ID" : "Passport"} rightLabel="Number" rightValue={isId ? idDisplay : passportDisplay} />
-            </div>
-          </div>
-
-          <div>
-            <SectionHeader title="C. Addendum details" />
-            <div className="border border-slate-200 border-t-0">
-              <SingleRow label="Original contract date" value={formatDate(data.originalContractDate)} />
-              <DualRow
-                leftLabel="Effective date"
-                leftValue={formatDate(data.effectiveDate)}
-                rightLabel="Addendum type"
-                rightValue={
-                  data.addendumType === "temporary-extension"
-                    ? "Temporary contract extension"
-                    : data.addendumType === "temporary-renewal"
-                      ? "Temporary contract renewal"
-                      : "General"
-                }
-              />
-              <SingleRow label="Issue date" value={formatDate(data.issueDate)} />
-            </div>
-          </div>
-        </div>
-
-      </div>
-    );
-  };
-
   const addWrappedText = (
     doc: jsPDF,
     text: string,
@@ -591,12 +760,15 @@ const AddendumGenerator = () => {
     return cursorY;
   };
 
-  const generatePDF = (data: AddendumFormData, download = false) => {
+  const generatePDF = (data: AddendumData, download = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
+    const formattedSalary = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
+    const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
+    const effectiveDateDisplay = data.effectiveDate || data.issueDate;
     const issueYear = extractYear(data.issueDate);
     let y = margin;
 
@@ -614,27 +786,24 @@ const AddendumGenerator = () => {
     };
 
     const drawSection = (title: string, subtitle: string | undefined, renderContent: () => void) => {
-      ensureSpace(16);
-      const boxTop = y;
+      ensureSpace(18);
+      const headerHeight = 9;
       doc.setFillColor(237, 242, 247);
-      doc.setDrawColor(206, 212, 218);
-      doc.rect(margin, y, contentWidth, 10, "F");
+      doc.setDrawColor(200, 204, 209);
+      doc.roundedRect(margin, y, contentWidth, headerHeight, 2, 2, "FD");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(45, 55, 72);
-      doc.text(title.toUpperCase(), margin + 3, y + 7);
+      doc.text(title.toUpperCase(), margin + 4, y + 6);
       if (subtitle) {
         doc.setFont("helvetica", "italic");
         doc.setFontSize(9);
-        doc.text(subtitle, margin + contentWidth - 3, y + 7, { align: "right" });
+        doc.text(subtitle, margin + contentWidth - 4, y + 6, { align: "right" });
       }
-      y += 12;
+      y += headerHeight + 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       renderContent();
-      const boxHeight = y - boxTop;
-      doc.setDrawColor(224, 231, 235);
-      doc.rect(margin, boxTop, contentWidth, boxHeight, "S");
       y += 8;
     };
 
@@ -657,10 +826,6 @@ const AddendumGenerator = () => {
       lines.forEach((line, idx) => {
         doc.text(line, margin + labelWidth, y + 6 + idx * lineHeight);
       });
-
-      doc.setDrawColor(224, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       y += rowHeight;
     };
@@ -698,9 +863,62 @@ const AddendumGenerator = () => {
         doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
       });
 
-      doc.setDrawColor(224, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
+      y += rowHeight;
+    };
+
+    const drawDualRowWithMixedLeft = (
+      leftLabel: string,
+      amountText: string,
+      suffixText: string,
+      rightLabel: string,
+      rightValue: string | number | null,
+    ) => {
+      const columnWidth = (contentWidth - 8) / 2;
+      const labelWidth = 42;
+      const availableWidth = columnWidth - labelWidth - 6;
+      const lineHeight = 5.5;
+
+      let suffixSize = 8;
+      let suffixDisplay = suffixText;
+
+      const fits = (size: number, suffix: string) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        const amountWidth = doc.getTextWidth(amountText);
+        doc.setFontSize(size);
+        const suffixWidth = doc.getTextWidth(` ${suffix}`);
+        return amountWidth + suffixWidth <= availableWidth;
+      };
+
+      while (!fits(suffixSize, suffixDisplay) && suffixSize > 6) {
+        suffixSize -= 0.5;
+      }
+      if (!fits(suffixSize, suffixDisplay)) {
+        suffixDisplay = suffixText.replace("per ", "/");
+      }
+
+      const rightLines = doc.splitTextToSize(valueOrLine(rightValue), availableWidth);
+      const rowHeight = lineHeight + 3;
+
+      ensureSpace(rowHeight);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(55, 65, 81);
+      doc.text(`${leftLabel.toUpperCase()}:`, margin + 3, y + 6);
+      doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 8 + 3, y + 6);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      const amountX = margin + labelWidth;
+      doc.text(amountText, amountX, y + 6);
+      doc.setFontSize(suffixSize);
+      doc.text(` ${suffixDisplay}`, amountX + doc.getTextWidth(amountText) + 4, y + 6);
+
+      doc.setFontSize(10);
+      rightLines.forEach((line, idx) => {
+        doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
+      });
 
       y += rowHeight;
     };
@@ -715,6 +933,22 @@ const AddendumGenerator = () => {
       doc.setTextColor(0, 0, 0);
       y = addWrappedText(doc, body, margin, y, contentWidth, 6, 10, "normal") + 2;
       y += 2;
+    };
+
+    const addUnnumberedParagraph = (text: string) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const lineHeight = 6;
+      const paragraphSpacing = 2;
+      const maxWidth = contentWidth;
+      const lines = doc.splitTextToSize(text, maxWidth);
+      const blockHeight = lines.length * lineHeight + paragraphSpacing;
+
+      ensureSpace(blockHeight);
+      lines.forEach((line, idx) => {
+        doc.text(line, margin, y + idx * lineHeight);
+      });
+      y += lines.length * lineHeight + paragraphSpacing;
     };
 
     const addNumberedParagraph = (index: number, text: string) => {
@@ -759,258 +993,77 @@ const AddendumGenerator = () => {
     };
 
     const addInformationPage = () => {
-      const isId = data.idType === "id";
-      const idDisplay = isId ? data.employeeIdNumber : "";
-      const passportDisplay = isId ? "" : data.passportNumber || "";
+      const effectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
+      const usesId = data.idType === "id";
+      const idDisplay = usesId ? data.employeeIdNumber : "--";
+      const passportDisplay = usesId ? "--" : data.passportNumber || "";
+      const derivedAge = usesId ? deriveAgeFromId(data.employeeIdNumber) : "";
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text("CONTRACT ADDENDUM", pageWidth / 2, y, { align: "center" });
+    doc.text("ADDENDUM TO EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
       y += 12;
 
-      drawSection("A. Employer details", '(Hereinafter referred to as "The Employer")', () => {
+      drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
         drawSingleRow("Company name", profile?.company_name);
         drawSingleRow("Reg. number", profile?.registration_number);
-        drawSingleRow("Address", profile?.physical_address);
-        drawSingleRow("Email", profile?.company_email);
-        drawSingleRow("Contact", profile?.company_contact);
       });
 
       drawSection("B. Employee details", '(Hereinafter referred to as "the Employee")', () => {
         drawDualRow("Surname", data.employeeSurname, "Name(s)", data.employeeName);
-        drawDualRow("ID Type", isId ? "ID" : "Passport", "Number", isId ? idDisplay : passportDisplay || "");
+        drawDualRow("ID No.", idDisplay, "Passport No.", passportDisplay || "--");
       });
 
-      drawSection("C. Addendum details", undefined, () => {
-        drawSingleRow("Original contract date", formatDate(data.originalContractDate));
-        drawDualRow(
-          "Effective date",
-          formatDate(data.effectiveDate),
-          "Addendum type",
-          data.addendumType === "temporary-extension"
-            ? "Temporary contract extension"
-            : data.addendumType === "temporary-renewal"
-              ? "Temporary contract renewal"
-              : "General",
-        );
-        drawSingleRow("Issue date", formatDate(data.issueDate));
+      drawSection("C. Addendum details", '(Hereinafter referred to as "this Addendum")', () => {
+        drawDualRow("Type", addendumTypeDisplay, "Effective date", effectiveDisplay);
       });
 
-      doc.addPage();
-      y = margin;
     };
 
     addInformationPage();
 
     const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
+    ensureSpace(6);
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 12; // larger gap before first clause heading
+
+    ensureSpace(24);
+
+    const contractRefDisplay = formatDate(data.contractReference);
+    const recordEffectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
+
     const clauses: ClauseDefinition[] = mergeClauses(
       withClauseIds([
-      {
-        title: "Introduction",
-        body: "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily.  The Employee hereby agrees that he/she has been granted the opportunity to peruse and discuss the contract with his/her council and that he/she understands the content that follows.",
-      },
-      {
-        title: "Recordal",
-        body:
-          "The Employer appoints the Employee in a permanent capacity, which the Employee accepts on the terms of this agreement. This agreement records the essential conditions of employment, including duties, remuneration, working hours, leave, and termination, and constitutes the entire understanding between the parties, replacing any prior verbal or written arrangements unless expressly stated otherwise. The employment relationship is governed by this agreement and all applicable labour laws of South Africa.",
-      },
-      {
-        title: "Probation",
-        body:
-          "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employee’s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employer’s discretion.",
-      },
-      {
-        title: "Performance and adaptability",
-        body: [
-          "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employer’s satisfaction.",
-          "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee’s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employee’s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
-        ],
-      },
-      {
-        title: "Guarantee",
-        body:
-          "The Employee warrants that all information, documentation, and credentials submitted to the Employer are true and accurate. If any submission is found to be false, fraudulent, or misleading, the Employer may institute disciplinary action for dishonesty, which may result in summary termination of employment.",
-      },
-      {
-        title: "Remuneration",
-        body: [
-          "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
-          "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
-          "The Employee will be remunerated at two times the normal wage for work performed on a public holiday.",
-        ],
-      },
-      {
-        title: "Deductions",
-        body:
-          "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employee’s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
-      },
-      {
-        title: "Hours of work",
-        body:
-          "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
-      },
-      {
-        title: "Overtime",
-        body:
-          "The Employee may be required to work overtime, subject to the limits set by the BCEA. Reasonable notice of overtime will be given, except in emergencies where short-notice overtime may be required. Overtime shall be remunerated in accordance with applicable legislation; however, employees earning above the Ministerial earnings threshold and employees classified as top management are not entitled to overtime pay.",
-      },
-      {
-        title: "Retirement",
-        body:
-          "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
-      },
-      {
-        title: "Exclusivity of employment",
-        body: "The Employee shall not undertake any outside work or business activity without the Employer’s prior written consent.",
-      },
-      {
-        title: "Annual bonus",
-        body: [
-          "Any annual bonus is ex-gratia and granted entirely at the Employer’s discretion, subject to the Employer’s financial position and the Employee’s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
-          "The Employee agrees that no pro-rata bonus shall be payable in the event of termination of employment for any reason.",
-        ],
-      },
-      {
-        title: "Termination of employment",
-        body: [
-          "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
-          "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
-        ],
-      },
-      {
-        title: "Annual leave",
-        body: [
-          annualLeaveText,
-          "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer. Any additional leave taken during the cycle will be deducted from the Employee's leave entitlement.",
-        ],
-      },
-      {
-        title: "Sick leave",
-        body: [
-          "The Employee is entitled to sick leave in accordance with the BCEA. The Employee must provide a valid medical certificate when required by law or by the Employer.",
-          "In cases of prolonged or recurring illness, the Employer may initiate a fair incapacity process in line with applicable labour legislation, which may result in termination of employment where the Employee is unable to perform the inherent requirements of the job.",
-          "The Employee must submit a valid medical certificate issued and signed by a registered medical practitioner or any person certified to diagnose and treat patients and registered with a recognised professional council.",
-          "Clinic or hospital attendance notes that merely confirm a visit, and do not expressly declare the Employee unfit for duty for a specific period, shall also not be accepted as proof of sickness.",
-        ],
-      },
-      {
-        title: "Parental leave",
-        body: [
-          "Where both parents are employed, they are jointly entitled to a combined period of four months and ten days of parental leave, which may be shared between them as they agree. The leave may be taken at the same time or one after the other. If the parents cannot agree on the division of leave, it shall be shared equally.",
-          "Where the Employee is a single parent or where only one parent is employed, that parent is entitled to four consecutive months of parental leave.",
-          "A pregnant Employee may commence parental leave at any time from four weeks before the expected date of birth, or earlier if medically required, and may not return to work within six weeks after giving birth unless declared fit for duty by a medical practitioner or midwife.",
-          "Adoptive and commissioning parents are entitled to parental leave on the same basis as biological parents, subject to the statutory notice requirements.",
-          "The Employee must notify the Employer in writing of the intended parental leave dates and return date at least four weeks before the start of the leave.",
-          "Parental leave under this agreement is unpaid and the Employee must claim any available benefits from the Unemployment Insurance Fund.",
-        ],
-      },
-      {
-        title: "Family responsibility leave",
-        body: [
-          "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employee’s child, or in the event of the death of the Employee’s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
-          "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four days’ prior notice.",
-          "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a child’s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employee’s relationship to the deceased.",
-          "Failure to provide notice or proof when requested may result in the leave not being approved and treated as unpaid leave. Family responsibility leave does not accumulate, may not be carried over, and lapses at the end of each annual leave cycle.",
-        ],
-      },
-      {
-        title: "Absence from work",
-        body: [
-          "The Employee must notify the Employer before the start of the shift if unable to attend work. Where an absence is known in advance, the Employee must arrange leave at least 24 hours beforehand. Unjustified absence may result in disciplinary action, and sick leave will be applied in line with the BCEA.",
-          "Attendance at a disciplinary hearing is compulsory. If the Employee is unable to attend due to illness, an affidavit from a medical practitioner confirming incapacity to attend must be provided, and the practitioner must be available to verify it.",
-          "If the Employee fails to comply with these requirements, the hearing may proceed in his or her absence, and the Employee agrees not to dispute the fairness of any outcome, including dismissal.",
-          "Failure to report for work for more than five consecutive workdays without valid reason or notifying the Employer shall be regarded as abscondment.",
-          "In the instance of abscondment, the Employer will send a notice by WhatsApp, SMS, normal post or registered post instructing the Employee to return to work or contact the office and notifying the Employee of the disciplinary enquiry date. Failure to return, make contact, or attend the enquiry will result in dismissal.",
-        ],
-      },
-      {
-        title: "Protection of personal information",
-        body: [
-          "The Employee consents to the collection, use and storage of Personal Information and Special Personal Information, as defined in POPIA, for purposes related to the employment relationship. This includes payroll and benefit administration, statutory reporting, security and access control, monitoring for operational and risk-management purposes, internal and external communication, and compliance with legal and contractual obligations.",
-          "The Employee consents to the sharing or transfer of Personal Information, where necessary, to third party service providers such as benefit administrators and insurers, to clients or service providers for operational purposes, and to secure cloud-based or foreign storage platforms that offer adequate data protection in accordance with POPIA.",
-          "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employer’s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
-        ],
-      },
-      {
-        title: "Rules and regulations",
-        body: [
-          "The Employee agrees to comply with all rules, policies, procedures and regulations of the Employer, whether communicated in writing, verbally, or arising by reasonable implication from the nature of the workplace and the duties performed.",
-          "The Employee must immediately inform the Employer of any offence, misconduct or breach of company rules committed by himself or herself, or by any other Employee, as soon as he or she becomes aware of it or reasonably ought to have become aware of it.",
-          "Failure to disclose such information shall be regarded as dishonesty and a breach of trust, and may result in disciplinary action, including possible dismissal.",
-        ],
-      },
-      {
-        title: "Industrial action",
-        body: [
-          "The Employee may not participate in any unprotected strike, stoppage, or form of industrial action. No strike or picket may be undertaken unless it is protected in terms of the Labour Relations Act and preceded by the required certificate to strike and authorisation to picket.",
-          "The Employee acknowledges and agrees that he/she shall be held liable for any damages to property, financial losses, or other harm suffered by the Employer as a result of his/her involvement in any legal or illegal industrial action, whether directly or indirectly.",
-        ],
-      },
-      {
-        title: "Health and fitness",
-        body: [
-          "The Employee confirms that he or she is medically fit to perform the duties of the position. Should the Employee become unable to perform these duties for health reasons, the Employer may follow the applicable incapacity procedures prescribed by the Labour Relations Act, which may result in termination of employment.",
-          "The Employer may require the Employee to undergo a medical assessment, at the Employer’s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
-        ],
-      },
-      {
-        title: "Change of status",
-        body: [
-          "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employer’s records remain accurate and up to date.",
-          "The Employee cannot hold the Employer liable for making use of incorrect details if the Employee breaches this clause.",
-        ],
-      },
-      {
-        title: "Domicilium citandi",
-        body: [
-          "The parties choose the physical addresses recorded on Page 1 of this agreement as their domicilium citandi et executandi for all purposes relating to this agreement. Any notice delivered by hand or by any means as agreed to in this agreement shall be deemed duly received.",
-          "The Employee agrees that the Employer may send notices or correspondence by WhatsApp, SMS, email, regular post or registered post, and that proof of transmission or delivery shall constitute sufficient proof that the notice was sent.",
-        ],
-      },
-      {
-        title: "Alcohol and drug testing",
-        body: [
-          "The Employee agrees to undergo alcohol or drug testing when reasonably required by the Employer. All testing will be conducted by a competent person in a lawful and reasonable manner, and the Employer maintains a zero tolerance approach to alcohol and drug use in the workplace.",
-          "The Employee further agrees to submit to a blood test where the Employer has reasonable suspicion that the Employee is under the influence of alcohol or drugs. Such testing shall be carried out by a qualified medical professional, and refusal to comply will be regarded as insubordination.",
-          "Unreasonable refusal to undergo a required test may result in a negative inference being drawn, which may be treated as a presumptive positive result and may lead to disciplinary action, including dismissal.",
-        ],
-      },
-      {
-        title: "Polygraph testing",
-        body: [
-          "The Employee agrees to undergo polygraph testing when reasonably required by the Employer for investigative or security purposes, including matters involving theft, fraud, dishonesty, misconduct or breach of company policies. All tests will be conducted by a qualified and accredited examiner in a fair and lawful manner.",
-          "Refusal to undergo a required polygraph test may result in an adverse inference being drawn.  Such refusal will also be regarded as insubordination and continued refusal could lead to dismissal.",
-        ],
-      },
-      {
-        title: "Temporary lay-off",
-        body: [
-          "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one day’s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
-          "Temporary lay offs may be introduced due to circumstances beyond the Employer’s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
-        ],
-      },
-      {
-        title: "Proof of citizenship",
-        body: [
-          "The Employee must provide proof of South African citizenship upon commencement of employment. If not a South African citizen, the Employee must submit a valid work permit or proof of permanent residency within seven days of request, and must continue to provide updated documentation whenever required.",
-          "It is the Employee’s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
-        ],
-      },
-      {
-        title: "Confidentiality",
-        body:
-          "The Employee shall keep all confidential information, trade secrets, client data and business affairs of the Employer strictly confidential and shall not disclose or use such information for any purpose other than the performance of his or her duties.",
-      },
-      {
-        title: "Entire Agreement and Acknoweldgement",
-        body: [
-          "This agreement constitutes the entire agreement between the parties, and no variation, amendment or addition shall be valid unless reduced to writing and signed by both parties. Any indulgence or leniency granted shall not constitute a waiver of rights.",
-          "By signing this agreement, both parties acknowledge that they have read and understood its contents and agree to be bound by its terms. The Employee confirms that the conditions of employment have been explained where necessary and that he or she voluntarily accepts them.",
-          "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
-        ],
-      },
+        {
+          title: "Introduction",
+          body: fillClausePlaceholders(
+            "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them and dated [contract reference].",
+            contractRefDisplay,
+            recordEffectiveDisplay,
+          ),
+        },
+        {
+          title: "Recordal",
+          body: fillClausePlaceholders(
+            [
+              "This Addendum must be read together with that employment contract, and except as expressly amended herein, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+              "Effective from [effective date], the employment contract is amended as set out below.",
+            ],
+            contractRefDisplay,
+            recordEffectiveDisplay,
+          ),
+        },
+        {
+          title: "Entire Agreement and Acknoweldgement",
+          body: [
+            "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
+            "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
+            "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
+          ],
+        },
       ])
     );
 
@@ -1024,7 +1077,16 @@ const AddendumGenerator = () => {
       }
       isFirstClause = false;
       const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
+      const preface =
+        clause.amendmentType === "add"
+          ? "The following term(s) will be added to the employment contract:"
+          : clause.amendmentType === "amend"
+            ? "The terms of this clause is hereby amended as follows:"
+            : null;
       addClauseHeading(clause.title);
+      if (preface) {
+        addUnnumberedParagraph(preface);
+      }
       paragraphs.forEach((text) => {
         addNumberedParagraph(clauseNumber, text);
         clauseNumber += 1;
@@ -1050,10 +1112,9 @@ const AddendumGenerator = () => {
     doc.text(signingLine, margin, y);
     y += 16;
 
-    // Start a fresh page for the signature block
-    doc.addPage();
-    y = margin;
-
+    // Draw signature block on the same page where possible; only push if no space remains
+    const signatureBlockHeight = 12 + signatureLabels.length * 20;
+    ensureSpace(signatureBlockHeight);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(0, 0, 0);
@@ -1076,7 +1137,9 @@ const AddendumGenerator = () => {
     doc.setFontSize(9);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
-      const footerY = pageHeight - 10;
+      const footerY = pageHeight - 10; // slightly lower for more space above
+      doc.setDrawColor(226, 232, 240); // subtle divider above footer text
+      doc.line(margin, footerY - 8, margin + contentWidth, footerY - 8);
       doc.text(`Page ${i} of ${pageCount}`, margin, footerY, { align: "left" });
       doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
@@ -1085,7 +1148,7 @@ const AddendumGenerator = () => {
       doc.save(`Addendum_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
-        description: "Addendum to contract has been generated.",
+        description: "Addendum has been generated.",
       });
     } else {
       const blobUrl = doc.output("bloburl");
@@ -1097,6 +1160,7 @@ const AddendumGenerator = () => {
     try {
       const validated = validateData();
       setValidatedPreview(validated);
+      setShowPreview(true);
       setShowFinalActions(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
@@ -1110,6 +1174,7 @@ const AddendumGenerator = () => {
 
   const handleDownload = () => {
     try {
+      setIsGenerating(true);
       const validated = validateData();
       generatePDF(validated, true);
     } catch (error) {
@@ -1119,6 +1184,8 @@ const AddendumGenerator = () => {
         description: message,
         variant: "destructive",
       });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -1139,8 +1206,8 @@ const AddendumGenerator = () => {
 
   const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
   const previewSubtitle = employeeFullName
-    ? `Review and download the addendum for ${employeeFullName}.`
-    : "Review and download the addendum.";
+    ? `Review and edit the addendum to the employment contract for ${employeeFullName}.`
+    : "Review and edit the addendum to the employment contract.";
 
   if (loading) {
     return (
@@ -1199,7 +1266,7 @@ const AddendumGenerator = () => {
             <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Addendum</p>
             <h1 className="text-3xl font-bold text-gray-900">Addendum to Contract</h1>
             <p className="text-base text-gray-600">
-              Fill out the details in a quick multistep form to generate an addendum to an existing contract.
+              Fill out the details in the quick multistep form to generate an addendum.
             </p>
           </div>
           <Button
@@ -1360,11 +1427,11 @@ const AddendumGenerator = () => {
 
               {activeStep === 1 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="space-y-2.5">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="employee">Select Employee (optional)</Label>
-                      <Select onValueChange={handleEmployeeSelect}>
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                    <div className="space-y-2.5">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="employee">Select Employee (optional)</Label>
+                      <Select value={selectedEmployeeId} onValueChange={handleEmployeeSelect}>
+                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-gray-900">
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
                         <SelectContent className="w-[var(--radix-select-trigger-width)]">
@@ -1375,7 +1442,7 @@ const AddendumGenerator = () => {
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                      </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="employeeName">Employee Name *</Label>
@@ -1396,30 +1463,29 @@ const AddendumGenerator = () => {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="idType">ID type *</Label>
+                        <Label>ID/Passport *</Label>
                         <Select
                           value={formData.idType}
-                          onValueChange={(value) =>
+                          onValueChange={(value) => {
                             setFormData((prev) => ({
                               ...prev,
-                              idType: value as ContractFormState["idType"],
-                              employeeIdNumber: value === "id" ? prev.employeeIdNumber : "",
-                              passportNumber: value === "passport" ? prev.passportNumber : "",
-                              age: value === "id" ? deriveAgeFromId(prev.employeeIdNumber) : "",
-                            }))
-                          }
+                              idType: value as "id" | "passport",
+                            }));
+                          }}
                         >
                           <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                            <SelectValue placeholder="Choose ID type" />
+                            <SelectValue placeholder="Choose document type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="id">ID number</SelectItem>
-                            <SelectItem value="passport">Passport number</SelectItem>
+                            <SelectItem value="id">ID Number</SelectItem>
+                            <SelectItem value="passport">Passport Number</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="idOrPassport">{formData.idType === "id" ? "ID Number *" : "Passport Number *"}</Label>
+                        <Label htmlFor="idOrPassport">
+                          {formData.idType === "id" ? "ID Number *" : "Passport Number *"}
+                        </Label>
                         <Input
                           id="idOrPassport"
                           value={formData.idType === "id" ? formData.employeeIdNumber : formData.passportNumber}
@@ -1443,7 +1509,9 @@ const AddendumGenerator = () => {
                           className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
                             isIdDateInvalid ? "border-red-500 ring-red-500" : ""
                           }`}
-                          placeholder={formData.idType === "id" ? "Insert 13-digit ID number" : "Insert passport number"}
+                          placeholder={
+                            formData.idType === "id" ? "Insert 13-digit ID number" : "Insert passport number"
+                          }
                         />
                       </div>
                     </div>
@@ -1451,84 +1519,753 @@ const AddendumGenerator = () => {
                 </div>
               )}
 
-                            {activeStep === 2 && (
+              {activeStep === 2 && (
                 <div className="space-y-3 rounded-xl border border-blue-400 bg-white p-3 shadow-sm">
                   <div className="grid md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="originalContractDate">Original Contract Date *</Label>
-                      <Input
-                        id="originalContractDate"
-                        type="date"
-                        value={formData.originalContractDate}
-                        onChange={(e) => setFormData({ ...formData, originalContractDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate">Effective Date *</Label>
-                      <Input
-                        id="effectiveDate"
-                        type="date"
-                        value={formData.effectiveDate}
-                        onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
-                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="addendumType">Addendum Type *</Label>
                       <Select
                         value={formData.addendumType}
-                        onValueChange={(value) => setFormData({ ...formData, addendumType: value as AddendumFormData["addendumType"] })}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            addendumType: value as AddendumType,
+                          }))
+                        }
                       >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                          <SelectValue placeholder="Select addendum type" />
+                        <SelectTrigger className="addendum-select focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-gray-900">
+                          <SelectValue
+                            placeholder="Select addendum type"
+                            className="data-[placeholder]:text-slate-400"
+                            style={!formData.addendumType ? { color: "#94a3b8" } : undefined}
+                          />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="general">General</SelectItem>
-                          <SelectItem value="temporary-extension">Temporary contract extension</SelectItem>
-                          <SelectItem value="temporary-renewal">Temporary contract renewal</SelectItem>
+                          {addendumTypeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="issueDate">Issue Date *</Label>
-                      <Input
-                        id="issueDate"
-                        type="date"
-                        value={formData.issueDate}
-                        onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                      />
+                      <Label htmlFor="effectiveDate">Effective Date *</Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="effectiveDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
+                          onClick={openEffectiveDatePicker}
+                          onFocus={openEffectiveDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openEffectiveDatePicker();
+                            }
+                          }}
+                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                        />
+                        <input
+                          ref={effectiveDatePickerRef}
+                          type="date"
+                          value={formData.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.effectiveDate) ? formData.effectiveDate : ""}
+                          onChange={(e) => setFormData({ ...formData, effectiveDate: e.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="contractReference">Reference the date of issuing or signing of the contract this addendum applies to *</Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="contractReference"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.contractReference ? toDisplayDate(formData.contractReference) : ""}
+                          onClick={openContractReferencePicker}
+                          onFocus={openContractReferencePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openContractReferencePicker();
+                            }
+                          }}
+                          aria-required="true"
+                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                        />
+                        <input
+                          ref={contractReferencePickerRef}
+                          type="date"
+                          value={
+                            formData.contractReference && /^\d{4}-\d{2}-\d{2}$/.test(formData.contractReference)
+                              ? formData.contractReference
+                              : ""
+                          }
+                          onChange={(e) => setFormData({ ...formData, contractReference: e.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
-            </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <Button variant="outline" onClick={handleBack} disabled={activeStep === 0}>
-                <ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-                Back
-              </Button>
-              <div className="flex items-center gap-2">
-                {activeStep < steps.length - 1 ? (
-                  <Button onClick={handleNext} disabled={!canGoNext}>
-                    Next
-                    <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
-                  </Button>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                {activeStep === steps.length - 1 ? (
+                  <div className="flex w-full items-center gap-3 flex-wrap justify-between">
+                    <div className="flex-none">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBack}
+                        className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back
+                      </Button>
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                      <TooltipProvider delayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={resetForm}
+                              disabled={isGenerating}
+                              aria-label="Reset form"
+                              className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                            >
+                              <Undo2 className="h-4 w-4" />
+                              Reset form
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Clear all fields and start over</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <div className="flex-none relative">
+                      <Button
+                        type="button"
+                        onClick={handleFinish}
+                        disabled={!isFormComplete || isGenerating}
+                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
+                          isFormComplete && !isGenerating
+                            ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
+                            : "bg-primary hover:bg-primary/90 border border-primary/60"
+                        }`}
+                      >
+                        Finish
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <Button onClick={handleFinish} className="bg-green-600 hover:bg-green-700">
-                    Preview &amp; generate
-                  </Button>
+                  <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                    <div className="flex-none">
+                      {activeStep > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          Back
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                      {activeStep === 1 ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={resetEmployeeStepFields}
+                          disabled={isGenerating}
+                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                        >
+                          <Undo2 className="h-4 w-4" />
+                          Reset fields
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="flex-none">
+                      {activeStep < steps.length - 1 && (
+                        <Button
+                          type="button"
+                          onClick={handleNext}
+                          disabled={!canGoNext}
+                          className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          Next
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
           </CardContent>
           </Card>
-        ) : null}
+          ) : (
+            <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+              <CardHeader className="pt-4 pb-0" />
+              <CardContent className="space-y-6 pt-2">
+                <div className="flex flex-col items-center gap-3">
+                  <div
+                    className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
+                    style={{
+                      width: `${snippetContainerWidthMm}mm`,
+                      height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
+                    }}
+                    >
+                      {validatedPreview ? (
+                        <div className="relative h-full w-full overflow-hidden">
+                          <div
+                            className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
+                            style={{
+                              width: "210mm",
+                              height: `${snippetVisibleHeightMm}mm`,
+                              overflow: "hidden",
+                              marginTop: `${snippetPaddingTopMm}mm`,
+                              transform: `translateX(-50%) scale(${snippetScale})`,
+                              transformOrigin: "top center",
+                            }}
+                          >
+                            <div style={{ height: "297mm", overflow: "hidden" }}>
+                              <FirstPagePreview data={validatedPreview} compact profile={profile} />
+                            </div>
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handlePreview}
+                                disabled={isGenerating}
+                                aria-label="Preview"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <FileText />
+                                  <span className="text-sm font-semibold">Preview</span>
+                                </div>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handleDownload}
+                                disabled={isGenerating}
+                                aria-label="Download PDF"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Download />
+                                  <span className="text-sm font-semibold">Download</span>
+                                </div>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-6 text-sm text-slate-600">Complete the form and click Finish to see the first-page preview.</div>
+                      )}
+                    </div>
+
+                <div className="flex w-full items-center gap-2">
+                  <div className="flex-none">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowFinalActions(false)}
+                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                      Back to form
+                    </Button>
+                  </div>
+                  <div className="flex-1" />
+                  <div className="flex-none opacity-0 pointer-events-none">
+                    <Button variant="outline" className="gap-2 border-transparent">
+                      Placeholder
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl h-[90vh] p-0">
+          <DialogHeader className="px-6 pt-6 pr-10">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <DialogTitle className="text-blue-600">Preview - Addendum</DialogTitle>
+                <DialogDescription>{previewSubtitle}</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <ScrollArea className="h-full px-6 pb-6" ref={previewScrollRef}>
+            {validatedPreview ? (() => {
+              const displayValue = (value?: string | number | null) =>
+                value && value.toString().trim() ? value.toString() : "________________________";
+              const salaryDisplay = `${formatCurrency(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}`;
+              const workplace = validatedPreview.workplace || profile?.physical_address || "";
+              const employerName = profile?.company_name || "the Employer";
+              const usesId = validatedPreview.idType === "id";
+              const derivedAge = usesId ? deriveAgeFromId(validatedPreview.employeeIdNumber) : "";
+              const idDisplay = usesId ? validatedPreview.employeeIdNumber : "--";
+              const passportDisplay = usesId ? "--" : validatedPreview.passportNumber || "--";
+              const contractRefDisplay = formatDate(validatedPreview.contractReference);
+              const effectiveDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
+              const annualLeaveText = `The Employee is entitled to ${validatedPreview.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
+
+              const DualRow = ({
+                leftLabel,
+                leftValue,
+                rightLabel,
+                rightValue,
+              }: {
+                leftLabel: string;
+                leftValue?: string | number | null;
+                rightLabel: string;
+                rightValue?: string | number | null;
+              }) => (
+                <div className="grid grid-cols-2 gap-4 border-b border-slate-200 py-2 px-3 text-[11px]">
+                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                    <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
+                    <span className="text-gray-900">{displayValue(leftValue)}</span>
+                  </div>
+                  <div className="grid grid-cols-[120px_1fr] gap-2">
+                    <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
+                    <span className="text-gray-900">{displayValue(rightValue)}</span>
+                  </div>
+                </div>
+              );
+
+              const clauses: ClauseDefinition[] = mergeClauses(
+                withClauseIds([
+                  {
+                    title: "Introduction",
+                    body: fillClausePlaceholders(
+                      "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them dated [contract reference].",
+                      contractRefDisplay,
+                      effectiveDisplay,
+                    ),
+                  },
+                  {
+                    title: "Recordal",
+                    body: fillClausePlaceholders(
+                      [
+                        "This Addendum must be read together with that employment contract, and except as expressly amended herein, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+                        "Effective from [effective date], the employment contract is amended as set out below.",
+                      ],
+                      contractRefDisplay,
+                      effectiveDisplay,
+                    ),
+                  },
+                  {
+                    title: "Entire Agreement and Acknoweldgement",
+                    body: [
+                      "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
+                      "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
+                      "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
+                    ],
+                  },
+                ])
+              );
+
+              const clausesWithEdits = applyClauseEdits(clauses);
+
+              const startEditingClause = (clause: ClauseDefinition) => {
+                rememberPreviewScroll();
+                setEditingClause(clause.id);
+                setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
+              };
+
+              const saveClauseEdit = (id: string) => {
+                const trimmed = clauseDraft.trim();
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  if (trimmed) {
+                    next[id] = trimmed;
+                  } else {
+                    delete next[id];
+                  }
+                  return next;
+                });
+                setEditingClause(null);
+                setClauseDraft("");
+              };
+
+              const resetClauseEdit = (id: string) => {
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
+                setEditingClause(null);
+                setClauseDraft("");
+              };
+
+              const openAddClauseForm = (afterId: string | null) => {
+                rememberPreviewScroll();
+                setAddingAfter(afterId);
+                setNewClauseTitle("");
+                setNewClauseBody("");
+                setNewClauseAmendmentType("");
+              };
+
+              const cancelAddClause = () => {
+                setAddingAfter(undefined);
+                setNewClauseTitle("");
+                setNewClauseBody("");
+                setNewClauseAmendmentType("");
+              };
+
+              const saveNewClause = () => {
+                const title = newClauseTitle.trim();
+                const body = newClauseBody.trim();
+                if (!newClauseAmendmentType) {
+                  toast({
+                    title: "Add clause",
+                    description: "Please select an amendment type.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                if (!title || !body) {
+                  toast({
+                    title: "Add clause",
+                    description: "Please provide both a title and body for the new clause.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+    const normalizedBody = normalizeBodyText(body);
+                setCustomClauses((prev) => [
+                  ...prev,
+                  {
+                    id: generateCustomClauseId(),
+                    title,
+                    body: normalizedBody,
+                    insertAfterId: addingAfter,
+                    amendmentType: newClauseAmendmentType,
+                  },
+                ]);
+                cancelAddClause();
+              };
+
+              const deleteCustomClause = (id: string) => {
+                setCustomClauses((prev) => prev.filter((clause) => clause.id !== id));
+                setClauseEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
+                if (editingClause === id) {
+                  setEditingClause(null);
+                  setClauseDraft("");
+                }
+              };
+
+              return (
+                <div className="space-y-8">
+                  <FirstPagePreview data={validatedPreview} profile={profile}>
+                    <div className="text-xs leading-relaxed space-y-5">
+                          {(() => {
+                            let clauseNumber = 1;
+                            const renderAddClauseControl = (afterId: string | null) => {
+                          if (afterId === "introduction" || afterId === "entire-agreement-and-acknoweldgement") return null;
+                              const isFormOpen = addingAfter === afterId && addingAfter !== undefined;
+                              return (
+                                <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
+                                  {isFormOpen ? (
+                                    <div className="w-full rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-4">
+                                      <div className="grid gap-3">
+                                        <div className="grid gap-1 text-left">
+                                          <Label className="text-xs">Amendment type</Label>
+                                          <Select
+                                            value={newClauseAmendmentType}
+                                            onValueChange={(value) => setNewClauseAmendmentType(value as AmendmentType)}
+                                          >
+                                            <SelectTrigger className="h-8 text-xs border-blue-200 hover:border-blue-400 focus-visible:ring-blue-500">
+                                              <SelectValue placeholder="Please Select amendment type" />
+                                            </SelectTrigger>
+                                            <SelectContent className="text-xs">
+                                              <SelectItem className="text-xs" value="add">
+                                                Add new term(s)
+                                              </SelectItem>
+                                              <SelectItem className="text-xs" value="amend">
+                                                Amend existing term(s)
+                                              </SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        {newClauseAmendmentType ? (
+                                          <>
+                                            <Input
+                                              value={newClauseTitle}
+                                              onChange={(e) => setNewClauseTitle(e.target.value)}
+                                              placeholder="Clause title"
+                                              onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
+                                              onClick={rememberPreviewScroll}
+                                              className="text-xs"
+                                            />
+                                            <Textarea
+                                              value={newClauseBody}
+                                              onChange={(e) => setNewClauseBody(e.target.value)}
+                                              rows={4}
+                                              className="text-xs text-slate-600"
+                                              placeholder="Clause body. Separate paragraphs with a blank line."
+                                              spellCheck={true}
+                                              lang="en"
+                                              autoCorrect="on"
+                                              onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
+                                              onClick={rememberPreviewScroll}
+                                            />
+                                          </>
+                                        ) : null}
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                          <span>Paragraph numbering updates automatically.</span>
+                                          <div className="flex items-center gap-2">
+                                            <Button
+                                              size="sm"
+                                              className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                              onClick={saveNewClause}
+                                              disabled={
+                                                !newClauseAmendmentType ||
+                                                !newClauseTitle.trim() ||
+                                                !newClauseBody.trim()
+                                              }
+                                            >
+                                              Add clause
+                                            </Button>
+                                            <Button size="sm" variant="ghost" className="h-8 px-3" onClick={cancelAddClause}>
+                                              Cancel
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddClauseForm(afterId)}
+                                      className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    >
+                                      <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                        <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                          <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
+                                        </span>
+                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                          Add
+                                        </span>
+                                      </span>
+                                      <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
+                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                        <span className="w-16" />
+                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            };
+
+                            return [
+                              <div key="clause-divider" className="my-4 border-t border-slate-200" aria-hidden="true" />,
+                              ...clausesWithEdits.flatMap((clause) => {
+                              const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
+                              const preface =
+        clause.amendmentType === "add"
+          ? "The following term(s) will be added to the employment contract:"
+          : clause.amendmentType === "amend"
+            ? "The terms of this clause is hereby amended as follows:"
+            : null;
+                              const isEditing = editingClause === clause.id;
+                              const isEdited = Boolean(clauseEdits[clause.id]);
+                              const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
+                              return [
+                                <div key={clause.id} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <h3 className="font-semibold text-black">{clause.title}</h3>
+                                      {isCustomClause ? (
+                                        <span
+                                          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                                            clause.amendmentType === "amend"
+                                              ? "bg-blue-50 text-blue-700"
+                                              : clause.amendmentType === "add"
+                                                ? "bg-green-50 text-green-600"
+                                                : "bg-blue-50 text-blue-700"
+                                          }`}
+                                        >
+                                          {clause.amendmentType === "amend"
+                                            ? "Amended Existing Term(s)"
+                                            : clause.amendmentType === "add"
+                                              ? "Added New Term(s)"
+                                              : "Custom"}
+                                        </span>
+                                      ) : null}
+                                      {isEdited ? (
+                                        <span className="rounded-full bg-[#04b81f]/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#04b81f]">
+                                          Edited
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {isEditing ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                            onClick={() => saveClauseEdit(clause.id)}
+                                          >
+                                            Save
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 px-3"
+                                            onClick={() => {
+                                              setEditingClause(null);
+                                              setClauseDraft("");
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          {isEdited ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-8 px-3 text-slate-600 hover:text-slate-800"
+                                              onClick={() => resetClauseEdit(clause.id)}
+                                            >
+                                              Reset
+                                            </Button>
+                                          ) : null}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-8 px-3"
+                                            onClick={() => startEditingClause(clause)}
+                                          >
+                                            Edit
+                                          </Button>
+                                          {isCustomClause ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-8 px-3 text-red-600 hover:text-red-700"
+                                              onClick={() => deleteCustomClause(clause.id)}
+                                            >
+                                              Delete
+                                            </Button>
+                                          ) : null}
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {isEditing ? (
+                                    <div className="space-y-2">
+                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
+                                      </p>
+                                      <Textarea
+                                        value={clauseDraft}
+                                        onChange={(e) => setClauseDraft(e.target.value)}
+                                        rows={6}
+                                        className="text-xs text-slate-600"
+                                        spellCheck={true}
+                                        lang="en"
+                                        autoCorrect="on"
+                                        onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
+                                        onClick={rememberPreviewScroll}
+                                      />
+                                    </div>
+                                  ) : null}
+
+                                  <div className="space-y-1">
+                                    {preface ? (
+                                      <p className="text-justify whitespace-pre-line text-black font-semibold">{preface}</p>
+                                    ) : null}
+                                    {paragraphs.map((text) => {
+                                      const currentNumber = clauseNumber;
+                                      clauseNumber += 1;
+                                      return (
+                                        <div key={`${clause.id}-${currentNumber}`} className="grid grid-cols-[auto,1fr] gap-2 text-justify">
+                                          <span className="font-semibold">{currentNumber}.</span>
+                                          <p className="text-justify whitespace-pre-line text-black">
+                                            {text}
+                                          </p>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>,
+                                renderAddClauseControl(clause.id),
+                              ];
+                            }),
+                            ];
+                          })()}
+
+                      {validatedPreview.additionalNotes && (
+                        <div className="space-y-1">
+                          <h3 className="font-semibold text-black">Additional notes</h3>
+                          <p className="whitespace-pre-wrap">{validatedPreview.additionalNotes}</p>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="font-semibold text-black mb-1">Signing</p>
+                        <p>
+                          Done and Signed at ________________________________________ on this _____ day of ______________________________{" "}
+                          {extractYear(validatedPreview.issueDate)}.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6 text-xs mt-10">
+                      {["For the Employer", "Employer Witness", "Employee", "Employee Witness"].map((label) => (
+                        <div key={label}>
+                          <div className="flex justify-between mb-1">
+                            <span className="border-b border-black flex-1 max-w-[60%]" />
+                            <span className="ml-4">
+                              Date: <span className="border-b border-black inline-block w-32" />
+                            </span>
+                          </div>
+                          <p className="mt-1">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+                </FirstPagePreview>
+              </div>
+            );
+          })() : (
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-muted-foreground">Complete the form to preview the contract.</p>
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
 
 export default AddendumGenerator;
+

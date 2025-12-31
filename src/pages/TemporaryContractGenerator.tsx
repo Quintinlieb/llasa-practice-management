@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import type { ReactNode } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -677,16 +678,29 @@ const TemporaryContractGenerator = () => {
         ? data.projectScope || "completion of the project/scope"
         : formatDate(data.endDate);
 
-    const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-      <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
-        <span>{title}</span>
-        {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+    const SectionBlock = ({
+      title,
+      subtitle,
+      children,
+    }: {
+      title: string;
+      subtitle?: string;
+      children: ReactNode;
+    }) => (
+      <div className="space-y-2">
+        <div className="w-full flex items-center justify-between rounded-md bg-slate-100 border border-slate-300 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+          <span>{title}</span>
+          {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+        </div>
+        <div className="space-y-1.5 px-1 text-[11px] text-gray-900">
+          {children}
+        </div>
       </div>
     );
 
-    const SingleRow = ({ label, value }: { label: string; value?: string | number | null }) => (
-      <div className="grid grid-cols-[120px_1fr] gap-2 border-b border-slate-200 py-2 px-3 text-[11px]">
-        <span className="font-semibold italic uppercase text-gray-700">{label}:</span>
+    const Row = ({ label, value }: { label: string; value?: string | number | null }) => (
+      <div className="grid grid-cols-[120px_1fr] gap-2 text-[11px]">
+        <span className="font-semibold text-gray-700">{label}:</span>
         <span className="text-gray-900">{displayValue(value)}</span>
       </div>
     );
@@ -702,13 +716,13 @@ const TemporaryContractGenerator = () => {
       rightLabel: string;
       rightValue?: string | number | null;
     }) => (
-      <div className="grid grid-cols-2 gap-4 border-b border-slate-200 py-2 px-3 text-[11px]">
+      <div className="grid grid-cols-2 gap-4 text-[11px]">
         <div className="grid grid-cols-[120px_1fr] gap-2">
-          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
+          <span className="font-semibold text-gray-700 whitespace-nowrap">{leftLabel}:</span>
           <span className="text-gray-900">{displayValue(leftValue)}</span>
         </div>
         <div className="grid grid-cols-[120px_1fr] gap-2">
-          <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
+          <span className="font-semibold text-gray-700 whitespace-nowrap">{rightLabel}:</span>
           <span className="text-gray-900">{displayValue(rightValue)}</span>
         </div>
       </div>
@@ -722,37 +736,28 @@ const TemporaryContractGenerator = () => {
         <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Temporary Employment Contract</h1>
 
         <div className="space-y-6 flex-1">
-          <div>
-            <SectionHeader title="A. Employer details" subtitle='(Hereinafter referred to as "The Employer")' />
-            <div className="border border-slate-200 border-t-0">
-              <SingleRow label="Company name" value={profile?.company_name} />
-              <SingleRow label="Reg. number" value={profile?.registration_number} />
-              <SingleRow label="Address" value={profile?.physical_address} />
-              <SingleRow label="Email" value={profile?.company_email} />
-              <SingleRow label="Contact" value={profile?.company_contact} />
-            </div>
-          </div>
+          <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
+            <Row label="Company name" value={profile?.company_name} />
+            <Row label="Reg. number" value={profile?.registration_number} />
+            <Row label="Address" value={profile?.physical_address} />
+            <Row label="Email" value={profile?.company_email} />
+            <Row label="Contact" value={profile?.company_contact} />
+          </SectionBlock>
 
-          <div>
-            <SectionHeader title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")' />
-            <div className="border border-slate-200 border-t-0">
-              <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
-              <SingleRow label="ID / Passport" value={idOrPassport || "--"} />
-              <SingleRow label="Contact number" value={data.employeeCell} />
-              <SingleRow label="Address" value={data.employeeAddress} />
-            </div>
-          </div>
+          <SectionBlock title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")'>
+            <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
+            <Row label="ID / Passport" value={idOrPassport || "--"} />
+            <Row label="Contact number" value={data.employeeCell} />
+            <Row label="Address" value={data.employeeAddress} />
+          </SectionBlock>
 
-          <div>
-            <SectionHeader title="C. Employment details" />
-            <div className="border border-slate-200 border-t-0">
-              <DualRow leftLabel="Type" leftValue="Temporary" rightLabel="Start date" rightValue={formatDate(data.startDate)} />
-              <DualRow leftLabel={endInfoLabel} leftValue={endInfoValue} rightLabel="Gross salary" rightValue={salaryDisplay} />
-              <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
-              <SingleRow label="Workplace" value={workplace} />
-              <SingleRow label="Project/Scope" value={data.projectScope} />
-            </div>
-          </div>
+          <SectionBlock title="C. Employment details">
+            <DualRow leftLabel="Type" leftValue="Temporary" rightLabel="Start date" rightValue={formatDate(data.startDate)} />
+            <DualRow leftLabel={endInfoLabel} leftValue={endInfoValue} rightLabel="Gross salary" rightValue={salaryDisplay} />
+            <DualRow leftLabel="Job title" leftValue={data.jobTitle} rightLabel="Interpreter" rightValue={data.interpreter === "yes" ? "Yes" : "No"} />
+            <Row label="Workplace" value={workplace} />
+            <Row label="Project/Scope" value={data.projectScope} />
+          </SectionBlock>
         </div>
 
       </div>
@@ -812,27 +817,24 @@ const TemporaryContractGenerator = () => {
     };
 
     const drawSection = (title: string, subtitle: string | undefined, renderContent: () => void) => {
-      ensureSpace(16);
-      const boxTop = y;
+      ensureSpace(18);
+      const headerHeight = 9;
       doc.setFillColor(237, 242, 247);
-      doc.setDrawColor(206, 212, 218);
-      doc.rect(margin, y, contentWidth, 10, "F");
+      doc.setDrawColor(200, 204, 209);
+      doc.roundedRect(margin, y, contentWidth, headerHeight, 2, 2, "FD");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(45, 55, 72);
-      doc.text(title.toUpperCase(), margin + 3, y + 7);
+      doc.text(title.toUpperCase(), margin + 4, y + 6);
       if (subtitle) {
         doc.setFont("helvetica", "italic");
         doc.setFontSize(9);
-        doc.text(subtitle, margin + contentWidth - 3, y + 7, { align: "right" });
+        doc.text(subtitle, margin + contentWidth - 4, y + 6, { align: "right" });
       }
-      y += 12;
+      y += headerHeight + 4;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       renderContent();
-      const boxHeight = y - boxTop;
-      doc.setDrawColor(224, 231, 235);
-      doc.rect(margin, boxTop, contentWidth, boxHeight, "S");
       y += 8;
     };
 
@@ -844,10 +846,10 @@ const TemporaryContractGenerator = () => {
       const rowHeight = lines.length * lineHeight + 3;
 
       ensureSpace(rowHeight);
-      doc.setFont("helvetica", "italic");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(55, 65, 81);
-      doc.text(`${label.toUpperCase()}:`, margin + 3, y + 6);
+      doc.text(`${label}:`, margin + 3, y + 6);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
@@ -855,10 +857,6 @@ const TemporaryContractGenerator = () => {
       lines.forEach((line, idx) => {
         doc.text(line, margin + labelWidth, y + 6 + idx * lineHeight);
       });
-
-      doc.setDrawColor(224, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       y += rowHeight;
     };
@@ -870,9 +868,9 @@ const TemporaryContractGenerator = () => {
       rightValue: string | number | null,
       valueFontSize = 10,
     ) => {
-      const columnWidth = (contentWidth - 8) / 2;
+      const columnWidth = contentWidth / 2;
       const labelWidth = 42;
-      const availableWidth = columnWidth - labelWidth - 6;
+      const availableWidth = columnWidth - labelWidth;
       const lineHeight = 5.5;
       const leftLines = doc.splitTextToSize(valueOrLine(leftValue), availableWidth);
       const rightLines = doc.splitTextToSize(valueOrLine(rightValue), availableWidth);
@@ -880,11 +878,11 @@ const TemporaryContractGenerator = () => {
 
       ensureSpace(rowHeight);
 
-      doc.setFont("helvetica", "italic");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(55, 65, 81);
-      doc.text(`${leftLabel.toUpperCase()}:`, margin + 3, y + 6);
-      doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 8 + 3, y + 6);
+      doc.text(`${leftLabel}:`, margin + 3, y + 6);
+      doc.text(`${rightLabel}:`, margin + columnWidth, y + 6);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(valueFontSize);
@@ -893,12 +891,8 @@ const TemporaryContractGenerator = () => {
         doc.text(line, margin + labelWidth, y + 6 + idx * lineHeight);
       });
       rightLines.forEach((line, idx) => {
-        doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
+        doc.text(line, margin + columnWidth + labelWidth, y + 6 + idx * lineHeight);
       });
-
-      doc.setDrawColor(224, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       y += rowHeight;
     };
@@ -910,56 +904,38 @@ const TemporaryContractGenerator = () => {
       rightLabel: string,
       rightValue: string | number | null,
     ) => {
-      const columnWidth = (contentWidth - 8) / 2;
+      const columnWidth = contentWidth / 2;
       const labelWidth = 42;
-      const availableWidth = columnWidth - labelWidth - 6;
+      const availableWidth = columnWidth - labelWidth;
       const lineHeight = 5.5;
-
-      let suffixSize = 8;
-      let suffixDisplay = suffixText;
-
-      const fits = (size: number, suffix: string) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        const amountWidth = doc.getTextWidth(amountText);
-        doc.setFontSize(size);
-        const suffixWidth = doc.getTextWidth(` ${suffix}`);
-        return amountWidth + suffixWidth <= availableWidth;
-      };
-
-      while (!fits(suffixSize, suffixDisplay) && suffixSize > 6) {
-        suffixSize -= 0.5;
-      }
-      if (!fits(suffixSize, suffixDisplay)) {
-        suffixDisplay = suffixText.replace("per ", "/");
+      const combinedValue = `${amountText} ${suffixText}`;
+      doc.setFont("helvetica", "normal");
+      let valueFontSize = 10;
+      while (doc.getTextWidth(combinedValue) > availableWidth && valueFontSize > 7) {
+        valueFontSize -= 0.5;
+        doc.setFontSize(valueFontSize);
       }
 
       const rightLines = doc.splitTextToSize(valueOrLine(rightValue), availableWidth);
       const rowHeight = lineHeight + 3;
 
       ensureSpace(rowHeight);
-      doc.setFont("helvetica", "italic");
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(55, 65, 81);
-      doc.text(`${leftLabel.toUpperCase()}:`, margin + 3, y + 6);
-      doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 8 + 3, y + 6);
+      doc.text(`${leftLabel}:`, margin + 3, y + 6);
+      doc.text(`${rightLabel}:`, margin + columnWidth, y + 6);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(valueFontSize);
       doc.setTextColor(0, 0, 0);
       const amountX = margin + labelWidth;
-      doc.text(amountText, amountX, y + 6);
-      doc.setFontSize(suffixSize);
-      doc.text(` ${suffixDisplay}`, amountX + doc.getTextWidth(amountText) + 4, y + 6);
+      doc.text(combinedValue, amountX, y + 6);
 
       doc.setFontSize(10);
       rightLines.forEach((line, idx) => {
-        doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
+        doc.text(line, margin + columnWidth + labelWidth, y + 6 + idx * lineHeight);
       });
-
-      doc.setDrawColor(224, 231, 235);
-      doc.setLineWidth(0.3);
-      doc.line(margin, y + rowHeight, margin + contentWidth, y + rowHeight);
 
       y += rowHeight;
     };
@@ -1031,7 +1007,7 @@ const TemporaryContractGenerator = () => {
       doc.text("TEMPORARY EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
       y += 12;
 
-      drawSection("A. Employer details", '(Hereinafter referred to as "The Employer")', () => {
+      drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
         drawSingleRow("Company name", profile?.company_name);
         drawSingleRow("Reg. number", profile?.registration_number);
         drawSingleRow("Address", profile?.physical_address);
@@ -2134,16 +2110,29 @@ const TemporaryContractGenerator = () => {
               const annualLeaveText =
                 "The Employee is entitled to one (1) day of leave for every seventeen (17) days worked. Leave shall be taken at times determined by the Employer, subject to operational requirements.";
 
-              const SectionHeader = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-                <div className="bg-slate-100 border border-slate-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700 flex items-center">
-                  <span>{title}</span>
-                  {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+              const SectionBlock = ({
+                title,
+                subtitle,
+                children,
+              }: {
+                title: string;
+                subtitle?: string;
+                children: ReactNode;
+              }) => (
+                <div className="space-y-2">
+                  <div className="w-full flex items-center justify-between rounded-md bg-slate-100 border border-slate-300 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+                    <span>{title}</span>
+                    {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
+                  </div>
+                  <div className="space-y-1.5 px-1 text-[11px] text-gray-900">
+                    {children}
+                  </div>
                 </div>
               );
 
-              const SingleRow = ({ label, value }: { label: string; value?: string | number | null }) => (
-                <div className="grid grid-cols-[120px_1fr] gap-2 border-b border-slate-200 py-2 px-3 text-[11px]">
-                  <span className="font-semibold italic uppercase text-gray-700">{label}:</span>
+              const Row = ({ label, value }: { label: string; value?: string | number | null }) => (
+                <div className="grid grid-cols-[120px_1fr] gap-2 text-[11px]">
+                  <span className="font-semibold text-gray-700">{label}:</span>
                   <span className="text-gray-900">{displayValue(value)}</span>
                 </div>
               );
@@ -2159,13 +2148,13 @@ const TemporaryContractGenerator = () => {
                 rightLabel: string;
                 rightValue?: string | number | null;
               }) => (
-                <div className="grid grid-cols-2 gap-4 border-b border-slate-200 py-2 px-3 text-[11px]">
+                <div className="grid grid-cols-2 gap-4 text-[11px]">
                   <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
+                    <span className="font-semibold text-gray-700 whitespace-nowrap">{leftLabel}:</span>
                     <span className="text-gray-900">{displayValue(leftValue)}</span>
                   </div>
                   <div className="grid grid-cols-[120px_1fr] gap-2">
-                    <span className="font-semibold italic uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
+                    <span className="font-semibold text-gray-700 whitespace-nowrap">{rightLabel}:</span>
                     <span className="text-gray-900">{displayValue(rightValue)}</span>
                   </div>
                 </div>

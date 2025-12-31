@@ -34,6 +34,8 @@ type ContractFormState = {
   contractReference: string;
   addendumType: AddendumType | "";
   effectiveDate: string;
+  contractEndDate: string;
+  newEndDate: string;
   idType: "id" | "passport";
 };
 
@@ -44,6 +46,8 @@ type AddendumData = PermanentContractFormData & {
   contractReference: string;
   addendumType: AddendumType;
   effectiveDate: string;
+  contractEndDate: string;
+  newEndDate: string;
   idType: "id" | "passport";
 };
 
@@ -131,11 +135,12 @@ const toIsoDate = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? null : iso;
 };
 
-const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string) => {
+const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string, newEndDate = "") => {
   const replaceText = (text: string) =>
     text
       .replace("[contract reference]", contractRef)
-      .replace("[effective date]", effectiveDate);
+      .replace("[effective date]", effectiveDate)
+      .replace("[new end date]", newEndDate || "________________________");
   return Array.isArray(body) ? body.map(replaceText) : replaceText(body);
 };
 
@@ -178,6 +183,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
   const usesId = data.idType === "id";
   const idDisplay = usesId ? data.employeeIdNumber : "--";
   const passportDisplay = usesId ? "--" : data.passportNumber || "--";
+  const documentTitle = data.addendumType === "extension" ? "Temporary Contract Extension" : "Addendum to Employment Contract";
 
   const SectionBlock = ({
     title,
@@ -234,7 +240,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
       className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
       style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
     >
-      <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Addendum to Employment Contract</h1>
+      <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">{documentTitle}</h1>
 
       <div className="space-y-6 flex-1">
         <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
@@ -288,6 +294,8 @@ const AddendumGenerator = () => {
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
   const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
+  const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const previewScrollTop = useRef(0);
@@ -307,8 +315,10 @@ const AddendumGenerator = () => {
     employeeId: "",
     age: "",
     contractReference: "",
-    addendumType: "",
+    addendumType: "general",
     effectiveDate: "",
+    contractEndDate: "",
+    newEndDate: "",
     idType: "id",
     startDate: new Date().toISOString().split("T")[0],
     issueDate: new Date().toISOString().split("T")[0],
@@ -448,8 +458,10 @@ const AddendumGenerator = () => {
       employeeId: "",
       age: "",
       contractReference: "",
-      addendumType: "",
+      addendumType: "general",
       effectiveDate: "",
+      contractEndDate: "",
+      newEndDate: "",
       idType: "id",
       startDate: new Date().toISOString().split("T")[0],
       issueDate: new Date().toISOString().split("T")[0],
@@ -519,14 +531,19 @@ const AddendumGenerator = () => {
   );
 
   const isEmploymentStepComplete = useMemo(
-    () =>
-      Boolean(
-        formData.addendumType && formData.effectiveDate && formData.contractReference,
-      ),
+    () => {
+      if (!formData.addendumType || !formData.effectiveDate) return false;
+      if (formData.addendumType === "extension") {
+        return Boolean(formData.contractEndDate && formData.newEndDate);
+      }
+      return Boolean(formData.contractReference);
+    },
     [
       formData.addendumType,
       formData.effectiveDate,
       formData.contractReference,
+      formData.contractEndDate,
+      formData.newEndDate,
     ],
   );
 
@@ -645,6 +662,26 @@ const AddendumGenerator = () => {
     }
   };
 
+  const openContractEndDatePicker = () => {
+    const picker = contractEndDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
+  const openNewEndDatePicker = () => {
+    const picker = newEndDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
   const validateData = () => {
     const missingFields: string[] = [];
     const checkRequired = (value: string | undefined | null, label: string) => {
@@ -666,7 +703,13 @@ const AddendumGenerator = () => {
 
     checkRequired(formData.addendumType, "Addendum type");
     checkRequired(formData.effectiveDate, "Effective date");
-    checkRequired(formData.contractReference, "Contract reference");
+    if (formData.addendumType !== "extension") {
+      checkRequired(formData.contractReference, "Contract reference");
+    }
+    if (formData.addendumType === "extension") {
+      checkRequired(formData.contractEndDate, "Contract end date");
+      checkRequired(formData.newEndDate, "New end date");
+    }
 
     if (missingFields.length) {
       throw new Error(`Please fill in the following required fields: ${missingFields.join(", ")}`);
@@ -683,6 +726,8 @@ const AddendumGenerator = () => {
       gender: formData.gender as PermanentContractFormData["gender"],
       race: formData.race as PermanentContractFormData["race"],
       idType: formData.idType,
+      contractEndDate: formData.contractEndDate,
+      newEndDate: formData.newEndDate,
     } as AddendumData;
   };
 
@@ -738,7 +783,7 @@ const AddendumGenerator = () => {
     y: number,
     maxWidth: number,
     lineHeight: number,
-    fontSize = 10,
+    fontSize = 9,
     fontStyle: "normal" | "bold" | "italic" | "bolditalic" = "normal",
   ) => {
     doc.setFont("helvetica", fontStyle);
@@ -770,6 +815,7 @@ const AddendumGenerator = () => {
     const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
     const effectiveDateDisplay = data.effectiveDate || data.issueDate;
     const issueYear = extractYear(data.issueDate);
+    const newEndDateDisplay = formatDate(data.newEndDate || data.contractEndDate);
     let y = margin;
 
     const ensureSpace = (space: number) => {
@@ -792,17 +838,17 @@ const AddendumGenerator = () => {
       doc.setDrawColor(200, 204, 209);
       doc.roundedRect(margin, y, contentWidth, headerHeight, 2, 2, "FD");
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(45, 55, 72);
       doc.text(title.toUpperCase(), margin + 4, y + 6);
       if (subtitle) {
         doc.setFont("helvetica", "italic");
-        doc.setFontSize(9);
+        doc.setFontSize(8);
         doc.text(subtitle, margin + contentWidth - 4, y + 6, { align: "right" });
       }
       y += headerHeight + 4;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       renderContent();
       y += 8;
     };
@@ -816,12 +862,12 @@ const AddendumGenerator = () => {
 
       ensureSpace(rowHeight);
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(55, 65, 81);
       doc.text(`${label.toUpperCase()}:`, margin + 3, y + 6);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       lines.forEach((line, idx) => {
         doc.text(line, margin + labelWidth, y + 6 + idx * lineHeight);
@@ -835,11 +881,12 @@ const AddendumGenerator = () => {
       leftValue: string | number | null,
       rightLabel: string,
       rightValue: string | number | null,
-      valueFontSize = 10,
+      valueFontSize = 9,
     ) => {
-      const columnWidth = (contentWidth - 8) / 2;
-      const labelWidth = 42;
-      const availableWidth = columnWidth - labelWidth - 6;
+      // Give the amount/suffix extra breathing room to avoid wrapping.
+      const columnWidth = (contentWidth - 2) / 2;
+      const labelWidth = 40;
+      const availableWidth = columnWidth - labelWidth + 12;
       const lineHeight = 5.5;
       const leftLines = doc.splitTextToSize(valueOrLine(leftValue), availableWidth);
       const rightLines = doc.splitTextToSize(valueOrLine(rightValue), availableWidth);
@@ -848,10 +895,10 @@ const AddendumGenerator = () => {
       ensureSpace(rowHeight);
 
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(55, 65, 81);
       doc.text(`${leftLabel.toUpperCase()}:`, margin + 3, y + 6);
-      doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 8 + 3, y + 6);
+      doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 2, y + 6);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(valueFontSize);
@@ -860,7 +907,7 @@ const AddendumGenerator = () => {
         doc.text(line, margin + labelWidth, y + 6 + idx * lineHeight);
       });
       rightLines.forEach((line, idx) => {
-        doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
+        doc.text(line, margin + columnWidth + labelWidth, y + 6 + idx * lineHeight);
       });
 
       y += rowHeight;
@@ -875,26 +922,29 @@ const AddendumGenerator = () => {
     ) => {
       const columnWidth = (contentWidth - 8) / 2;
       const labelWidth = 42;
-      const availableWidth = columnWidth - labelWidth - 6;
+      const availableWidth = columnWidth - labelWidth;
       const lineHeight = 5.5;
 
-      let suffixSize = 8;
+      let suffixSize = 6.5;
       let suffixDisplay = suffixText;
 
       const fits = (size: number, suffix: string) => {
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         const amountWidth = doc.getTextWidth(amountText);
         doc.setFontSize(size);
         const suffixWidth = doc.getTextWidth(` ${suffix}`);
         return amountWidth + suffixWidth <= availableWidth;
       };
 
-      while (!fits(suffixSize, suffixDisplay) && suffixSize > 6) {
+      while (!fits(suffixSize, suffixDisplay) && suffixSize > 5) {
         suffixSize -= 0.5;
       }
       if (!fits(suffixSize, suffixDisplay)) {
         suffixDisplay = suffixText.replace("per ", "/");
+        if (!fits(suffixSize, suffixDisplay)) {
+          suffixSize = 4.5;
+        }
       }
 
       const rightLines = doc.splitTextToSize(valueOrLine(rightValue), availableWidth);
@@ -902,20 +952,20 @@ const AddendumGenerator = () => {
 
       ensureSpace(rowHeight);
       doc.setFont("helvetica", "italic");
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setTextColor(55, 65, 81);
       doc.text(`${leftLabel.toUpperCase()}:`, margin + 3, y + 6);
       doc.text(`${rightLabel.toUpperCase()}:`, margin + columnWidth + 8 + 3, y + 6);
 
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       const amountX = margin + labelWidth;
       doc.text(amountText, amountX, y + 6);
       doc.setFontSize(suffixSize);
-      doc.text(` ${suffixDisplay}`, amountX + doc.getTextWidth(amountText) + 4, y + 6);
+      doc.text(` ${suffixDisplay}`, amountX + doc.getTextWidth(amountText), y + 6);
 
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       rightLines.forEach((line, idx) => {
         doc.text(line, margin + columnWidth + 8 + labelWidth, y + 6 + idx * lineHeight);
       });
@@ -926,18 +976,18 @@ const AddendumGenerator = () => {
     const addSection = (title: string, body: string) => {
       ensureSpace(12);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setTextColor(0, 0, 0);
       doc.text(title.toUpperCase(), margin, y);
       y += 6;
       doc.setTextColor(0, 0, 0);
-      y = addWrappedText(doc, body, margin, y, contentWidth, 6, 10, "normal") + 2;
+      y = addWrappedText(doc, body, margin, y, contentWidth, 6, 9, "normal") + 2;
       y += 2;
     };
 
     const addUnnumberedParagraph = (text: string) => {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       const lineHeight = 6;
       const paragraphSpacing = 2;
       const maxWidth = contentWidth;
@@ -953,7 +1003,7 @@ const AddendumGenerator = () => {
 
     const addNumberedParagraph = (index: number, text: string) => {
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       const label = `${index}.`;
       const labelWidth = doc.getTextWidth(`${label} `);
       const indent = labelWidth + 2; // small padding so wrapped lines align under text start
@@ -985,7 +1035,7 @@ const AddendumGenerator = () => {
       const headingHeight = 6;
       ensureSpace(headingHeight * 2);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       doc.text(title.toUpperCase(), margin, y);
       y += headingHeight;
@@ -1000,9 +1050,11 @@ const AddendumGenerator = () => {
       const derivedAge = usesId ? deriveAgeFromId(data.employeeIdNumber) : "";
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.setTextColor(0, 0, 0);
-    doc.text("ADDENDUM TO EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
+      const documentTitle =
+        data.addendumType === "extension" ? "TEMPORARY CONTRACT EXTENSION" : "ADDENDUM TO EMPLOYMENT CONTRACT";
+      doc.text(documentTitle, pageWidth / 2, y, { align: "center" });
       y += 12;
 
       drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
@@ -1033,39 +1085,60 @@ const AddendumGenerator = () => {
     ensureSpace(24);
 
     const contractRefDisplay = formatDate(data.contractReference);
+    const previousEndDateDisplay = formatDate(data.contractEndDate || data.contractReference);
     const recordEffectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
 
-    const clauses: ClauseDefinition[] = mergeClauses(
-      withClauseIds([
-        {
-          title: "Introduction",
-          body: fillClausePlaceholders(
-            "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them and dated [contract reference].",
-            contractRefDisplay,
-            recordEffectiveDisplay,
-          ),
-        },
-        {
-          title: "Recordal",
-          body: fillClausePlaceholders(
-            [
-              "This Addendum must be read together with that employment contract, and except as expressly amended herein, all terms and conditions thereof shall remain unchanged and of full force and effect.",
-              "Effective from [effective date], the employment contract is amended as set out below.",
-            ],
-            contractRefDisplay,
-            recordEffectiveDisplay,
-          ),
-        },
-        {
-          title: "Entire Agreement and Acknoweldgement",
-          body: [
-            "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
-            "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
-            "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
+    const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
+      {
+        title: "Introduction",
+        body:
+          data.addendumType === "extension"
+            ? `This Addendum is entered into by and between the Employer and the Employee to extend the temporary employment contract, which ends or ended on ${previousEndDateDisplay || "________________________"}.`
+            : fillClausePlaceholders(
+                "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them and dated [contract reference].",
+                contractRefDisplay,
+                recordEffectiveDisplay,
+              ),
+      },
+      {
+        title: "Recordal",
+        body: fillClausePlaceholders(
+          [
+            "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+            "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
           ],
-        },
-      ])
-    );
+          contractRefDisplay,
+          recordEffectiveDisplay,
+          newEndDateDisplay,
+        ),
+      },
+      ...(data.addendumType === "extension"
+        ? [
+            {
+              title: "Termination",
+              body: fillClausePlaceholders(
+                [
+                  "The temporary employment contract shall terminate automatically on [new end date], without notice.",
+                  "The Employee acknowledges and agrees that this extension does not create any expectation of further extension, renewal, or permanent or indefinite employment.",
+                ],
+                contractRefDisplay,
+                recordEffectiveDisplay,
+                newEndDateDisplay,
+              ),
+            },
+          ]
+        : []),
+      {
+        title: "Entire Agreement and Acknoweldgement",
+        body: [
+          "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
+          "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
+          "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
+        ],
+      },
+    ];
+
+    const clauses: ClauseDefinition[] = mergeClauses(withClauseIds(baseClauses));
 
     const clausesWithEdits = applyClauseEdits(clauses);
 
@@ -1107,7 +1180,7 @@ const AddendumGenerator = () => {
     const signingLine = `Done and Signed at ___________________________ on this _____ day of ____________________ ${issueYear}.`;
     ensureSpace(12);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
     doc.text(signingLine, margin, y);
     y += 16;
@@ -1116,12 +1189,12 @@ const AddendumGenerator = () => {
     const signatureBlockHeight = 12 + signatureLabels.length * 20;
     ensureSpace(signatureBlockHeight);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
+    doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text("SIGNATURES", margin, y);
     y += 12; // increased gap before first signature line
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8);
 
     signatureLabels.forEach((label) => {
       ensureSpace(20);
@@ -1134,7 +1207,7 @@ const AddendumGenerator = () => {
 
     const pageCount = doc.getNumberOfPages();
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
       const footerY = pageHeight - 10; // slightly lower for more space above
@@ -1205,9 +1278,12 @@ const AddendumGenerator = () => {
   };
 
   const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
-  const previewSubtitle = employeeFullName
-    ? `Review and edit the addendum to the employment contract for ${employeeFullName}.`
-    : "Review and edit the addendum to the employment contract.";
+  const previewSubtitle =
+    validatedPreview?.addendumType === "extension"
+      ? `Review and edit the extension to the temporary employment contract for ${employeeFullName || "the employee"}.`
+      : employeeFullName
+        ? `Review and edit the addendum to the employment contract for ${employeeFullName}.`
+        : "Review and edit the addendum to the employment contract.";
 
   if (loading) {
     return (
@@ -1530,10 +1606,13 @@ const AddendumGenerator = () => {
                           setFormData((prev) => ({
                             ...prev,
                             addendumType: value as AddendumType,
+                            contractReference: value === "extension" ? "" : prev.contractReference,
+                            contractEndDate: value === "extension" ? prev.contractEndDate : "",
+                            newEndDate: value === "extension" ? prev.newEndDate : "",
                           }))
                         }
                       >
-                        <SelectTrigger className="addendum-select focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-gray-900">
+                        <SelectTrigger className="addendum-select focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700">
                           <SelectValue
                             placeholder="Select addendum type"
                             className="data-[placeholder]:text-slate-400"
@@ -1579,41 +1658,115 @@ const AddendumGenerator = () => {
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="contractReference">Reference the date of issuing or signing of the contract this addendum applies to *</Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="contractReference"
-                          type="text"
-                          readOnly
-                          placeholder="Please select a date"
-                          value={formData.contractReference ? toDisplayDate(formData.contractReference) : ""}
-                          onClick={openContractReferencePicker}
-                          onFocus={openContractReferencePicker}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openContractReferencePicker();
+                    {formData.addendumType === "extension" ? (
+                      <>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="contractEndDate">What was the previous contract end date? *</Label>
+                          <div className="flex items-start gap-2">
+                            <Input
+                              id="contractEndDate"
+                              type="text"
+                              readOnly
+                              placeholder="Please select a date"
+                              value={formData.contractEndDate ? toDisplayDate(formData.contractEndDate) : ""}
+                              onClick={openContractEndDatePicker}
+                              onFocus={openContractEndDatePicker}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openContractEndDatePicker();
+                                }
+                              }}
+                              className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                            />
+                            <input
+                              ref={contractEndDatePickerRef}
+                              type="date"
+                              value={
+                                formData.contractEndDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.contractEndDate)
+                                  ? formData.contractEndDate
+                                  : ""
+                              }
+                              onChange={(e) => setFormData({ ...formData, contractEndDate: e.target.value })}
+                              className="sr-only"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="newEndDate">New End Date *</Label>
+                          <div className="flex items-start gap-2">
+                            <Input
+                              id="newEndDate"
+                              type="text"
+                              readOnly
+                              placeholder="Please select a date"
+                              value={formData.newEndDate ? toDisplayDate(formData.newEndDate) : ""}
+                              onClick={openNewEndDatePicker}
+                              onFocus={openNewEndDatePicker}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openNewEndDatePicker();
+                                }
+                              }}
+                              className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                            />
+                            <input
+                              ref={newEndDatePickerRef}
+                              type="date"
+                              value={
+                                formData.newEndDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.newEndDate)
+                                  ? formData.newEndDate
+                                  : ""
+                              }
+                              onChange={(e) => setFormData({ ...formData, newEndDate: e.target.value })}
+                              className="sr-only"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                    {formData.addendumType !== "extension" ? (
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label htmlFor="contractReference">Reference the date of issuing or signing of the contract this addendum applies to *</Label>
+                        <div className="flex items-start gap-2">
+                          <Input
+                            id="contractReference"
+                            type="text"
+                            readOnly
+                            placeholder="Please select a date"
+                            value={formData.contractReference ? toDisplayDate(formData.contractReference) : ""}
+                            onClick={openContractReferencePicker}
+                            onFocus={openContractReferencePicker}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openContractReferencePicker();
+                              }
+                            }}
+                            aria-required="true"
+                            className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                          />
+                          <input
+                            ref={contractReferencePickerRef}
+                            type="date"
+                            value={
+                              formData.contractReference && /^\d{4}-\d{2}-\d{2}$/.test(formData.contractReference)
+                                ? formData.contractReference
+                                : ""
                             }
-                          }}
-                          aria-required="true"
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
-                        />
-                        <input
-                          ref={contractReferencePickerRef}
-                          type="date"
-                          value={
-                            formData.contractReference && /^\d{4}-\d{2}-\d{2}$/.test(formData.contractReference)
-                              ? formData.contractReference
-                              : ""
-                          }
-                          onChange={(e) => setFormData({ ...formData, contractReference: e.target.value })}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
+                            onChange={(e) => setFormData({ ...formData, contractReference: e.target.value })}
+                            className="sr-only"
+                            aria-hidden="true"
+                            tabIndex={-1}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -1826,6 +1979,8 @@ const AddendumGenerator = () => {
               const passportDisplay = usesId ? "--" : validatedPreview.passportNumber || "--";
               const contractRefDisplay = formatDate(validatedPreview.contractReference);
               const effectiveDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
+              const newEndDateDisplay = formatDate(validatedPreview.newEndDate || validatedPreview.contractEndDate);
+              const previousEndDateDisplay = formatDate(validatedPreview.contractEndDate || validatedPreview.contractReference);
               const annualLeaveText = `The Employee is entitled to ${validatedPreview.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
               const DualRow = ({
@@ -1851,37 +2006,57 @@ const AddendumGenerator = () => {
                 </div>
               );
 
-              const clauses: ClauseDefinition[] = mergeClauses(
-                withClauseIds([
-                  {
-                    title: "Introduction",
-                    body: fillClausePlaceholders(
-                      "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them dated [contract reference].",
-                      contractRefDisplay,
-                      effectiveDisplay,
-                    ),
-                  },
-                  {
-                    title: "Recordal",
-                    body: fillClausePlaceholders(
-                      [
-                        "This Addendum must be read together with that employment contract, and except as expressly amended herein, all terms and conditions thereof shall remain unchanged and of full force and effect.",
-                        "Effective from [effective date], the employment contract is amended as set out below.",
-                      ],
-                      contractRefDisplay,
-                      effectiveDisplay,
-                    ),
-                  },
-                  {
-                    title: "Entire Agreement and Acknoweldgement",
-                    body: [
-                      "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
-                      "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
-                      "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
-                    ],
-                  },
-                ])
-              );
+    const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
+      {
+        title: "Introduction",
+        body:
+          validatedPreview.addendumType === "extension"
+            ? `This Addendum is entered into by and between the Employer and the Employee to extend the temporary employment contract, which ends or ended on ${previousEndDateDisplay || "________________________"}.`
+            : fillClausePlaceholders(
+                "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them dated [contract reference].",
+                contractRefDisplay,
+                effectiveDisplay,
+              ),
+      },
+      {
+        title: "Recordal",
+        body: fillClausePlaceholders(
+          [
+            "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+            "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
+          ],
+          contractRefDisplay,
+          effectiveDisplay,
+          newEndDateDisplay,
+        ),
+      },
+      ...(validatedPreview.addendumType === "extension"
+        ? [
+            {
+              title: "Termination",
+              body: fillClausePlaceholders(
+                [
+                  "The temporary employment contract shall terminate automatically on [new end date], without notice.",
+                  "The Employee acknowledges and agrees that this extension does not create any expectation of further extension, renewal, or permanent or indefinite employment.",
+                ],
+                contractRefDisplay,
+                effectiveDisplay,
+                newEndDateDisplay,
+              ),
+            },
+          ]
+        : []),
+      {
+        title: "Entire Agreement and Acknoweldgement",
+        body: [
+          "This Addendum constitutes the entire agreement between the parties in respect of the amendments recorded herein. No amendment to this Addendum shall be valid unless reduced to writing and signed by both parties.",
+          "By signing this Addendum, the parties acknowledge that they have read and understood its contents and agree to be bound by its terms.",
+          "Save as expressly amended by this Addendum, all terms and conditions of the employment contract remain unchanged and of full force and effect.",
+        ],
+      },
+    ];
+
+    const clauses: ClauseDefinition[] = mergeClauses(withClauseIds(baseClauses));
 
               const clausesWithEdits = applyClauseEdits(clauses);
 

@@ -179,61 +179,14 @@ type FirstPagePreviewProps = {
 const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPagePreviewProps) => {
   const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
   const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
-  const effectiveDateDisplay = formatDate(data.effectiveDate || data.issueDate);
   const usesId = data.idType === "id";
-  const idDisplay = usesId ? data.employeeIdNumber : "--";
-  const passportDisplay = usesId ? "--" : data.passportNumber || "--";
+  const idDisplay = usesId ? data.employeeIdNumber : data.passportNumber || "--";
+  const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
+  const companyNameDisplay = displayValue(profile?.company_name);
+  const regNumberDisplay = displayValue(profile?.registration_number);
   const documentTitle = data.addendumType === "extension" ? "Temporary Contract Extension" : "Addendum to Employment Contract";
-
-  const SectionBlock = ({
-    title,
-    subtitle,
-    children: sectionChildren,
-  }: {
-    title: string;
-    subtitle?: string;
-    children: ReactNode;
-  }) => (
-    <div className="space-y-2">
-      <div className="w-full flex items-center justify-between rounded-md bg-slate-100 border border-slate-300 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
-        <span>{title}</span>
-        {subtitle ? <span className="ml-2 italic normal-case font-medium text-gray-600">{subtitle}</span> : null}
-      </div>
-      <div className="space-y-1.5 px-1 text-[11px] text-gray-900">
-        {sectionChildren}
-      </div>
-    </div>
-  );
-
-  const Row = ({ label, value }: { label: string; value?: string | number | null }) => (
-    <div className="grid grid-cols-[120px_1fr] gap-2 text-[11px]">
-      <span className="font-semibold uppercase text-gray-700">{label}:</span>
-      <span className="text-gray-900">{displayValue(value)}</span>
-    </div>
-  );
-
-  const DualRow = ({
-    leftLabel,
-    leftValue,
-    rightLabel,
-    rightValue,
-  }: {
-    leftLabel: string;
-    leftValue?: string | number | null;
-    rightLabel: string;
-    rightValue?: string | number | null;
-  }) => (
-    <div className="grid grid-cols-2 gap-4 text-[11px]">
-      <div className="grid grid-cols-[120px_1fr] gap-2">
-        <span className="font-semibold uppercase text-gray-700 whitespace-nowrap">{leftLabel}:</span>
-        <span className="text-gray-900">{displayValue(leftValue)}</span>
-      </div>
-      <div className="grid grid-cols-[120px_1fr] gap-2">
-        <span className="font-semibold uppercase text-gray-700 whitespace-nowrap">{rightLabel}:</span>
-        <span className="text-gray-900">{displayValue(rightValue)}</span>
-      </div>
-    </div>
-  );
+  const employerLabel = "Hereinafter referred to as the Employer";
+  const employeeLabel = "Hereinafter referred to as the Employee";
 
   return (
     <div
@@ -242,25 +195,32 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
     >
       <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">{documentTitle}</h1>
 
-      <div className="space-y-6 flex-1">
-        <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
-          <Row label="Company name" value={profile?.company_name} />
-          <Row label="Reg. number" value={profile?.registration_number} />
-        </SectionBlock>
+      <div className="space-y-5 flex-1 text-sm text-gray-900">
+        <p className="text-xs uppercase tracking-wide text-gray-600">Entered into by and between:</p>
 
-        <SectionBlock title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")'>
-          <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
-          <DualRow leftLabel="ID no." leftValue={idDisplay} rightLabel="Passport no." rightValue={passportDisplay} />
-        </SectionBlock>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-black">{companyNameDisplay}</p>
+              <p className="text-xs text-gray-600">Reg. number: {regNumberDisplay}</p>
+            </div>
+            <p className="text-[11px] uppercase tracking-wide text-gray-600 text-right">{employerLabel}</p>
+          </div>
 
-        <SectionBlock title="C. Addendum details" subtitle='(Hereinafter referred to as "this Addendum")'>
-          <DualRow
-            leftLabel="Type"
-            leftValue={addendumTypeDisplay}
-            rightLabel="Effective date"
-            rightValue={effectiveDateDisplay}
-          />
-        </SectionBlock>
+          <div className="text-center text-xs font-semibold text-gray-500">and</div>
+
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-black">{employeeNameDisplay}</p>
+              <p className="text-xs text-gray-600">
+                {usesId ? "ID no." : "Passport no."}: {displayValue(idDisplay)}
+              </p>
+            </div>
+            <p className="text-[11px] uppercase tracking-wide text-gray-600 text-right">{employeeLabel}</p>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200" />
       </div>
 
       {children ? <div className="mt-6">{children}</div> : null}
@@ -1045,9 +1005,10 @@ const AddendumGenerator = () => {
     const addInformationPage = () => {
       const effectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
       const usesId = data.idType === "id";
-      const idDisplay = usesId ? data.employeeIdNumber : "--";
-      const passportDisplay = usesId ? "--" : data.passportNumber || "";
-      const derivedAge = usesId ? deriveAgeFromId(data.employeeIdNumber) : "";
+      const idDisplay = usesId ? data.employeeIdNumber : data.passportNumber || "";
+      const companyName = profile?.company_name || "________________________";
+      const regNumber = profile?.registration_number || "________________________";
+      const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ") || "________________________";
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
@@ -1057,20 +1018,48 @@ const AddendumGenerator = () => {
       doc.text(documentTitle, pageWidth / 2, y, { align: "center" });
       y += 12;
 
-      drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
-        drawSingleRow("Company name", profile?.company_name);
-        drawSingleRow("Reg. number", profile?.registration_number);
-      });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Entered into by and between:", margin, y);
+      y += 8;
 
-      drawSection("B. Employee details", '(Hereinafter referred to as "the Employee")', () => {
-        drawDualRow("Surname", data.employeeSurname, "Name(s)", data.employeeName);
-        drawDualRow("ID No.", idDisplay, "Passport No.", passportDisplay || "--");
-      });
+      // Employer block
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(companyName, margin, y);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.text("Hereinafter referred to as the Employer", margin + contentWidth, y, { align: "right" });
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(`Reg. number: ${valueOrLine(regNumber)}`, margin, y);
+      y += 10;
 
-      drawSection("C. Addendum details", '(Hereinafter referred to as "this Addendum")', () => {
-        drawDualRow("Type", addendumTypeDisplay, "Effective date", effectiveDisplay);
-      });
+      // Separator
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.text("and", margin + contentWidth / 2, y, { align: "center" });
+      y += 8;
 
+      // Employee block
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(valueOrLine(employeeFullName), margin, y);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.text("Hereinafter referred to as the Employee", margin + contentWidth, y, { align: "right" });
+      y += 5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      const idLabel = usesId ? "ID no." : "Passport no.";
+      doc.text(`${idLabel}: ${valueOrLine(idDisplay)}`, margin, y);
+      y += 10;
+
+      // Divider
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, margin + contentWidth, y);
+      y += 10;
     };
 
     addInformationPage();

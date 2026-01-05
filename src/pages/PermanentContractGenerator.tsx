@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -583,10 +584,10 @@ const PermanentContractGenerator = () => {
         className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
         style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
       >
-        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Employment Contract</h1>
+        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Employment Information</h1>
 
         <div className="space-y-6 flex-1">
-          <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
+          <SectionBlock title="A. Employer details">
             <Row label="Company name" value={profile?.company_name} />
             <Row label="Reg. number" value={profile?.registration_number} />
             <Row label="Address" value={profile?.physical_address} />
@@ -594,7 +595,7 @@ const PermanentContractGenerator = () => {
             <Row label="Contact" value={profile?.company_contact} />
           </SectionBlock>
 
-          <SectionBlock title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")'>
+          <SectionBlock title="B. Employee details">
             <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
             <DualRow leftLabel="ID no." leftValue={idDisplay} rightLabel="Passport no." rightValue={passportDisplay} />
             <DualRow leftLabel="Age" leftValue={derivedAge} rightLabel="Nationality" rightValue={data.nationality} />
@@ -855,7 +856,7 @@ const PermanentContractGenerator = () => {
       const headingHeight = 6;
       ensureSpace(headingHeight * 2);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       doc.text(title.toUpperCase(), margin, y);
       y += headingHeight;
@@ -871,10 +872,10 @@ const PermanentContractGenerator = () => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text("EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
+      doc.text("EMPLOYMENT INFORMATION", pageWidth / 2, y, { align: "center" });
       y += 12;
 
-      drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
+      drawSection("A. Employer details", undefined, () => {
         drawSingleRow("Company name", profile?.company_name);
         drawSingleRow("Reg. number", profile?.registration_number);
         drawSingleRow("Address", profile?.physical_address);
@@ -882,7 +883,7 @@ const PermanentContractGenerator = () => {
         drawSingleRow("Contact", profile?.company_contact);
       });
 
-      drawSection("B. Employee details", '(Hereinafter referred to as "the Employee")', () => {
+      drawSection("B. Employee details", undefined, () => {
         drawDualRow("Surname", data.employeeSurname, "Name(s)", data.employeeName);
         drawDualRow("ID No.", idDisplay, "Passport No.", passportDisplay || "--");
         drawDualRow("Age", derivedAge, "Nationality", data.nationality);
@@ -912,7 +913,58 @@ const PermanentContractGenerator = () => {
       y = margin;
     };
 
+    const addEnteredIntoHeader = () => {
+      const companyName = valueOrLine(profile?.company_name).toUpperCase();
+      const regNumber = valueOrLine(profile?.registration_number);
+      const employeeFullName = valueOrLine(
+        [data.employeeName, data.employeeSurname].filter(Boolean).join(" "),
+      ).toUpperCase();
+      const isSouthAfrican = data.nationality === "South African";
+      const idLabel = isSouthAfrican ? "ID no." : "Passport no.";
+      const idDisplay = isSouthAfrican ? data.employeeIdNumber : data.passportNumber || "";
+
+      ensureSpace(58);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("PERMANENT EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
+      y += 10;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Entered into by and between:", margin, y);
+      y += 8;
+
+      doc.setFont("helvetica", "bold");
+      doc.text(companyName, margin, y);
+      y += 5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Reg. number: ${regNumber}`, margin, y);
+      y += 9;
+
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.text("and", margin, y);
+      y += 9;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(employeeFullName, margin, y);
+      y += 5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`${idLabel}: ${valueOrLine(idDisplay)}`, margin, y);
+      y += 12;
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, margin + contentWidth, y);
+      y += 10;
+    };
+
     addInformationPage();
+    addEnteredIntoHeader();
 
     const annualLeaveText = `The Employee is entitled to ${data.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
@@ -1152,7 +1204,7 @@ const PermanentContractGenerator = () => {
 
     const signatureLabels = ["For the Employer", "Employer Witness", "Employee", "Employee Witness"];
 
-    // Place signing line on the page above the signature page
+    // Place signing line and keep signatures on the same page where space allows
     const signingLine = `Done and Signed at ___________________________ on this _____ day of ____________________ ${issueYear}.`;
     ensureSpace(12);
     doc.setFont("helvetica", "normal");
@@ -1161,9 +1213,8 @@ const PermanentContractGenerator = () => {
     doc.text(signingLine, margin, y);
     y += 16;
 
-    // Start a fresh page for the signature block
-    doc.addPage();
-    y = margin;
+    const signatureBlockHeight = 12 + signatureLabels.length * 20;
+    ensureSpace(signatureBlockHeight);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -1187,8 +1238,14 @@ const PermanentContractGenerator = () => {
     doc.setFontSize(9);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
+      // Top-right page number; does not shift layout content
+      doc.setFontSize(7);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, margin - 6, { align: "right" });
+      doc.setFontSize(9);
+
       const footerY = pageHeight - 10;
-      doc.text(`Page ${i} of ${pageCount}`, margin, footerY, { align: "left" });
+      doc.setDrawColor(226, 232, 240); // subtle divider above footer text
+      doc.line(margin, footerY - 8, margin + contentWidth, footerY - 8);
       doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
 
@@ -1267,65 +1324,65 @@ const PermanentContractGenerator = () => {
 
   return (
     <DashboardLayout>
-      {showEmployeeHint && (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
-            <span
-              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
-              aria-hidden="true"
-            ></span>
-            <div className="pointer-events-auto flex items-center gap-2">
-              <span className="text-orange-600">
-                TIP!{" "}
-                <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
-                  Add the employee to your Employee List before generating a contract
-                  <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
-                </span>
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                  navigate("/employees");
-                }}
-              >
-                Employees page
-              </button>
-              <button
-                type="button"
-                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                }}
-                aria-label="Dismiss employee guidance message"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="space-y-6">
+      {showEmployeeHint && typeof document !== "undefined"
+        ? createPortal(
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+              <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
+                  aria-hidden="true"
+                ></span>
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <span className="text-orange-600">
+                    TIP!{" "}
+                    <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                      Add the employee to your Employee List before generating a contract
+                      <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                      navigate("/employees");
+                    }}
+                  >
+                    Employees page
+                  </button>
+                  <button
+                    type="button"
+                    className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                    }}
+                    aria-label="Dismiss employee guidance message"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      <div className="space-y-6" style={{ scrollbarGutter: "stable" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Contracts</p>
-            <h1 className="text-3xl font-bold text-gray-900">Permanent Employment Contract</h1>
-            <p className="text-base text-gray-600">
-              Fill out the details in the quick multistep form to generate a permanent contract.
+            <button
+              type="button"
+              onClick={() => navigate("/documents/contracts")}
+              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
+            >
+              Documents &gt; Contracts
+            </button>
+            <h1 className="text-xl font-bold uppercase text-blue-700">Permanent Contract</h1>
+            <p className="text-xs text-gray-600">
+              Fill out the details in the quick multistep form below to generate a permanent employment contract.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/documents/contracts")}
-            className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-          >
-            <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
-            Back
-          </Button>
         </div>
 
         <div className="flex items-center justify-center gap-4">

@@ -318,34 +318,22 @@ const documentOptions: DocumentOption[] = [
     active: true,
   },
   {
-    label: "Code of Conduct",
-    description: "Share organisation-specific conduct guidelines (coming soon).",
-    path: "/documents/discipline/code-of-conduct/preview",
-    active: false,
+    label: "Permanent Contract",
+    description: "Generate a permanent employment contract.",
+    path: "/documents/contracts/permanent",
+    active: true,
   },
   {
-    label: "Notice of Hearing",
-    description: "Prepare notices with hearing details (coming soon).",
-    path: "/documents/discipline/notice-of-hearing",
-    active: false,
+    label: "Temporary Contract",
+    description: "Generate a temporary employment contract.",
+    path: "/documents/contracts/temporary",
+    active: true,
   },
   {
-    label: "Notice of Termination",
-    description: "Draft termination notices aligned with outcomes (coming soon).",
-    path: "/documents/discipline/notice-of-termination",
-    active: false,
-  },
-  {
-    label: "Notice of Counselling",
-    description: "Document informal counselling conversations (coming soon).",
-    path: "/documents/discipline/notice-of-counselling",
-    active: false,
-  },
-  {
-    label: "Counselling Report",
-    description: "Capture decisions and actions from counselling (coming soon).",
-    path: "/documents/discipline/counselling-report",
-    active: false,
+    label: "Addendum",
+    description: "Generate an addendum for an existing contract.",
+    path: "/documents/contracts/addendum",
+    active: true,
   },
 ];
 
@@ -2059,12 +2047,20 @@ const Employees = () => {
   return (
     <DashboardLayout>
       {!isProfilePanelOpen ? (
-        <div className="space-y-4">
+        <div className="space-y-4 -ml-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Employees</p>
-            <h1 className="text-3xl font-bold text-gray-900">Employee List</h1>
-            <p className="text-base text-gray-600">
+            <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+              <span className="underline-offset-2 rounded-sm">Home</span>
+              <span aria-hidden="true" className="text-slate-500">
+                &gt;
+              </span>
+              <span className="underline-offset-2 rounded-sm" aria-current="page">
+                Employees
+              </span>
+            </div>
+            <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
+            <p className="text-xs text-gray-600">
               Browse, search, and manage your employees and attach their documents.
             </p>
           </div>
@@ -2625,13 +2621,13 @@ const Employees = () => {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
-            Generate Document
+            Documents
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs text-muted-foreground">
             Select a document to generate for this employee.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="space-y-5">
           <div className="space-y-1">
             <Label htmlFor="document-select">Choose a document</Label>
             <Select
@@ -2662,9 +2658,6 @@ const Employees = () => {
           >
             Go
           </Button>
-          <p className="text-xs text-muted-foreground">
-            Select a document and click Go. Inactive documents are marked as coming soon.
-          </p>
         </div>
       </DialogContent>
     </Dialog>

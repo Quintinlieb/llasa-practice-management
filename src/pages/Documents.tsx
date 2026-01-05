@@ -40,7 +40,7 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { label: "Permanent Contract", href: "/documents/contracts/permanent", active: true },
       { label: "Temporary Contract", href: "/documents/contracts/temporary", active: true },
-      { label: "Addendum to Contract", href: "/documents/contracts/addendum", active: true },
+      { label: "Addendum", href: "/documents/contracts/addendum", active: true },
     ],
   },
   {
@@ -70,11 +70,19 @@ const Documents = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
+      <div className="space-y-8 -ml-6 pr-6">
         <header className="space-y-1">
-          <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Documents</p>
-          <h1 className="text-3xl font-bold text-gray-900">Generate HR Documents</h1>
-          <p className="text-base text-gray-600 max-w-3xl">
+          <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+            <span className="underline-offset-2 rounded-sm">Home</span>
+            <span aria-hidden="true" className="text-slate-500">
+              &gt;
+            </span>
+            <span className="underline-offset-2 rounded-sm" aria-current="page">
+              Documents
+            </span>
+          </div>
+          <h1 className="text-xl font-bold uppercase text-blue-700">Generate HR Documents</h1>
+          <p className="text-xs text-gray-600 max-w-3xl">
             One hub for your HR paperwork. Generate the documents you need instantly.
           </p>
         </header>

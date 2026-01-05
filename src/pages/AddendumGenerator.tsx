@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -184,7 +185,12 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
   const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")).toUpperCase();
   const companyNameDisplay = displayValue(profile?.company_name).toUpperCase();
   const regNumberDisplay = displayValue(profile?.registration_number);
-  const documentTitle = data.addendumType === "extension" ? "Temporary Contract Extension" : "Addendum to Employment Contract";
+  const documentTitle =
+    data.addendumType === "extension"
+      ? "Temporary Contract Extension"
+      : data.addendumType === "renewal"
+        ? "Temporary Contract Renewal"
+        : "Addendum to Employment Contract";
   const employerLabel = 'Hereinafter referred to as "the Employer"';
   const employeeLabel = 'Hereinafter referred to as "the Employee"';
 
@@ -492,7 +498,7 @@ const AddendumGenerator = () => {
   const isEmploymentStepComplete = useMemo(
     () => {
       if (!formData.addendumType || !formData.effectiveDate) return false;
-      if (formData.addendumType === "extension") {
+      if (formData.addendumType === "extension" || formData.addendumType === "renewal") {
         return Boolean(formData.contractEndDate && formData.newEndDate);
       }
       return Boolean(formData.contractReference);
@@ -649,6 +655,9 @@ const AddendumGenerator = () => {
       }
     };
 
+    const isExtension = formData.addendumType === "extension";
+    const isRenewal = formData.addendumType === "renewal";
+
     checkRequired(formData.employerContact, "Employer contact");
     checkRequired(formData.employerEmail, "Employer email");
     checkRequired(formData.employeeName, "Employee name");
@@ -662,12 +671,11 @@ const AddendumGenerator = () => {
 
     checkRequired(formData.addendumType, "Addendum type");
     checkRequired(formData.effectiveDate, "Effective date");
-    if (formData.addendumType !== "extension") {
-      checkRequired(formData.contractReference, "Contract reference");
-    }
-    if (formData.addendumType === "extension") {
+    if (isExtension || isRenewal) {
       checkRequired(formData.contractEndDate, "Contract end date");
       checkRequired(formData.newEndDate, "New end date");
+    } else {
+      checkRequired(formData.contractReference, "Contract reference");
     }
 
     if (missingFields.length) {
@@ -1014,7 +1022,11 @@ const AddendumGenerator = () => {
       doc.setFontSize(13);
       doc.setTextColor(0, 0, 0);
       const documentTitle =
-        data.addendumType === "extension" ? "TEMPORARY CONTRACT EXTENSION" : "ADDENDUM TO EMPLOYMENT CONTRACT";
+        data.addendumType === "extension"
+          ? "TEMPORARY CONTRACT EXTENSION"
+          : data.addendumType === "renewal"
+            ? "TEMPORARY CONTRACT RENEWAL"
+            : "ADDENDUM TO EMPLOYMENT CONTRACT";
       doc.text(documentTitle, pageWidth / 2, y, { align: "center" });
       y += 10;
 
@@ -1082,22 +1094,21 @@ const AddendumGenerator = () => {
     const contractRefDisplay = formatDate(data.contractReference);
     const previousEndDateDisplay = formatDate(data.contractEndDate || data.contractReference);
     const recordEffectiveDisplay = formatDate(effectiveDateDisplay || data.issueDate);
+    const isExtension = data.addendumType === "extension";
+    const isRenewal = data.addendumType === "renewal";
 
-    const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
-      {
-        title: "Introduction",
-        body:
-          data.addendumType === "extension"
-            ? `This Addendum is entered into by and between the Employer and the Employee to extend the temporary employment contract, which ends or ended on ${previousEndDateDisplay || "________________________"}.`
-            : fillClausePlaceholders(
-                "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them and dated [contract reference].",
-                contractRefDisplay,
-                recordEffectiveDisplay,
-              ),
-      },
-      {
-        title: "Recordal",
-        body: fillClausePlaceholders(
+    const introductionBody = isExtension
+      ? `This Addendum is entered into by and between the Employer and the Employee to extend the temporary employment contract, which ends or ended on ${previousEndDateDisplay || "________________________"}.`
+      : isRenewal
+        ? "The Employer and the Employee hereby agree to renew the temporary employment relationship on a temporary basis following the termination of the previous temporary employment contract."
+        : fillClausePlaceholders(
+            "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them and dated [contract reference].",
+            contractRefDisplay,
+            recordEffectiveDisplay,
+          );
+
+    const recordalBody = isExtension
+      ? fillClausePlaceholders(
           [
             "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
             "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
@@ -1105,9 +1116,33 @@ const AddendumGenerator = () => {
           contractRefDisplay,
           recordEffectiveDisplay,
           newEndDateDisplay,
-        ),
+        )
+      : isRenewal
+        ? [
+            `The parties record that the previous temporary employment contract terminated on ${previousEndDateDisplay || "________________________"}.`,
+            `This Addendum records the renewal of the employment relationship and constitutes a new fixed-term contract of employment for the period commencing on ${recordEffectiveDisplay || "________________________"} and ending on ${newEndDateDisplay || "________________________"}.`,
+            "Save as expressly amended by this Addendum, all terms and conditions of the previous employment contract shall apply to the renewed fixed-term period of employment.",
+          ]
+        : fillClausePlaceholders(
+            [
+              "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+              "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
+            ],
+            contractRefDisplay,
+            recordEffectiveDisplay,
+            newEndDateDisplay,
+          );
+
+    const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
+      {
+        title: "Introduction",
+        body: introductionBody,
       },
-      ...(data.addendumType === "extension"
+      {
+        title: "Recordal",
+        body: recordalBody,
+      },
+      ...(isExtension
         ? [
             {
               title: "Termination",
@@ -1122,6 +1157,16 @@ const AddendumGenerator = () => {
               ),
             },
           ]
+        : isRenewal
+          ? [
+              {
+                title: "Termination",
+                body: [
+                  `The renewed temporary employment contract shall terminate automatically on ${newEndDateDisplay || "________________________"}, without notice.`,
+                  "The Employee acknowledges and agrees that this renewal does not create any expectation of further renewal, extension, or permanent or indefinite employment.",
+                ],
+              },
+            ]
         : []),
       {
         title: "Entire Agreement and Acknoweldgement",
@@ -1205,10 +1250,14 @@ const AddendumGenerator = () => {
     doc.setFontSize(8);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
+      // Top-right page number (does not affect layout flow)
+      doc.setFontSize(7);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, margin - 6, { align: "right" });
+      doc.setFontSize(8);
+
       const footerY = pageHeight - 10; // slightly lower for more space above
       doc.setDrawColor(226, 232, 240); // subtle divider above footer text
       doc.line(margin, footerY - 8, margin + contentWidth, footerY - 8);
-      doc.text(`Page ${i} of ${pageCount}`, margin, footerY, { align: "left" });
       doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
 
@@ -1290,65 +1339,65 @@ const AddendumGenerator = () => {
 
   return (
     <DashboardLayout>
-      {showEmployeeHint && (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
-            <span
-              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
-              aria-hidden="true"
-            ></span>
-            <div className="pointer-events-auto flex items-center gap-2">
-              <span className="text-orange-600">
-                TIP!{" "}
-                <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
-                  Add the employee to your Employee List before generating a contract
-                  <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
-                </span>
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                  navigate("/employees");
-                }}
-              >
-                Employees page
-              </button>
-              <button
-                type="button"
-                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                }}
-                aria-label="Dismiss employee guidance message"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="space-y-6">
+      {showEmployeeHint && typeof document !== "undefined"
+        ? createPortal(
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+              <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
+                  aria-hidden="true"
+                ></span>
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <span className="text-orange-600">
+                    TIP!{" "}
+                    <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                      Add the employee to your Employee List before generating a contract
+                      <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                      navigate("/employees");
+                    }}
+                  >
+                    Employees page
+                  </button>
+                  <button
+                    type="button"
+                    className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                    }}
+                    aria-label="Dismiss employee guidance message"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      <div className="space-y-6" style={{ scrollbarGutter: "stable" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Addendum</p>
-            <h1 className="text-3xl font-bold text-gray-900">Addendum to Contract</h1>
-            <p className="text-base text-gray-600">
-              Fill out the details in the quick multistep form to generate an addendum.
+            <button
+              type="button"
+              onClick={() => navigate("/documents/contracts")}
+              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
+            >
+              Documents &gt; Contracts
+            </button>
+            <h1 className="text-xl font-bold uppercase text-blue-700">Addendum</h1>
+            <p className="text-xs text-gray-600">
+              Fill out the details in the quick multistep form below to generate an addendum to an employee&apos;s contract.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/documents/contracts")}
-            className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-          >
-            <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
-            Back
-          </Button>
         </div>
 
         <div className="flex items-center justify-center gap-4">
@@ -1597,15 +1646,17 @@ const AddendumGenerator = () => {
                       <Label htmlFor="addendumType">Addendum Type *</Label>
                       <Select
                         value={formData.addendumType}
-                        onValueChange={(value) =>
+                        onValueChange={(value) => {
+                          const nextType = value as AddendumType;
                           setFormData((prev) => ({
                             ...prev,
-                            addendumType: value as AddendumType,
-                            contractReference: value === "extension" ? "" : prev.contractReference,
-                            contractEndDate: value === "extension" ? prev.contractEndDate : "",
-                            newEndDate: value === "extension" ? prev.newEndDate : "",
-                          }))
-                        }
+                            addendumType: nextType,
+                            contractReference: nextType === "general" ? prev.contractReference : "",
+                            contractEndDate:
+                              nextType === "extension" || nextType === "renewal" ? prev.contractEndDate : "",
+                            newEndDate: nextType === "extension" || nextType === "renewal" ? prev.newEndDate : "",
+                          }));
+                        }}
                       >
                         <SelectTrigger className="addendum-select focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700">
                           <SelectValue
@@ -1653,7 +1704,7 @@ const AddendumGenerator = () => {
                         />
                       </div>
                     </div>
-                    {formData.addendumType === "extension" ? (
+                    {formData.addendumType === "extension" || formData.addendumType === "renewal" ? (
                       <>
                         <div className="space-y-1.5">
                           <Label htmlFor="contractEndDate">What was the previous contract end date? *</Label>
@@ -1725,7 +1776,7 @@ const AddendumGenerator = () => {
                         </div>
                       </>
                     ) : null}
-                    {formData.addendumType !== "extension" ? (
+                    {formData.addendumType === "general" ? (
                       <div className="space-y-1.5 md:col-span-2">
                         <Label htmlFor="contractReference">Reference the date of issuing or signing of the contract this addendum applies to *</Label>
                         <div className="flex items-start gap-2">
@@ -2001,31 +2052,52 @@ const AddendumGenerator = () => {
                 </div>
               );
 
+    const isExtension = validatedPreview.addendumType === "extension";
+    const isRenewal = validatedPreview.addendumType === "renewal";
+
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
         title: "Introduction",
         body:
-          validatedPreview.addendumType === "extension"
+          isExtension
             ? `This Addendum is entered into by and between the Employer and the Employee to extend the temporary employment contract, which ends or ended on ${previousEndDateDisplay || "________________________"}.`
-            : fillClausePlaceholders(
-                "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them dated [contract reference].",
-                contractRefDisplay,
-                effectiveDisplay,
-              ),
+            : isRenewal
+              ? "The Employer and the Employee hereby agree to renew the temporary employment relationship on a temporary basis following the termination of the previous temporary employment contract."
+              : fillClausePlaceholders(
+                  "This Addendum is entered into by and between the Employer and Employee to amend the employment contract concluded between them dated [contract reference].",
+                  contractRefDisplay,
+                  effectiveDisplay,
+                ),
       },
       {
         title: "Recordal",
-        body: fillClausePlaceholders(
-          [
-            "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
-            "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
-          ],
-          contractRefDisplay,
-          effectiveDisplay,
-          newEndDateDisplay,
-        ),
+        body: isExtension
+          ? fillClausePlaceholders(
+              [
+                "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+                "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
+              ],
+              contractRefDisplay,
+              effectiveDisplay,
+              newEndDateDisplay,
+            )
+          : isRenewal
+            ? [
+                `The parties record that the previous temporary employment contract terminated on ${previousEndDateDisplay || "________________________"}.`,
+                `This Addendum records the renewal of the employment relationship and constitutes a new fixed-term contract of employment for the period commencing on ${effectiveDisplay || "________________________"} and ending on ${newEndDateDisplay || "________________________"}.`,
+                "Save as expressly amended by this Addendum, all terms and conditions of the previous employment contract shall apply to the renewed fixed-term period of employment.",
+              ]
+            : fillClausePlaceholders(
+                [
+                  "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
+                  "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
+                ],
+                contractRefDisplay,
+                effectiveDisplay,
+                newEndDateDisplay,
+              ),
       },
-      ...(validatedPreview.addendumType === "extension"
+      ...(isExtension
         ? [
             {
               title: "Termination",
@@ -2040,6 +2112,16 @@ const AddendumGenerator = () => {
               ),
             },
           ]
+        : isRenewal
+          ? [
+              {
+                title: "Termination",
+                body: [
+                  `The renewed temporary employment contract shall terminate automatically on ${newEndDateDisplay || "________________________"}, without notice.`,
+                  "The Employee acknowledges and agrees that this renewal does not create any expectation of further renewal, extension, or permanent or indefinite employment.",
+                ],
+              },
+            ]
         : []),
       {
         title: "Entire Agreement and Acknoweldgement",

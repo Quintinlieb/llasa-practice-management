@@ -774,25 +774,22 @@ const WarningGenerator = () => {
   return (
     <DashboardLayout>
       <style>{pulseShadowStyles}</style>
-      <div className="space-y-6">
+      <div className="space-y-6 -ml-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Discipline</p>
-            <h1 className="text-3xl font-bold text-gray-900">Generate Written Warning</h1>
-            <p className="text-base text-gray-600">Complete the form below to generate a compliant written warning.</p>
+            <button
+              type="button"
+              onClick={() => navigate("/documents/discipline")}
+              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
+            >
+              Documents &gt; Discipline
+            </button>
+            <h1 className="text-xl font-bold uppercase text-blue-700">Generate Written Warning</h1>
+            <p className="text-xs text-gray-600">Complete the form below to generate a compliant written warning.</p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/documents/discipline")}
-            className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-          >
-            <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
-            Back
-          </Button>
         </div>
 
-          <Card className="shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+          <Card className="shadow-md border border-slate-200 bg-white">
             <CardHeader className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="h-9 w-1.5 rounded-full bg-gradient-to-b from-blue-500 to-blue-300" aria-hidden="true" />

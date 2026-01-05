@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -733,10 +734,10 @@ const TemporaryContractGenerator = () => {
         className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
         style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
       >
-        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Temporary Employment Contract</h1>
+        <h1 className="text-xl font-bold text-center text-gray-900 mb-6 uppercase tracking-wide">Employment Information</h1>
 
         <div className="space-y-6 flex-1">
-          <SectionBlock title="A. Employer details" subtitle='(Hereinafter referred to as "the Employer")'>
+          <SectionBlock title="A. Employer details">
             <Row label="Company name" value={profile?.company_name} />
             <Row label="Reg. number" value={profile?.registration_number} />
             <Row label="Address" value={profile?.physical_address} />
@@ -744,7 +745,7 @@ const TemporaryContractGenerator = () => {
             <Row label="Contact" value={profile?.company_contact} />
           </SectionBlock>
 
-          <SectionBlock title="B. Employee details" subtitle='(Hereinafter referred to as "the Employee")'>
+          <SectionBlock title="B. Employee details">
             <DualRow leftLabel="Surname" leftValue={data.employeeSurname} rightLabel="Name(s)" rightValue={data.employeeName} />
             <Row label="ID / Passport" value={idOrPassport || "--"} />
             <Row label="Contact number" value={data.employeeCell} />
@@ -986,7 +987,7 @@ const TemporaryContractGenerator = () => {
       const headingHeight = 6;
       ensureSpace(headingHeight * 2);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       doc.text(title.toUpperCase(), margin, y);
       y += headingHeight;
@@ -1004,10 +1005,10 @@ const TemporaryContractGenerator = () => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text("TEMPORARY EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
+      doc.text("EMPLOYMENT INFORMATION", pageWidth / 2, y, { align: "center" });
       y += 12;
 
-      drawSection("A. Employer details", '(Hereinafter referred to as "the Employer")', () => {
+      drawSection("A. Employer details", undefined, () => {
         drawSingleRow("Company name", profile?.company_name);
         drawSingleRow("Reg. number", profile?.registration_number);
         drawSingleRow("Address", profile?.physical_address);
@@ -1015,7 +1016,7 @@ const TemporaryContractGenerator = () => {
         drawSingleRow("Contact", profile?.company_contact);
       });
 
-      drawSection("B. Employee details", '(Hereinafter referred to as "the Employee")', () => {
+      drawSection("B. Employee details", undefined, () => {
         drawDualRow("Surname", data.employeeSurname, "Name(s)", data.employeeName);
         drawSingleRow("ID / Passport", idOrPassport || "--");
         drawSingleRow("Contact number", data.employeeCell);
@@ -1039,7 +1040,61 @@ const TemporaryContractGenerator = () => {
       y = margin;
     };
 
+    const addEnteredIntoHeader = () => {
+      const companyName = valueOrLine(profile?.company_name).toUpperCase();
+      const regNumber = valueOrLine(profile?.registration_number);
+      const employeeFullName = valueOrLine(
+        [data.employeeName, data.employeeSurname].filter(Boolean).join(" "),
+      ).toUpperCase();
+      const idLabel = data.employeeIdNumber ? "ID no." : "Passport no.";
+      const idDisplay = data.employeeIdNumber || data.passportNumber || "";
+
+      ensureSpace(58);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("TEMPORARY EMPLOYMENT CONTRACT", pageWidth / 2, y, { align: "center" });
+      y += 10;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text("Entered into by and between:", margin, y);
+      y += 8;
+
+      doc.setFont("helvetica", "bold");
+      doc.text(companyName, margin, y);
+      doc.setFont("helvetica", "italic");
+      doc.text('Hereinafter referred to as "the Employer"', margin + contentWidth, y, { align: "right" });
+      y += 5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Reg. number: ${regNumber}`, margin, y);
+      y += 9;
+
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.text("and", margin, y);
+      y += 9;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(employeeFullName, margin, y);
+      doc.setFont("helvetica", "italic");
+      doc.text('Hereinafter referred to as "the Employee"', margin + contentWidth, y, { align: "right" });
+      y += 5;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`${idLabel}: ${valueOrLine(idDisplay)}`, margin, y);
+      y += 12;
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, margin + contentWidth, y);
+      y += 10;
+    };
+
     addInformationPage();
+    addEnteredIntoHeader();
 
     const annualLeaveText =
       "The Employee is entitled to one (1) day of leave for every seventeen (17) days worked. Leave shall be taken at times determined by the Employer, subject to operational requirements.";
@@ -1208,7 +1263,7 @@ const TemporaryContractGenerator = () => {
 
     const signatureLabels = ["For the Employer", "Employer Witness", "Employee", "Employee Witness"];
 
-    // Place signing line on the page above the signature page
+    // Place signing line and keep signatures on the same page where space allows
     const signingLine = `Done and Signed at ___________________________ on this _____ day of ____________________ ${issueYear}.`;
     ensureSpace(12);
     doc.setFont("helvetica", "normal");
@@ -1217,9 +1272,8 @@ const TemporaryContractGenerator = () => {
     doc.text(signingLine, margin, y);
     y += 16;
 
-    // Start a fresh page for the signature block
-    doc.addPage();
-    y = margin;
+    const signatureBlockHeight = 12 + signatureLabels.length * 20;
+    ensureSpace(signatureBlockHeight);
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
@@ -1243,8 +1297,14 @@ const TemporaryContractGenerator = () => {
     doc.setFontSize(9);
     for (let i = 1; i <= pageCount; i += 1) {
       doc.setPage(i);
+      // Top-right page number; does not shift layout content
+      doc.setFontSize(7);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, margin - 6, { align: "right" });
+      doc.setFontSize(9);
+
       const footerY = pageHeight - 10;
-      doc.text(`Page ${i} of ${pageCount}`, margin, footerY, { align: "left" });
+      doc.setDrawColor(226, 232, 240); // subtle divider above footer text
+      doc.line(margin, footerY - 8, margin + contentWidth, footerY - 8);
       doc.text("Initial here: ______________________", pageWidth - margin, footerY, { align: "right" });
     }
 
@@ -1342,65 +1402,65 @@ const TemporaryContractGenerator = () => {
 
   return (
     <DashboardLayout>
-      {showEmployeeHint && (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-          <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
-            <span
-              className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
-              aria-hidden="true"
-            ></span>
-            <div className="pointer-events-auto flex items-center gap-2">
-              <span className="text-orange-600">
-                TIP!{" "}
-                <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
-                  Add the employee to your Employee List before generating a contract
-                  <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
-                </span>
-              </span>
-              <button
-                type="button"
-                className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                  navigate("/employees");
-                }}
-              >
-                Employees page
-              </button>
-              <button
-                type="button"
-                className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
-                onClick={() => {
-                  setHasDismissedEmployeeHint(true);
-                  setShowEmployeeHint(false);
-                }}
-                aria-label="Dismiss employee guidance message"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="space-y-6">
+      {showEmployeeHint && typeof document !== "undefined"
+        ? createPortal(
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+              <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
+                  aria-hidden="true"
+                ></span>
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <span className="text-orange-600">
+                    TIP!{" "}
+                    <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                      Add the employee to your Employee List before generating a contract
+                      <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                      navigate("/employees");
+                    }}
+                  >
+                    Employees page
+                  </button>
+                  <button
+                    type="button"
+                    className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                    }}
+                    aria-label="Dismiss employee guidance message"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      <div className="space-y-6" style={{ scrollbarGutter: "stable" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Contracts</p>
-            <h1 className="text-3xl font-bold text-gray-900">Temporary Employment Contract</h1>
-            <p className="text-base text-gray-600">
-              Fill out the details in the quick multistep form to generate a temporary/fixed-term contract.
+            <button
+              type="button"
+              onClick={() => navigate("/documents/contracts")}
+              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
+            >
+              Documents &gt; Contracts
+            </button>
+            <h1 className="text-xl font-bold uppercase text-blue-700">Temporary Contract</h1>
+            <p className="text-xs text-gray-600">
+              Fill out the details in the quick multistep form below to generate a temporary employment contract.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => navigate("/documents/contracts")}
-            className="flex-shrink-0 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-          >
-            <ArrowLeft className="mr-0.5 h-4 w-4" aria-hidden="true" />
-            Back
-          </Button>
         </div>
 
         <div className="flex items-center justify-center gap-4">

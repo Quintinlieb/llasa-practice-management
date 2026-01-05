@@ -310,10 +310,18 @@ const Dashboard = () => {
     <DashboardLayout>
       <div className="space-y-4">
         <header className="space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Dashboard</p>
-            <h1 className="text-3xl font-bold text-gray-900 leading-snug">Workforce overview</h1>
-            <p className="text-base text-gray-600">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+              <span className="underline-offset-2 rounded-sm">Home</span>
+              <span aria-hidden="true" className="text-slate-500">
+                &gt;
+              </span>
+              <span className="underline-offset-2 rounded-sm" aria-current="page">
+                Dashboard
+              </span>
+            </div>
+            <h1 className="text-xl font-bold uppercase text-blue-700 leading-snug">Workforce Overview</h1>
+            <p className="text-xs text-gray-600">
               Monitor headcount trends, demographics, and disciplinary activity at a glance.
             </p>
           </div>

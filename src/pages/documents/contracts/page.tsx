@@ -27,7 +27,7 @@ const contractDocuments: ContractDocument[] = [
     isActive: true,
   },
   {
-    name: "Addendum to Contract",
+    name: "Addendum",
     description: "Generate addendums to capture changes or clarifications for existing contracts.",
     href: "/documents/contracts/addendum",
     isActive: false,

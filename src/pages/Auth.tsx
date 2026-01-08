@@ -199,15 +199,16 @@ const Auth = () => {
             <img
               src="/AuthImage.png"
               alt="Team collaborating"
-              className="h-full w-full object-cover object-center opacity-[0.18]"
+              className="h-full w-full object-cover opacity-[0.28]"
+              style={{ objectPosition: "20% center" }}
             />
           </div>
           <div className="relative z-10 flex h-full w-full flex-col items-center justify-center p-14 text-white">
-            <img src="/mainlogo2.png" alt="Hure Systems" className="mx-auto h-auto w-72" />
-            <p className="mt-10 max-w-md text-center text-sm text-white/80">
+            <img src="/mainlogo2.png" alt="Hure Systems" className="mx-auto h-auto w-64" />
+            <p className="mt-10 max-w-lg text-center text-[0.8125rem] text-white/80">
               {isLogin
-                ? "Welcome back to Nudoc. Your secure and reliable platform that simplifies the drafting and storage of HR documents."
-                : "Welcome to Nudoc. A secure and reliable platform that simplifies the drafting and storage of HR documents."}
+                ? "Welcome back to Nudoc\u2122. A secure and reliable platform that simplifies the drafting and storage of your most important HR documents."
+                : "Welcome to Nudoc\u2122. A secure and reliable platform that simplifies the drafting and storage of your most important HR documents."}
             </p>
           </div>
         </section>
@@ -217,29 +218,30 @@ const Auth = () => {
             <Link
               to="/"
               aria-label="Close and return home"
+              tabIndex={-1}
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:text-blue-600 hover:ring-1 hover:ring-blue-500"
             >
               <X className="h-4 w-4" />
             </Link>
           </div>
 
-          <div className="w-full max-w-md space-y-6">
+          <div className="w-full max-w-md space-y-4">
             <div className="text-center space-y-3">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-500/90">
-                <img src="/thumbnail-logo.svg" alt="thumbnail logo" className="h-7 w-7" />
+              <div className="mx-auto flex items-center justify-center">
+                <img src="/thumbnail-logo.svg" alt="thumbnail logo" className="h-12 w-12" />
               </div>
               <div className="space-y-1">
-                <h1 className="text-2xl font-semibold text-foreground">
+                <h1 className="text-[1.35rem] font-semibold text-foreground">
                   {isLogin ? "Welcome back" : "Create account"}
                 </h1>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-[0.8rem] text-muted-foreground">
                   {isLogin ? "Go ahead and log in below" : "Fill out the form below to get started"}
                 </p>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
+            <form onSubmit={handleSubmit} className="pt-6 space-y-4">
+              <div className="space-y-1">
                 <Label htmlFor="email">Username:</Label>
                 <Input
                   id="email"
@@ -252,97 +254,104 @@ const Auth = () => {
                 />
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password:</Label>
-                  {isLogin && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password:</Label>
+                    {!isLogin && (
+                      <div className="relative group inline-flex items-center gap-2 cursor-help text-[11px] text-muted-foreground">
+                        <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                        <span className="font-medium">Password requirements</span>
+                        <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded-md border border-blue-600 bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+                          <p className="mb-1 font-medium text-blue-600">Include:</p>
+                          <ul className="space-y-0.5 list-disc list-inside">
+                            <li>At least 8 characters</li>
+                            <li>One uppercase letter</li>
+                            <li>One lowercase letter</li>
+                            <li>One number</li>
+                            <li>One special character</li>
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="group relative pb-1">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Type your password"
+                      value={password}
+                      onChange={handlePasswordChange}
+                      required
+                      minLength={isLogin ? 6 : 8}
+                      className={passwordError && !isLogin ? "h-11 border-destructive pr-10 group-hover:border-blue-600" : "h-11 pr-10 group-hover:border-blue-600"}
+                    />
                     <button
                       type="button"
-                      onClick={handleResetPassword}
-                      className="text-xs font-medium text-muted-foreground hover:text-blue-600 hover:underline disabled:opacity-60"
-                      disabled={isSendingReset}
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
-                      {isSendingReset ? "Sending..." : "Forgot your password?"}
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
+                  </div>
+                  {isLogin && (
+                    <div className="mt-2 flex justify-start">
+                      <button
+                        type="button"
+                        onClick={handleResetPassword}
+                        tabIndex={-1}
+                        className="text-[11px] font-normal text-muted-foreground underline hover:text-blue-600 disabled:opacity-60"
+                        disabled={isSendingReset}
+                      >
+                        {isSendingReset ? "Sending..." : "Forgot your password?"}
+                      </button>
+                    </div>
+                  )}
+                  {!isLogin && passwordError && (
+                    <p className="text-sm text-destructive">{passwordError}</p>
                   )}
                 </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Type your password"
-                    value={password}
-                    onChange={handlePasswordChange}
-                    required
-                    minLength={isLogin ? 6 : 8}
-                    className={passwordError && !isLogin ? "h-11 border-destructive pr-10" : "h-11 pr-10"}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
                 {!isLogin && (
-                  <div className="flex items-start justify-between text-xs text-muted-foreground">
-                    <div className="relative group inline-flex items-center gap-2 cursor-help">
-                      <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                      <span className="font-medium">Password requirements</span>
-                      <div className="invisible absolute left-0 top-full z-10 mt-2 w-56 rounded-md border border-border bg-background p-3 text-xs leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-                        <p className="mb-1 font-medium">Include:</p>
-                        <ul className="space-y-0.5 list-disc list-inside">
-                          <li>At least 8 characters</li>
-                          <li>One uppercase letter</li>
-                          <li>One lowercase letter</li>
-                          <li>One number</li>
-                          <li>One special character</li>
-                        </ul>
-                      </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                    <div className="group relative">
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirm password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        className={confirmPasswordError ? "h-11 border-destructive pr-10 group-hover:border-blue-600" : "h-11 pr-10 group-hover:border-blue-600"}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        tabIndex={-1}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
                     </div>
-                    {passwordError && (
-                      <p className="text-sm text-destructive">{passwordError}</p>
+                    {confirmPasswordError && (
+                      <p className="text-sm text-destructive">{confirmPasswordError}</p>
                     )}
                   </div>
                 )}
               </div>
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      placeholder="Confirm password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      className={confirmPasswordError ? "h-11 border-destructive pr-10" : "h-11 pr-10"}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  {confirmPasswordError && (
-                    <p className="text-sm text-destructive">{confirmPasswordError}</p>
-                  )}
-                </div>
-              )}
-              <Button
-                type="submit"
-                className="w-full bg-blue-600 text-white hover:bg-blue-700"
-                disabled={isLoading}
-              >
-                {isLoading ? "Please wait..." : isLogin ? "Log in" : "Sign up"}
-              </Button>
+              <div className="pt-6">
+                <Button
+                  type="submit"
+                  className="w-full bg-blue-600 text-white hover:bg-blue-700"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Please wait..." : isLogin ? "Sign in" : "Sign up"}
+                </Button>
+              </div>
             </form>
 
-            <div className="text-center text-sm text-muted-foreground">
+            <div className="text-center text-xs text-muted-foreground">
               <button
                 onClick={() => {
                   const toSignup = isLogin;
@@ -353,11 +362,17 @@ const Auth = () => {
                     navigate("/auth", { replace: true });
                   }
                 }}
-                className="text-blue-600 hover:underline"
+                className="text-muted-foreground hover:text-blue-600 hover:underline"
               >
-                {isLogin
-                  ? "Don't have an account? Sign up"
-                  : "Already have an account? Sign in"}
+                {isLogin ? (
+                  <>
+                    Don't have an account? <span className="font-semibold">Sign up</span>
+                  </>
+                ) : (
+                  <>
+                    Already have an account? <span className="font-semibold">Sign in</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

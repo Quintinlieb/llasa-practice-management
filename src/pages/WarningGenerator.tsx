@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -73,6 +74,70 @@ type WarningFormData = {
 >;
 
 type WarningEmployee = Pick<Tables<"employees">, "id" | "employee_name" | "employee_surname" | "id_number">;
+type EmployeeWarningRow = {
+  id: string;
+  misconduct_type: string | null;
+  warning_type: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+  file_url: string | null;
+};
+
+const warningTable = () => (supabase as any).from("employee_warnings");
+const dateToday = () => new Date().toISOString().split("T")[0];
+const toDateOnly = (value: string) => value.split("T")[0];
+const formatDisplayDate = (value?: string | null) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleDateString("en-ZA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+};
+const normalizeMisconduct = (value?: string | null) => (value || "").trim().toLowerCase();
+const coerceWarningType = (value?: string | null) => {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "first" || normalized === "second" || normalized === "serious" || normalized === "final") {
+    return normalized as WarningGeneratorFormData["warningType"];
+  }
+  return "" as WarningGeneratorFormData["warningType"] | "";
+};
+const warningValidityMonths: Record<WarningGeneratorFormData["warningType"], number> = {
+  first: 6,
+  second: 6,
+  serious: 9,
+  final: 12,
+};
+const warningTypeLabels: Record<WarningGeneratorFormData["warningType"], string> = {
+  first: "First Written Warning",
+  second: "Second Written Warning",
+  serious: "Serious Written Warning",
+  final: "Final Written Warning",
+};
+const computeWarningExpiry = (
+  warningType: WarningGeneratorFormData["warningType"] | "",
+  issueDate: string | null,
+) => {
+  if (!warningType || !issueDate) return "";
+  const months = warningValidityMonths[warningType] ?? 6;
+  const base = new Date(issueDate);
+  if (Number.isNaN(base.getTime())) return "";
+  const expiry = new Date(base);
+  expiry.setMonth(expiry.getMonth() + months);
+  return expiry.toISOString().split("T")[0];
+};
+const getWarningExpiryDate = (warning: EmployeeWarningRow) => {
+  if (warning.expiry_date) return toDateOnly(warning.expiry_date);
+  const coerced = coerceWarningType(warning.warning_type);
+  return computeWarningExpiry(coerced, warning.issue_date);
+};
+const isWarningActive = (warning: EmployeeWarningRow) => {
+  const expiry = getWarningExpiryDate(warning);
+  if (!expiry) return false;
+  return expiry >= dateToday();
+};
 
 const extractErrorMessage = (error: unknown): string => {
   if (error && typeof error === "object" && "errors" in error) {
@@ -97,11 +162,13 @@ const WarningGenerator = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   const [employees, setEmployees] = useState<WarningEmployee[]>([]);
+  const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRow[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [misconductSearch, setMisconductSearch] = useState("");
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const misconductPopoverRef = useRef<HTMLDivElement | null>(null);
   const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
+  const [employeeSelectResetCount, setEmployeeSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
     { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
   >([]);
@@ -110,11 +177,29 @@ const WarningGenerator = () => {
     message: string;
     next: WarningGeneratorFormData["warningType"] | "";
   }>({ open: false, message: "", next: "" });
+  const [duplicateWarningOverride, setDuplicateWarningOverride] = useState<{
+    open: boolean;
+    messageIntro: string;
+    messagePrompt: string;
+    pendingWarningType: WarningGeneratorFormData["warningType"] | "";
+    pendingMisconduct: string | null;
+    pendingAction: "" | "finish" | "submit";
+    viewUrl: string | null;
+  }>({
+    open: false,
+    messageIntro: "",
+    messagePrompt: "",
+    pendingWarningType: "",
+    pendingMisconduct: null,
+    pendingAction: "",
+    viewUrl: null,
+  });
   const [warningSelectOpen, setWarningSelectOpen] = useState(false);
   const [dismissibleOverride, setDismissibleOverride] = useState<{
     open: boolean;
     pending: string | null;
   }>({ open: false, pending: null });
+  const [duplicateOverrideAccepted, setDuplicateOverrideAccepted] = useState(false);
   const [formData, setFormData] = useState<WarningFormData>({
     tradingName: "",
     employeeId: "",
@@ -260,6 +345,40 @@ const WarningGenerator = () => {
     }
   }, [user, fetchProfile, fetchEmployees, fetchConductOffences]);
 
+  const fetchEmployeeWarnings = useCallback(
+    async (employeeId: string) => {
+      if (!user || !employeeId) {
+        setEmployeeWarnings([]);
+        return;
+      }
+      const { data, error } = await warningTable()
+        .select("id, misconduct_type, warning_type, issue_date, expiry_date, file_url")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId);
+
+      if (error) {
+        console.warn("Unable to load employee warnings", error);
+        setEmployeeWarnings([]);
+        return;
+      }
+
+      setEmployeeWarnings((data as EmployeeWarningRow[]) ?? []);
+    },
+    [user],
+  );
+
+  useEffect(() => {
+    if (!formData.employeeId) {
+      setEmployeeWarnings([]);
+      return;
+    }
+    fetchEmployeeWarnings(formData.employeeId);
+  }, [formData.employeeId, fetchEmployeeWarnings]);
+
+  useEffect(() => {
+    setDuplicateOverrideAccepted(false);
+  }, [formData.employeeId, formData.misconductTypes.join("|"), formData.warningType]);
+
   const misconductOptions = useMemo(() => {
     if (conductOffences.length > 0) return conductOffences;
     return MISCONDUCT_TYPES.map((name) => ({ name, category: "Serious" as const, firstOutcome: "" }));
@@ -313,17 +432,18 @@ const WarningGenerator = () => {
     }
   };
 
-  const mostRestrictiveOutcome = (selectedTypes: string[]) => {
-    const matches = selectedTypes
-      .map((type) => {
-        const offence = conductOffences.find((item) => item.name === type);
-        const severity = offence ? outcomeSeverity(offence.firstOutcome) : 0;
-        return { type, severity, outcome: offence?.firstOutcome ?? "" };
-      })
-      .filter((item) => item.severity > 0);
+  const getSelectionRequirement = (selectedTypes: string[]) => {
+    const evaluated = selectedTypes.map((type) => {
+      const offence = conductOffences.find((item) => item.name === type);
+      const severity = offence ? outcomeSeverity(offence.firstOutcome) : 0;
+      return { type, severity, outcome: offence?.firstOutcome ?? "", matched: Boolean(offence) };
+    });
+    const matchedCount = evaluated.filter((item) => item.matched).length;
+    const matches = evaluated.filter((item) => item.severity > 0);
 
-    if (matches.length === 0) return null;
-    return matches.reduce((prev, curr) => (curr.severity > prev.severity ? curr : prev), matches[0]);
+    if (matches.length === 0) return { requirement: null, matchedCount };
+    const requirement = matches.reduce((prev, curr) => (curr.severity > prev.severity ? curr : prev), matches[0]);
+    return { requirement, matchedCount };
   };
 
   const applyWarningType = (value: WarningGeneratorFormData["warningType"] | "") => {
@@ -351,12 +471,102 @@ const WarningGenerator = () => {
 
   const confirmOverrideWarning = (accepted: boolean) => {
     if (accepted && warningOverride.next) {
-      applyWarningType(warningOverride.next);
+      applyWarningTypeWithDuplicateCheck(warningOverride.next);
     } else {
       resetWarningSelection();
     }
     setWarningOverride({ open: false, message: "", next: "" });
     setWarningSelectOpen(false);
+  };
+
+  const buildDuplicateWarningMessageParts = (
+    warningType: WarningGeneratorFormData["warningType"] | "",
+    misconduct: string,
+    warning: EmployeeWarningRow,
+  ) => {
+    const label = warningType ? warningTypeLabels[warningType] : "Warning";
+    const expiryDate = getWarningExpiryDate(warning);
+    const expiryDisplay = expiryDate ? formatDisplayDate(expiryDate) : "--";
+    return {
+      intro: `The employee already has a ${label} for "${misconduct}" that is valid until ${expiryDisplay}.`,
+      prompt:
+        "If you override your code of conduct it may result in disciplinary inconsistency. Do you wish to override and proceed with this warning?",
+    };
+  };
+
+  const findDuplicateWarning = (
+    misconductTypes: string[],
+    warningType: WarningGeneratorFormData["warningType"] | "",
+  ) => {
+    if (!formData.employeeId || !warningType || employeeWarnings.length === 0) return null;
+    const normalizedWarningType = warningType.toLowerCase();
+    const activeWarnings = employeeWarnings.filter(isWarningActive);
+
+    for (const misconduct of misconductTypes) {
+      const normalizedMisconduct = normalizeMisconduct(misconduct);
+      const warningMatch = activeWarnings.find((warning) => {
+        const warningTypeMatch = coerceWarningType(warning.warning_type);
+        if (!warningTypeMatch || warningTypeMatch !== normalizedWarningType) return false;
+        return normalizeMisconduct(warning.misconduct_type) === normalizedMisconduct;
+      });
+      if (warningMatch) {
+        return { warning: warningMatch, misconduct };
+      }
+    }
+    return null;
+  };
+
+  const openDuplicateWarningOverride = (params: {
+    messageIntro: string;
+    messagePrompt: string;
+    pendingWarningType?: WarningGeneratorFormData["warningType"] | "";
+    pendingMisconduct?: string | null;
+    pendingAction?: "" | "finish" | "submit";
+    viewUrl?: string | null;
+  }) => {
+    setWarningSelectOpen(false);
+    setDuplicateWarningOverride({
+      open: true,
+      messageIntro: params.messageIntro,
+      messagePrompt: params.messagePrompt,
+      pendingWarningType: params.pendingWarningType || "",
+      pendingMisconduct: params.pendingMisconduct ?? null,
+      pendingAction: params.pendingAction || "",
+      viewUrl: params.viewUrl ?? null,
+    });
+  };
+
+  const confirmDuplicateWarningOverride = (accepted: boolean) => {
+    if (accepted) {
+      setDuplicateOverrideAccepted(true);
+      if (duplicateWarningOverride.pendingWarningType) {
+        applyWarningType(duplicateWarningOverride.pendingWarningType);
+      } else if (duplicateWarningOverride.pendingMisconduct) {
+        updateMisconductTypes((prev) => {
+          if (prev.includes(duplicateWarningOverride.pendingMisconduct!)) return prev;
+          return [...prev, duplicateWarningOverride.pendingMisconduct!];
+        });
+      } else if (duplicateWarningOverride.pendingAction === "finish") {
+        setShowFinalActions(true);
+      } else if (duplicateWarningOverride.pendingAction === "submit") {
+        performSubmit();
+      }
+    } else if (duplicateWarningOverride.pendingWarningType) {
+      resetWarningSelection();
+    }
+    setDuplicateWarningOverride({
+      open: false,
+      messageIntro: "",
+      messagePrompt: "",
+      pendingWarningType: "",
+      pendingMisconduct: null,
+      pendingAction: "",
+      viewUrl: null,
+    });
+  };
+
+  const applyWarningTypeWithDuplicateCheck = (value: WarningGeneratorFormData["warningType"]) => {
+    applyWarningType(value);
   };
 
   const updateMisconductTypes = (updater: (prev: string[]) => string[]) => {
@@ -455,18 +665,22 @@ const WarningGenerator = () => {
   `;
 
   const handleWarningTypeChange = (value: WarningGeneratorFormData["warningType"]) => {
-    const validityMap: Record<WarningGeneratorFormData["warningType"], string> = {
-      first: "6",
-      second: "6",
-      serious: "9",
-      final: "12",
-    };
-
-    const selectionRequirement = mostRestrictiveOutcome(formData.misconductTypes);
+    const { requirement: selectionRequirement, matchedCount } = getSelectionRequirement(formData.misconductTypes);
     const newSeverity = severityFromWarningType(value);
 
-    if (selectionRequirement && newSeverity > 0 && selectionRequirement.severity > newSeverity) {
-      const prescribed = selectionRequirement.outcome || "a higher warning";
+    if (formData.misconductTypes.length > 0 && (conductOffences.length === 0 || matchedCount === 0)) {
+      resetWarningSelection();
+      setWarningSelectOpen(false);
+      setWarningOverride({
+        open: true,
+        message: `No Code of Conduct warning was found for the selected misconduct. Override and use "${value}" instead?`,
+        next: value,
+      });
+      return;
+    }
+
+    if (selectionRequirement && newSeverity > 0 && selectionRequirement.severity !== newSeverity) {
+      const prescribed = selectionRequirement.outcome || "a different warning";
       resetWarningSelection();
       setWarningSelectOpen(false);
       setWarningOverride({
@@ -477,11 +691,7 @@ const WarningGenerator = () => {
       return;
     }
 
-    setFormData({
-      ...formData,
-      warningType: value,
-      validityMonths: validityMap[value] || "",
-    });
+    applyWarningTypeWithDuplicateCheck(value);
   };
 
   const handleEmployeeSelect = (employeeId: string) => {
@@ -494,8 +704,13 @@ const WarningGenerator = () => {
         employeeSurname: employee.employee_surname,
         employeeIdNumber: employee.id_number ?? "",
       });
+      setEmployeeSelectResetCount((prev) => prev + 1);
     }
   };
+  const handleOpenWarningFile = useCallback((fileUrl: string | null) => {
+    if (!fileUrl) return;
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
+  }, []);
 
   const generatePDF = (download = false) => {
     const doc = new jsPDF();
@@ -645,10 +860,8 @@ const WarningGenerator = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performSubmit = async () => {
     if (!user) return;
-
     setIsLoading(true);
 
     try {
@@ -701,6 +914,31 @@ const WarningGenerator = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    if (!duplicateOverrideAccepted) {
+      const duplicate = findDuplicateWarning(formData.misconductTypes, formData.warningType);
+      if (duplicate) {
+        const { intro, prompt } = buildDuplicateWarningMessageParts(
+          formData.warningType,
+          duplicate.misconduct,
+          duplicate.warning,
+        );
+        openDuplicateWarningOverride({
+          messageIntro: intro,
+          messagePrompt: prompt,
+          pendingAction: "submit",
+          viewUrl: duplicate.warning.file_url,
+        });
+        return;
+      }
+    }
+
+    await performSubmit();
   };
 
   const handlePreview = () => {
@@ -756,9 +994,58 @@ const WarningGenerator = () => {
     setActiveStep(0);
     setShowFinalActions(false);
     resetWarningSelection();
+    setEmployeeWarnings([]);
+    setDuplicateOverrideAccepted(false);
+    setDuplicateWarningOverride({
+      open: false,
+      messageIntro: "",
+      messagePrompt: "",
+      pendingWarningType: "",
+      pendingMisconduct: null,
+      pendingAction: "",
+      viewUrl: null,
+    });
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+
+  const handleResetWarningStep = () => {
+    setFormData((prev) => ({
+      ...prev,
+      warningType: "" as WarningGeneratorFormData["warningType"] | "",
+      validityMonths: "",
+      issuedBy: "",
+      dateIssued: new Date().toISOString().split("T")[0],
+      misconductTypes: [],
+      description: "",
+    }));
+    setWarningSelectOpen(false);
+    setIsMisconductMenuOpen(false);
+    setMisconductSearch("");
+    setShowFinalActions(false);
+    resetWarningSelection();
+    setDuplicateOverrideAccepted(false);
+    setDuplicateWarningOverride({
+      open: false,
+      messageIntro: "",
+      messagePrompt: "",
+      pendingWarningType: "",
+      pendingMisconduct: null,
+      pendingAction: "",
+      viewUrl: null,
+    });
+  };
+
+  const handleResetEmployeeStep = () => {
+    setFormData((prev) => ({
+      ...prev,
+      employeeId: "",
+      employeeName: "",
+      employeeSurname: "",
+      employeeIdNumber: "",
+    }));
+    setEmployeeSelectResetCount((prev) => prev + 1);
   };
 
   const isFormValid = () => {
@@ -799,6 +1086,7 @@ const WarningGenerator = () => {
       formData.warningType,
     ],
   );
+  const activeWarnings = useMemo(() => employeeWarnings.filter(isWarningActive), [employeeWarnings]);
 
   const canGoNext = useMemo(() => {
     if (showFinalActions) return false;
@@ -831,6 +1119,23 @@ const WarningGenerator = () => {
         variant: "destructive",
       });
       return;
+    }
+    if (!duplicateOverrideAccepted) {
+      const duplicate = findDuplicateWarning(formData.misconductTypes, formData.warningType);
+      if (duplicate) {
+        const { intro, prompt } = buildDuplicateWarningMessageParts(
+          formData.warningType,
+          duplicate.misconduct,
+          duplicate.warning,
+        );
+        openDuplicateWarningOverride({
+          messageIntro: intro,
+          messagePrompt: prompt,
+          pendingAction: "finish",
+          viewUrl: duplicate.warning.file_url,
+        });
+        return;
+      }
     }
     setShowFinalActions(true);
   };
@@ -1016,59 +1321,58 @@ const WarningGenerator = () => {
 
         <Card className="shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-center gap-4 w-full">
+            <div className="flex items-center justify-center gap-8 w-full">
               {steps.map((label, index) => {
                 const Icon = stepIcons[index];
                 const isDone = index < activeStep || isFinalizedCurrent;
                 const isActive = index === activeStep && !isFinalizedCurrent;
                 const canClick = isFinalizedCurrent || index < activeStep;
-                return (
+                  return (
                   <div key={label} className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      disabled={!canClick}
-                      onClick={() => {
-                        setShowFinalActions(false);
-                        if (canClick) setActiveStep(index);
-                      }}
-                      className={`flex flex-col items-start gap-1 transition ${
-                        canClick
-                          ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
-                          : "cursor-default"
-                      }`}
-                    >
-                      <div
-                        className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold leading-none ${
+                    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={!canClick}
+                            aria-label={label}
+                            onClick={() => {
+                              setShowFinalActions(false);
+                              if (canClick) setActiveStep(index);
+                            }}
+                            className={`flex flex-col items-start gap-1 transition ${
+                              canClick
+                                ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                : "cursor-default"
+                            }`}
+                          >
+                      <span
+                        className={`flex h-11 w-11 items-center justify-center rounded-full border ${
                           isDone
-                            ? "bg-[#e9f9ee] border-[#b6e6c1] text-[#038314]"
+                            ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
                             : isActive
-                              ? "bg-blue-100 border-blue-300 text-blue-800"
-                              : "bg-white border-slate-200 text-slate-600"
+                              ? "border-blue-300 text-blue-700 bg-blue-100"
+                              : "border-slate-200 text-slate-500 bg-white"
                         }`}
                       >
-                        <span
-                          className={`flex h-7 w-7 items-center justify-center rounded-full ${
-                            isDone
-                              ? "bg-[#04b81f] text-white"
-                              : isActive
-                                ? "bg-blue-500 text-white"
-                                : "bg-slate-200 text-slate-500"
-                          }`}
-                        >
-                          {isDone ? <Check className="h-5 w-5 -translate-y-[1px]" /> : <Icon className="h-5 w-5 -translate-y-[1px]" />}
-                        </span>
-                          <span className="text-sm font-semibold">{label}</span>
-                        </div>
-                      </button>
-                      {index < steps.length - 1 ? (
-                      <div
-                        className={`h-px w-16 ${
-                          index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
-                        }`}
-                      />
-                      ) : null}
-                    </div>
-                  );
+                        <Icon className="h-6 w-6 -translate-y-[1px]" />
+                      </span>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" align="center" className="text-xs">
+                          {label}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    {index < steps.length - 1 ? (
+                    <div
+                      className={`h-px w-16 ${
+                        index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                      }`}
+                    />
+                    ) : null}
+                  </div>
+                );
                 })}
             </div>
           </CardHeader>
@@ -1154,31 +1458,36 @@ const WarningGenerator = () => {
               <form onSubmit={handleSubmit} className="space-y-6">
               {activeStep === 0 && (
                 <div className="space-y-4 rounded-xl border border-blue-200 bg-slate-50/70 p-4 shadow-sm">
+                  <Badge className="w-fit rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
+                    Employer Details
+                  </Badge>
                   <div className="space-y-2">
-                    <Label htmlFor="tradingName">Trading Name (optional)</Label>
-                    <Input
-                      id="tradingName"
-                      value={formData.tradingName}
-                      onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
-                      placeholder="Enter trading name if different from company name"
-                      className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
-                    />
+                    <Label htmlFor="tradingName" className="text-sm font-semibold text-black">
+                      Trading Name (optional)
+                    </Label>
+                      <Input
+                        id="tradingName"
+                        value={formData.tradingName}
+                        onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
+                        placeholder="Enter trading name if different from company name"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
                   </div>
                   <div className="grid md:grid-cols-2 gap-4 pt-2">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-slate-600">Company name</Label>
+                      <Label className="text-sm font-semibold text-black">Company name</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.company_name || "Not set"}
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-slate-600">Registration number</Label>
+                      <Label className="text-sm font-semibold text-black">Registration number</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.registration_number || "Not set"}
                       </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label className="text-xs text-slate-600">Company address</Label>
+                      <Label className="text-sm font-semibold text-black">Company address</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.physical_address || "Not set"}
                       </div>
@@ -1192,11 +1501,15 @@ const WarningGenerator = () => {
 
               {activeStep === 1 && (
                 <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
-                  <h3 className="font-semibold text-lg">Employee Information</h3>
+                  <Badge className="w-fit rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
+                    Employee Details
+                  </Badge>
                   <div className="space-y-2">
-                    <Label htmlFor="employee">Select Employee (optional)</Label>
-                    <Select onValueChange={handleEmployeeSelect}>
-                      <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                    <Label htmlFor="employee" className="text-sm font-semibold text-black">
+                      Select Employee (optional)
+                    </Label>
+                    <Select key={employeeSelectResetCount} onValueChange={handleEmployeeSelect}>
+                      <SelectTrigger className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 data-[placeholder]:text-muted-foreground data-[placeholder]:hover:text-blue-700">
                         <SelectValue placeholder="Select from saved employees or fill manually" />
                       </SelectTrigger>
                       <SelectContent className="w-[var(--radix-select-trigger-width)]">
@@ -1210,33 +1523,39 @@ const WarningGenerator = () => {
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="employeeName">Employee Name *</Label>
+                      <Label htmlFor="employeeName" className="text-sm font-semibold text-black">
+                        Employee Name *
+                      </Label>
                       <Input
                         id="employeeName"
                         value={formData.employeeName}
                         onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
                         required
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeSurname">Employee Surname *</Label>
+                      <Label htmlFor="employeeSurname" className="text-sm font-semibold text-black">
+                        Employee Surname *
+                      </Label>
                       <Input
                         id="employeeSurname"
                         value={formData.employeeSurname}
                         onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
                         required
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeIdNumber">ID Number *</Label>
+                      <Label htmlFor="employeeIdNumber" className="text-sm font-semibold text-black">
+                        ID Number *
+                      </Label>
                       <Input
                         id="employeeIdNumber"
                         value={formData.employeeIdNumber}
                         onChange={(e) => setFormData({ ...formData, employeeIdNumber: e.target.value })}
                         required
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                   </div>
@@ -1246,18 +1565,82 @@ const WarningGenerator = () => {
               {activeStep === 2 && (
                 <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg text-gray-900">Warning Information</h3>
+                    <div className="flex items-center gap-2">
+                      <Badge className="rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
+                        Warning Details
+                      </Badge>
+                      {activeWarnings.length > 0 && (
+                        <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help">
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300"
+                                >
+                                  <Info className="mr-1 h-3 w-3" />
+                                  {activeWarnings.length} Active Warning{activeWarnings.length === 1 ? "" : "s"}
+                                </Badge>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="right"
+                              align="start"
+                              className="max-w-[320px] border-blue-200 p-3 text-left"
+                            >
+                              <div className="space-y-2">
+                                <div className="text-xs text-slate-500">Click on warning to view</div>
+                                <div className="space-y-2">
+                                  {activeWarnings.map((warning) => {
+                                    const warningType = coerceWarningType(warning.warning_type);
+                                    const warningTone =
+                                      warningType === "final"
+                                        ? "text-red-700"
+                                        : warningType === "serious"
+                                          ? "text-amber-700"
+                                          : warningType === "first" || warningType === "second"
+                                            ? "text-emerald-700"
+                                            : "text-slate-700";
+                                    const label = warningType ? warningTypeLabels[warningType] : "Warning";
+                                    const expiryDate = getWarningExpiryDate(warning);
+                                    return (
+                                      <div key={warning.id} className="text-xs text-slate-700">
+                                        {warning.file_url ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenWarningFile(warning.file_url)}
+                                            className={`font-semibold ${warningTone} text-left hover:underline hover:decoration-solid hover:underline-offset-2`}
+                                          >
+                                            {warning.misconduct_type || "Misconduct"}
+                                          </button>
+                                        ) : (
+                                          <div className={`font-semibold ${warningTone}`}>
+                                            {warning.misconduct_type || "Misconduct"}
+                                          </div>
+                                        )}
+                                        <div>{label}</div>
+                                        <div>Valid until: {formatDisplayDate(expiryDate)}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
                     <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-100">
                       Step 3 of 3
                     </Badge>
                   </div>
                   <div className="space-y-2">
-                    <Label>Misconduct Type(s) *</Label>
+                    <Label className="text-sm font-semibold text-black">Misconduct Type(s) *</Label>
                     <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
-                          className="w-full justify-start text-left font-normal border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-900"
+                          className="w-full justify-start text-left text-sm font-normal border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-900"
                           type="button"
                         >
                           {formData.misconductTypes.length === 0
@@ -1353,7 +1736,9 @@ const WarningGenerator = () => {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description of Misconduct *</Label>
+                    <Label htmlFor="description" className="text-sm font-semibold text-black">
+                      Description of Misconduct *
+                    </Label>
                     <Textarea
                       id="description"
                       value={formData.description}
@@ -1361,12 +1746,14 @@ const WarningGenerator = () => {
                       placeholder="Provide specific details about the misconduct incident(s) including dates"
                       rows={5}
                       required
-                      className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                     />
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="warningType">Type of Warning *</Label>
+                      <Label htmlFor="warningType" className="text-sm font-semibold text-black">
+                        Type of Warning *
+                      </Label>
                       <Select
                         key={warningSelectKey}
                         onValueChange={handleWarningTypeChange}
@@ -1375,9 +1762,9 @@ const WarningGenerator = () => {
                         onOpenChange={handleWarningSelectOpenChange}
                         required
                       >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
-                          <SelectValue placeholder="Select warning type" />
-                        </SelectTrigger>
+                      <SelectTrigger className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                        <SelectValue placeholder="Select warning type" />
+                      </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="first">First Written Warning</SelectItem>
                           <SelectItem value="second">Second Written Warning</SelectItem>
@@ -1387,7 +1774,9 @@ const WarningGenerator = () => {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="validityMonths">Validity Period (months) *</Label>
+                      <Label htmlFor="validityMonths" className="text-sm font-semibold text-black">
+                        Validity Period (months) *
+                      </Label>
                       <Input
                         id="validityMonths"
                         type="number"
@@ -1395,28 +1784,32 @@ const WarningGenerator = () => {
                         onChange={(e) => setFormData({ ...formData, validityMonths: e.target.value })}
                         required
                         readOnly
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="issuedBy">Issued By *</Label>
+                      <Label htmlFor="issuedBy" className="text-sm font-semibold text-black">
+                        Issued By *
+                      </Label>
                       <Input
                         id="issuedBy"
                         value={formData.issuedBy}
                         onChange={(e) => setFormData({ ...formData, issuedBy: e.target.value })}
                         required
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="dateIssued">Date of Issue *</Label>
+                      <Label htmlFor="dateIssued" className="text-sm font-semibold text-black">
+                        Date of Issue *
+                      </Label>
                       <Input
                         id="dateIssued"
                         type="date"
                         value={formData.dateIssued}
                         onChange={(e) => setFormData({ ...formData, dateIssued: e.target.value })}
                         required
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
                     </div>
                   </div>
@@ -1447,7 +1840,7 @@ const WarningGenerator = () => {
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={handleResetForm}
+                        onClick={handleResetWarningStep}
                         disabled={isLoading}
                         className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                       >
@@ -1485,7 +1878,20 @@ const WarningGenerator = () => {
                         </Button>
                       )}
                     </div>
-                    <div className="flex-1" />
+                    <div className="flex-1 flex justify-center">
+                      {activeStep === 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleResetEmployeeStep}
+                          disabled={isLoading}
+                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Reset
+                        </Button>
+                      )}
+                    </div>
                     <div className="flex-none">
                       {activeStep < steps.length - 1 && (
                         <Button
@@ -1555,7 +1961,7 @@ const WarningGenerator = () => {
       </Dialog>
 
       <Dialog open={dismissibleOverride.open} onOpenChange={(open) => !open && handleConfirmDismissible(false)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl sm:w-[640px]">
           <DialogHeader className="space-y-4 text-center">
             <DialogTitle className="text-blue-700 text-xl w-full text-center">
               Caution
@@ -1575,6 +1981,48 @@ const WarningGenerator = () => {
               <Button
                 variant="outline"
                 onClick={() => handleConfirmDismissible(true)}
+                className="min-w-[90px] text-sm text-gray-700 hover:text-blue-700 hover:bg-white hover:border-blue-600"
+              >
+                Yes
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={duplicateWarningOverride.open} onOpenChange={(open) => !open && confirmDuplicateWarningOverride(false)}>
+        <DialogContent className="sm:max-w-2xl sm:w-[720px]">
+          <DialogHeader className="space-y-4 text-center">
+            <DialogTitle className="text-blue-700 text-xl w-full text-center">
+              Caution
+            </DialogTitle>
+            <DialogDescription className="mt-8 block text-gray-700 text-center">
+              {duplicateWarningOverride.messageIntro}{" "}
+              {duplicateWarningOverride.viewUrl && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenWarningFile(duplicateWarningOverride.viewUrl)}
+                  className="font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                >
+                  View here
+                </button>
+              )}
+              {duplicateWarningOverride.messagePrompt && (
+                <span className="mt-3 block">{duplicateWarningOverride.messagePrompt}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="pt-4">
+            <div className="flex w-full justify-center gap-2">
+              <Button
+                onClick={() => confirmDuplicateWarningOverride(false)}
+                className="min-w-[120px] border-2 border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white text-base"
+              >
+                No
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => confirmDuplicateWarningOverride(true)}
                 className="min-w-[90px] text-sm text-gray-700 hover:text-blue-700 hover:bg-white hover:border-blue-600"
               >
                 Yes

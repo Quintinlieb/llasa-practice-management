@@ -5,12 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
-import { companySetupSchema } from "@/lib/validation";
+import { companySetupSchema, southAfricanProvinces } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const passwordSchema = z.string()
@@ -39,7 +40,11 @@ const Settings = () => {
     company_name: "",
     registration_number: "",
     vat_number: "",
-    physical_address: "",
+    physical_address_line1: "",
+    physical_address_line2: "",
+    city: "",
+    province: "",
+    area_code: "",
     postal_address: "",
     representative_name: "",
     representative_surname: "",
@@ -78,6 +83,10 @@ const Settings = () => {
         variant: "destructive",
       });
     } else if (data) {
+      const addressParts = (data.physical_address || "")
+        .split(/,\s*/)
+        .map((part) => part.trim())
+        .filter(Boolean);
       setUserDetails({
         user_name: data.user_name,
         user_surname: data.user_surname,
@@ -88,7 +97,11 @@ const Settings = () => {
         company_name: data.company_name,
         registration_number: data.registration_number,
         vat_number: data.vat_number || "",
-        physical_address: data.physical_address,
+        physical_address_line1: addressParts[0] || "",
+        physical_address_line2: addressParts[1] || "",
+        city: addressParts[2] || "",
+        province: addressParts[3] || "",
+        area_code: addressParts[4] || "",
         postal_address: data.postal_address,
         representative_name: data.representative_name,
         representative_surname: data.representative_surname,
@@ -150,18 +163,14 @@ const Settings = () => {
     setSaving(true);
 
     try {
-      // Split physical address back into components for validation
-      const addressParts = companyDetails.physical_address.split(", ");
-      
-      // Validate company fields using existing schema
       const validated = companySetupSchema.parse({
         companyName: companyDetails.company_name,
         registrationNumber: companyDetails.registration_number,
-        physicalAddressLine1: addressParts[0] || "",
-        physicalAddressLine2: addressParts[1] || "",
-        city: addressParts[2] || "",
-        province: addressParts[3] || "Gauteng",
-        areaCode: addressParts[4] || "0000",
+        physicalAddressLine1: companyDetails.physical_address_line1,
+        physicalAddressLine2: companyDetails.physical_address_line2,
+        city: companyDetails.city,
+        province: companyDetails.province,
+        areaCode: companyDetails.area_code,
         postalAddress: companyDetails.postal_address,
         companyContact: companyDetails.company_contact,
         companyEmail: companyDetails.company_email,
@@ -171,16 +180,14 @@ const Settings = () => {
         userEmail: companyDetails.company_email
       });
 
-      // Reconstruct physical address
       const physicalAddress = [
         validated.physicalAddressLine1,
         validated.physicalAddressLine2,
         validated.city,
         validated.province,
-        validated.areaCode
+        validated.areaCode,
       ].filter(Boolean).join(", ");
-      
-      // Update with validated data
+
       const { error } = await supabase
         .from("profiles")
         .update({
@@ -344,7 +351,7 @@ const Settings = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="company_name">Company Name</Label>
+                  <Label htmlFor="company_name" className="text-blue-600">Company Name</Label>
                   <Input
                     id="company_name"
                     value={companyDetails.company_name}
@@ -355,7 +362,7 @@ const Settings = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="registration_number">Registration Number</Label>
+                    <Label htmlFor="registration_number" className="text-blue-600">Registration Number</Label>
                     <Input
                       id="registration_number"
                       value={companyDetails.registration_number}
@@ -368,7 +375,7 @@ const Settings = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="vat_number">VAT Number</Label>
+                    <Label htmlFor="vat_number" className="text-blue-600">VAT Number</Label>
                     <Input
                       id="vat_number"
                       value={companyDetails.vat_number}
@@ -378,21 +385,88 @@ const Settings = () => {
                     />
                   </div>
                 </div>
+                <div>
+                  <Label className="text-blue-600">Physical Address</Label>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="physical_address">Physical Address</Label>
+                  <Label htmlFor="physical_address_line1" className="text-gray-600">Street Address</Label>
                   <Input
-                    id="physical_address"
-                    value={companyDetails.physical_address}
+                    id="physical_address_line1"
+                    value={companyDetails.physical_address_line1}
                     onChange={(e) =>
                       setCompanyDetails({
                         ...companyDetails,
-                        physical_address: e.target.value,
+                        physical_address_line1: e.target.value,
                       })
                     }
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="postal_address">Postal Address</Label>
+                  <Label htmlFor="physical_address_line2" className="text-gray-600">Address Line 2</Label>
+                  <Input
+                    id="physical_address_line2"
+                    value={companyDetails.physical_address_line2}
+                    onChange={(e) =>
+                      setCompanyDetails({
+                        ...companyDetails,
+                        physical_address_line2: e.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="city" className="text-gray-600">City</Label>
+                    <Input
+                      id="city"
+                      value={companyDetails.city}
+                      onChange={(e) =>
+                        setCompanyDetails({
+                          ...companyDetails,
+                          city: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="province" className="text-gray-600">Province</Label>
+                    <Select
+                      value={companyDetails.province}
+                      onValueChange={(value) =>
+                        setCompanyDetails({
+                          ...companyDetails,
+                          province: value,
+                        })
+                      }
+                    >
+                      <SelectTrigger id="province" aria-label="Province">
+                        <SelectValue placeholder="Choose province" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {southAfricanProvinces.map((province) => (
+                          <SelectItem key={province} value={province}>
+                            {province}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="area_code" className="text-gray-600">Area Code</Label>
+                    <Input
+                      id="area_code"
+                      value={companyDetails.area_code}
+                      onChange={(e) =>
+                        setCompanyDetails({
+                          ...companyDetails,
+                          area_code: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="postal_address" className="text-blue-600">Postal Address</Label>
                   <Input
                     id="postal_address"
                     value={companyDetails.postal_address}
@@ -406,7 +480,7 @@ const Settings = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="representative_name">Representative First Name</Label>
+                    <Label htmlFor="representative_name" className="text-blue-600">Representative First Name</Label>
                     <Input
                       id="representative_name"
                       value={companyDetails.representative_name}
@@ -419,7 +493,7 @@ const Settings = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="representative_surname">Representative Last Name</Label>
+                    <Label htmlFor="representative_surname" className="text-blue-600">Representative Last Name</Label>
                     <Input
                       id="representative_surname"
                       value={companyDetails.representative_surname}
@@ -434,7 +508,7 @@ const Settings = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="company_contact">Company Contact</Label>
+                    <Label htmlFor="company_contact" className="text-blue-600">Company Contact</Label>
                     <Input
                       id="company_contact"
                       value={companyDetails.company_contact}
@@ -447,7 +521,7 @@ const Settings = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="company_email">Company Email</Label>
+                    <Label htmlFor="company_email" className="text-blue-600">Company Email</Label>
                     <Input
                       id="company_email"
                       type="email"

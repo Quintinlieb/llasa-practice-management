@@ -324,17 +324,17 @@ export const companySetupSchema = z.object({
     .max(100, "City must not exceed 100 characters")
     .regex(/^[a-zA-Z\s'-]+$/, "City can only contain letters, spaces, hyphens, and apostrophes")
     .transform(sanitizeText),
-    province: z
-      .string()
-      .optional()
-      .or(z.literal(""))
-      .transform((val) => (typeof val === "string" ? val.trim() : ""))
-      .refine(
-        (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
-        {
-          message: "Please select a valid province",
-        },
-      ),
+  province: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : ""))
+    .refine(
+      (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
+      {
+        message: "Please select a valid province",
+      },
+    ),
   areaCode: z
     .string()
     .regex(/^\d{4}$/, "Area code must be 4 digits")

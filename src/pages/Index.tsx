@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   FileText,
   Menu,
@@ -123,8 +124,14 @@ const Index = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstallHint, setShowInstallHint] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const featureRef = useRef<HTMLElement | null>(null);
   const [featurePinned, setFeaturePinned] = useState(false);
+  const domesticMonthly = 99;
+  const domesticAnnual = Math.round(domesticMonthly * 12 * 0.9);
+  const businessMonthly = 249;
+  const businessAnnual = Math.round(businessMonthly * 12 * 0.9);
+  const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
@@ -533,52 +540,228 @@ const Index = () => {
 
         <section
           id="pricing"
-          className="mx-auto max-w-6xl px-6 pb-14 reveal"
+          className="relative w-full px-6 pb-14 pt-6 reveal"
         >
-          <Card className="overflow-hidden border border-blue-200 bg-white shadow-md">
-            <div className="grid gap-8 p-8 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="space-y-4">
-                <Badge className="bg-orange-100 text-orange-800">Recommended</Badge>
-                <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple pricing</h2>
-                <p className="text-lg text-slate-600">Straightforward billing so you always know the cost.</p>
-                <div className="flex flex-wrap gap-3 text-sm text-slate-600">
-                  <Badge variant="outline" className="border-blue-200 text-blue-700">Unlimited warnings</Badge>
-                  <Badge variant="outline" className="border-emerald-200 text-emerald-700">Contracts & letters</Badge>
-                  <Badge variant="outline" className="border-orange-200 text-orange-700">Live preview</Badge>
-                </div>
+          <div
+            className="absolute inset-0 -z-10 bg-gradient-to-b from-blue-50 via-blue-50/60 to-blue-50/20"
+            aria-hidden="true"
+          />
+          <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-5xl text-center">
+              <div className="mx-auto mt-4 w-fit rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                Best Pricing
               </div>
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-6">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-700">Pricing</p>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-slate-900">R250</span>
-                  <span className="text-slate-600">per month</span>
-                </div>
-                <p className="text-slate-700">+ R3 per employee</p>
-                <div className="mt-4 space-y-2 text-sm text-slate-700">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Guided flows for warnings and contracts
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Clause suggestions and live preview
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Employee records and audit trail
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Instant PDF export and sharing
-                  </div>
-                </div>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Link to="/auth?new=1">
-                    <Button className="bg-blue-600 text-white hover:bg-blue-700">Choose nudoc</Button>
-                  </Link>
-                  <Link to="/auth">
-                    <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">Log in</Button>
-                  </Link>
+              <h2 className="mt-4 text-3xl font-semibold text-slate-900 sm:text-4xl">Transparent Pricing</h2>
+              <p className="mx-auto mt-3 max-w-3xl text-sm text-slate-600 sm:text-base">
+                Choose the plan that fits your goals. No hidden fees, just powerful features.
+              </p>
+              <div className="mt-10 flex justify-center">
+                <div className="inline-flex items-center rounded-full border border-blue-100 bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setBillingCycle("monthly")}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                      billingCycle === "monthly"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBillingCycle("annual")}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                      billingCycle === "annual"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Annually
+                  </button>
                 </div>
               </div>
             </div>
-          </Card>
+            <div className="mx-auto mt-16 max-w-5xl">
+              <div className="grid gap-6 md:grid-cols-3">
+                <div className="relative flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 pt-10 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+                  <span className="inline-flex items-center rounded-full border border-blue-700 bg-blue-600 px-5 py-2 text-base font-semibold text-white shadow-lg ring-4 ring-white/70">
+                    Free
+                  </span>
+                  <span className="sr-only">Trial plan</span>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-slate-900">{formatPrice(0)}</span>
+                  <span className="text-sm text-slate-500">/ {billingCycle === "monthly" ? "month" : "year"}</span>
+                </div>
+                <div className="mt-6 h-px w-full bg-slate-200" />
+                <p className="mt-4 text-xs uppercase text-slate-400">Starter plan includes :</p>
+                <ul className="mt-3 space-y-2 text-left text-sm text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Up to 50 patient records.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Scheduling and appointment
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Analytics & Reporting
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Limited report and analytics.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Email support
+                  </li>
+                </ul>
+                <div className="mt-auto pt-6">
+                  <Link to="/auth?new=1">
+                    <Button variant="outline" className="h-10 w-full rounded-full border-slate-300 text-slate-700 hover:border-slate-400">
+                      Start free trial
+                    </Button>
+                  </Link>
+                </div>
+                </div>
+                <div className="relative flex h-full flex-col rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-6 pt-10 text-white shadow-[0_22px_50px_rgba(15,23,42,0.2)]">
+                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+                  <span className="inline-flex items-center rounded-full border border-white bg-white px-5 py-2 text-base font-semibold text-blue-700 shadow-lg ring-4 ring-blue-500/20">
+                    Domestic
+                  </span>
+                  <span className="sr-only">Domestic plan</span>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-white">
+                    {billingCycle === "monthly" ? formatPrice(domesticMonthly) : formatPrice(domesticAnnual)}
+                  </span>
+                  <span className="text-sm text-white/80">/ {billingCycle === "monthly" ? "month" : "year"}</span>
+                </div>
+                {billingCycle === "annual" && (
+                  <p className="mt-1 text-xs font-semibold text-white/90">Save 10% on annual</p>
+                )}
+                <div className="mt-6 h-px w-full bg-white/30" />
+                <p className="mt-4 text-xs uppercase text-white/70">Pro plan includes :</p>
+                <ul className="mt-3 space-y-2 text-left text-sm text-white/90">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Up to 5,000 patient records.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Advanced scheduling with waitlist management
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Comprehensive analytics
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Data portal for self-service scheduling
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Integration with third-party tools
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
+                      <Check className="h-3 w-3 text-blue-700" />
+                    </span>
+                    Phone and email support
+                  </li>
+                </ul>
+                <div className="mt-auto pt-6">
+                  <Link to="/auth?new=1">
+                    <Button className="h-10 w-full rounded-full bg-white text-blue-700 hover:bg-blue-50">
+                      Start with Domestic
+                    </Button>
+                  </Link>
+                </div>
+                </div>
+                <div className="relative flex h-full flex-col rounded-2xl border border-blue-100 bg-white p-6 pt-10 shadow-[0_22px_50px_rgba(15,23,42,0.16)]">
+                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
+                  <span className="inline-flex items-center rounded-full border border-blue-700 bg-blue-600 px-5 py-2 text-base font-semibold text-white shadow-lg ring-4 ring-white/70">
+                    Business
+                  </span>
+                  <span className="sr-only">Business plan</span>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-4xl font-bold text-slate-900">
+                    {billingCycle === "monthly" ? formatPrice(businessMonthly) : formatPrice(businessAnnual)}
+                  </span>
+                  <span className="text-sm text-slate-500">/ {billingCycle === "monthly" ? "month" : "year"}</span>
+                </div>
+                {billingCycle === "annual" && (
+                  <p className="mt-1 text-xs font-semibold text-blue-600">Save 10% on annual</p>
+                )}
+                <div className="mt-6 h-px w-full bg-slate-200" />
+                <p className="mt-4 text-xs uppercase text-slate-400">Custom plan includes :</p>
+                <ul className="mt-3 space-y-2 text-left text-sm text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Unlimited patient records
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Fully customizable workflows and reports.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    Dedicated account manager for setup and support.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    On-site training and implementation assistance.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
+                      <Check className="h-3 w-3 text-white" />
+                    </span>
+                    24/7 premium support.
+                  </li>
+                </ul>
+                <div className="mt-auto pt-6">
+                  <Link to="/auth?new=1">
+                    <Button className="h-10 w-full rounded-full bg-blue-600 text-white hover:bg-blue-700">
+                      Start with Business
+                    </Button>
+                  </Link>
+                </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section

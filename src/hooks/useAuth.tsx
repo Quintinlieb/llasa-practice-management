@@ -27,14 +27,21 @@ export const useAuth = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
-    const redirectUrl = `${window.location.origin}/company-setup`;
+  const signUp = async (
+    email: string,
+    password: string,
+    accountType: "trial" | "domestic" | "business",
+  ) => {
+    const redirectUrl = `${window.location.origin}/account-setup`;
     
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: redirectUrl
+        emailRedirectTo: redirectUrl,
+        data: {
+          account_type: accountType,
+        },
       }
     });
     return { data, error };

@@ -74,6 +74,7 @@ const saVatRegex = /^[0-9]{10}$/;
 
 // Company registration number validation (South African format)
 const saRegNumberRegex = /^[0-9]{4}\/[0-9]{6}\/[0-9]{2}$|^[0-9]{10}$/;
+const nameRegex = /^[a-zA-Z\s'-]+$/;
 
 // Company Setup Schema
 export const southAfricanProvinces = [
@@ -298,19 +299,7 @@ export const sanitizeEmployeeNumber = (value?: string | null): string =>
         .slice(0, EMPLOYEE_NUMBER_MAX_LENGTH)
     : "";
 
-export const companySetupSchema = z.object({
-  companyType: z.enum(["(Pty) Ltd", "Ltd", "Inc", "NPC", "SOC Ltd", "CC"], {
-    errorMap: () => ({ message: "Company type is required" }),
-  }),
-  companyName: z
-    .string()
-    .min(2, "Company name must be at least 2 characters")
-    .max(200, "Company name must not exceed 200 characters")
-    .transform(sanitizeText),
-  registrationNumber: z
-    .string()
-    .regex(saRegNumberRegex, "Invalid registration number format (e.g., 2023/123456/07 or 2023123456)")
-    .transform(sanitizeText),
+const companySetupBaseSchema = z.object({
   physicalAddressLine1: z
     .string()
     .max(200, "Address line 1 must not exceed 200 characters")
@@ -377,7 +366,27 @@ export const companySetupSchema = z.object({
     .email("Invalid email address")
     .max(255, "Email must not exceed 255 characters")
     .transform(sanitizeText),
-}).superRefine((data, ctx) => {
+});
+
+export const companySetupSchema = companySetupBaseSchema
+  .extend({
+    companyType: z.enum(["(Pty) Ltd", "Ltd", "Inc", "NPC", "SOC Ltd", "CC"], {
+      errorMap: () => ({ message: "Company type is required" }),
+    }),
+    companyName: z
+      .string()
+      .min(2, "Company name must be at least 2 characters")
+      .max(200, "Company name must not exceed 200 characters")
+      .transform(sanitizeText),
+    registrationNumber: z
+      .string()
+      .regex(
+        saRegNumberRegex,
+        "Invalid registration number format (e.g., 2023/123456/07 or 2023123456)",
+      )
+      .transform(sanitizeText),
+  })
+  .superRefine((data, ctx) => {
   const digits = data.registrationNumber.replace(/\D/g, "");
   if (digits.length !== 12) {
     ctx.addIssue({
@@ -407,8 +416,27 @@ export const companySetupSchema = z.object({
   }
 });
 
+export const domesticSetupSchema = companySetupBaseSchema.extend({
+  companyType: z
+    .string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must not exceed 100 characters")
+    .regex(nameRegex, "Name can only contain letters, spaces, hyphens, and apostrophes")
+    .transform(sanitizeText),
+  companyName: z
+    .string()
+    .min(2, "Surname must be at least 2 characters")
+    .max(100, "Surname must not exceed 100 characters")
+    .regex(nameRegex, "Surname can only contain letters, spaces, hyphens, and apostrophes")
+    .transform(sanitizeText),
+  registrationNumber: z
+    .string()
+    .min(5, "ID number is required")
+    .max(30, "ID number must not exceed 30 characters")
+    .transform(sanitizeText),
+});
+
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-const nameRegex = /^[a-zA-Z\s'-]+$/;
 
 export const employeeBasicSchema = z
   .object({

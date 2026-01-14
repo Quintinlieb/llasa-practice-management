@@ -11,7 +11,7 @@ import { Building2, MapPin, RotateCcw, User2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { companySetupSchema, southAfricanProvinces } from "@/lib/validation";
+import { companySetupSchema, domesticSetupSchema, southAfricanProvinces } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const CompanySetup = () => {
@@ -22,6 +22,9 @@ const CompanySetup = () => {
   const [step, setStep] = useState(0);
   const [companyTypeError, setCompanyTypeError] = useState("");
   const [registrationNumberError, setRegistrationNumberError] = useState("");
+  const rawAccountType = user?.user_metadata?.account_type;
+  const accountTypeLabel = rawAccountType === "business" ? "business" : "domestic";
+  const isDomestic = accountTypeLabel === "domestic";
   const [formData, setFormData] = useState({
     companyType: "",
     companyName: "",
@@ -39,7 +42,11 @@ const CompanySetup = () => {
     userContact: "",
     userEmail: "",
   });
-  const stepLabels = ["Company Information", "Company Address", "Main User Details"];
+  const stepLabels = [
+    isDomestic ? "Personal Information" : "Company Information",
+    isDomestic ? "Home Address" : "Company Address",
+    "Main User Details",
+  ];
   const stepIcons = [Building2, MapPin, User2] as const;
   const companyTypeSuffixes: Record<string, string> = {
     "(Pty) Ltd": "07",
@@ -64,9 +71,18 @@ const CompanySetup = () => {
   }, [user?.email]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
+    const { name, value } = e.target;
+    if (name === "companyType") {
+      setCompanyTypeError("");
+    }
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (isDomestic) {
+        if (name === "companyType") next.userName = value;
+        if (name === "companyName") next.userSurname = value;
+        if (name === "companyContact") next.userContact = value;
+      }
+      return next;
     });
   };
 
@@ -153,6 +169,7 @@ const CompanySetup = () => {
   };
 
   const getRegistrationError = (value: string, companyType: string) => {
+    if (isDomestic) return "";
     const digits = value.replace(/\D/g, "");
     if (digits.length !== 12) return "";
     const expected = companyTypeSuffixes[companyType];
@@ -164,6 +181,15 @@ const CompanySetup = () => {
 
   const isStepValid = () => {
     if (step === 0) {
+      if (isDomestic) {
+        return (
+          formData.companyType.trim().length > 0 &&
+          formData.companyName.trim().length > 0 &&
+          formData.registrationNumber.trim().length > 0 &&
+          formData.companyContact.trim().length > 0 &&
+          formData.companyEmail.trim().length > 0
+        );
+      }
       const registrationError = getRegistrationError(formData.registrationNumber, formData.companyType);
       const isRegistrationComplete = formData.registrationNumber.replace(/\D/g, "").length === 12;
       return (
@@ -193,6 +219,15 @@ const CompanySetup = () => {
   };
 
   const handleNext = () => {
+    if (isDomestic && step === 0) {
+      const missingName = formData.companyType.trim().length === 0;
+      const missingId = formData.registrationNumber.trim().length === 0;
+      setCompanyTypeError(missingName ? "Name is required" : "");
+      setRegistrationNumberError(missingId ? "ID number is required" : "");
+      if (missingName || missingId) return;
+      setStep((current) => Math.min(current + 1, stepLabels.length - 1));
+      return;
+    }
     if (step === 0 && formData.companyType.trim().length === 0) {
       setCompanyTypeError("Company type is required");
       return;
@@ -214,31 +249,17 @@ const CompanySetup = () => {
     setStep((current) => Math.max(current - 1, 0));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     if (!user) return;
-    if (step < stepLabels.length - 1) {
-      if (isStepValid()) {
-        handleNext();
-      } else if (step === 0 && formData.companyType.trim().length === 0) {
-        setCompanyTypeError("Company type is required");
-        const registrationDigits = formData.registrationNumber.replace(/\D/g, "");
-        if (registrationDigits.length !== 12) {
-          setRegistrationNumberError("Please enter a valid company registration number");
-        } else {
-          setRegistrationNumberError(
-            getRegistrationError(formData.registrationNumber, formData.companyType),
-          );
-        }
-      }
-      return;
-    }
+    if (step < stepLabels.length - 1) return;
 
     setIsLoading(true);
 
     try {
       // Validate and sanitize input
-      const validatedData = companySetupSchema.parse(formData);
+      const validatedData = isDomestic
+        ? domesticSetupSchema.parse(formData)
+        : companySetupSchema.parse(formData);
 
       const physicalAddressParts = [
         validatedData.physicalAddressLine1,
@@ -248,21 +269,33 @@ const CompanySetup = () => {
         validatedData.areaCode,
       ].filter(Boolean);
 
+      const rawAccountType = user.user_metadata?.account_type;
+      const accountType =
+        rawAccountType === "business" || rawAccountType === "trial"
+          ? rawAccountType
+          : "domestic";
+      const emptyCompanyField = isDomestic ? "" : undefined;
       const { error } = await supabase.from("profiles").insert({
         id: user.id,
-        company_type: validatedData.companyType,
-        company_name: validatedData.companyName,
-        registration_number: validatedData.registrationNumber,
+        account_type: accountType,
+        company_type: isDomestic ? emptyCompanyField : validatedData.companyType,
+        company_name: isDomestic ? emptyCompanyField : validatedData.companyName,
+        registration_number: isDomestic ? emptyCompanyField : validatedData.registrationNumber,
         physical_address: physicalAddressParts.join(", "),
         postal_address: validatedData.postalAddress || "",
         representative_name: validatedData.userName,
         representative_surname: validatedData.userSurname,
-        company_contact: validatedData.companyContact,
-        company_email: validatedData.companyEmail,
+        company_contact: isDomestic ? emptyCompanyField : validatedData.companyContact,
+        company_email: isDomestic ? emptyCompanyField : validatedData.companyEmail,
         user_name: validatedData.userName,
         user_surname: validatedData.userSurname,
         user_contact: validatedData.userContact,
         user_email: validatedData.userEmail,
+        domestic_name: isDomestic ? validatedData.companyType : null,
+        domestic_surname: isDomestic ? validatedData.companyName : null,
+        domestic_id_number: isDomestic ? validatedData.registrationNumber : null,
+        domestic_contact: isDomestic ? validatedData.companyContact : null,
+        domestic_email: isDomestic ? validatedData.companyEmail : null,
       });
 
       if (error) throw error;
@@ -289,9 +322,9 @@ const CompanySetup = () => {
       <div className="max-w-3xl mx-auto">
         <Card className="shadow-xl">
           <CardHeader className="pb-2">
-            <CardTitle className="text-2xl text-blue-700">Company Setup</CardTitle>
+            <CardTitle className="text-2xl text-blue-700">Account Setup</CardTitle>
             <CardDescription className="text-[0.8rem]">
-              Please complete your company profile in three easy steps to get started.
+              Please complete this easy 3-step form below to finish your {accountTypeLabel} account setup.
             </CardDescription>
             <div className="flex items-center justify-center gap-8 w-full py-6">
               {stepLabels.map((label, index) => {
@@ -348,7 +381,12 @@ const CompanySetup = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+              className="space-y-6"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Badge className="w-fit rounded-md bg-blue-600 text-white border border-blue-600 text-xs py-1 px-3 hover:bg-blue-600 hover:text-white hover:border-blue-600">
                   {stepLabels[step]}
@@ -362,34 +400,50 @@ const CompanySetup = () => {
                 <div className="space-y-4">
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="companyType" className="font-semibold">Company Type *</Label>
-                      <Select value={formData.companyType} onValueChange={handleCompanyTypeChange}>
-                        <SelectTrigger
+                      <Label htmlFor="companyType" className="font-semibold">
+                        {isDomestic ? "Name *" : "Company Type *"}
+                      </Label>
+                      {isDomestic ? (
+                        <Input
                           id="companyType"
-                          aria-label="Company Type"
-                          className={`company-type-select ${formData.companyType ? "text-sm" : "text-xs text-muted-foreground"}`}
-                        >
-                          <SelectValue placeholder="Please select the company type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="(Pty) Ltd">Private Company (Pty) Ltd</SelectItem>
-                          <SelectItem value="Ltd">Public Company Ltd</SelectItem>
-                          <SelectItem value="Inc">Personal Liability Company Inc</SelectItem>
-                          <SelectItem value="NPC">Non-Profit Company NPC</SelectItem>
-                          <SelectItem value="SOC Ltd">State-Owned Company SOC Ltd</SelectItem>
-                          <SelectItem value="CC">Close Corporation CC</SelectItem>
-                        </SelectContent>
-                      </Select>
+                          name="companyType"
+                          placeholder="Please enter your name"
+                          value={formData.companyType}
+                          onChange={handleChange}
+                          required
+                          className="text-sm placeholder:text-xs"
+                        />
+                      ) : (
+                        <Select value={formData.companyType} onValueChange={handleCompanyTypeChange}>
+                          <SelectTrigger
+                            id="companyType"
+                            aria-label="Company Type"
+                            className={`company-type-select hover:border-blue-600 ${formData.companyType ? "text-sm" : "text-xs text-muted-foreground"}`}
+                          >
+                            <SelectValue placeholder="Please select the company type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="(Pty) Ltd">Private Company (Pty) Ltd</SelectItem>
+                            <SelectItem value="Ltd">Public Company Ltd</SelectItem>
+                            <SelectItem value="Inc">Personal Liability Company Inc</SelectItem>
+                            <SelectItem value="NPC">Non-Profit Company NPC</SelectItem>
+                            <SelectItem value="SOC Ltd">State-Owned Company SOC Ltd</SelectItem>
+                            <SelectItem value="CC">Close Corporation CC</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                       {companyTypeError && (
                         <p className="text-sm text-destructive">{companyTypeError}</p>
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="companyName" className="font-semibold">Company Name *</Label>
+                      <Label htmlFor="companyName" className="font-semibold">
+                        {isDomestic ? "Surname *" : "Company Name *"}
+                      </Label>
                       <Input
                         id="companyName"
                         name="companyName"
-                        placeholder="Please enter Registered Name"
+                        placeholder={isDomestic ? "Please enter your surname" : "Please enter Registered Name"}
                         value={formData.companyName}
                         onChange={handleChange}
                         required
@@ -397,13 +451,25 @@ const CompanySetup = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="registrationNumber" className="font-semibold">Registration Number *</Label>
+                      <Label htmlFor="registrationNumber" className="font-semibold">
+                        {isDomestic ? "ID Number *" : "Registration Number *"}
+                      </Label>
                       <Input
                         id="registrationNumber"
                         name="registrationNumber"
-                        placeholder="Please enter CIPC registration number"
+                        placeholder={isDomestic ? "Please enter your ID number" : "Please enter CIPC registration number"}
                         value={formData.registrationNumber}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          if (isDomestic) {
+                            if (registrationNumberError) {
+                              setRegistrationNumberError("");
+                            }
+                            setFormData((prev) => ({
+                              ...prev,
+                              registrationNumber: e.target.value,
+                            }));
+                            return;
+                          }
                           setFormData((prev) => {
                             const formatted = formatRegistrationNumber(e.target.value);
                             const digits = formatted.replace(/\D/g, "");
@@ -415,8 +481,8 @@ const CompanySetup = () => {
                               setRegistrationNumberError("");
                             }
                             return { ...prev, registrationNumber: formatted };
-                          })
-                        }
+                          });
+                        }}
                         required
                         className="text-sm placeholder:text-xs"
                       />
@@ -437,12 +503,18 @@ const CompanySetup = () => {
                       />
                     </div>
                     <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="companyEmail" className="font-semibold">Company Email *</Label>
+                      <Label htmlFor="companyEmail" className="font-semibold">
+                        {isDomestic ? "Email Address *" : "Company Email *"}
+                      </Label>
                       <Input
                         id="companyEmail"
                         name="companyEmail"
                         type="email"
-                        placeholder="Please enter your company email address"
+                        placeholder={
+                          isDomestic
+                            ? "Please enter your email address"
+                            : "Please enter your company email address"
+                        }
                         value={formData.companyEmail}
                         onChange={handleChange}
                         required
@@ -608,7 +680,12 @@ const CompanySetup = () => {
                     Next
                   </Button>
                 ) : (
-                  <Button type="submit" className="sm:min-w-[200px]" disabled={isLoading || !isStepValid()}>
+                  <Button
+                    type="button"
+                    onClick={handleSubmit}
+                    className="sm:min-w-[200px]"
+                    disabled={isLoading || !isStepValid()}
+                  >
                     {isLoading ? "Creating Profile..." : "Complete Setup"}
                   </Button>
                 )}

@@ -28,7 +28,7 @@ const Auth = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
-  const [accountType, setAccountType] = useState<"domestic" | "business">("domestic");
+  const [accountType, setAccountType] = useState<"trial" | "domestic" | "business">("domestic");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const { signUp, signIn, signOut, resetPassword, user, loading } = useAuth();
   const { toast } = useToast();
@@ -39,6 +39,7 @@ const Auth = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const fromMarketing = params.get("new") === "1";
+    const fromLogin = params.get("login") === "1";
     if (!fromMarketing) return;
     setIsLogin(false);
     // Ensure we are fully signed out before continuing, so we don't auto-redirect away
@@ -50,11 +51,24 @@ const Auth = () => {
   }, [location.search, loading, user, signOut]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const fromLogin = params.get("login") === "1";
+    if (!fromLogin) return;
+    setIsLogin(true);
+    (async () => {
+      if (!loading && user) {
+        await signOut();
+      }
+    })();
+  }, [location.search, loading, user, signOut]);
+
+  useEffect(() => {
     const checkProfileAndRedirect = async () => {
       const params = new URLSearchParams(location.search);
       const fromMarketing = params.get("new") === "1";
+      const fromLogin = params.get("login") === "1";
       // Skip auto-redirects when explicitly starting a new flow from marketing
-      if (fromMarketing) return;
+      if (fromMarketing || fromLogin) return;
       if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -65,7 +79,7 @@ const Auth = () => {
         if (profile) {
           if (location.pathname !== "/dashboard") navigate("/dashboard");
         } else {
-          if (location.pathname !== "/company-setup") navigate("/company-setup");
+          if (location.pathname !== "/account-setup") navigate("/account-setup");
         }
       }
     };
@@ -125,7 +139,7 @@ const Auth = () => {
           });
         }
       } else {
-        const { data, error } = await signUp(email, password);
+        const { data, error } = await signUp(email, password, accountType);
         if (error) {
           toast({
             title: "Error",

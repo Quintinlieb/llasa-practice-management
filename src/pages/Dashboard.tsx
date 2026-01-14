@@ -83,7 +83,7 @@ const Dashboard = () => {
           throw profileError;
         }
         if (!profileData) {
-          navigate("/company-setup");
+          navigate("/account-setup");
           return;
         }
 

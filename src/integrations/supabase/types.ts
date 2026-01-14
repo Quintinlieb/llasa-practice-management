@@ -114,11 +114,17 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: string
           company_contact: string
           company_email: string
           company_name: string
           company_type: string
           created_at: string | null
+          domestic_contact: string | null
+          domestic_email: string | null
+          domestic_id_number: string | null
+          domestic_name: string | null
+          domestic_surname: string | null
           id: string
           physical_address: string
           postal_address: string
@@ -133,11 +139,17 @@ export type Database = {
           vat_number: string | null
         }
         Insert: {
+          account_type: string
           company_contact: string
           company_email: string
           company_name: string
           company_type: string
           created_at?: string | null
+          domestic_contact?: string | null
+          domestic_email?: string | null
+          domestic_id_number?: string | null
+          domestic_name?: string | null
+          domestic_surname?: string | null
           id: string
           physical_address: string
           postal_address: string
@@ -152,11 +164,17 @@ export type Database = {
           vat_number?: string | null
         }
         Update: {
+          account_type?: string
           company_contact?: string
           company_email?: string
           company_name?: string
           company_type?: string
           created_at?: string | null
+          domestic_contact?: string | null
+          domestic_email?: string | null
+          domestic_id_number?: string | null
+          domestic_name?: string | null
+          domestic_surname?: string | null
           id?: string
           physical_address?: string
           postal_address?: string

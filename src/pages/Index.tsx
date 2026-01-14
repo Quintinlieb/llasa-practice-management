@@ -262,7 +262,7 @@ const Index = () => {
             ))}
           </nav>
           <div className="hidden flex-1 items-center justify-end gap-3 md:flex">
-            <Link to="/auth">
+            <Link to="/auth?login=1">
               <Button variant="outline" className="border-blue-200 text-blue-700">
                 Log in
               </Button>
@@ -292,7 +292,7 @@ const Index = () => {
                   {item.label}
                 </a>
               ))}
-              <Link to="/auth">
+              <Link to="/auth?login=1">
                 <Button variant="outline" className="w-full border-blue-200 text-blue-700">
                   Log in
                 </Button>
@@ -859,7 +859,7 @@ const Index = () => {
               <Link to="/auth?new=1">
                 <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
               </Link>
-              <Link to="/auth">
+              <Link to="/auth?login=1">
                 <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">
                   Log in
                 </Button>

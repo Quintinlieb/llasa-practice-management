@@ -299,6 +299,9 @@ export const sanitizeEmployeeNumber = (value?: string | null): string =>
     : "";
 
 export const companySetupSchema = z.object({
+  companyType: z.enum(["(Pty) Ltd", "Ltd", "Inc", "NPC", "SOC Ltd", "CC"], {
+    errorMap: () => ({ message: "Company type is required" }),
+  }),
   companyName: z
     .string()
     .min(2, "Company name must be at least 2 characters")
@@ -374,6 +377,34 @@ export const companySetupSchema = z.object({
     .email("Invalid email address")
     .max(255, "Email must not exceed 255 characters")
     .transform(sanitizeText),
+}).superRefine((data, ctx) => {
+  const digits = data.registrationNumber.replace(/\D/g, "");
+  if (digits.length !== 12) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["registrationNumber"],
+      message: "Please enter a valid company registration number",
+    });
+    return;
+  }
+
+  const companyTypeSuffixes: Record<typeof data.companyType, string> = {
+    "(Pty) Ltd": "07",
+    Ltd: "06",
+    NPC: "08",
+    Inc: "21",
+    "SOC Ltd": "30",
+    CC: "23",
+  };
+
+  const expected = companyTypeSuffixes[data.companyType];
+  if (digits.slice(10, 12) !== expected) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["registrationNumber"],
+      message: `Registration number ending must match selected company type (expected /${expected})`,
+    });
+  }
 });
 
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;

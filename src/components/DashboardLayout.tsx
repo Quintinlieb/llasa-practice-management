@@ -20,6 +20,7 @@ interface Profile {
 
 const STORAGE_KEYS = {
   COMPANY: "header:companyName",
+  COMPANY_TYPE: "header:companyType",
   PROFILE: "header:profile",
 } as const;
 
@@ -42,6 +43,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       return "";
     }
   });
+  const [companyType, setCompanyType] = useState(() => {
+    try {
+      return sessionStorage.getItem(STORAGE_KEYS.COMPANY_TYPE) || "";
+    } catch {
+      return "";
+    }
+  });
   const [profile, setProfile] = useState<Profile | null>(() => getStoredProfile());
 
 
@@ -50,11 +58,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     if (user) {
       supabase
         .from("profiles")
-        .select("company_name")
+        .select("company_name, company_type")
         .eq("id", user.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) setCompanyName(data.company_name);
+          if (data) {
+            setCompanyName(data.company_name);
+            setCompanyType(data.company_type ?? "");
+          }
         });
       supabase
         .from("profiles")
@@ -71,6 +82,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     try {
       if (companyName) {
         sessionStorage.setItem(STORAGE_KEYS.COMPANY, companyName);
+      }
+      if (companyType) {
+        sessionStorage.setItem(STORAGE_KEYS.COMPANY_TYPE, companyType);
       }
       if (profile) {
         sessionStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
@@ -91,7 +105,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <div className="relative w-full rounded-2xl border border-sidebar-border bg-white shadow-md px-6 py-3 flex items-center justify-between">
               <div className="flex items-center">
                 {companyName && (
-                  <h1 className="text-lg font-semibold">{companyName}</h1>
+                  <h1 className="text-lg font-semibold">
+                    {companyName}
+                    {companyType ? ` ${companyType}` : ""}
+                  </h1>
                 )}
               </div>
               <div className="flex items-center gap-2">

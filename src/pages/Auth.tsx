@@ -28,6 +28,8 @@ const Auth = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
+  const [accountType, setAccountType] = useState<"domestic" | "business">("domestic");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const { signUp, signIn, signOut, resetPassword, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -191,6 +193,13 @@ const Auth = () => {
     }
   };
 
+  const isSignupReady =
+    !isLogin &&
+    email.trim().length > 0 &&
+    password.trim().length > 0 &&
+    confirmPassword.trim().length > 0 &&
+    acceptedTerms;
+
   return (
     <div className="min-h-screen bg-black">
       <div className="min-h-screen grid lg:grid-cols-2">
@@ -235,12 +244,42 @@ const Auth = () => {
                   {isLogin ? "Welcome back" : "Create account"}
                 </h1>
                 <p className="text-[0.8rem] text-muted-foreground">
-                  {isLogin ? "Go ahead and log in below" : "Fill out the form below to get started"}
+                  {isLogin ? "Go ahead and log in below" : "Choose your account type and fill out the form to get started."}
                 </p>
               </div>
             </div>
 
             <form onSubmit={handleSubmit} className="pt-6 space-y-4">
+              {!isLogin && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setAccountType("domestic")}
+                      aria-pressed={accountType === "domestic"}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                        accountType === "domestic"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Domestic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAccountType("business")}
+                      aria-pressed={accountType === "business"}
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                        accountType === "business"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Business
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label htmlFor="email">Username:</Label>
                 <Input
@@ -311,9 +350,9 @@ const Auth = () => {
                     <p className="text-sm text-destructive">{passwordError}</p>
                   )}
                 </div>
-                {!isLogin && (
-                  <div className="space-y-1">
-                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+              {!isLogin && (
+                <div className="space-y-1">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
                     <div className="group relative">
                       <Input
                         id="confirmPassword"
@@ -334,18 +373,39 @@ const Auth = () => {
                         {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
-                    {confirmPasswordError && (
-                      <p className="text-sm text-destructive">{confirmPasswordError}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="pt-6">
-                <Button
-                  type="submit"
-                  className="w-full bg-blue-600 text-white hover:bg-blue-700"
-                  disabled={isLoading}
-                >
+                  {confirmPasswordError && (
+                    <p className="text-sm text-destructive">{confirmPasswordError}</p>
+                  )}
+                </div>
+              )}
+              {!isLogin && (
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    id="terms"
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    required
+                    className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                  />
+                  <label htmlFor="terms" className="text-xs text-muted-foreground">
+                    I have read and agree to the{" "}
+                    <a
+                      href="/terms"
+                      className="font-semibold text-inherit hover:text-blue-600 hover:underline"
+                    >
+                      Terms & Conditions
+                    </a>
+                  </label>
+                </div>
+              )}
+            </div>
+            <div className="pt-6">
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 text-white hover:bg-blue-700"
+                disabled={isLoading || (isLogin ? false : !isSignupReady)}
+              >
                   {isLoading ? "Please wait..." : isLogin ? "Sign in" : "Sign up"}
                 </Button>
               </div>

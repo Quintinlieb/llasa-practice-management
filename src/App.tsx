@@ -19,6 +19,7 @@ import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import CalendarPage from "./pages/Calendar";
+import TermsAndConditions from "./pages/TermsAndConditions";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+            <Route path="/terms" element={<TermsAndConditions />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE - THE CATCH-ALL ROUTE IS LAST */}
             <Route path="*" element={<NotFound />} />
           </Routes>

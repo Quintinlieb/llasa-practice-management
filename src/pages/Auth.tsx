@@ -403,13 +403,14 @@ const Auth = () => {
                     className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
                   />
                   <label htmlFor="terms" className="text-xs text-muted-foreground">
-                    I have read and agree to the{" "}
-                    <a
-                      href="/terms"
+                    I have read, understood, and agree to the{" "}
+                    <Link
+                      to="/terms"
                       className="font-semibold text-inherit hover:text-blue-600 hover:underline"
                     >
-                      Terms & Conditions
-                    </a>
+                      Terms and Conditions
+                    </Link>
+                    .
                   </label>
                 </div>
               )}

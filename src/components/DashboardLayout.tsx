@@ -1,9 +1,6 @@
-import { ReactNode, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Settings, LogOut, Bell } from "lucide-react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,8 +31,7 @@ const getStoredProfile = (): Profile | null => {
 };
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, signOut } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const [companyName, setCompanyName] = useState(() => {
     try {
       return sessionStorage.getItem(STORAGE_KEYS.COMPANY) || "";
@@ -51,6 +47,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   });
   const [profile, setProfile] = useState<Profile | null>(() => getStoredProfile());
+  const initials = useMemo(() => {
+    if (!profile?.user_name || !profile?.user_surname) return "U";
+    return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
+  }, [profile]);
 
 
 
@@ -105,7 +105,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="absolute inset-0 bg-white/50" />
         </div>
         <div className="fixed left-0 top-0 z-40 h-screen w-[14rem] p-4">
-          <AppSidebar profile={profile || undefined} />
+          <AppSidebar />
         </div>
         <div className="flex-shrink-0 w-[14rem]" aria-hidden="true" />
         <div className="flex flex-1 min-h-screen flex-col bg-transparent">
@@ -119,50 +119,23 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   </h1>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              {profile && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-primary/10">
-                      <Bell className="h-5 w-5 text-primary" />
-                      <span className="sr-only">Notifications</span>
-                    </Button>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+                      {initials}
+                    </div>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Notifications</TooltipContent>
+                  <TooltipContent side="bottom" align="end" collisionPadding={12} className="text-xs">
+                    <div className="font-semibold">
+                      {profile.user_name} {profile.user_surname}
+                    </div>
+                    <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${profile.user_email}`}>
+                      {profile.user_email}
+                    </a>
+                  </TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 hover:bg-primary/10"
-                      onClick={() => navigate("/settings")}
-                    >
-                      <Settings className="h-5 w-5 text-primary" />
-                      <span className="sr-only">Settings</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Settings</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 hover:bg-primary/10"
-                      onClick={async () => {
-                        const { error } = await signOut();
-                        if (!error) {
-                          navigate("/");
-                        }
-                      }}
-                    >
-                      <LogOut className="h-5 w-5 text-primary" />
-                      <span className="sr-only">Sign out</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Sign out</TooltipContent>
-                </Tooltip>
-              </div>
+              )}
             </div>
           </header>
 

@@ -37,6 +37,7 @@ const Settings = () => {
   });
 
   const [companyDetails, setCompanyDetails] = useState({
+    company_type: "",
     company_name: "",
     registration_number: "",
     vat_number: "",
@@ -71,7 +72,7 @@ const Settings = () => {
     const { data, error } = await (supabase as any)
       .from("profiles")
       .select(
-        "user_name, user_surname, user_email, user_contact, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email",
+        "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email",
       )
       .eq("id", user.id)
       .maybeSingle();
@@ -87,6 +88,7 @@ const Settings = () => {
         .split(/,\s*/)
         .map((part) => part.trim())
         .filter(Boolean);
+      const hasFourParts = addressParts.length === 4;
       setUserDetails({
         user_name: data.user_name,
         user_surname: data.user_surname,
@@ -94,14 +96,15 @@ const Settings = () => {
         user_contact: data.user_contact,
       });
       setCompanyDetails({
+        company_type: data.company_type ?? "",
         company_name: data.company_name,
         registration_number: data.registration_number,
         vat_number: data.vat_number || "",
-        physical_address_line1: addressParts[0] || "",
-        physical_address_line2: addressParts[1] || "",
-        city: addressParts[2] || "",
-        province: addressParts[3] || "",
-        area_code: addressParts[4] || "",
+        physical_address_line1: hasFourParts ? "" : addressParts[0] || "",
+        physical_address_line2: hasFourParts ? addressParts[0] || "" : addressParts[1] || "",
+        city: hasFourParts ? addressParts[1] || "" : addressParts[2] || "",
+        province: hasFourParts ? addressParts[2] || "" : addressParts[3] || "",
+        area_code: hasFourParts ? addressParts[3] || "" : addressParts[4] || "",
         postal_address: data.postal_address,
         representative_name: data.representative_name,
         representative_surname: data.representative_surname,
@@ -164,6 +167,7 @@ const Settings = () => {
 
     try {
       const validated = companySetupSchema.parse({
+        companyType: companyDetails.company_type,
         companyName: companyDetails.company_name,
         registrationNumber: companyDetails.registration_number,
         physicalAddressLine1: companyDetails.physical_address_line1,
@@ -191,6 +195,7 @@ const Settings = () => {
       const { error } = await supabase
         .from("profiles")
         .update({
+          company_type: validated.companyType,
           company_name: validated.companyName,
           registration_number: validated.registrationNumber,
           vat_number: companyDetails.vat_number || null,
@@ -350,6 +355,30 @@ const Settings = () => {
                 <CardDescription>Update your company details</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="company_type" className="text-blue-600">Company Type</Label>
+                  <Select
+                    value={companyDetails.company_type}
+                    onValueChange={(value) =>
+                      setCompanyDetails({
+                        ...companyDetails,
+                        company_type: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="company_type" aria-label="Company Type">
+                      <SelectValue placeholder="Choose company type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="(Pty) Ltd">Private Company (Pty) Ltd</SelectItem>
+                      <SelectItem value="Ltd">Public Company Ltd</SelectItem>
+                      <SelectItem value="Inc">Personal Liability Company Inc</SelectItem>
+                      <SelectItem value="NPC">Non-Profit Company NPC</SelectItem>
+                      <SelectItem value="SOC Ltd">State-Owned Company SOC Ltd</SelectItem>
+                      <SelectItem value="CC">Close Corporation CC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="company_name" className="text-blue-600">Company Name</Label>
                   <Input

@@ -1,5 +1,5 @@
-import { FileText, Users, Home, CalendarClock, ArrowLeft } from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
+import { FileText, Users, Home, CalendarClock, ArrowLeft, Headset, Bell, Settings, LogOut } from "lucide-react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,14 +15,9 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
-type SidebarProfile = {
-  user_name: string;
-  user_surname: string;
-  user_email: string;
-};
-
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
@@ -30,8 +25,10 @@ const primaryNavItems = [
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
 ];
 
-export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
+export function AppSidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
@@ -64,11 +61,6 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
     );
 
   const pathname = location.pathname;
-  const initials =
-    profile?.user_name && profile?.user_surname
-      ? `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase()
-      : "U";
-
   return (
     <Sidebar
       collapsible="none"
@@ -137,21 +129,82 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
         </SidebarContent>
 
         <SidebarFooter className="p-4 mt-auto border-t border-white/40 bg-transparent">
-          {profile && (
-            <div className="flex items-center gap-3">
-              <div className="flex-shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
-                {initials}
-              </div>
-              {!isCollapsed && (
-                <div className="leading-tight min-w-0">
-                  <p className="text-[10px] text-muted-foreground truncate">Welcome,</p>
-                  <p className="text-xs font-semibold truncate">
-                    {profile.user_name} {profile.user_surname}
-                  </p>
-                </div>
+          <SidebarMenu className="gap-2">
+            <SidebarMenuItem>
+              {withTooltip(
+                <SidebarMenuButton
+                  asChild
+                  className={cn(
+                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    isCollapsed && "justify-center gap-0",
+                    location.pathname === "/settings" &&
+                      "bg-white/45 text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white/45 [&>svg]:text-primary",
+                  )}
+                  isActive={location.pathname === "/settings"}
+                  data-collapsed={isCollapsed}
+                >
+                  <NavLink to="/settings" className="w-full">
+                    <Settings className="h-5 w-5" />
+                    <span className={cn(isCollapsed && "sr-only")}>Settings</span>
+                  </NavLink>
+                </SidebarMenuButton>,
+                "Settings"
               )}
-            </div>
-          )}
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              {withTooltip(
+                <SidebarMenuButton
+                  className={cn(
+                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    isCollapsed && "justify-center gap-0",
+                  )}
+                  data-collapsed={isCollapsed}
+                >
+                  <Bell className="h-5 w-5" />
+                  <span className={cn(isCollapsed && "sr-only")}>Notifications</span>
+                </SidebarMenuButton>,
+                "Notifications"
+              )}
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              {withTooltip(
+                <SidebarMenuButton
+                  className={cn(
+                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    isCollapsed && "justify-center gap-0",
+                  )}
+                  data-collapsed={isCollapsed}
+                >
+                  <Headset className="h-5 w-5" />
+                  <span className={cn(isCollapsed && "sr-only")}>Support</span>
+                </SidebarMenuButton>,
+                "Support"
+              )}
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              {withTooltip(
+                <SidebarMenuButton
+                  className={cn(
+                    "group rounded-lg bg-primary text-primary-foreground transition-all duration-150 hover:bg-primary/90 hover:text-black [&>span]:transition-colors [&>span]:duration-150 [&>svg]:transition-colors [&>svg]:duration-150",
+                    isCollapsed && "justify-center gap-0",
+                  )}
+                  data-collapsed={isCollapsed}
+                  onClick={async () => {
+                    const { error } = await signOut();
+                    if (!error) {
+                      navigate("/");
+                    }
+                  }}
+                >
+                  <LogOut className="h-5 w-5 text-primary-foreground group-hover:text-black" />
+                  <span className={cn(isCollapsed && "sr-only", "text-primary-foreground group-hover:text-black")}>
+                    Sign out
+                  </span>
+                </SidebarMenuButton>,
+                "Sign out"
+              )}
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
       </div>
     </Sidebar>

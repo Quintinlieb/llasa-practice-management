@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -274,8 +274,6 @@ const formatDisplayDate = (value?: string | null) => {
 };
 
 
-const TABLE_MAX_HEIGHT = "calc(100vh - 340px)";
-const TABLE_BODY_MAX_HEIGHT = "calc(100vh - 340px - 56px)";
 const DEFAULT_PAGE_SIZE = 25;
 const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
   First: 6,
@@ -376,6 +374,8 @@ const Employees = () => {
   const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
   const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>(firstActiveDocPath);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableCardRef = useRef<HTMLDivElement | null>(null);
+  const [tableOffsetTop, setTableOffsetTop] = useState(0);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [deleteUndo, setDeleteUndo] = useState<DeleteUndoState | null>(null);
   const [deleteUndoCountdown, setDeleteUndoCountdown] = useState(0);
@@ -397,6 +397,25 @@ const Employees = () => {
     "border-none bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-transparent px-0 py-0 h-auto rounded-none";
   const fieldInputClass = `${baseFieldInputClass} ${isEditMode ? "" : viewModeFieldInputExtras}`;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
+
+  useLayoutEffect(() => {
+    const updateOffset = () => {
+      if (!tableCardRef.current) return;
+      const rect = tableCardRef.current.getBoundingClientRect();
+      setTableOffsetTop(rect.top);
+    };
+
+    updateOffset();
+    const onResize = () => requestAnimationFrame(updateOffset);
+    window.addEventListener("resize", onResize);
+
+    return () => window.removeEventListener("resize", onResize);
+  }, [isProfilePanelOpen]);
+
+  const tableMaxHeight =
+    tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px)` : "calc(100vh - 340px)";
+  const tableBodyMaxHeight =
+    tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px - 56px)` : "calc(100vh - 340px - 56px)";
   const fieldHelperTextClass = "text-xs text-muted-foreground";
   const totalPages = totalEmployees !== null ? Math.ceil(totalEmployees / DEFAULT_PAGE_SIZE) : null;
   const isFirstPage = currentPage === 1;
@@ -809,7 +828,11 @@ const Employees = () => {
     if (!selectedEmployee) return null;
 
     return (
-        <Card className="shadow-lg">
+        <Card
+          ref={tableCardRef}
+          className="rounded-2xl bg-white/55 backdrop-blur-2xl !border-0"
+          style={{ boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2)" }}
+        >
           <CardHeader className="flex flex-col gap-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
@@ -2048,96 +2071,97 @@ const Employees = () => {
     <DashboardLayout>
       {!isProfilePanelOpen ? (
         <div className="space-y-4 -ml-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
-              <span className="underline-offset-2 rounded-sm">Home</span>
-              <span aria-hidden="true" className="text-slate-500">
-                &gt;
-              </span>
-              <span className="underline-offset-2 rounded-sm" aria-current="page">
-                Employees
-              </span>
+        <div className="glass-panel rounded-2xl px-5 py-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+                <span className="underline-offset-2 rounded-sm">Home</span>
+                <span aria-hidden="true" className="text-slate-500">
+                  &gt;
+                </span>
+                <span className="underline-offset-2 rounded-sm" aria-current="page">
+                  Employees
+                </span>
+              </div>
+              <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
+              <p className="text-xs text-gray-600">
+                Browse, search, and manage your employees and attach their documents.
+              </p>
             </div>
-            <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
-            <p className="text-xs text-gray-600">
-              Browse, search, and manage your employees and attach their documents.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3 justify-end">
-            <Button
-              variant="outline"
-              onClick={handleBulkDelete}
-              disabled={selectedEmployees.size === 0}
-              className={`gap-2 ${
-                selectedEmployees.size > 0
-                  ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
-                  : ""
-              }`}
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </Button>
+            <div className="flex flex-wrap gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={handleBulkDelete}
+                disabled={selectedEmployees.size === 0}
+                className={`gap-2 ${
+                  selectedEmployees.size > 0
+                    ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
+                    : ""
+                }`}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
 
-            <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <Upload className="h-4 w-4" />
-                  Bulk Upload
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader className="flex flex-col gap-2">
-                  <div className="flex items-center gap-4">
-                    <UsersRound className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
+              <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    Bulk Upload
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader className="flex flex-col gap-2">
+                    <div className="flex items-center gap-4">
+                      <UsersRound className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
+                      <div>
+                        <DialogTitle>Bulk Upload</DialogTitle>
+                        <DialogDescription>Add all your employees with a single upload.</DialogDescription>
+                      </div>
+                    </div>
+                  </DialogHeader>
+                  <div className="space-y-8">
                     <div>
-                      <DialogTitle>Bulk Upload</DialogTitle>
-                      <DialogDescription>Add all your employees with a single upload.</DialogDescription>
+                      <div className="space-y-3">
+                        <div className="h-px bg-muted" />
+                        <h4 className="text-sm font-semibold">Step 1: Download</h4>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Download the spreadsheet to capture your employee information.
+                      </p>
+                      <Button variant="outline" className="mt-4 gap-2 w-full text-primary [&_svg]:text-primary" onClick={downloadTemplate}>
+                        <Download className="h-4 w-4" />
+                        Download Template
+                      </Button>
+                    </div>
+                    <div>
+                      <div className="space-y-3">
+                        <div className="h-px bg-muted" />
+                        <h4 className="text-sm font-semibold">Step 2: Upload</h4>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Upload spreadsheet. Accepted formats: .xlsx or .xls
+                      </p>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleBulkUpload}
+                        className="hidden"
+                        id="bulk-upload"
+                      />
+                      <Button className="mt-4 gap-2 w-full" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+                        <Upload className="h-4 w-4" />
+                        Upload File
+                      </Button>
                     </div>
                   </div>
-                </DialogHeader>
-                <div className="space-y-8">
-                  <div>
-                    <div className="space-y-3">
-                      <div className="h-px bg-muted" />
-                      <h4 className="text-sm font-semibold">Step 1: Download</h4>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Download the spreadsheet to capture your employee information.
-                    </p>
-                    <Button variant="outline" className="mt-4 gap-2 w-full text-primary [&_svg]:text-primary" onClick={downloadTemplate}>
-                      <Download className="h-4 w-4" />
-                      Download Template
-                    </Button>
-                  </div>
-                  <div>
-                    <div className="space-y-3">
-                      <div className="h-px bg-muted" />
-                      <h4 className="text-sm font-semibold">Step 2: Upload</h4>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Upload spreadsheet. Accepted formats: .xlsx or .xls
-                    </p>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleBulkUpload}
-                      className="hidden"
-                      id="bulk-upload"
-                    />
-                    <Button className="mt-4 gap-2 w-full" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
-                      <Upload className="h-4 w-4" />
-                      Upload File
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
 
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
+              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
                   <Plus className="h-4 w-4" />
                   Add Employee
                 </Button>
@@ -2240,16 +2264,20 @@ const Employees = () => {
             </Dialog>
           </div>
         </div>
+      </div>
 
-        <Card className="shadow-lg">
-          <CardHeader className="px-6 py-3">
+        <Card
+          className="rounded-2xl bg-white/55 backdrop-blur-2xl !border-0"
+          style={{ boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2)" }}
+        >
+          <CardHeader className="px-6 pt-5 pb-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full sm:max-w-lg">
                 <Input
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 rounded-xl border-2 border-primary/30 bg-white pr-12 text-sm shadow-md focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
+                  className="h-10 rounded-xl border-2 border-primary/30 bg-white/30 pr-12 text-xs shadow-md placeholder:text-xs focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
                 />
                 <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
               </div>
@@ -2258,23 +2286,23 @@ const Employees = () => {
                   value={contractFilter}
                   onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
                 >
-                  <SelectTrigger className="w-full sm:w-52">
+                  <SelectTrigger className="w-full sm:w-52 text-xs bg-white/30 border-2 border-primary/30">
                     <SelectValue placeholder="Filter by contract" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all" className="group">
+                    <SelectItem value="all" className="group text-xs">
                       All employees{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({filteredEmployees.length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="permanent" className="group">
+                    <SelectItem value="permanent" className="group text-xs">
                       Permanent{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="temporary" className="group">
+                    <SelectItem value="temporary" className="group text-xs">
                       Temporary{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
                         ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
@@ -2285,7 +2313,7 @@ const Employees = () => {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pb-3">
+          <CardContent className="pb-2">
             {employees.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
@@ -2295,9 +2323,9 @@ const Employees = () => {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="relative rounded-md overflow-hidden" style={{ maxHeight: TABLE_MAX_HEIGHT }}>
-                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-blue-50 dark:bg-blue-950/20 px-3 py-3 text-xs font-semibold text-muted-foreground">
+              <div className="space-y-2">
+                <div className="relative rounded-md overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
+                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
@@ -2313,7 +2341,7 @@ const Employees = () => {
                   <div
                     ref={tableScrollRef}
                     className="divide-y employee-table-scroll overflow-y-auto"
-                    style={{ maxHeight: TABLE_BODY_MAX_HEIGHT }}
+                    style={{ maxHeight: tableBodyMaxHeight }}
                   >
                     {filteredEmployees.map((employee) => (
                       <div
@@ -2411,27 +2439,29 @@ const Employees = () => {
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-center">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-center">
+                  <div className="flex items-center gap-1">
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
                       onClick={goToPreviousPage}
                       disabled={isFirstPage}
                       aria-label="Previous page"
+                      className="h-8 w-8 hover:bg-transparent"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="text-xs font-medium text-primary">
+                    <span className="text-[10px] font-medium text-primary">
                       Page {currentPage}
                       {totalPages !== null && totalPages > 0 ? ` of ${Math.max(totalPages, 1)}` : ""}
                     </span>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
                       onClick={goToNextPage}
                       disabled={isLastPage}
                       aria-label="Next page"
+                      className="h-8 w-8 hover:bg-transparent"
                     >
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Button>
@@ -2666,3 +2696,4 @@ const Employees = () => {
  };
 
 export default Employees;
+

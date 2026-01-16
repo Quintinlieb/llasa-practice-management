@@ -73,8 +73,8 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
     <Sidebar
       collapsible="none"
       className={cn(
-        "relative h-full flex flex-col bg-white border border-sidebar-border shadow-md rounded-2xl overflow-visible transition-[width] duration-200",
-        isCollapsed ? "w-[4.5rem]" : "w-52",
+        "relative h-full flex flex-col glass-panel !bg-white/60 !backdrop-blur-2xl !border-white/60 rounded-2xl overflow-visible transition-[width] duration-200",
+        isCollapsed ? "w-[4.5rem]" : "w-48",
       )}
     >
       <Button
@@ -86,12 +86,12 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
         <ArrowLeft className={cn("h-4 w-4 transition-transform", isCollapsed && "rotate-180")} />
         <span className="sr-only">Collapse sidebar</span>
       </Button>
-      <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-white">
+      <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-transparent">
         <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
           <img
-            src={isCollapsed ? "/thumbnail-logo.svg" : "/logo.png.png"}
+            src={isCollapsed ? "/thumbnail-logo.svg" : "/mainlogo.png"}
             alt="logo"
-            className={cn(isCollapsed ? "h-8" : "h-10", "w-auto object-contain")}
+            className={cn(isCollapsed ? "h-8" : "h-8", "w-auto object-contain")}
             style={{ imageRendering: "crisp-edges" }}
           />
         </div>
@@ -112,9 +112,9 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
                           asChild
                           isActive={isActive}
                           className={cn(
-                            "rounded-xl border border-transparent transition-all duration-150 hover:border-primary/10 hover:bg-primary/5",
+                            "rounded-lg transition-all duration-150 hover:bg-primary/5",
                             isActive &&
-                              "bg-primary/10 text-primary border-primary/20 shadow-[0_10px_25px_-15px_hsla(var(--primary),0.6)] data-[active=true]:!bg-primary/10 [&>svg]:text-primary",
+                              "bg-white/45 text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white/45 [&>svg]:text-primary",
                           )}
                           data-collapsed={isCollapsed}
                         >
@@ -136,7 +136,7 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-4 bg-sidebar mt-auto border-t border-sidebar-border/70">
+        <SidebarFooter className="p-4 mt-auto border-t border-white/40 bg-transparent">
           {profile && (
             <div className="flex items-center gap-3">
               <div className="flex-shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold text-sm">
@@ -144,8 +144,8 @@ export function AppSidebar({ profile }: { profile?: SidebarProfile }) {
               </div>
               {!isCollapsed && (
                 <div className="leading-tight min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">Welcome,</p>
-                  <p className="text-sm font-semibold truncate">
+                  <p className="text-[10px] text-muted-foreground truncate">Welcome,</p>
+                  <p className="text-xs font-semibold truncate">
                     {profile.user_name} {profile.user_surname}
                   </p>
                 </div>

@@ -309,7 +309,7 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-4">
-        <header className="space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <header className="glass-panel rounded-2xl px-5 py-4 space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
               <span className="underline-offset-2 rounded-sm">Home</span>

@@ -67,8 +67,8 @@ const Auth = () => {
       const params = new URLSearchParams(location.search);
       const fromMarketing = params.get("new") === "1";
       const fromLogin = params.get("login") === "1";
-      // Skip auto-redirects when explicitly starting a new flow from marketing
-      if (fromMarketing || fromLogin) return;
+      // Skip auto-redirects while still unauthenticated when explicitly starting a new flow
+      if ((fromMarketing || fromLogin) && !user) return;
       if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")

@@ -184,3 +184,15 @@ All colors MUST be HSL.
     box-shadow: 0 10px 30px -10px hsla(var(--primary), 0.35);
   }
 }
+
+@layer components {
+  .glass-panel {
+    @apply border border-white/[0.6] bg-white/[0.6] backdrop-blur-2xl;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .glass-panel-soft {
+    @apply border border-white/[0.45] bg-white/[0.3] backdrop-blur-2xl;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2);
+  }
+}

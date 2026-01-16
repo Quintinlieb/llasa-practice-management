@@ -96,13 +96,21 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen w-screen flex bg-[#eef2f7]">
-        <div className="flex-shrink-0 h-screen sticky top-0 p-4 overflow-y-auto">
+      <div className="relative min-h-screen w-screen flex bg-transparent overflow-hidden">
+        <div
+          className="pointer-events-none absolute inset-0 -z-10"
+          aria-hidden="true"
+        >
+          <div className="h-full w-full bg-[url('/background_image_2.png')] bg-cover bg-center blur-md scale-105" />
+          <div className="absolute inset-0 bg-white/50" />
+        </div>
+        <div className="fixed left-0 top-0 z-40 h-screen w-[14rem] p-4">
           <AppSidebar profile={profile || undefined} />
         </div>
-        <div className="flex flex-1 min-h-screen flex-col bg-[#eef2f7]">
-          <header className="sticky top-0 z-40 pr-4 pl-0 pt-4 pb-0 bg-[#eef2f7]">
-            <div className="relative w-full rounded-2xl border border-sidebar-border bg-white shadow-md px-6 py-3 flex items-center justify-between">
+        <div className="flex-shrink-0 w-[14rem]" aria-hidden="true" />
+        <div className="flex flex-1 min-h-screen flex-col bg-transparent">
+          <header className="fixed top-0 z-40 pr-4 pl-0 pt-4 pb-0 bg-transparent" style={{ left: "14rem", right: 0 }}>
+            <div className="relative w-full rounded-2xl glass-panel border-0 px-6 py-3 flex items-center justify-between">
               <div className="flex items-center">
                 {companyName && (
                   <h1 className="text-lg font-semibold">
@@ -158,7 +166,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
           </header>
 
-          <div className="flex-1 min-w-0 flex flex-col bg-[#eef2f7]">
+          <div className="flex-1 min-w-0 flex flex-col bg-transparent pt-20">
             <main className="flex-1 w-full p-6">{children}</main>
           </div>
         </div>

@@ -866,18 +866,18 @@ const TermsAndConditions = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur">
+    <div className="relative min-h-screen text-slate-900 before:fixed before:inset-0 before:-z-10 before:bg-[url('/AuthImage2.png')] before:bg-cover before:bg-center before:bg-no-repeat before:blur-md before:scale-105 after:fixed after:inset-0 after:-z-10 after:bg-white/25">
+      <header className="sticky top-0 z-30 border-b border-white/30 bg-white/45 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4">
           <div className="flex items-center gap-3 text-sm text-slate-600">
             <Link
               to="/auth?new=1"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-blue-200 hover:text-blue-700"
+              className="inline-flex items-center gap-2 rounded-full border border-white/50 bg-white/45 px-3 py-1 text-xs font-semibold text-slate-700 shadow-[0_10px_25px_rgba(15,23,42,0.35)] backdrop-blur-2xl transition hover:border-blue-200 hover:text-blue-700"
             >
               Back to sign up
             </Link>
           </div>
-          <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1 text-xs font-semibold text-slate-500">
+          <div className="rounded-full border border-white/40 bg-white/40 px-4 py-1 text-xs font-semibold text-slate-700 shadow-[0_10px_25px_rgba(15,23,42,0.3)] backdrop-blur-2xl">
             Last updated: 15 January 2026
           </div>
         </div>
@@ -885,7 +885,7 @@ const TermsAndConditions = () => {
 
       <main className="mx-auto grid max-w-6xl gap-8 px-6 py-4 pb-16 lg:grid-cols-[300px_1fr]">
         <aside className="lg:sticky lg:top-20 lg:-mt-6 lg:-translate-y-0.5 lg:self-start">
-          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="rounded-2xl border border-white/[0.6] bg-white/[0.6] p-3 shadow-[0_16px_40px_rgba(0,0,0,0.35),0_4px_10px_rgba(0,0,0,0.2)] backdrop-blur-2xl">
             <p className="pl-2.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 lg:pl-2">
               Clauses
             </p>
@@ -901,10 +901,10 @@ const TermsAndConditions = () => {
                     type="button"
                     onClick={() => handleScrollTo(section.id)}
                     aria-current={isActive ? "true" : undefined}
-                    className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-left text-[0.7rem] font-semibold leading-tight transition lg:rounded-md lg:border-none lg:px-2 lg:py-1 ${
+                    className={`whitespace-nowrap border px-2.5 py-1 text-left text-[0.7rem] font-semibold leading-tight transition lg:border-none lg:px-2 lg:py-1 ${
                       isActive
-                        ? "border-blue-200 bg-blue-50 text-blue-700 lg:bg-slate-100"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700 lg:bg-transparent"
+                        ? "rounded-sm border-blue-300 bg-white/80 text-blue-700 shadow-[0_6px_14px_rgba(37,99,235,0.18)] lg:rounded-sm lg:bg-white/60"
+                        : "rounded-full border-white/40 bg-white/40 text-slate-500 hover:border-slate-300 hover:text-slate-900 lg:rounded-md lg:bg-transparent"
                     }`}
                   >
                     {section.title}
@@ -916,14 +916,11 @@ const TermsAndConditions = () => {
         </aside>
 
         <div className="space-y-6">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
+          <section className="rounded-2xl border border-white/[0.6] bg-white/[0.6] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.35),0_4px_10px_rgba(0,0,0,0.2)] backdrop-blur-2xl">
+            <p className="text-4xl font-bold tracking-[0.1em] text-blue-700">
               Terms & Conditions
             </p>
-            <h1 className="mt-3 text-3xl font-semibold text-slate-900 sm:text-4xl">
-              User Terms and Conditions
-            </h1>
-            <p className="mt-3 text-sm text-slate-600 sm:text-base">
+            <p className="mt-3 text-xs text-slate-900 sm:text-sm">
               This page summarises the terms and conditions for using the Nudoc platform.
             </p>
           </section>
@@ -932,7 +929,7 @@ const TermsAndConditions = () => {
             <section
               key={section.id}
               id={section.id}
-              className="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+              className="scroll-mt-28 rounded-2xl border border-white/[0.6] bg-white/[0.6] p-6 shadow-[0_16px_40px_rgba(0,0,0,0.35),0_4px_10px_rgba(0,0,0,0.2)] backdrop-blur-2xl"
             >
               {(() => {
                 const { label, body } = splitClauseItem(section.title);
@@ -951,24 +948,25 @@ const TermsAndConditions = () => {
                   <div key={subSection.id} id={subSection.id} className="space-y-2">
                     {(() => {
                       const { label, body } = splitClauseItem(subSection.title);
+                      const headingClass = "text-slate-800";
                       if (!label) {
                         return (
-                          <h3 className="text-sm font-semibold text-slate-800">
+                          <h3 className={`text-sm font-semibold ${headingClass}`}>
                             {subSection.title}
                           </h3>
                         );
                       }
                       return (
                         <div className="grid grid-cols-[3.5rem_1fr] gap-2">
-                          <span className="text-sm font-semibold text-slate-800">{label}</span>
-                          <h3 className="text-sm font-semibold text-slate-800">{body}</h3>
+                          <span className={`text-sm font-semibold ${headingClass}`}>{label}</span>
+                          <h3 className={`text-sm font-semibold ${headingClass}`}>{body}</h3>
                         </div>
                       );
                     })()}
                     {subSection.intro && (
                       <div className="grid grid-cols-[3.5rem_1fr] gap-2">
                         <span aria-hidden="true" />
-                        <p style={{ textAlign: "justify", textAlignLast: "left" }}>
+                        <p className="text-slate-900" style={{ textAlign: "justify", textAlignLast: "left" }}>
                           {subSection.intro}
                         </p>
                       </div>
@@ -980,7 +978,7 @@ const TermsAndConditions = () => {
                           return (
                             <p
                               key={item}
-                              className="leading-relaxed"
+                              className="text-slate-900 leading-relaxed"
                               style={{ textAlign: "justify", textAlignLast: "left" }}
                             >
                               {item}
@@ -989,9 +987,9 @@ const TermsAndConditions = () => {
                         }
                         return (
                           <div key={item} className="grid grid-cols-[3.5rem_1fr] gap-2">
-                            <span className="text-slate-600">{label}</span>
+                            <span className="text-slate-900">{label}</span>
                             <p
-                              className="leading-relaxed"
+                              className="text-slate-900 leading-relaxed"
                               style={{ textAlign: "justify", textAlignLast: "left" }}
                             >
                               {body}
@@ -1011,7 +1009,7 @@ const TermsAndConditions = () => {
       <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center">
         <Link
           to="/auth?new=1"
-          className="pointer-events-auto relative rounded-full border border-blue-100 bg-white/95 px-6 py-3 text-sm font-semibold text-blue-900 shadow-[0_8px_18px_rgba(59,130,246,0.28)] backdrop-blur transition hover:bg-white"
+          className="pointer-events-auto relative rounded-full border border-white/50 bg-white/50 px-6 py-3 text-sm font-semibold text-blue-900 shadow-[0_12px_30px_rgba(30,64,175,0.4)] backdrop-blur-2xl transition hover:bg-white/65"
         >
           <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
           <span className="relative">Back to Sign Up</span>

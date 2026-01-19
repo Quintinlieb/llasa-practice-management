@@ -17,6 +17,7 @@ import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
 import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
+import Payroll from "./pages/Payroll";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import CalendarPage from "./pages/Calendar";
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
             <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
             <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
+            <Route path="/documents/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
             <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />

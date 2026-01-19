@@ -1,4 +1,4 @@
-import { FileText, Users, Home, CalendarClock, ArrowLeft, Headset, Bell, Settings, LogOut } from "lucide-react";
+import { FileText, Users, Home, CalendarClock, ArrowLeft, Headset, Bell, Settings, LogOut, Calculator } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
   { title: "Documents", url: "/documents", icon: FileText },
+  { title: "Payroll", url: "/documents/payroll", icon: Calculator },
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
 ];
 
@@ -107,7 +108,9 @@ export function AppSidebar() {
               <SidebarMenu className="gap-2">
                 {primaryNavItems.map((item) => {
                   const isActive =
-                    item.url === "/documents" ? pathname.startsWith("/documents") : location.pathname === item.url;
+                    item.url === "/documents"
+                      ? pathname.startsWith("/documents") && !pathname.startsWith("/documents/payroll")
+                      : location.pathname === item.url;
                   return (
                     <SidebarMenuItem key={item.title}>
                       {withTooltip(
@@ -115,7 +118,7 @@ export function AppSidebar() {
                           asChild
                           isActive={isActive}
                           className={cn(
-                            "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                            "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
                             isActive &&
                               "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
                           )}
@@ -146,7 +149,7 @@ export function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   className={cn(
-                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
                     isCollapsed && "justify-center gap-0",
                     location.pathname === "/settings" &&
                       "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
@@ -166,7 +169,7 @@ export function AppSidebar() {
               {withTooltip(
                 <SidebarMenuButton
                   className={cn(
-                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
                     isCollapsed && "justify-center gap-0",
                   )}
                   data-collapsed={isCollapsed}
@@ -181,7 +184,7 @@ export function AppSidebar() {
               {withTooltip(
                 <SidebarMenuButton
                   className={cn(
-                    "rounded-lg transition-all duration-150 hover:bg-primary/5",
+                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
                     isCollapsed && "justify-center gap-0",
                   )}
                   data-collapsed={isCollapsed}

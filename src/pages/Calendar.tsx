@@ -298,7 +298,7 @@ const CalendarPage = () => {
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-6">
-        <header className="glass-panel rounded-2xl px-5 py-4 space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <header className="rounded-2xl px-5 py-4 space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-white border border-slate-300">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Calendar</p>
             <h1 className="text-3xl font-bold text-gray-900 leading-snug">Expiries & validity</h1>

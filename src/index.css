@@ -120,6 +120,22 @@ All colors MUST be HSL.
   display: none;
 }
 
+.app-shell .shadow,
+.app-shell .shadow-sm,
+.app-shell .shadow-md,
+.app-shell .shadow-lg,
+.app-shell .shadow-xl,
+.app-shell .shadow-2xl,
+.app-shell .shadow-inner {
+  box-shadow: none;
+}
+
+.app-shell .glass-panel,
+.app-shell .glass-panel-soft {
+  border-color: #cbd5e1;
+}
+
+
 /* Align the addendum select placeholder color with input placeholders */
 .addendum-select [data-placeholder] {
   color: #94a3b8 !important;
@@ -188,11 +204,11 @@ All colors MUST be HSL.
 @layer components {
   .glass-panel {
     @apply border border-white/[0.6] bg-white/[0.6] backdrop-blur-2xl;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: none;
   }
 
   .glass-panel-soft {
     @apply border border-white/[0.45] bg-white/[0.3] backdrop-blur-2xl;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2);
+    box-shadow: none;
   }
 }

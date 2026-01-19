@@ -1,6 +1,6 @@
 import { FileText, Users, Home, CalendarClock, ArrowLeft, Headset, Bell, Settings, LogOut } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -28,7 +28,7 @@ const primaryNavItems = [
 export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
@@ -36,6 +36,11 @@ export function AppSidebar() {
       return false;
     }
   });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setCollapsed(false);
+  }, [user?.id]);
 
   const setCollapsed = (value: boolean) => {
     setIsCollapsed(value);
@@ -45,6 +50,11 @@ export function AppSidebar() {
       // ignore storage errors
     }
   };
+
+  useLayoutEffect(() => {
+    const width = isCollapsed ? "6.5rem" : "14rem";
+    document.documentElement.style.setProperty("--app-sidebar-width", width);
+  }, [isCollapsed]);
 
   const withTooltip = (element: ReactElement, label: string) =>
     isCollapsed ? (
@@ -65,20 +75,21 @@ export function AppSidebar() {
     <Sidebar
       collapsible="none"
       className={cn(
-        "relative h-full flex flex-col glass-panel !bg-white/60 !backdrop-blur-2xl !border-white/60 rounded-2xl overflow-visible transition-[width] duration-200",
+        "relative h-full flex flex-col rounded-2xl bg-white border border-slate-300 overflow-visible transition-[width] duration-200",
         isCollapsed ? "w-[4.5rem]" : "w-48",
       )}
+      style={{ backgroundColor: "#ffffff" }}
     >
       <Button
         variant="default"
         size="icon"
-        className="absolute right-[-10px] top-14 z-50 h-7 w-7 rounded-full bg-white/70 text-primary border border-primary/20 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.35)] backdrop-blur-sm hover:bg-white hover:border-primary/30 hover:shadow-[0_14px_38px_-14px_rgba(0,0,0,0.38)]"
+        className="absolute right-[-10px] top-14 z-50 h-7 w-7 rounded-full bg-white text-primary border border-primary/20 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.35)] hover:bg-white hover:border-primary/30 hover:shadow-[0_14px_38px_-14px_rgba(0,0,0,0.38)]"
         onClick={() => setCollapsed(!isCollapsed)}
       >
         <ArrowLeft className={cn("h-4 w-4 transition-transform", isCollapsed && "rotate-180")} />
         <span className="sr-only">Collapse sidebar</span>
       </Button>
-      <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-transparent">
+      <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-white" style={{ backgroundColor: "#ffffff" }}>
         <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
           <img
             src={isCollapsed ? "/thumbnail-logo.svg" : "/mainlogo.png"}
@@ -106,7 +117,7 @@ export function AppSidebar() {
                           className={cn(
                             "rounded-lg transition-all duration-150 hover:bg-primary/5",
                             isActive &&
-                              "bg-white/45 text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white/45 [&>svg]:text-primary",
+                              "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
                           )}
                           data-collapsed={isCollapsed}
                         >
@@ -128,7 +139,7 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-4 mt-auto border-t border-white/40 bg-transparent">
+        <SidebarFooter className="p-4 mt-auto border-t border-border bg-white" style={{ backgroundColor: "#ffffff" }}>
           <SidebarMenu className="gap-2">
             <SidebarMenuItem>
               {withTooltip(
@@ -138,7 +149,7 @@ export function AppSidebar() {
                     "rounded-lg transition-all duration-150 hover:bg-primary/5",
                     isCollapsed && "justify-center gap-0",
                     location.pathname === "/settings" &&
-                      "bg-white/45 text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white/45 [&>svg]:text-primary",
+                      "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
                   )}
                   isActive={location.pathname === "/settings"}
                   data-collapsed={isCollapsed}

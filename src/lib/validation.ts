@@ -500,21 +500,15 @@ export const employeeProfileSchema = z
       .or(z.literal(""))
       .transform((val) => (val ? val : "")),
     gender: z
-      .enum(genderOptions, {
-        errorMap: () => ({ message: "Please select a gender" }),
-      })
+      .enum(genderOptions)
+      .optional()
       .or(z.literal(""))
-      .refine((val) => val !== "", {
-        message: "Please select a gender",
-      }),
+      .transform((val) => (val ? sanitizeText(val) : "")),
     race: z
-      .enum(raceOptions, {
-        errorMap: () => ({ message: "Please select a race" }),
-      })
+      .enum(raceOptions)
+      .optional()
       .or(z.literal(""))
-      .refine((val) => val !== "", {
-        message: "Please select a race",
-      }),
+      .transform((val) => (val ? sanitizeText(val) : "")),
     nationality: z.enum(nationalityOptions, {
       errorMap: () => ({ message: "Please select a nationality" }),
     }),
@@ -573,6 +567,40 @@ export const employeeProfileSchema = z
         },
       ),
     areaCode: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || /^\d{4}$/.test(val), {
+        message: "Area code must be 4 digits",
+      }),
+    postalAddressLine1: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    postalAddressLine2: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    postalCity: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    postalProvince: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (typeof val === "string" ? val.trim() : ""))
+      .refine(
+        (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
+        {
+          message: "Please select a valid province",
+        },
+      ),
+    postalAreaCode: z
       .string()
       .optional()
       .or(z.literal(""))

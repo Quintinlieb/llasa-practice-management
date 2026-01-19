@@ -70,8 +70,8 @@ const Documents = () => {
 
   return (
     <DashboardLayout>
-      <div className="w-full max-w-none space-y-8 -ml-6 pr-0">
-        <header className="glass-panel rounded-2xl px-5 py-4 space-y-1">
+      <div className="w-[calc(100%+1.5rem)] max-w-none space-y-8 -ml-6 pr-0">
+        <header className="rounded-2xl px-5 py-4 space-y-1 bg-white border border-slate-300">
           <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
             <span className="underline-offset-2 rounded-sm">Home</span>
             <span aria-hidden="true" className="text-slate-500">

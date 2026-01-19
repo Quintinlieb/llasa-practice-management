@@ -61,9 +61,7 @@ import {
   employeeImportSchema,
   employeeProfileSchema,
   sanitizeEmployeeNumber,
-  genderOptions,
   nationalityOptions,
-  raceOptions,
   southAfricanProvinces,
   type EmployeeBasicFormData,
   type EmployeeProfileFormData,
@@ -77,14 +75,17 @@ type Employee = Tables<"employees"> & {
   start_date?: string | null;
   end_date?: string | null;
   contract_type?: string | null;
-  gender?: string | null;
-  race?: string | null;
   nationality?: string | null;
   employee_number?: string | null;
   job_title?: string | null;
   physical_address_line1?: string | null;
   physical_address_line2?: string | null;
   city?: string | null;
+  postal_address_line1?: string | null;
+  postal_address_line2?: string | null;
+  postal_city?: string | null;
+  postal_province?: string | null;
+  postal_area_code?: string | null;
   province?: string | null;
   area_code?: string | null;
   cell_number?: string | null;
@@ -98,12 +99,15 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   job_title?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  gender?: string | null;
-  race?: string | null;
   nationality?: string | null;
   physical_address_line1?: string | null;
   physical_address_line2?: string | null;
   city?: string | null;
+  postal_address_line1?: string | null;
+  postal_address_line2?: string | null;
+  postal_city?: string | null;
+  postal_province?: string | null;
+  postal_area_code?: string | null;
   province?: string | null;
   area_code?: string | null;
   cell_number?: string | null;
@@ -244,20 +248,23 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
     (coerceEnumValue(employee?.contract_type, contractTypes) as EmployeeProfileFormData["contractType"]) ??
     "Permanent",
   endDate: employee?.end_date ?? "",
-  gender: coerceEnumValue(employee?.gender, genderOptions) as EmployeeProfileFormData["gender"],
-  race: coerceEnumValue(employee?.race, raceOptions) as EmployeeProfileFormData["race"],
   nationality:
     (coerceEnumValue(employee?.nationality, nationalityOptions) as EmployeeProfileFormData["nationality"]) ??
     DEFAULT_NATIONALITY,
   employeeNumber: cleanEmployeeNumberInput(employee?.employee_number),
   jobTitle: employee?.job_title ?? "",
-   physicalAddressLine1: employee?.physical_address_line1 ?? "",
-   physicalAddressLine2: employee?.physical_address_line2 ?? "",
-   city: employee?.city ?? "",
+  physicalAddressLine1: employee?.physical_address_line1 ?? "",
+  physicalAddressLine2: employee?.physical_address_line2 ?? "",
+  city: employee?.city ?? "",
   province: coerceEnumValue(employee?.province, southAfricanProvinces) as EmployeeProfileFormData["province"],
-   areaCode: employee?.area_code ?? "",
-   cellNumber: employee?.cell_number ?? "",
-   email: employee?.email ?? "",
+  areaCode: employee?.area_code ?? "",
+  postalAddressLine1: employee?.postal_address_line1 ?? "",
+  postalAddressLine2: employee?.postal_address_line2 ?? "",
+  postalCity: employee?.postal_city ?? "",
+  postalProvince: coerceEnumValue(employee?.postal_province, southAfricanProvinces) as EmployeeProfileFormData["postalProvince"],
+  postalAreaCode: employee?.postal_area_code ?? "",
+  cellNumber: employee?.cell_number ?? "",
+  email: employee?.email ?? "",
   emergencyContactName: employee?.emergency_contact_name ?? "",
   emergencyContactNumber: employee?.emergency_contact_number ?? "",
 });
@@ -390,7 +397,7 @@ const Employees = () => {
   const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
   const fieldWrapperClass = "space-y-1";
   const fieldLabelClass =
-    "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-900/70";
+    "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700";
   const baseFieldInputClass =
     "h-9 rounded-lg border border-border/60 bg-background/80 text-sm font-medium text-foreground shadow-sm placeholder:text-xs focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:border-primary/40 disabled:bg-background disabled:text-foreground disabled:border-border/60 disabled:opacity-100 disabled:cursor-default";
   const viewModeFieldInputExtras =
@@ -416,7 +423,6 @@ const Employees = () => {
     tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px)` : "calc(100vh - 340px)";
   const tableBodyMaxHeight =
     tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px - 56px)` : "calc(100vh - 340px - 56px)";
-  const fieldHelperTextClass = "text-xs text-muted-foreground";
   const totalPages = totalEmployees !== null ? Math.ceil(totalEmployees / DEFAULT_PAGE_SIZE) : null;
   const isFirstPage = currentPage === 1;
   const isLastPage =
@@ -828,111 +834,123 @@ const Employees = () => {
     if (!selectedEmployee) return null;
 
     return (
-        <Card
-          ref={tableCardRef}
-          className="rounded-2xl bg-white/55 backdrop-blur-2xl !border-0"
-          style={{ boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2)" }}
-        >
-          <CardHeader className="flex flex-col gap-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Employee Profile</p>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
-                </h1>
-                <p className="text-base text-gray-600">
-                  Quickly access this employee’s details and attach important documents such as warnings and contracts.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={isEditMode ? "outline" : "ghost"}
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setIsEditMode((prev) => !prev)}
-                >
-                  {isEditMode ? (
-                    <>
-                      <X className="h-4 w-4" />
-                      Cancel
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </>
-                  )}
-                </Button>
-                {isEditMode && (
-                  <Button
-                    size="sm"
-                    className="gap-2"
-                    onClick={handleProfileSave}
-                    disabled={isProfileSaving}
-                  >
-                    {isProfileSaving ? "Saving..." : "Save"}
-                  </Button>
-                )}
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="gap-2"
+      <div className="space-y-4">
+        <div className="rounded-2xl px-5 py-4 bg-white border border-slate-300">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+                <button
+                  type="button"
                   onClick={closeProfileDialog}
+                  className="underline-offset-2 rounded-sm hover:underline"
                 >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Button>
+                  Employees
+                </button>
+                <span aria-hidden="true" className="text-slate-500">
+                  &gt;
+                </span>
+                <span className="underline-offset-2 rounded-sm" aria-current="page">
+                  Profile
+                </span>
               </div>
+              <h1 className="text-xl font-bold uppercase text-blue-700">
+                {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
+              </h1>
+              <p className="text-xs text-gray-600">
+                Quickly access this employee's details and attach important documents such as warnings and contracts.
+              </p>
             </div>
-          </CardHeader>
-        <CardContent className="pt-0">
-          <div className="rounded-2xl border border-border/60 bg-white p-4 shadow-sm dark:bg-background/70">
+            <div className="flex flex-wrap gap-3 justify-end">
+              <Button
+                variant={isEditMode ? "outline" : "ghost"}
+                className="h-8 px-3 text-xs gap-1.5"
+                onClick={() => setIsEditMode((prev) => !prev)}
+              >
+                {isEditMode ? (
+                  <>
+                    <X className="h-3.5 w-3.5" />
+                    Cancel
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </>
+                )}
+              </Button>
+              {isEditMode && (
+                <Button
+                  className="h-8 px-3 text-xs gap-1.5"
+                  onClick={handleProfileSave}
+                  disabled={isProfileSaving}
+                >
+                  {isProfileSaving ? "Saving..." : "Save"}
+                </Button>
+              )}
+              <Button
+                variant="default"
+                className="h-8 px-3 text-xs gap-1.5"
+                onClick={closeProfileDialog}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          ref={tableCardRef}
+          className="rounded-2xl bg-white/55 backdrop-blur-2xl border border-slate-300"
+        >
+        <div className="pt-0">
+          <div className="rounded-2xl border border-border/60 bg-white p-2 shadow-sm dark:bg-background/70">
             <Tabs
               value={activeTab}
               onValueChange={(value) => setActiveTab(value as EmployeeTab)}
               className="mt-0"
-              orientation="vertical"
             >
-              <div className="flex flex-col gap-12 lg:flex-row">
-                <TabsList className="h-auto w-full flex-col items-stretch gap-2 rounded-xl bg-white p-3 shadow-none lg:w-56 lg:sticky lg:top-4 self-start">
-                  <TabsTrigger value="personal" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+              <div className="flex flex-col gap-3">
+                <TabsList className="h-auto w-full flex-wrap justify-start gap-3 rounded-xl bg-white px-2 pt-2 pb-1 shadow-none border-b-2 border-border">
+                  <TabsTrigger value="personal" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
                     Personal
                   </TabsTrigger>
-                  <TabsTrigger value="employment" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                  <TabsTrigger value="employment" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
                     Employment
                   </TabsTrigger>
-                  <TabsTrigger value="address" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                  <TabsTrigger value="address" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
                     Address
                   </TabsTrigger>
-                  <TabsTrigger value="discipline" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                  <TabsTrigger value="discipline" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
                     Discipline
                   </TabsTrigger>
-                  <TabsTrigger value="contracts" className="w-full justify-start rounded-lg px-3 py-2 text-left">
+                  <TabsTrigger value="contracts" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
                     Contract
                   </TabsTrigger>
                 </TabsList>
-                <div className="flex-1">
-                  <TabsContent value="personal" className="mt-2 lg:mt-0">
+                <div className="flex-1 px-2">
+                  <TabsContent value="personal" className="mt-1 pb-4">
                     {renderPersonalTab()}
                   </TabsContent>
-                  <TabsContent value="employment" className="mt-2 lg:mt-0">
+                  <TabsContent value="employment" className="mt-1 pb-4">
                     {renderEmploymentTab()}
                   </TabsContent>
-                  <TabsContent value="address" className="mt-2 lg:mt-0">
+                  <TabsContent value="address" className="mt-1 pb-4">
                     {renderAddressTab()}
                   </TabsContent>
-                  <TabsContent value="discipline" className="mt-2 lg:mt-0">
+                  <TabsContent value="discipline" className="mt-1 pb-4">
                     {renderDisciplineTab()}
                   </TabsContent>
-                  <TabsContent value="contracts" className="mt-2 lg:mt-0">
+                  <TabsContent value="contracts" className="mt-1 pb-4">
                     {renderContractTab()}
                   </TabsContent>
                 </div>
               </div>
             </Tabs>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+      </div>
     );
   };
 
@@ -943,7 +961,7 @@ const Employees = () => {
     const { data, error, count } = await (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
         { count: "exact" },
       )
       .eq("company_id", user.id)
@@ -1166,27 +1184,30 @@ const Employees = () => {
          return;
        }
 
-       const updatePayload: EmployeeUpdate = {
-         employee_name: validated.employeeName,
-         employee_surname: validated.employeeSurname,
-         id_number: validated.idNumber || null,
-         start_date: validated.startDate,
-         contract_type: validated.contractType,
-         end_date: endDateValue,
-         gender: validated.gender,
-         race: validated.race,
-         nationality: validated.nationality,
-         employee_number: finalEmployeeNumber,
-         job_title: validated.jobTitle || null,
-         physical_address_line1: validated.physicalAddressLine1 || null,
-         physical_address_line2: validated.physicalAddressLine2 || null,
-         city: validated.city || null,
-         province: validated.province,
-         area_code: validated.areaCode || null,
-         cell_number: validated.cellNumber || null,
-         email: validated.email || null,
-         emergency_contact_name: validated.emergencyContactName || null,
-       emergency_contact_number: validated.emergencyContactNumber || null,
+        const updatePayload: EmployeeUpdate = {
+          employee_name: validated.employeeName,
+          employee_surname: validated.employeeSurname,
+          id_number: validated.idNumber || null,
+          start_date: validated.startDate,
+          contract_type: validated.contractType,
+          end_date: endDateValue,
+          nationality: validated.nationality,
+          employee_number: finalEmployeeNumber,
+          job_title: validated.jobTitle || null,
+          physical_address_line1: validated.physicalAddressLine1 || null,
+          physical_address_line2: validated.physicalAddressLine2 || null,
+          city: validated.city || null,
+          province: validated.province,
+          area_code: validated.areaCode || null,
+          postal_address_line1: validated.postalAddressLine1 || null,
+          postal_address_line2: validated.postalAddressLine2 || null,
+          postal_city: validated.postalCity || null,
+          postal_province: validated.postalProvince || null,
+          postal_area_code: validated.postalAreaCode || null,
+          cell_number: validated.cellNumber || null,
+          email: validated.email || null,
+          emergency_contact_name: validated.emergencyContactName || null,
+        emergency_contact_number: validated.emergencyContactNumber || null,
       };
 
        const { error } = await supabase
@@ -1209,8 +1230,6 @@ const Employees = () => {
         start_date: validated.startDate || null,
         contract_type: validated.contractType,
         end_date: endDateValue,
-        gender: validated.gender,
-        race: validated.race,
         nationality: validated.nationality,
         employee_number: finalEmployeeNumber,
         job_title: validated.jobTitle || null,
@@ -1219,6 +1238,11 @@ const Employees = () => {
         city: validated.city || null,
         province: validated.province,
         area_code: validated.areaCode || null,
+        postal_address_line1: validated.postalAddressLine1 || null,
+        postal_address_line2: validated.postalAddressLine2 || null,
+        postal_city: validated.postalCity || null,
+        postal_province: validated.postalProvince || null,
+        postal_area_code: validated.postalAreaCode || null,
         cell_number: validated.cellNumber || null,
         email: validated.email || null,
         emergency_contact_name: validated.emergencyContactName || null,
@@ -1338,8 +1362,6 @@ const Employees = () => {
             employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
             contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
-            gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
-            race: normalizeEnumValue(getColumnValue(row, "Race", "race"), raceOptions),
             nationality: normalizeEnumValue(getColumnValue(row, "Nationality", "nationality"), nationalityOptions),
             jobTitle: getColumnValue(row, "Job Title", "job_title"),
           };
@@ -1352,8 +1374,6 @@ const Employees = () => {
             id_number: validated.idNumber || null,
             employee_number: validated.employeeNumber || null,
             contract_type: validated.contractType || null,
-            gender: validated.gender || null,
-            race: validated.race || null,
             nationality: validated.nationality || null,
             job_title: validated.jobTitle || null,
           });
@@ -1400,9 +1420,9 @@ const Employees = () => {
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new();
     const wsData = [
-      ["Employee Number", "Name", "Surname", "ID Number", "Gender", "Race", "Nationality", "Contract Type", "Job Title"],
-      ["A0001", "John", "Doe", "9001015009087", "Male", "African", "South African", "Permanent", "Store Manager"],
-      ["B0002", "Jane", "Smith", "8505125800082", "Female", "Coloured", "Namibian", "Temporary", ""],
+      ["Employee Number", "Name", "Surname", "ID Number", "Nationality", "Contract Type", "Job Title"],
+      ["A0001", "John", "Doe", "9001015009087", "South African", "Permanent", "Store Manager"],
+      ["B0002", "Jane", "Smith", "8505125800082", "Namibian", "Temporary", ""],
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const idNumberColumnIndex = 3;
@@ -1481,7 +1501,7 @@ const Employees = () => {
 
   const renderPersonalTab = () => (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Name
@@ -1529,58 +1549,6 @@ const Employees = () => {
             }
           />
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-        <div className={fieldWrapperClass}>
-          <Label className={fieldLabelClass}>
-            Gender
-          </Label>
-          <Select
-            value={profileForm.gender || undefined}
-            disabled={!isEditMode}
-            onValueChange={(value) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                gender: value as EmployeeProfileFormData["gender"],
-              }))
-            }
-          >
-            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
-              <SelectValue placeholder="Gender" />
-            </SelectTrigger>
-            <SelectContent>
-              {genderOptions.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className={fieldWrapperClass}>
-          <Label className={fieldLabelClass}>Race</Label>
-          <Select
-            value={profileForm.race || undefined}
-            disabled={!isEditMode}
-            onValueChange={(value) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                race: value as EmployeeProfileFormData["race"],
-              }))
-            }
-          >
-            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
-              <SelectValue placeholder="Race" />
-            </SelectTrigger>
-            <SelectContent>
-              {raceOptions.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>Nationality</Label>
           <Select
@@ -1606,7 +1574,7 @@ const Employees = () => {
           </Select>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Cell Number
@@ -1640,8 +1608,6 @@ const Employees = () => {
             }
           />
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Emergency Contact
@@ -1679,13 +1645,11 @@ const Employees = () => {
   );
   const renderAddressTab = () => (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
-        <div className="min-w-[140px]">
-          <p className="mt-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-900/70">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,420px)]">
+        <div className="grid gap-3 sm:grid-cols-[auto_1fr] items-start">
+          <p className="mt-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700">
             Physical Address:
           </p>
-        </div>
-        <div className="flex-1 space-y-3 sm:ml-4">
           <div className={fieldWrapperClass}>
             <Input
               className={fieldInputClass}
@@ -1700,70 +1664,159 @@ const Employees = () => {
               }
             />
           </div>
+          <div className="col-start-2 space-y-3">
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Address Line 2"
+                value={profileForm.physicalAddressLine2}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    physicalAddressLine2: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="City"
+                value={profileForm.city}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    city: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={fieldWrapperClass}>
+              <Select
+                value={profileForm.province}
+                disabled={!isEditMode}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    province: value as EmployeeProfileFormData["province"],
+                  }))
+                }
+              >
+                <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+                  <SelectValue placeholder="Province" />
+                </SelectTrigger>
+                <SelectContent>
+                  {southAfricanProvinces.map((province) => (
+                    <SelectItem key={province} value={province}>
+                      {province}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Area Code"
+                value={profileForm.areaCode}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    areaCode: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[auto_1fr] items-start">
+          <p className="mt-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700">
+            Postal Address:
+          </p>
           <div className={fieldWrapperClass}>
             <Input
               className={fieldInputClass}
-              placeholder="Address Line 2"
-              value={profileForm.physicalAddressLine2}
+              placeholder="Address Line 1"
+              value={profileForm.postalAddressLine1}
               disabled={!isEditMode}
               onChange={(e) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  physicalAddressLine2: e.target.value,
+                  postalAddressLine1: e.target.value,
                 }))
               }
             />
           </div>
-          <div className={fieldWrapperClass}>
-            <Input
-              className={fieldInputClass}
-              placeholder="City"
-              value={profileForm.city}
-              disabled={!isEditMode}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  city: e.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className={fieldWrapperClass}>
-            <Select
-              value={profileForm.province}
-              disabled={!isEditMode}
-              onValueChange={(value) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  province: value as EmployeeProfileFormData["province"],
-                }))
-              }
-            >
-              <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
-                <SelectValue placeholder="Province" />
-              </SelectTrigger>
-              <SelectContent>
-                {southAfricanProvinces.map((province) => (
-                  <SelectItem key={province} value={province}>
-                    {province}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className={fieldWrapperClass}>
-            <Input
-              className={fieldInputClass}
-              placeholder="Area Code"
-              value={profileForm.areaCode}
-              disabled={!isEditMode}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  areaCode: e.target.value,
-                }))
-              }
-            />
+          <div className="col-start-2 space-y-3">
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Address Line 2"
+                value={profileForm.postalAddressLine2}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalAddressLine2: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="City"
+                value={profileForm.postalCity}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalCity: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={fieldWrapperClass}>
+              <Select
+                value={profileForm.postalProvince}
+                disabled={!isEditMode}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalProvince: value as EmployeeProfileFormData["postalProvince"],
+                  }))
+                }
+              >
+                <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+                  <SelectValue placeholder="Province" />
+                </SelectTrigger>
+                <SelectContent>
+                  {southAfricanProvinces.map((province) => (
+                    <SelectItem key={province} value={province}>
+                      {province}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Area Code"
+                value={profileForm.postalAreaCode}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalAreaCode: e.target.value,
+                  }))
+                }
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1772,7 +1825,7 @@ const Employees = () => {
 
   const renderEmploymentTab = () => (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Start Date
@@ -1868,9 +1921,6 @@ const Employees = () => {
               onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
               placeholder={`Enter a custom number (up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers)`}
             />
-            <p className={fieldHelperTextClass}>
-              Enter the employee&apos;s custom number; leave blank to skip.
-            </p>
           </div>
         </div>
       </div>
@@ -2071,7 +2121,7 @@ const Employees = () => {
     <DashboardLayout>
       {!isProfilePanelOpen ? (
         <div className="space-y-4 -ml-6">
-        <div className="glass-panel rounded-2xl px-5 py-4">
+        <div className="rounded-2xl px-5 py-4 bg-white border border-slate-300">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
@@ -2093,20 +2143,20 @@ const Employees = () => {
                 variant="outline"
                 onClick={handleBulkDelete}
                 disabled={selectedEmployees.size === 0}
-                className={`gap-2 ${
+                className={`h-8 px-3 text-xs gap-1.5 ${
                   selectedEmployees.size > 0
                     ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
                     : ""
                 }`}
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
                 Delete
               </Button>
 
               <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <Upload className="h-4 w-4" />
+                  <Button variant="outline" className="h-8 px-3 text-xs gap-1.5">
+                    <Upload className="h-3.5 w-3.5" />
                     Bulk Upload
                   </Button>
                 </DialogTrigger>
@@ -2161,8 +2211,8 @@ const Employees = () => {
 
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="gap-2">
-                  <Plus className="h-4 w-4" />
+                  <Button className="h-8 px-3 text-xs gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
                   Add Employee
                 </Button>
               </DialogTrigger>
@@ -2266,10 +2316,7 @@ const Employees = () => {
         </div>
       </div>
 
-        <Card
-          className="rounded-2xl bg-white/55 backdrop-blur-2xl !border-0"
-          style={{ boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.2)" }}
-        >
+        <Card className="rounded-2xl bg-white border border-slate-300">
           <CardHeader className="px-6 pt-5 pb-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full sm:max-w-lg">
@@ -2406,7 +2453,7 @@ const Employees = () => {
                                     onClick={() => openProfileDialog(employee)}
                                     className="hover:text-primary hover:bg-muted/50 bg-transparent"
                                   >
-                                    <Search className="h-4 w-4" />
+                                    <Search className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">View Profile</TooltipContent>
@@ -2419,7 +2466,7 @@ const Employees = () => {
                                     onClick={() => setDocumentDialogEmployee(employee)}
                                     className="group hover:bg-muted/50 bg-transparent"
                                   >
-                                    <FilePlus className="h-4 w-4 transition-colors group-hover:text-primary" />
+                                    <FilePlus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">Add Document</TooltipContent>
@@ -2473,7 +2520,7 @@ const Employees = () => {
         </Card>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 -ml-6">
           {renderProfilePanel()}
         </div>
       )}

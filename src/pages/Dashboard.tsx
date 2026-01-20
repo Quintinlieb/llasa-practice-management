@@ -308,7 +308,7 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-4">
+      <div className="space-y-4 -ml-6 -mr-6 pl-3 pr-3">
         <header className="rounded-2xl px-5 py-4 space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-white border border-slate-300">
           <div className="space-y-1">
             <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">

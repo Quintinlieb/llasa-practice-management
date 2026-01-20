@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { clearAuthFormDraft } from "@/lib/authFormDraft";
 import {
   ArrowRight,
   Check,
@@ -132,6 +133,10 @@ const Index = () => {
   const businessMonthly = 249;
   const businessAnnual = Math.round(businessMonthly * 12 * 0.9);
   const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
+
+  useEffect(() => {
+    clearAuthFormDraft();
+  }, []);
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;

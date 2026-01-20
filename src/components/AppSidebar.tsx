@@ -1,7 +1,6 @@
-import { FileText, Users, Home, CalendarClock, ArrowLeft, Headset, Bell, Settings, LogOut, Calculator } from "lucide-react";
+import { FileText, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useLayoutEffect, useState, type ReactElement } from "react";
-import { Button } from "@/components/ui/button";
+import { type ReactElement } from "react";
 import {
   Sidebar,
   SidebarContent,
@@ -17,7 +16,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
-const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
@@ -26,36 +24,14 @@ const primaryNavItems = [
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
 ];
 
-export function AppSidebar() {
+type AppSidebarProps = {
+  isCollapsed: boolean;
+};
+
+export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, user } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    if (!user?.id) return;
-    setCollapsed(false);
-  }, [user?.id]);
-
-  const setCollapsed = (value: boolean) => {
-    setIsCollapsed(value);
-    try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? "1" : "0");
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  useLayoutEffect(() => {
-    const width = isCollapsed ? "6.5rem" : "14rem";
-    document.documentElement.style.setProperty("--app-sidebar-width", width);
-  }, [isCollapsed]);
+  const { signOut } = useAuth();
 
   const withTooltip = (element: ReactElement, label: string) =>
     isCollapsed ? (
@@ -76,36 +52,25 @@ export function AppSidebar() {
     <Sidebar
       collapsible="none"
       className={cn(
-        "relative h-full flex flex-col rounded-2xl bg-white border border-slate-300 overflow-visible transition-[width] duration-200",
-        isCollapsed ? "w-[4.5rem]" : "w-48",
+        "relative h-full w-full flex flex-col bg-[#2D4256] text-white shadow-sm overflow-visible transition-[width] duration-200",
       )}
-      style={{ backgroundColor: "#ffffff" }}
     >
-      <Button
-        variant="default"
-        size="icon"
-        className="absolute right-[-10px] top-14 z-50 h-7 w-7 rounded-full bg-white text-primary border border-primary/20 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.35)] hover:bg-white hover:border-primary/30 hover:shadow-[0_14px_38px_-14px_rgba(0,0,0,0.38)]"
-        onClick={() => setCollapsed(!isCollapsed)}
-      >
-        <ArrowLeft className={cn("h-4 w-4 transition-transform", isCollapsed && "rotate-180")} />
-        <span className="sr-only">Collapse sidebar</span>
-      </Button>
-      <div className="flex h-full flex-col rounded-2xl overflow-hidden bg-white" style={{ backgroundColor: "#ffffff" }}>
+      <div className="flex h-full flex-col overflow-hidden">
         <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
           <img
-            src={isCollapsed ? "/thumbnail-logo.svg" : "/mainlogo.png"}
+            src={isCollapsed ? "/nudocthumbnail1.png" : "/mainlogo3 .png"}
             alt="logo"
-            className={cn(isCollapsed ? "h-8" : "h-8", "w-auto object-contain")}
+            className={cn(isCollapsed ? "h-10" : "h-9", "w-auto object-contain")}
             style={{ imageRendering: "crisp-edges" }}
           />
         </div>
-        <SidebarContent className={cn("px-4", isCollapsed && "px-2")}>
-          <SidebarGroup className="pt-2">
-            <SidebarGroupLabel className={cn("mt-0 w-full text-center", isCollapsed && "transform -translate-x-1")}>
+        <SidebarContent className="px-0">
+          <SidebarGroup className="pt-2 px-0">
+            <SidebarGroupLabel className="mt-0 w-full pl-[22px] text-left text-white/70">
               Menu
             </SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu className="gap-2">
+              <SidebarMenu className="gap-0">
                 {primaryNavItems.map((item) => {
                   const isActive =
                     item.url === "/documents"
@@ -118,15 +83,15 @@ export function AppSidebar() {
                           asChild
                           isActive={isActive}
                           className={cn(
-                            "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
+                            "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                             isActive &&
-                              "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
+                              "bg-[#010D1A] text-white border-b-2 border-blue-500 data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
                           )}
                           data-collapsed={isCollapsed}
                         >
                           <NavLink
                             to={item.url}
-                            className={cn("w-full", isCollapsed && "justify-center gap-0")}
+                            className="w-full text-xs"
                           >
                             <item.icon className="h-5 w-5" />
                             <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
@@ -142,22 +107,21 @@ export function AppSidebar() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-4 mt-auto border-t border-border bg-white" style={{ backgroundColor: "#ffffff" }}>
-          <SidebarMenu className="gap-2">
+        <SidebarFooter className="px-0 py-4 mt-auto border-t border-white/10">
+          <SidebarMenu className="gap-0">
             <SidebarMenuItem>
               {withTooltip(
                 <SidebarMenuButton
                   asChild
                   className={cn(
-                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
-                    isCollapsed && "justify-center gap-0",
+                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                     location.pathname === "/settings" &&
-                      "bg-white text-primary shadow-[0_10px_25px_-15px_rgba(255,255,255,0.6)] data-[active=true]:!bg-white [&>svg]:text-primary",
+                      "bg-[#010D1A] text-white border-b-2 border-blue-500 data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
                   )}
                   isActive={location.pathname === "/settings"}
                   data-collapsed={isCollapsed}
                 >
-                  <NavLink to="/settings" className="w-full">
+                  <NavLink to="/settings" className="w-full text-xs">
                     <Settings className="h-5 w-5" />
                     <span className={cn(isCollapsed && "sr-only")}>Settings</span>
                   </NavLink>
@@ -169,8 +133,7 @@ export function AppSidebar() {
               {withTooltip(
                 <SidebarMenuButton
                   className={cn(
-                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
-                    isCollapsed && "justify-center gap-0",
+                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                   )}
                   data-collapsed={isCollapsed}
                 >
@@ -184,8 +147,7 @@ export function AppSidebar() {
               {withTooltip(
                 <SidebarMenuButton
                   className={cn(
-                    "rounded-lg text-slate-500 transition-all duration-150 hover:bg-primary/5 hover:text-primary [&>svg]:text-slate-500 hover:[&>svg]:text-primary",
-                    isCollapsed && "justify-center gap-0",
+                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                   )}
                   data-collapsed={isCollapsed}
                 >
@@ -199,8 +161,7 @@ export function AppSidebar() {
               {withTooltip(
                 <SidebarMenuButton
                   className={cn(
-                    "group rounded-lg bg-primary text-primary-foreground transition-all duration-150 hover:bg-primary/90 hover:text-black [&>span]:transition-colors [&>span]:duration-150 [&>svg]:transition-colors [&>svg]:duration-150",
-                    isCollapsed && "justify-center gap-0",
+                    "group rounded-none px-7 !py-5 text-xs text-white underline underline-offset-4 decoration-white transition-all duration-150 hover:bg-[#010D1A] [&>span]:transition-colors [&>span]:duration-150 [&>svg]:transition-colors [&>svg]:duration-150",
                   )}
                   data-collapsed={isCollapsed}
                   onClick={async () => {
@@ -210,8 +171,8 @@ export function AppSidebar() {
                     }
                   }}
                 >
-                  <LogOut className="h-5 w-5 text-primary-foreground group-hover:text-black" />
-                  <span className={cn(isCollapsed && "sr-only", "text-primary-foreground group-hover:text-black")}>
+                  <LogOut className="h-5 w-5 text-white" />
+                  <span className={cn(isCollapsed && "sr-only", "text-white !underline underline-offset-4 decoration-white")}>
                     Sign out
                   </span>
                 </SidebarMenuButton>,

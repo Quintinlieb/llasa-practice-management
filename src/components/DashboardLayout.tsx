@@ -1,9 +1,11 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@iconify/react";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -15,10 +17,19 @@ interface Profile {
   user_email: string;
 }
 
+interface HeaderInfo {
+  account_type: string | null;
+  company_name: string | null;
+  company_type: string | null;
+  domestic_surname: string | null;
+  user_surname: string | null;
+}
+
 const STORAGE_KEYS = {
   COMPANY: "header:companyName",
   COMPANY_TYPE: "header:companyType",
   PROFILE: "header:profile",
+  SIDEBAR_COLLAPSED: "sidebar:collapsed",
 } as const;
 
 const getStoredProfile = (): Profile | null => {
@@ -32,6 +43,13 @@ const getStoredProfile = (): Profile | null => {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [companyName, setCompanyName] = useState(() => {
     try {
       return sessionStorage.getItem(STORAGE_KEYS.COMPANY) || "";
@@ -52,19 +70,47 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
   }, [profile]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
+      if (stored === null) {
+        setIsCollapsed(false);
+      }
+    } catch {
+      setIsCollapsed(false);
+    }
+  }, [user?.id]);
+
+  useLayoutEffect(() => {
+    const width = isCollapsed ? "5rem" : "10.5rem";
+    document.documentElement.style.setProperty("--app-sidebar-width", width);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, isCollapsed ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }, [isCollapsed]);
 
 
   useEffect(() => {
     if (user) {
       supabase
         .from("profiles")
-        .select("company_name, company_type")
+        .select("account_type, company_name, company_type, domestic_surname, user_surname")
         .eq("id", user.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) {
-            setCompanyName(data.company_name);
-            setCompanyType(data.company_type ?? "");
+          if (!data) return;
+          const headerData = data as HeaderInfo;
+          const isDomestic = headerData.account_type === "domestic";
+          if (isDomestic) {
+            const surname = headerData.domestic_surname || headerData.user_surname || "";
+            setCompanyName(surname ? `${surname} Household` : "");
+            setCompanyType("");
+          } else {
+            setCompanyName(headerData.company_name ?? "");
+            setCompanyType(headerData.company_type ?? "");
           }
         });
       supabase
@@ -80,12 +126,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   useEffect(() => {
     try {
-      if (companyName) {
-        sessionStorage.setItem(STORAGE_KEYS.COMPANY, companyName);
-      }
-      if (companyType) {
-        sessionStorage.setItem(STORAGE_KEYS.COMPANY_TYPE, companyType);
-      }
+      if (companyName) sessionStorage.setItem(STORAGE_KEYS.COMPANY, companyName);
+      else sessionStorage.removeItem(STORAGE_KEYS.COMPANY);
+      if (companyType) sessionStorage.setItem(STORAGE_KEYS.COMPANY_TYPE, companyType);
+      else sessionStorage.removeItem(STORAGE_KEYS.COMPANY_TYPE);
       if (profile) {
         sessionStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
       }
@@ -96,19 +140,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <SidebarProvider>
-      <div className="app-shell relative min-h-screen w-screen flex bg-transparent overflow-hidden">
+      <div className="app-shell relative min-h-screen w-screen flex bg-[#f3f4f6] overflow-hidden">
         <div
           className="pointer-events-none absolute inset-0 -z-10"
           aria-hidden="true"
         >
-          <div className="h-full w-full bg-[#c0d3f2] blur-md scale-105" />
+          <div className="h-full w-full bg-[#f3f4f6] blur-md scale-105" />
           <div className="absolute inset-0 bg-white/08" />
         </div>
         <div
-          className="fixed left-0 top-0 z-40 h-screen p-4 transition-[width] duration-200 ease-linear"
-          style={{ width: "var(--app-sidebar-width, 14rem)", backgroundColor: "#c0d3f2" }}
+          className="fixed left-0 top-0 bottom-0 z-40 transition-[width] duration-200 ease-linear"
+          style={{ width: "var(--app-sidebar-width, 14rem)", backgroundColor: "#2f3134" }}
         >
-          <AppSidebar />
+          <AppSidebar isCollapsed={isCollapsed} />
         </div>
         <div
           className="flex-shrink-0 transition-[width] duration-200 ease-linear"
@@ -117,34 +161,52 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         />
         <div className="flex flex-1 min-h-screen flex-col bg-transparent">
           <header
-            className="fixed top-0 z-40 pr-4 pl-0 pt-4 pb-0 bg-transparent transition-[left] duration-200 ease-linear"
+            className="fixed top-0 z-40 bg-transparent transition-[left] duration-200 ease-linear"
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
-            <div className="relative w-full rounded-2xl border border-slate-300 bg-white px-6 py-3 flex items-center justify-between">
-              <div className="flex items-center">
+            <div className="relative w-full bg-white pl-1 pr-6 py-3 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCollapsed((prev) => !prev)}
+                  className="h-12 w-12 text-slate-700 hover:text-blue-600"
+                >
+                  <Icon
+                    icon="material-symbols:menu-open-sharp"
+                    width={28}
+                    height={28}
+                    className={isCollapsed ? "rotate-180" : undefined}
+                  />
+                  <span className="sr-only">Toggle sidebar</span>
+                </button>
                 {companyName && (
-                  <h1 className="text-lg font-semibold">
+                  <h1 className="text-xl font-semibold">
                     {companyName}
                     {companyType ? ` ${companyType}` : ""}
                   </h1>
                 )}
               </div>
               {profile && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
-                      {initials}
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" align="end" collisionPadding={12} className="text-xs">
-                    <div className="font-semibold">
-                      {profile.user_name} {profile.user_surname}
-                    </div>
-                    <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${profile.user_email}`}>
-                      {profile.user_email}
-                    </a>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-slate-700">
+                    Hi, {profile.user_name} {profile.user_surname}
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+                        {initials}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" align="end" collisionPadding={12} className="text-xs">
+                      <div className="font-semibold">
+                        {profile.user_name} {profile.user_surname}
+                      </div>
+                      <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${profile.user_email}`}>
+                        {profile.user_email}
+                      </a>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               )}
             </div>
           </header>

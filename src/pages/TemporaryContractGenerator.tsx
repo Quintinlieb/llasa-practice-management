@@ -1446,7 +1446,7 @@ const TemporaryContractGenerator = () => {
             document.body,
           )
         : null}
-      <div className="space-y-6" style={{ scrollbarGutter: "stable" }}>
+      <div className="space-y-6 -ml-6 -mr-6 pl-3 pr-3" style={{ scrollbarGutter: "stable" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <button

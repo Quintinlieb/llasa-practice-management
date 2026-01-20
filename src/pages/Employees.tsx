@@ -2111,16 +2111,18 @@ const Employees = () => {
 
    if (loading) {
      return (
-       <div className="min-h-screen flex items-center justify-center">
-         <p className="text-muted-foreground">Loading...</p>
-       </div>
+       <DashboardLayout>
+         <div className="min-h-[60vh] flex items-center justify-center">
+           <p className="text-muted-foreground">Loading...</p>
+         </div>
+       </DashboardLayout>
      );
    }
 
   return (
     <DashboardLayout>
       {!isProfilePanelOpen ? (
-        <div className="space-y-4 -ml-6">
+        <div className="space-y-4 -ml-6 -mr-6 pl-3 pr-3">
         <div className="rounded-2xl px-5 py-4 bg-white border border-slate-300">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">

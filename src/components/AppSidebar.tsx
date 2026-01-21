@@ -38,7 +38,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       <TooltipProvider delayDuration={0}>
         <Tooltip>
           <TooltipTrigger asChild>{element}</TooltipTrigger>
-          <TooltipContent side="right" className="drop-shadow-md">
+          <TooltipContent side="right" className="rounded drop-shadow-md">
             {label}
           </TooltipContent>
         </Tooltip>
@@ -58,9 +58,9 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       <div className="flex h-full flex-col overflow-hidden">
         <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
           <img
-            src={isCollapsed ? "/nudocthumbnail1.png" : "/mainlogo3 .png"}
+            src={isCollapsed ? "/nudocthumbnail1.png" : "/mainlogo4.png"}
             alt="logo"
-            className={cn(isCollapsed ? "h-10" : "h-9", "w-auto object-contain")}
+            className={cn(isCollapsed ? "h-10" : "h-8", "w-auto object-contain")}
             style={{ imageRendering: "crisp-edges" }}
           />
         </div>

@@ -188,24 +188,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
               {profile && (
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-slate-700">
-                    Hi, {profile.user_name} {profile.user_surname}
-                  </span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
-                        {initials}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="end" collisionPadding={12} className="text-xs">
-                      <div className="font-semibold">
-                        {profile.user_name} {profile.user_surname}
-                      </div>
-                      <a className="text-primary underline-offset-4 hover:underline" href={`mailto:${profile.user_email}`}>
-                        {profile.user_email}
-                      </a>
-                    </TooltipContent>
-                  </Tooltip>
+                  <span className="h-10 w-px bg-slate-200 self-center" aria-hidden="true" />
+                  <div className="flex flex-col items-end text-right leading-tight">
+                    <span className="text-sm font-medium text-slate-700">
+                      Welcome, {profile.user_name} {profile.user_surname}
+                    </span>
+                    <span className="mt-1 h-px w-12 bg-slate-200" aria-hidden="true" />
+                    <span className="text-[11px] text-blue-600">{profile.user_email}</span>
+                  </div>
                 </div>
               )}
             </div>

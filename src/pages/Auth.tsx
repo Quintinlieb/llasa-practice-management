@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,7 @@ const Auth = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const clearedSessionRef = useRef(false);
 
   useEffect(() => {
     const draft = readAuthFormDraft();
@@ -72,31 +73,20 @@ const Auth = () => {
     });
   }, [isLogin, email, password, confirmPassword, accountType, acceptedTerms]);
 
-  // If coming from marketing CTAs with ?new=1, default to Sign Up view and ensure no existing session persists
+  // When starting a new auth flow, clear any existing session once.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const fromMarketing = params.get("new") === "1";
     const fromLogin = params.get("login") === "1";
-    if (!fromMarketing) return;
-    setIsLogin(false);
-    // Ensure we are fully signed out before continuing, so we don't auto-redirect away
-    (async () => {
-      if (!loading && user) {
+    if (!fromMarketing && !fromLogin) return;
+    setIsLogin(fromLogin);
+    if (clearedSessionRef.current || loading) return;
+    clearedSessionRef.current = true;
+    if (user) {
+      (async () => {
         await signOut();
-      }
-    })();
-  }, [location.search, loading, user, signOut]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const fromLogin = params.get("login") === "1";
-    if (!fromLogin) return;
-    setIsLogin(true);
-    (async () => {
-      if (!loading && user) {
-        await signOut();
-      }
-    })();
+      })();
+    }
   }, [location.search, loading, user, signOut]);
 
   useEffect(() => {
@@ -265,7 +255,7 @@ const Auth = () => {
             />
           </div>
           <div className="relative z-10 flex h-full w-full flex-col items-center justify-center p-14 text-white">
-            <img src="/mainlogo2.png" alt="Hure Systems" className="mx-auto h-auto w-64" />
+            <img src="/mainlogo4.png" alt="Hure Systems" className="mx-auto h-auto w-56" />
             <p className="mt-10 max-w-lg text-center text-[0.8125rem] text-white/80">
               {isLogin
                 ? "Welcome back to Nudoc\u2122. A secure and reliable platform that simplifies the drafting and storage of your most important HR documents."
@@ -289,7 +279,7 @@ const Auth = () => {
           <div className="w-full max-w-md space-y-4">
             <div className="text-center space-y-3">
               <div className="mx-auto flex items-center justify-center">
-                <img src="/thumbnail-logo.svg" alt="thumbnail logo" className="h-12 w-12" />
+                <img src="/nudocthumbnail1.png" alt="thumbnail logo" className="h-12 w-12" />
               </div>
               <div className="space-y-1">
                 <h1 className="text-[1.35rem] font-semibold text-foreground">

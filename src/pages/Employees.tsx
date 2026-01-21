@@ -62,6 +62,8 @@ import {
   employeeProfileSchema,
   sanitizeEmployeeNumber,
   nationalityOptions,
+  genderOptions,
+  raceOptions,
   southAfricanProvinces,
   type EmployeeBasicFormData,
   type EmployeeProfileFormData,
@@ -78,6 +80,8 @@ type Employee = Tables<"employees"> & {
   nationality?: string | null;
   employee_number?: string | null;
   job_title?: string | null;
+  gender?: string | null;
+  race?: string | null;
   physical_address_line1?: string | null;
   physical_address_line2?: string | null;
   city?: string | null;
@@ -251,6 +255,8 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
   nationality:
     (coerceEnumValue(employee?.nationality, nationalityOptions) as EmployeeProfileFormData["nationality"]) ??
     DEFAULT_NATIONALITY,
+  gender: (employee?.gender ?? "") as EmployeeProfileFormData["gender"],
+  race: (employee?.race ?? "") as EmployeeProfileFormData["race"],
   employeeNumber: cleanEmployeeNumberInput(employee?.employee_number),
   jobTitle: employee?.job_title ?? "",
   physicalAddressLine1: employee?.physical_address_line1 ?? "",
@@ -396,13 +402,10 @@ const Employees = () => {
     addForm.employeeName.trim().length > 0 && addForm.employeeSurname.trim().length > 0;
   const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
   const fieldWrapperClass = "space-y-1";
-  const fieldLabelClass =
-    "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700";
+  const fieldLabelClass = "text-[11px] font-semibold text-slate-500";
   const baseFieldInputClass =
-    "h-9 rounded-lg border border-border/60 bg-background/80 text-sm font-medium text-foreground shadow-sm placeholder:text-xs focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:border-primary/40 disabled:bg-background disabled:text-foreground disabled:border-border/60 disabled:opacity-100 disabled:cursor-default";
-  const viewModeFieldInputExtras =
-    "border-none bg-transparent shadow-none focus-visible:ring-0 focus-visible:border-transparent px-0 py-0 h-auto rounded-none";
-  const fieldInputClass = `${baseFieldInputClass} ${isEditMode ? "" : viewModeFieldInputExtras}`;
+    "h-9 rounded-sm border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-none placeholder:text-xs focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:border-blue-400 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+  const fieldInputClass = baseFieldInputClass;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
 
   useLayoutEffect(() => {
@@ -417,12 +420,18 @@ const Employees = () => {
     window.addEventListener("resize", onResize);
 
     return () => window.removeEventListener("resize", onResize);
-  }, [isProfilePanelOpen]);
+  }, [isProfilePanelOpen, employees.length, filteredEmployees.length]);
 
+  const tableBottomGap = 32;
+  const tableFooterHeight = 32;
   const tableMaxHeight =
-    tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px)` : "calc(100vh - 340px)";
+    tableOffsetTop > 0
+      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight}px)`
+      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight}px)`;
   const tableBodyMaxHeight =
-    tableOffsetTop > 0 ? `calc(100vh - ${tableOffsetTop}px - 56px)` : "calc(100vh - 340px - 56px)";
+    tableOffsetTop > 0
+      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
+      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
   const totalPages = totalEmployees !== null ? Math.ceil(totalEmployees / DEFAULT_PAGE_SIZE) : null;
   const isFirstPage = currentPage === 1;
   const isLastPage =
@@ -834,122 +843,103 @@ const Employees = () => {
     if (!selectedEmployee) return null;
 
     return (
-      <div className="space-y-4">
-        <div className="rounded-2xl px-5 py-4 bg-white border border-slate-300">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
+      <div className="flex h-full flex-col rounded-sm bg-white px-6 py-5">
+        <div className="flex items-start justify-between gap-4 pt-2">
+          <div className="space-y-6 w-full">
+            <div className="flex items-center justify-between gap-3 w-full">
+              <div className="flex items-center gap-1 text-xs font-semibold text-slate-500">
                 <button
                   type="button"
                   onClick={closeProfileDialog}
-                  className="underline-offset-2 rounded-sm hover:underline"
+                  className="underline-offset-2 hover:underline"
                 >
                   Employees
                 </button>
-                <span aria-hidden="true" className="text-slate-500">
-                  &gt;
-                </span>
-                <span className="underline-offset-2 rounded-sm" aria-current="page">
-                  Profile
-                </span>
+                <span aria-hidden="true">&gt;</span>
+                <span>Profile</span>
               </div>
-              <h1 className="text-xl font-bold uppercase text-blue-700">
+              <Button
+                variant="outline"
+                className="h-8 px-3 text-xs gap-1.5 rounded-sm"
+                onClick={() => setIsEditMode((prev) => !prev)}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {isEditMode ? "Editing" : "Edit"}
+              </Button>
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-3xl font-bold text-blue-700">
                 {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
               </h1>
               <p className="text-xs text-gray-600">
-                Quickly access this employee's details and attach important documents such as warnings and contracts.
+                View and edit this employee&apos;s information here.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-3 justify-end">
-              <Button
-                variant={isEditMode ? "outline" : "ghost"}
-                className="h-8 px-3 text-xs gap-1.5"
-                onClick={() => setIsEditMode((prev) => !prev)}
-              >
-                {isEditMode ? (
-                  <>
-                    <X className="h-3.5 w-3.5" />
-                    Cancel
-                  </>
-                ) : (
-                  <>
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </>
-                )}
-              </Button>
-              {isEditMode && (
-                <Button
-                  className="h-8 px-3 text-xs gap-1.5"
-                  onClick={handleProfileSave}
-                  disabled={isProfileSaving}
-                >
-                  {isProfileSaving ? "Saving..." : "Save"}
-                </Button>
-              )}
-              <Button
-                variant="default"
-                className="h-8 px-3 text-xs gap-1.5"
-                onClick={closeProfileDialog}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
-              </Button>
             </div>
           </div>
         </div>
 
-        <div
-          ref={tableCardRef}
-          className="rounded-2xl bg-white/55 backdrop-blur-2xl border border-slate-300"
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as EmployeeTab)}
+          className="mt-8"
         >
-        <div className="pt-0">
-          <div className="rounded-2xl border border-border/60 bg-white p-2 shadow-sm dark:bg-background/70">
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => setActiveTab(value as EmployeeTab)}
-              className="mt-0"
-            >
-              <div className="flex flex-col gap-3">
-                <TabsList className="h-auto w-full flex-wrap justify-start gap-3 rounded-xl bg-white px-2 pt-2 pb-1 shadow-none border-b-2 border-border">
-                  <TabsTrigger value="personal" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
-                    Personal
-                  </TabsTrigger>
-                  <TabsTrigger value="employment" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
-                    Employment
-                  </TabsTrigger>
-                  <TabsTrigger value="address" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
-                    Address
-                  </TabsTrigger>
-                  <TabsTrigger value="discipline" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
-                    Discipline
-                  </TabsTrigger>
-                  <TabsTrigger value="contracts" className="rounded-lg px-3 py-2 text-left text-sm data-[state=inactive]:hover:!text-black data-[state=active]:!bg-white data-[state=active]:!text-blue-700 data-[state=active]:underline data-[state=active]:underline-offset-4 data-[state=active]:shadow-none">
-                    Contract
-                  </TabsTrigger>
-                </TabsList>
-                <div className="flex-1 px-2">
-                  <TabsContent value="personal" className="mt-1 pb-4">
-                    {renderPersonalTab()}
-                  </TabsContent>
-                  <TabsContent value="employment" className="mt-1 pb-4">
-                    {renderEmploymentTab()}
-                  </TabsContent>
-                  <TabsContent value="address" className="mt-1 pb-4">
-                    {renderAddressTab()}
-                  </TabsContent>
-                  <TabsContent value="discipline" className="mt-1 pb-4">
-                    {renderDisciplineTab()}
-                  </TabsContent>
-                  <TabsContent value="contracts" className="mt-1 pb-4">
-                    {renderContractTab()}
-                  </TabsContent>
-                </div>
-              </div>
-            </Tabs>
+          <div className="flex flex-col gap-3">
+            <div className="relative">
+            <TabsList className="h-auto w-full flex-wrap justify-start gap-0 bg-transparent px-0 py-0 shadow-none">
+              <TabsTrigger value="personal" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
+                Personal
+              </TabsTrigger>
+              <TabsTrigger value="employment" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
+                Employment
+              </TabsTrigger>
+              <TabsTrigger value="address" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
+                Address
+              </TabsTrigger>
+              <TabsTrigger value="discipline" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
+                Discipline
+              </TabsTrigger>
+              <TabsTrigger value="contracts" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
+                Contract
+              </TabsTrigger>
+            </TabsList>
+            <div className="pointer-events-none absolute left-0 right-0 bottom-0 h-px bg-slate-200" aria-hidden="true" />
+            </div>
+            <div className="flex-1 px-0">
+              <TabsContent value="personal" className="mt-4 pb-4">
+                {renderPersonalTab()}
+              </TabsContent>
+              <TabsContent value="employment" className="mt-4 pb-4">
+                {renderEmploymentTab()}
+              </TabsContent>
+              <TabsContent value="address" className="mt-4 pb-4">
+                {renderAddressTab()}
+              </TabsContent>
+              <TabsContent value="discipline" className="mt-4 pb-4">
+                {renderDisciplineTab()}
+              </TabsContent>
+              <TabsContent value="contracts" className="mt-4 pb-4">
+                {renderContractTab()}
+              </TabsContent>
+            </div>
           </div>
+        </Tabs>
+
+        <div className="mt-auto flex items-center justify-between pt-4">
+          <Button
+            variant="outline"
+            className="h-9 px-4 text-xs"
+            onClick={closeProfileDialog}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="h-9 px-4 text-xs"
+            onClick={handleProfileSave}
+            disabled={!isEditMode || isProfileSaving}
+          >
+            {isProfileSaving ? "Saving..." : "Save"}
+          </Button>
         </div>
-      </div>
       </div>
     );
   };
@@ -1192,6 +1182,8 @@ const Employees = () => {
           contract_type: validated.contractType,
           end_date: endDateValue,
           nationality: validated.nationality,
+          gender: validated.gender,
+          race: validated.race,
           employee_number: finalEmployeeNumber,
           job_title: validated.jobTitle || null,
           physical_address_line1: validated.physicalAddressLine1 || null,
@@ -1501,7 +1493,7 @@ const Employees = () => {
 
   const renderPersonalTab = () => (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Name
@@ -1573,8 +1565,56 @@ const Employees = () => {
             </SelectContent>
           </Select>
         </div>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Gender</Label>
+          <Select
+            value={profileForm.gender || ""}
+            disabled={!isEditMode}
+            onValueChange={(value) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                gender: value as EmployeeProfileFormData["gender"],
+              }))
+            }
+          >
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Gender" />
+            </SelectTrigger>
+            <SelectContent>
+              {genderOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className={fieldWrapperClass}>
+          <Label className={fieldLabelClass}>Race</Label>
+          <Select
+            value={profileForm.race || ""}
+            disabled={!isEditMode}
+            onValueChange={(value) =>
+              setProfileForm((prev) => ({
+                ...prev,
+                race: value as EmployeeProfileFormData["race"],
+              }))
+            }
+          >
+            <SelectTrigger className={fieldSelectTriggerClass} showIcon={isEditMode}>
+              <SelectValue placeholder="Race" />
+            </SelectTrigger>
+            <SelectContent>
+              {raceOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Cell Number
@@ -1825,7 +1865,7 @@ const Employees = () => {
 
   const renderEmploymentTab = () => (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className={fieldWrapperClass}>
           <Label className={fieldLabelClass}>
             Start Date
@@ -2121,26 +2161,18 @@ const Employees = () => {
 
   return (
     <DashboardLayout>
-      {!isProfilePanelOpen ? (
-        <div className="space-y-4 -ml-6 -mr-6 pl-3 pr-3">
-        <div className="rounded-2xl px-5 py-4 bg-white border border-slate-300">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
-                <span className="underline-offset-2 rounded-sm">Home</span>
-                <span aria-hidden="true" className="text-slate-500">
-                  &gt;
-                </span>
-                <span className="underline-offset-2 rounded-sm" aria-current="page">
-                  Employees
-                </span>
-              </div>
-              <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
-              <p className="text-xs text-gray-600">
-                Browse, search, and manage your employees and attach their documents.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3 justify-end">
+      <div className="-ml-6 -mr-6 pl-3 pr-3 -mt-3">
+          <div className="relative">
+            <div className="space-y-3">
+              <div className="rounded-sm px-5 py-4 bg-white border border-slate-300">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
+                    <p className="text-xs text-gray-600">
+                      Browse, search, and manage your employees and attach their documents.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3 justify-end">
               <Button
                 variant="outline"
                 onClick={handleBulkDelete}
@@ -2149,7 +2181,7 @@ const Employees = () => {
                   selectedEmployees.size > 0
                     ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
                     : ""
-                }`}
+                } rounded-sm`}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete
@@ -2157,7 +2189,7 @@ const Employees = () => {
 
               <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" className="h-8 px-3 text-xs gap-1.5">
+                  <Button variant="outline" className="h-8 px-3 text-xs gap-1.5 rounded-sm">
                     <Upload className="h-3.5 w-3.5" />
                     Bulk Upload
                   </Button>
@@ -2213,7 +2245,7 @@ const Employees = () => {
 
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="h-8 px-3 text-xs gap-1.5">
+                  <Button className="h-8 px-3 text-xs gap-1.5 rounded-sm">
                   <Plus className="h-3.5 w-3.5" />
                   Add Employee
                 </Button>
@@ -2318,7 +2350,7 @@ const Employees = () => {
         </div>
       </div>
 
-        <Card className="rounded-2xl bg-white border border-slate-300">
+        <Card className="rounded-sm bg-white border border-slate-300">
           <CardHeader className="px-6 pt-5 pb-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full sm:max-w-lg">
@@ -2326,7 +2358,7 @@ const Employees = () => {
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 rounded-xl border-2 border-primary/30 bg-white/30 pr-12 text-xs shadow-md placeholder:text-xs focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
+                  className="h-10 rounded-sm border-2 border-primary/30 bg-white/30 pr-12 text-xs shadow-md placeholder:text-xs focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
                 />
                 <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
               </div>
@@ -2335,7 +2367,7 @@ const Employees = () => {
                   value={contractFilter}
                   onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
                 >
-                  <SelectTrigger className="w-full sm:w-52 text-xs bg-white/30 border-2 border-primary/30">
+                  <SelectTrigger className="w-full sm:w-52 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
                     <SelectValue placeholder="Filter by contract" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2373,7 +2405,7 @@ const Employees = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="relative rounded-md overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
+                <div ref={tableCardRef} className="relative overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
                   <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
                     <div className="flex items-center justify-center">
                       <Checkbox
@@ -2395,7 +2427,7 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-1 text-xs hover:bg-muted/30"
+                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-0.5 text-xs hover:bg-blue-50/70"
                       >
                         <div className="flex items-center justify-center">
                           <Checkbox
@@ -2411,12 +2443,9 @@ const Employees = () => {
                           >
                             {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
                           </button>
-                          {employee.employee_number && (
-                            <p className="text-[10px] text-muted-foreground leading-tight">#{employee.employee_number}</p>
-                          )}
                         </div>
                         <div className="flex items-center gap-2 leading-tight">
-                          <span className="text-xs font-normal">
+                          <span className="text-[11px] font-normal">
                             {employee.id_number
                               ? revealedIds.has(employee.id)
                                 ? employee.id_number
@@ -2439,7 +2468,7 @@ const Employees = () => {
                             className="h-6 w-6 p-0"
                             title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
                           >
-                            {revealedIds.has(employee.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            {revealedIds.has(employee.id) ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
                           </Button>
                         </div>
                         <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
@@ -2458,7 +2487,7 @@ const Employees = () => {
                                     <Search className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">View Profile</TooltipContent>
+                                <TooltipContent side="top" className="rounded">View Profile</TooltipContent>
                               </Tooltip>
                               <Tooltip disableHoverableContent>
                                 <TooltipTrigger asChild>
@@ -2471,7 +2500,7 @@ const Employees = () => {
                                     <FilePlus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Add Document</TooltipContent>
+                                <TooltipContent side="top" className="rounded">Add Document</TooltipContent>
                               </Tooltip>
                             </div>
                           </TooltipProvider>
@@ -2481,8 +2510,8 @@ const Employees = () => {
                   </div>
                   {showScrollHint && (
                     <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                      <div className="relative rounded-full border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-                        <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
+                      <div className="relative rounded-sm border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                        <span className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
                         <span className="relative">Scroll down</span>
                       </div>
                     </div>
@@ -2520,10 +2549,20 @@ const Employees = () => {
             )}
           </CardContent>
         </Card>
+            </div>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-6 -ml-6">
-          {renderProfilePanel()}
+      {isProfilePanelOpen && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/65"
+            aria-label="Close employee profile"
+            onClick={closeProfileDialog}
+          />
+          <section className="absolute right-4 top-4 bottom-4 w-full sm:w-[45vw] max-w-[680px] rounded-sm bg-white shadow-2xl border border-slate-200 animate-in slide-in-from-right-6 duration-200 overflow-y-auto">
+            {renderProfilePanel()}
+          </section>
         </div>
       )}
 
@@ -2655,9 +2694,9 @@ const Employees = () => {
               >
                 <X className="h-4 w-4" />
               </button>
-            </div>
-          </div>
-        </div>
+                  </div>
+                </div>
+              </div>
       )}
 
       {warningDeleteUndo && (

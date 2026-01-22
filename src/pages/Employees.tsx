@@ -31,6 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Plus,
   Trash2,
@@ -48,6 +56,7 @@ import {
   UsersRound,
   Info,
   ArrowRight,
+  MoreVertical,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -131,7 +140,8 @@ type EmployeeWarning = {
   fileUrl?: string;
 };
 type OffenceSection = {
-  offences: { name: string }[];
+  title?: string;
+  offences?: Array<{ name?: string; category?: string; first?: string }>;
 };
 type DeleteUndoState = {
   deletedEmployees: Employee[];
@@ -150,6 +160,19 @@ type DocumentOption = {
   description: string;
   path: string;
   active: boolean;
+};
+
+type ConductOffence = {
+  category: "Minor" | "Serious" | "Dismissible";
+  name: string;
+  firstOutcome: string;
+};
+
+type WarningFormState = {
+  misconductTypes: string[];
+  warningType: EmployeeWarning["warningType"];
+  issueDate: string;
+  fileName: string;
 };
 
 const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]): T | "" =>
@@ -279,13 +302,31 @@ const formatDisplayDate = (value?: string | null) => {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = String(date.getFullYear());
+  return `${day}/${month}/${year}`;
 };
 
+const parseMisconductTypes = (value?: string | null) => {
+  if (!value) return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item)).filter(Boolean);
+      }
+    } catch {
+      // Fallback to split if parsing fails.
+    }
+  }
+  return trimmed
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
 
 const DEFAULT_PAGE_SIZE = 25;
 const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
@@ -372,16 +413,18 @@ const Employees = () => {
   const [addForm, setAddForm] = useState<EmployeeBasicFormData>(createBlankAddForm());
   const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
   const [isWarningDialogOpen, setIsWarningDialogOpen] = useState(false);
-  const [warningForm, setWarningForm] = useState<Omit<EmployeeWarning, "id" | "expiryDate">>({
-    misconductType: "",
+  const [warningForm, setWarningForm] = useState<WarningFormState>({
+    misconductTypes: [],
     warningType: "First",
     issueDate: dateToday(),
     fileName: "",
   });
+  const [warningFilter, setWarningFilter] = useState<"valid" | "expired">("valid");
   const [warningFile, setWarningFile] = useState<File | null>(null);
   const [warningsByEmployee, setWarningsByEmployee] = useState<Record<string, EmployeeWarning[]>>({});
   const [misconductSearch, setMisconductSearch] = useState("");
-  const [misconductOptions, setMisconductOptions] = useState<string[]>(MISCONDUCT_TYPES);
+  const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
+  const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
   const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
@@ -402,7 +445,7 @@ const Employees = () => {
     addForm.employeeName.trim().length > 0 && addForm.employeeSurname.trim().length > 0;
   const isAddFormSubmitDisabled = isLoading || !isAddFormComplete;
   const fieldWrapperClass = "space-y-1";
-  const fieldLabelClass = "text-[11px] font-semibold text-slate-500";
+  const fieldLabelClass = "text-[12px] font-semibold text-slate-500";
   const baseFieldInputClass =
     "h-9 rounded-sm border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-none placeholder:text-xs focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:border-blue-400 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const fieldInputClass = baseFieldInputClass;
@@ -606,7 +649,7 @@ const Employees = () => {
 
   const canUploadWarning =
     !!selectedEmployee &&
-    warningForm.misconductType.trim().length > 0 &&
+    warningForm.misconductTypes.length > 0 &&
     warningForm.issueDate.trim().length > 0 &&
     isPdfFile(warningForm.fileName) &&
     !!warningFile;
@@ -662,7 +705,7 @@ const Employees = () => {
       });
       return;
     }
-    if (!warningForm.misconductType.trim() || !warningForm.issueDate || !isPdfFile(warningForm.fileName) || !warningFile) {
+    if (warningForm.misconductTypes.length === 0 || !warningForm.issueDate || !isPdfFile(warningForm.fileName) || !warningFile) {
       toast({
         title: "Missing details",
         description: "Please select misconduct, warning type, issue date, and upload a PDF warning.",
@@ -697,7 +740,7 @@ const Employees = () => {
     const { error: insertError } = await warningTable().insert({
       company_id: user.id,
       employee_id: selectedEmployee.id,
-      misconduct_type: warningForm.misconductType,
+      misconduct_type: JSON.stringify(warningForm.misconductTypes),
       warning_type: warningForm.warningType,
       issue_date: warningForm.issueDate,
       expiry_date: expiryDate,
@@ -716,7 +759,7 @@ const Employees = () => {
     await fetchWarnings(selectedEmployee.id);
 
     setWarningForm({
-      misconductType: "",
+      misconductTypes: [],
       warningType: "First",
       issueDate: dateToday(),
       fileName: "",
@@ -833,11 +876,54 @@ const Employees = () => {
     };
   }, [warningsForSelectedEmployee]);
 
+  const misconductOptions = useMemo(() => {
+    if (conductOffences.length > 0) return conductOffences;
+    return MISCONDUCT_TYPES.map((name) => ({ name, category: "Serious" as const, firstOutcome: "" }));
+  }, [conductOffences]);
+
+  const misconductColorClasses = (category: "Minor" | "Serious" | "Dismissible") => {
+    if (category === "Minor") return "text-emerald-700";
+    if (category === "Serious") return "text-amber-700";
+    return "text-red-700";
+  };
+
+  const misconductCheckboxClasses = (category: "Minor" | "Serious" | "Dismissible") => {
+    if (category === "Minor") {
+      return "border-emerald-500 data-[state=checked]:bg-emerald-100 data-[state=checked]:border-emerald-600 text-emerald-700";
+    }
+    if (category === "Serious") {
+      return "border-amber-500 data-[state=checked]:bg-amber-100 data-[state=checked]:border-amber-600 text-amber-700";
+    }
+    return "border-red-500 data-[state=checked]:bg-red-100 data-[state=checked]:border-red-600 text-red-700";
+  };
+
+  const getMisconductCategory = (name: string): "Minor" | "Serious" | "Dismissible" => {
+    const found = conductOffences.find((item) => item.name === name);
+    return found?.category ?? "Serious";
+  };
+
   const filteredMisconductTypes = useMemo(() => {
     const query = misconductSearch.trim().toLowerCase();
     if (!query) return misconductOptions;
-    return misconductOptions.filter((type) => type.toLowerCase().includes(query));
+    return misconductOptions.filter((type) => type.name.toLowerCase().includes(query));
   }, [misconductSearch, misconductOptions]);
+
+  const toggleWarningMisconduct = (type: string) => {
+    setWarningForm((prev) => {
+      const exists = prev.misconductTypes.includes(type);
+      const next = exists
+        ? prev.misconductTypes.filter((item) => item !== type)
+        : [...prev.misconductTypes, type];
+      return { ...prev, misconductTypes: next };
+    });
+  };
+
+  const handleMisconductMenuOpenChange = (open: boolean) => {
+    setIsMisconductMenuOpen(open);
+    if (!open) {
+      setMisconductSearch("");
+    }
+  };
 
   const renderProfilePanel = () => {
     if (!selectedEmployee) return null;
@@ -1001,13 +1087,41 @@ const Employees = () => {
       .select("data")
       .eq("company_id", user.id)
       .maybeSingle();
-    if (error) return;
-      const raw = (data?.data as any) ?? null;
-      const sections = Array.isArray(raw?.sections) ? (raw.sections as OffenceSection[]) : Array.isArray(raw) ? (raw as OffenceSection[]) : [];
-      const names = sections.flatMap((section) => section.offences?.map((o) => o.name) ?? []);
-    const unique = Array.from(new Set(names.filter(Boolean)));
-    if (unique.length > 0) {
-      setMisconductOptions(unique);
+    if (error) {
+      return;
+    }
+
+    const raw = (data?.data as any) ?? null;
+    const sections = Array.isArray(raw?.sections)
+      ? (raw.sections as OffenceSection[])
+      : Array.isArray(raw)
+        ? (raw as OffenceSection[])
+        : [];
+
+    const mapped = sections
+      .flatMap((section) => {
+        const sectionCategory = section.title?.toLowerCase().includes("dismiss")
+          ? "Dismissible"
+          : section.title?.toLowerCase().includes("minor")
+            ? "Minor"
+            : section.title?.toLowerCase().includes("serious")
+              ? "Serious"
+              : undefined;
+        return (section.offences ?? []).map((offence) => {
+          const name = offence.name?.trim();
+          if (!name) return null;
+          const category =
+            (offence.category as "Minor" | "Serious" | "Dismissible" | undefined) ?? sectionCategory ?? "Serious";
+          return { name, category, firstOutcome: offence.first ?? "" };
+        });
+      })
+      .filter(
+        (item): item is ConductOffence =>
+          Boolean(item?.name),
+      );
+
+    if (mapped.length > 0) {
+      setConductOffences(mapped);
     }
   }, [user]);
 
@@ -1686,25 +1800,23 @@ const Employees = () => {
   const renderAddressTab = () => (
     <div className="space-y-4">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,420px)]">
-        <div className="grid gap-3 sm:grid-cols-[auto_1fr] items-start">
-          <p className="mt-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700">
-            Physical Address:
-          </p>
-          <div className={fieldWrapperClass}>
-            <Input
-              className={fieldInputClass}
-              placeholder="Address Line 1"
-              value={profileForm.physicalAddressLine1}
-              disabled={!isEditMode}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  physicalAddressLine1: e.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="col-start-2 space-y-3">
+        <div className="space-y-3">
+          <Label className={fieldLabelClass}>Physical Address</Label>
+          <div className="space-y-3">
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Address Line 1"
+                value={profileForm.physicalAddressLine1}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    physicalAddressLine1: e.target.value,
+                  }))
+                }
+              />
+            </div>
             <div className={fieldWrapperClass}>
               <Input
                 className={fieldInputClass}
@@ -1773,25 +1885,44 @@ const Employees = () => {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[auto_1fr] items-start">
-          <p className="mt-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-blue-700">
-            Postal Address:
-          </p>
-          <div className={fieldWrapperClass}>
-            <Input
-              className={fieldInputClass}
-              placeholder="Address Line 1"
-              value={profileForm.postalAddressLine1}
+        <div className="space-y-3">
+          <div className="flex items-center gap-4">
+            <Label className={fieldLabelClass}>Postal Address</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px] text-slate-900 rounded-[5px] hover:bg-transparent hover:text-slate-900 hover:border-blue-600"
               disabled={!isEditMode}
-              onChange={(e) =>
+              onClick={() =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  postalAddressLine1: e.target.value,
+                  postalAddressLine1: prev.physicalAddressLine1,
+                  postalAddressLine2: prev.physicalAddressLine2,
+                  postalCity: prev.city,
+                  postalProvince: prev.province,
+                  postalAreaCode: prev.areaCode,
                 }))
               }
-            />
+            >
+              Copy from physical
+            </Button>
           </div>
-          <div className="col-start-2 space-y-3">
+          <div className="space-y-3">
+            <div className={fieldWrapperClass}>
+              <Input
+                className={fieldInputClass}
+                placeholder="Address Line 1"
+                value={profileForm.postalAddressLine1}
+                disabled={!isEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalAddressLine1: e.target.value,
+                  }))
+                }
+              />
+            </div>
             <div className={fieldWrapperClass}>
               <Input
                 className={fieldInputClass}
@@ -1967,8 +2098,24 @@ const Employees = () => {
     </div>
   );
 
-  const renderDisciplineTab = () => (
-    <div className="space-y-6">
+  const renderDisciplineTab = () => {
+    const showingValid = warningFilter === "valid";
+    const activeWarnings = showingValid ? warningsByStatus.valid : warningsByStatus.expired;
+    const warningTypeTag: Record<EmployeeWarning["warningType"], string> = {
+      First: "First",
+      Second: "Second",
+      Serious: "Serious",
+      Final: "Final",
+    };
+    const warningTypeBadgeClass: Record<EmployeeWarning["warningType"], string> = {
+      First: "border-blue-200 bg-blue-50 text-blue-700",
+      Second: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      Serious: "border-amber-200 bg-amber-50 text-amber-700",
+      Final: "border-rose-200 bg-rose-50 text-rose-700",
+    };
+
+    return (
+      <div className="space-y-6">
         <div className="flex flex-col items-center gap-3">
           <Button
             variant="outline"
@@ -1985,152 +2132,149 @@ const Employees = () => {
           <p className="text-sm text-muted-foreground">Click in the box to upload warnings</p>
         </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="border-border/70">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <span>Valid warnings</span>
-                  <span className="text-xs rounded-full bg-blue-50 px-2 py-1 text-blue-700 border border-blue-200">
-                    {warningsByStatus.valid.length}
-                  </span>
-                </CardTitle>
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
-                        onClick={goToWarningGenerator}
-                      >
-                        New warning
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">Generate a warning</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {warningsByStatus.valid.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No valid warnings yet.</p>
-      ) : (
-        warningsByStatus.valid.map((warning) => {
-          const openPdf = () => {
-            if (warning.fileUrl) window.open(warning.fileUrl, "_blank", "noopener,noreferrer");
-          };
-          const content = (
-            <div
-              className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2 text-sm cursor-pointer"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="font-semibold text-blue-800">{warning.misconductType || "Misconduct"}</div>
-                  <Badge variant="outline" className="border-blue-300 text-blue-800">
-                    {warningTypeLabels[warning.warningType] || warning.warningType}
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-blue-900 hover:text-red-600 hover:bg-transparent focus-visible:bg-transparent"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteWarning(warning.id, warning.fileUrl);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="sr-only">Delete warning</span>
-                </Button>
-              </div>
-              <div className="mt-1 flex flex-wrap gap-3 text-xs text-blue-700">
-                <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
-                <span>Valid until: {formatDisplayDate(warning.expiryDate)}</span>
-              </div>
-            </div>
-          );
-
-                  return warning.fileUrl ? (
-                    <div
-                      key={warning.id}
-                      onClick={openPdf}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openPdf();
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      className="focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-lg"
-                    >
-                      {content}
-                    </div>
-                  ) : (
-                    <div key={warning.id}>{content}</div>
-                  );
-                })
-              )}
-            </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between text-base">
-              Expired warnings
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-slate-900">Warnings</h4>
               <span className="text-xs rounded-full bg-muted px-2 py-1 text-foreground border border-border/60">
-                {warningsByStatus.expired.length}
+                {activeWarnings.length}
               </span>
-            </CardTitle>
-            <CardDescription>Warnings past their validity window</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {warningsByStatus.expired.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No expired warnings.</p>
-            ) : (
-                warningsByStatus.expired.map((warning) => {
-                  const content = (
-                    <div
-                      className="rounded-lg border border-border/70 bg-background px-3 py-2 text-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="font-semibold">{warning.misconductType || "Misconduct"}</div>
-                          <Badge variant="outline" className="border-border/70 text-muted-foreground">
-                            {warningTypeLabels[warning.warningType] || warning.warningType}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Issued: {formatDisplayDate(warning.issueDate)}</span>
-                        <span>Expired: {formatDisplayDate(warning.expiryDate)}</span>
-                      </div>
-                    </div>
-                  );
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={warningFilter}
+                onValueChange={(value) => setWarningFilter(value as "valid" | "expired")}
+              >
+                <SelectTrigger className={`${fieldSelectTriggerClass} h-8 px-2 text-xs w-[96px]`} showIcon>
+                <SelectValue placeholder="Filter warnings" />
+              </SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="valid">Valid</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+              </SelectContent>
+            </Select>
+            </div>
+          </div>
 
-                  return warning.fileUrl ? (
-                    <a
-                      key={warning.id}
-                      href={warning.fileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block focus:outline-none focus:ring-2 focus:ring-primary/50 rounded-lg"
-                      title="Open PDF"
-                    >
-                      {content}
-                    </a>
+          <div className="overflow-hidden rounded-lg border border-border/70">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed">
+                <thead className="bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 w-[40%]">Misconduct</th>
+                    <th className="px-3 py-2 text-center w-[12%]">Type</th>
+                    <th className="px-3 py-2 text-center w-[16%]">Issued</th>
+                    <th className="px-3 py-2 text-center w-[16%]">{showingValid ? "Expiry" : "Expired"}</th>
+                    <th className="px-3 py-2 text-center w-[16%]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-[11px]">
+                  {activeWarnings.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        {showingValid ? "No valid warnings yet." : "No expired warnings."}
+                      </td>
+                    </tr>
                   ) : (
-                    <div key={warning.id}>{content}</div>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
+                    activeWarnings.map((warning) => {
+                      const openPdf = () => {
+                        if (warning.fileUrl) window.open(warning.fileUrl, "_blank", "noopener,noreferrer");
+                      };
+                      const misconductTypes = parseMisconductTypes(warning.misconductType);
+                      const primaryMisconduct = misconductTypes[0] || "Misconduct";
+                      const otherMisconductTypes = misconductTypes.slice(1);
+                      const hasOtherMisconduct = otherMisconductTypes.length > 0;
+
+                      return (
+                        <tr key={warning.id} className="hover:bg-muted/30">
+                          <td className="px-3 py-2 font-medium text-slate-900 w-[40%]">
+                            <span>{primaryMisconduct}</span>
+                            {hasOtherMisconduct && (
+                              <TooltipProvider delayDuration={0}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="ml-1 text-xs font-semibold text-blue-700 hover:underline"
+                                    >
+                                      , Other
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <ul className="list-disc space-y-1 pl-4 text-xs">
+                                      {otherMisconductTypes.map((type) => (
+                                        <li key={type}>{type}</li>
+                                      ))}
+                                    </ul>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center w-[12%]">
+                            <Badge
+                              variant="outline"
+                              className={warningTypeBadgeClass[warning.warningType] || "border-border/70 text-muted-foreground"}
+                            >
+                              {warningTypeTag[warning.warningType] || warning.warningType}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-center text-muted-foreground w-[16%]">
+                            {formatDisplayDate(warning.issueDate)}
+                          </td>
+                          <td className="px-3 py-2 text-center text-muted-foreground w-[16%]">
+                            {formatDisplayDate(warning.expiryDate)}
+                          </td>
+                          <td className="px-3 py-2 text-center w-[16%]">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
+                                  aria-label="Warning actions"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="text-xs">
+                                {warning.fileUrl && (
+                                  <DropdownMenuItem
+                                    className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      openPdf();
+                                    }}
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  className="gap-2 border border-transparent text-red-600 focus:text-red-600 hover:bg-transparent hover:border-red-500 focus:bg-transparent focus:border-red-500"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    handleDeleteWarning(warning.id, warning.fileUrl);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderContractTab = () => (
     <div className="space-y-6">
@@ -2575,32 +2719,105 @@ const Employees = () => {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="misconductType">Type of misconduct</Label>
-              <Select
-                value={warningForm.misconductType || undefined}
-                onValueChange={(value) => setWarningForm((prev) => ({ ...prev, misconductType: value }))}
-              >
-                <SelectTrigger id="misconductType">
-                  <SelectValue placeholder="Search or select misconduct type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="px-2 pb-2">
+              <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-left text-sm font-normal"
+                    type="button"
+                  >
+                    {warningForm.misconductTypes.length === 0
+                      ? "Select misconduct type(s)"
+                      : `${warningForm.misconductTypes.length} selected`}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[420px] p-4" align="start">
+                  <div className="space-y-3">
                     <Input
                       placeholder="Search misconduct..."
                       className="h-9"
                       value={misconductSearch}
                       onChange={(e) => setMisconductSearch(e.target.value)}
                     />
+                    <ScrollArea
+                      className="h-48 rounded-md border border-muted"
+                      onWheel={(event) => event.stopPropagation()}
+                      onTouchMove={(event) => event.stopPropagation()}
+                    >
+                      <div className="space-y-2 p-3">
+                        {filteredMisconductTypes.length === 0 && (
+                          <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
+                        )}
+                        {["Minor", "Serious", "Dismissible"].map((category) => {
+                          const bucket = filteredMisconductTypes.filter((item) => item.category === category);
+                          if (bucket.length === 0) return null;
+                          return (
+                            <div key={category} className="space-y-1">
+                              <p
+                                className={`text-xs font-semibold uppercase px-2 py-1 rounded-sm ${
+                                  category === "Minor"
+                                    ? "bg-emerald-600 text-white"
+                                    : category === "Serious"
+                                      ? "bg-amber-600 text-white"
+                                      : "bg-red-600 text-white"
+                                }`}
+                              >
+                                {category} Offences
+                              </p>
+                              {bucket.map((item) => (
+                                <label
+                                  key={`${category}-${item.name}`}
+                                  className={`flex items-center gap-2 text-sm cursor-pointer ${misconductColorClasses(
+                                    item.category,
+                                  )}`}
+                                >
+                                  <Checkbox
+                                    checked={warningForm.misconductTypes.includes(item.name)}
+                                    onCheckedChange={() => toggleWarningMisconduct(item.name)}
+                                    className={misconductCheckboxClasses(item.category)}
+                                  />
+                                  <span className="flex-1">{item.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                    {warningForm.misconductTypes.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground">Selected</p>
+                        <div className="flex flex-wrap gap-2">
+                          {warningForm.misconductTypes.map((type) => (
+                            <Badge
+                              key={type}
+                              variant="secondary"
+                              className={`gap-1 ${misconductColorClasses(getMisconductCategory(type))}`}
+                            >
+                              {type}
+                              <X className="h-3 w-3 cursor-pointer" onClick={() => toggleWarningMisconduct(type)} />
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {filteredMisconductTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
+                </PopoverContent>
+              </Popover>
+              {warningForm.misconductTypes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {warningForm.misconductTypes.map((type) => (
+                    <Badge
+                      key={type}
+                      variant="secondary"
+                      className={`gap-1 ${misconductColorClasses(getMisconductCategory(type))}`}
+                    >
                       {type}
-                    </SelectItem>
+                      <X className="h-3 w-3 cursor-pointer" onClick={() => toggleWarningMisconduct(type)} />
+                    </Badge>
                   ))}
-                  {filteredMisconductTypes.length === 0 && (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">No matches</div>
-                  )}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="space-y-2">

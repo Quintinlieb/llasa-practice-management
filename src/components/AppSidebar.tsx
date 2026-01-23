@@ -56,13 +56,28 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       )}
     >
       <div className="flex h-full flex-col overflow-hidden">
-        <div className={cn("flex items-center justify-center pt-4 pb-2 mb-4 h-16", isCollapsed ? "px-2" : "px-4")}>
-          <img
-            src={isCollapsed ? "/nudocthumbnail1.png" : "/mainlogo4.png"}
-            alt="logo"
-            className={cn(isCollapsed ? "h-10" : "h-8", "w-auto object-contain")}
-            style={{ imageRendering: "crisp-edges" }}
-          />
+        <div
+          className={cn(
+            "relative flex items-center pt-4 pb-2 mb-4 h-16 overflow-hidden transition-[padding] duration-200 ease-linear",
+            isCollapsed ? "px-2 justify-center" : "px-4 justify-start",
+          )}
+        >
+          {!isCollapsed && (
+            <img
+              src="/mainlogo4.png"
+              alt="logo"
+              className="absolute left-6 top-[53%] h-8 w-auto -translate-y-1/2 object-contain"
+              style={{ imageRendering: "crisp-edges" }}
+            />
+          )}
+          {isCollapsed && (
+            <img
+              src="/nudocthumbnail1.png"
+              alt="logo"
+              className="absolute left-10 top-[55%] h-10 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
+              style={{ imageRendering: "crisp-edges" }}
+            />
+          )}
         </div>
         <SidebarContent className="px-0">
           <SidebarGroup className="pt-2 px-0">

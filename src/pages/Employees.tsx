@@ -3264,7 +3264,7 @@ const Employees = () => {
             aria-label="Close employee profile"
             onClick={closeProfileDialog}
           />
-          <section className="absolute right-4 top-4 bottom-4 w-full sm:w-[45vw] max-w-[680px] rounded-sm bg-white shadow-2xl border border-slate-200 animate-in slide-in-from-right-6 duration-200 overflow-y-auto">
+          <section className="fixed left-[50%] top-[50%] w-full sm:w-[45vw] max-w-[680px] h-[92vh] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-2xl border border-slate-200 overflow-y-auto">
             {renderProfilePanel()}
           </section>
         </div>

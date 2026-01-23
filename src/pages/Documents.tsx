@@ -70,24 +70,15 @@ const Documents = () => {
 
   return (
     <DashboardLayout>
-      <div className="w-[calc(100%+1.5rem)] max-w-none space-y-8 -ml-6 -mr-6 pl-3 pr-3">
-        <header className="rounded-2xl px-5 py-4 space-y-1 bg-white border border-slate-300">
-          <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
-            <span className="underline-offset-2 rounded-sm">Home</span>
-            <span aria-hidden="true" className="text-slate-500">
-              &gt;
-            </span>
-            <span className="underline-offset-2 rounded-sm" aria-current="page">
-              Documents
-            </span>
-          </div>
+      <div className="space-y-3 -ml-6 -mr-6 pl-3 pr-3 -mt-3">
+        <header className="rounded-sm px-5 py-4 space-y-1 bg-white border border-slate-300">
           <h1 className="text-xl font-bold uppercase text-blue-700">Generate HR Documents</h1>
           <p className="text-xs text-gray-600 max-w-3xl">
             One hub for your HR paperwork. Generate the documents you need instantly.
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 items-start">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 items-start">
           {documentCategories.map((category) => {
             const isOpen = openCategory === category.title;
             return (
@@ -96,7 +87,7 @@ const Documents = () => {
                 onMouseEnter={() => setOpenCategory(category.title)}
                 onMouseLeave={() => setOpenCategory(null)}
                 className={cn(
-                  "rounded-2xl border border-slate-200/80 bg-white/55 shadow-sm transition-all hover:shadow-lg",
+                  "rounded-sm border border-slate-300 bg-white/55 shadow-sm transition-all hover:shadow-lg",
                   isOpen && "shadow-lg ring-1 ring-blue-100",
                 )}
               >

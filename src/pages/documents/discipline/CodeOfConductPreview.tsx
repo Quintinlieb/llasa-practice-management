@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { Printer, Save, Edit2, ArrowLeft, Plus, Loader2, Trash2, X } from "lucide-react";
+import { Printer, ArrowLeft, Plus, Loader2, Trash2, X } from "lucide-react";
 
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
 
@@ -36,6 +36,18 @@ const categoryMetadata: Record<FixedCategoryId, { title: string; category: Offen
   minor: { title: "Minor Offences", category: "Minor" },
   serious: { title: "Serious Offences", category: "Serious" },
   dismissible: { title: "Dismissible Offences", category: "Dismissible" },
+};
+
+const misconductColorClasses = (category: OffenceCategory) => {
+  if (category === "Minor") return "text-emerald-700";
+  if (category === "Serious") return "text-amber-700";
+  return "text-red-700";
+};
+
+const misconductBadgeClasses = (category: OffenceCategory) => {
+  if (category === "Minor") return "bg-emerald-50 text-emerald-700 border border-emerald-200";
+  if (category === "Serious") return "bg-amber-50 text-amber-700 border border-amber-200";
+  return "bg-red-50 text-red-700 border border-red-200";
 };
 
 const defaultOffences: Record<FixedCategoryId, OffenceRow[]> = {
@@ -543,13 +555,17 @@ export default function CodeOfConductPreviewPage() {
   const [snapshot, setSnapshot] = useState<OffenceSection[] | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [activeCategoryId, setActiveCategoryId] = useState<FixedCategoryId>("minor");
   const [isRemoteLoading, setIsRemoteLoading] = useState(true);
   const [undoState, setUndoState] = useState<UndoAction | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
+  const selectedSection = useMemo(
+    () => sections.find((section) => section.id === activeCategoryId) ?? null,
+    [sections, activeCategoryId],
+  );
 
   const printStyles = useMemo(
     () => `
@@ -616,12 +632,10 @@ export default function CodeOfConductPreviewPage() {
           const savedDefaults = await persistSections(defaults);
           setSections(savedDefaults);
           setSnapshot(cloneSections(savedDefaults));
-          setExpandedSection(null);
         } else {
           const hydrated = normalizeSections(storedSections);
           setSections(hydrated);
           setSnapshot(cloneSections(hydrated));
-          setExpandedSection(null);
         }
       } catch (loadError) {
         console.error(loadError);
@@ -927,230 +941,208 @@ export default function CodeOfConductPreviewPage() {
           </div>
         </div>
       )}
-      <div id="code-of-conduct-preview" className="mx-auto w-full space-y-6 print:space-y-4">
-        <div className="sticky top-0 z-20 space-y-4 pb-4 pt-1">
-          <div className="rounded-3xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-sm font-medium uppercase tracking-wide text-blue-600">Discipline</p>
-                <h1 className="text-3xl font-bold text-gray-900">Code of Conduct</h1>
-                <p className="text-base text-gray-600">
-                  Track minor, serious, and dismissible misconduct with their progressive discipline outcomes.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 md:w-auto md:flex-row md:items-center no-print">
-                <Button variant="outline" className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-500 hover:text-white" asChild>
-                  <Link to="/documents/discipline">
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Link>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleToggleEdit}
-                  className={cn(
-                    "gap-2 border-blue-600 text-blue-600 hover:bg-blue-500 hover:text-white",
-                    isEditing && "bg-blue-600 text-white hover:bg-blue-500",
-                  )}
-                >
-                  <Edit2 className="h-4 w-4" />
-                  {isEditing ? "Cancel" : "Edit"}
-                </Button>
-                {isEditing && (
-                  <Button
-                    type="button"
-                    onClick={handleSaveDraft}
-                    disabled={isSaving}
-                    className="gap-2 bg-blue-600 hover:bg-blue-500 text-white"
-                  >
-                    <Save className="h-4 w-4" />
-                    {isSaving ? "Saving..." : "Save"}
-                  </Button>
-                )}
-              </div>
+      <div id="code-of-conduct-preview" className="-ml-6 -mr-6 pl-3 pr-3 -mt-3 space-y-3 print:space-y-4">
+        <div className="rounded-sm border border-slate-300 bg-white px-5 py-4 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <h1 className="text-xl font-bold uppercase text-blue-700">Code of Conduct</h1>
+              <p className="text-xs text-gray-600">
+                View minor, serious, and dismissible misconduct with their progressive discipline outcomes.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 md:w-auto md:flex-row md:items-center no-print">
+              <Button
+                variant="outline"
+                className="h-8 px-3 text-xs gap-1.5 rounded-sm border-blue-600 text-blue-600 hover:bg-accent hover:text-accent-foreground"
+                asChild
+              >
+                <Link to="/documents/discipline">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Link>
+              </Button>
             </div>
           </div>
         </div>
 
-        <div className="rounded-3xl border border-gray-200 bg-white shadow-sm">
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
-            <Accordion
-              type="single"
-              collapsible
-              value={expandedSection ?? undefined}
-              onValueChange={(value) => setExpandedSection(value || null)}
+        <div className="rounded-sm border border-slate-300 bg-white shadow-sm">
+          <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
+            <Tabs
+              value={activeCategoryId}
+              onValueChange={(value) => setActiveCategoryId(value as FixedCategoryId)}
               className="space-y-4"
             >
-              {sections.map((section) => (
-                <AccordionItem
-                  key={section.id}
-                  value={section.id}
-                  className="rounded-2xl border border-gray-200 bg-white px-4 print-section data-[state=open]:border-blue-300 data-[state=open]:shadow-sm"
-                >
-                  <AccordionTrigger className="flex w-full items-center gap-4 py-4 text-left text-gray-900 hover:no-underline hover:text-blue-600 data-[state=open]:text-blue-600">
-                    <div className="flex flex-1 items-center gap-3">
-                      <span className="text-lg font-semibold">{section.title}</span>
-                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">
-                        {section.offences.length}
-                      </span>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-6 space-y-4">
-                <div className="hidden md:flex md:items-center md:justify-between md:pb-2">
-                  <div className="grid flex-1 grid-cols-5 gap-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    {gridColumns.map((column, index) => {
-                      return (
-                        <div
-                          key={column.key}
-                          className={cn(
-                            "flex flex-col gap-1 md:-ml-px",
-                            isEditing && index === 0 && "md:pl-[15px]",
-                            isEditing && column.key === "first" && "md:pl-3",
-                            isEditing && column.key === "second" && "md:pl-6",
-                            isEditing && column.key === "third" && "md:pl-1",
-                            isEditing && column.key === "fourth" && "md:-ml-[10px]",
-                            column.key === "name" && "md:pl-4",
-                            column.key === "first" && "md:pl-2",
-                          )}
-                        >
-                          <span>
-                            {column.label}
-                            {column.key === "fourth" && (
-                              <span className="ml-1 text-xs font-normal text-gray-400">(optional)</span>
-                            )}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {isEditing && <div className="w-16" aria-hidden="true" />}
-                </div>
-                <div className="space-y-3">
-                  {section.offences.map((offence, index) => (
-                    <div
-                      key={`${section.id}-${index}`}
-                      className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-150 ease-out hover:border-blue-200 hover:shadow-md"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="grid flex-1 gap-3 md:grid-cols-5">
-                          {gridColumns.map((column) => {
-                            const isDefaultRow = offence.isDefault === true;
-                            const canEditRow = isEditing && !isDefaultRow;
-                            const showFourthSelect =
-                              column.key !== "fourth" || offence.fourth !== undefined || isDefaultRow;
-
-                            if (column.key === "fourth" && offence.fourth === undefined && !isEditing) {
-                              return (
-                                <div key={`${section.id}-${index}-fourth`} className="flex flex-col gap-1">
-                                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
-                                    4th
-                                  </span>
-                                  <p className="text-sm text-gray-700">--</p>
-                                </div>
-                              );
-                            }
-
-                            return (
-                          <div key={`${section.id}-${index}-${column.key}`} className="flex flex-col gap-1 md:-ml-px">
-                                <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
-                                  {column.label}
-                                </span>
-                                {column.key === "name" ? (
-                                  isEditing ? (
-                                    <Input
-                                      value={offence.name}
-                                      onChange={(event) =>
-                                        handleFieldChange(section.id, index, "name", event.target.value)
-                                      }
-                                      placeholder={column.placeholder}
-                                      className="border-blue-100 focus-visible:ring-blue-600"
-                                      readOnly={!canEditRow}
-                                      disabled={!canEditRow}
-                                    />
-                                  ) : (
-                                    <p className="text-sm font-medium text-gray-900">{offence.name}</p>
-                                  )
-                                ) : isEditing ? (
-                                  showFourthSelect ? (
-                                    <select
-                                      value={offence[column.key] ?? ""}
-                                      onChange={(event) =>
-                                        handleFieldChange(section.id, index, column.key, event.target.value)
-                                      }
-                                      className="h-10 w-full rounded-md border border-blue-100 bg-white px-3 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                                      disabled={!canEditRow}
-                                    >
-                                      <option value="">Not set</option>
-                                      {actionOptions.map((option) => (
-                                        <option key={option} value={option}>
-                                          {option}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="justify-start border border-blue-200 px-3 text-blue-600 hover:border-2 hover:border-blue-500 hover:bg-white hover:text-blue-700"
-                                      onClick={() => handleAddFourthOutcome(section.id, index)}
-                                      disabled={!canEditRow}
-                                    >
-                                      <Plus className="mr-1 h-4 w-4" />
-                                      Add 4th offence
-                                    </Button>
-                                  )
-                                ) : (
-                                  <p className="text-sm text-gray-700">{offence[column.key] || "--"}</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {isEditing && !offence.isDefault && (
-                          <div className="flex items-center justify-end gap-2 pr-1 md:w-16">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="border border-transparent text-red-600 transition hover:border-red-300 hover:bg-white hover:text-red-600"
-                              onClick={() => confirmDeleteOffence(section.id, index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 bg-transparent px-0 py-0 shadow-none">
+                {fixedCategoryOrder.map((id) => (
+                  <TabsTrigger
+                    key={id}
+                    value={id}
+                    className="rounded-none border-b-[3px] border-transparent px-5 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none"
+                  >
+                    {categoryMetadata[id].title.replace(" Offences", "")}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {selectedSection && (
+                <div className="rounded-sm bg-white px-4 print-section">
+                  <div className="pb-6 space-y-4">
+                    <div className="hidden md:flex md:items-center md:justify-between md:pb-0 pt-2">
+                      <div
+                        className={cn(
+                          "grid flex-1 grid-cols-5 gap-3 text-xs font-semibold tracking-wide underline underline-offset-4",
+                          misconductColorClasses(categoryMetadata[selectedSection.id]?.category ?? "Serious"),
                         )}
+                      >
+                        {gridColumns.map((column, index) => {
+                          return (
+                            <div
+                              key={column.key}
+                              className={cn(
+                                "flex flex-col gap-1 md:-ml-px",
+                                isEditing && index === 0 && "md:pl-[15px]",
+                                isEditing && column.key === "first" && "md:pl-5",
+                                isEditing && column.key === "second" && "md:pl-6",
+                                isEditing && column.key === "third" && "md:pl-1",
+                                !isEditing && column.key === "third" && "md:-ml-[6px]",
+                                isEditing && column.key === "fourth" && "md:-ml-[10px]",
+                                !isEditing && column.key === "fourth" && "md:-ml-[10px]",
+                                column.key === "name" && "md:pl-3",
+                                column.key === "first" && "md:pl-2",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  column.key === "first" && isEditing && "md:ml-4",
+                                  column.key === "second" && isEditing && "md:ml-2",
+                                  column.key === "third" && isEditing && "md:ml-8",
+                                  column.key === "fourth" && isEditing && "md:translate-x-14",
+                                )}
+                              >
+                                {column.label}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
+                      {isEditing && <div className="w-16" aria-hidden="true" />}
                     </div>
-                  ))}
-                </div>
-                {isEditing && (
-                  <div className="pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="gap-2 border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
-                      onClick={() => handleAddOffence(section.id)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add offence
-                    </Button>
+                    <div className="space-y-1.5">
+                      {selectedSection.offences.map((offence, index) => (
+                        <div
+                          key={`${selectedSection.id}-${index}`}
+                          className="rounded-sm bg-white p-2 shadow-sm transition-all duration-150 ease-out hover:shadow-md"
+                        >
+                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                            <div className="grid flex-1 gap-2 md:grid-cols-5">
+                              {gridColumns.map((column) => {
+                                const isDefaultRow = offence.isDefault === true;
+                                const canEditRow = isEditing && !isDefaultRow;
+                                const showFourthSelect =
+                                  column.key !== "fourth" || offence.fourth !== undefined || isDefaultRow;
+
+                                if (column.key === "fourth" && offence.fourth === undefined && !isEditing) {
+                                  return (
+                                    <div key={`${selectedSection.id}-${index}-fourth`} className="flex flex-col gap-0.5">
+                                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
+                                        4th
+                                      </span>
+                                      <p className="text-xs text-gray-700">--</p>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div key={`${selectedSection.id}-${index}-${column.key}`} className="flex flex-col gap-0.5 md:-ml-px">
+                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
+                                      {column.label}
+                                    </span>
+                                    {column.key === "name" ? (
+                                      isEditing ? (
+                                        <Input
+                                          value={offence.name}
+                                          onChange={(event) =>
+                                            handleFieldChange(selectedSection.id, index, "name", event.target.value)
+                                          }
+                                          placeholder={column.placeholder}
+                                          className="h-8 border-blue-100 text-xs px-1.5 py-1 focus-visible:ring-blue-600"
+                                          readOnly={!canEditRow}
+                                          disabled={!canEditRow}
+                                        />
+                                      ) : (
+                                        <p className="text-xs font-medium text-gray-900">{offence.name}</p>
+                                      )
+                                    ) : isEditing ? (
+                                      showFourthSelect ? (
+                                        <select
+                                          value={offence[column.key] ?? ""}
+                                          onChange={(event) =>
+                                            handleFieldChange(selectedSection.id, index, column.key, event.target.value)
+                                          }
+                                          className="h-8 w-full rounded-md border border-blue-100 bg-white px-1.5 py-1 text-xs text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                                          disabled={!canEditRow}
+                                        >
+                                          <option value="">Not set</option>
+                                          {actionOptions.map((option) => (
+                                            <option key={option} value={option}>
+                                              {option}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="justify-start border border-blue-200 px-3 text-blue-600 hover:border-2 hover:border-blue-500 hover:bg-white hover:text-blue-700"
+                                          onClick={() => handleAddFourthOutcome(selectedSection.id, index)}
+                                          disabled={!canEditRow}
+                                        >
+                                          <Plus className="mr-1 h-4 w-4" />
+                                          Add 4th offence
+                                        </Button>
+                                      )
+                                    ) : (
+                                      <p className="text-xs text-gray-700">{offence[column.key] || "--"}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {isEditing && !offence.isDefault && (
+                              <div className="flex items-center justify-end gap-2 pr-1 md:w-16">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="border border-transparent text-red-600 transition hover:border-red-300 hover:bg-white hover:text-red-600"
+                                  onClick={() => confirmDeleteOffence(selectedSection.id, index)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {isEditing && (
+                      <div className="pt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
+                          onClick={() => handleAddOffence(selectedSection.id)}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add offence
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+                </div>
+              )}
+            </Tabs>
           </div>
-        </div>
-        <div className="flex flex-col gap-3 border-t border-gray-200 pt-6 md:flex-row md:items-center md:justify-start no-print">
-          <Button variant="outline" className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-500 hover:text-white" asChild>
-            <Link to="/documents/discipline">
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
-          </Button>
         </div>
       </div>
     </DashboardLayout>

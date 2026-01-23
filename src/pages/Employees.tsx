@@ -81,6 +81,8 @@ import { maskSAIdNumber } from "@/lib/idMasking";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 // Supabase types do not include employee_warnings; cast to any for those calls to avoid type errors.
 const warningTable = () => (supabase as any).from("employee_warnings");
+// Supabase types do not include employee_contracts; cast to any for those calls to avoid type errors.
+const contractTable = () => (supabase as any).from("employee_contracts");
 
 type Employee = Tables<"employees"> & {
   start_date?: string | null;
@@ -139,6 +141,14 @@ type EmployeeWarning = {
   fileName?: string;
   fileUrl?: string;
 };
+type EmployeeContract = {
+  id: string;
+  contractType: string;
+  issueDate: string;
+  fileName?: string;
+  fileUrl?: string;
+  isActive: boolean;
+};
 type OffenceSection = {
   title?: string;
   offences?: Array<{ name?: string; category?: string; first?: string }>;
@@ -172,6 +182,10 @@ type WarningFormState = {
   misconductTypes: string[];
   warningType: EmployeeWarning["warningType"];
   issueDate: string;
+  fileName: string;
+};
+type ContractFormState = {
+  contractType: (typeof contractTypes)[number] | "";
   fileName: string;
 };
 
@@ -347,7 +361,15 @@ const getStoragePathFromUrl = (url?: string) => {
   if (!url) return "";
   const marker = "/warnings/";
   const idx = url.indexOf(marker);
-  if (idx === -1) return "";
+  if (idx === -1) return url;
+  return url.slice(idx + marker.length);
+};
+
+const getContractStoragePathFromUrl = (url?: string) => {
+  if (!url) return "";
+  const marker = "/contracts/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return url;
   return url.slice(idx + marker.length);
 };
 
@@ -422,6 +444,15 @@ const Employees = () => {
   const [warningFilter, setWarningFilter] = useState<"valid" | "expired">("valid");
   const [warningFile, setWarningFile] = useState<File | null>(null);
   const [warningsByEmployee, setWarningsByEmployee] = useState<Record<string, EmployeeWarning[]>>({});
+  const [editingWarning, setEditingWarning] = useState<EmployeeWarning | null>(null);
+  const [isContractDialogOpen, setIsContractDialogOpen] = useState(false);
+  const [contractForm, setContractForm] = useState<ContractFormState>({
+    contractType: "",
+    fileName: "",
+  });
+  const [contractStatusFilter, setContractStatusFilter] = useState<"active" | "inactive">("active");
+  const [contractFile, setContractFile] = useState<File | null>(null);
+  const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
   const [misconductSearch, setMisconductSearch] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
@@ -647,12 +678,11 @@ const Employees = () => {
 
   const isPdfFile = (fileName?: string) => fileName?.toLowerCase().endsWith(".pdf") ?? false;
 
-  const canUploadWarning =
+  const canSaveWarning =
     !!selectedEmployee &&
     warningForm.misconductTypes.length > 0 &&
     warningForm.issueDate.trim().length > 0 &&
-    isPdfFile(warningForm.fileName) &&
-    !!warningFile;
+    (editingWarning ? !!editingWarning.fileUrl : isPdfFile(warningForm.fileName) && !!warningFile);
   const fetchWarnings = useCallback(
     async (employeeId: string) => {
       if (!user) return;
@@ -696,7 +726,19 @@ const Employees = () => {
     }
   }, [selectedEmployee, fetchWarnings]);
 
-  const handleAddWarning = async () => {
+  const resetWarningForm = () => {
+    setWarningForm({
+      misconductTypes: [],
+      warningType: "First",
+      issueDate: dateToday(),
+      fileName: "",
+    });
+    setWarningFile(null);
+    setEditingWarning(null);
+  };
+
+  const handleSaveWarning = async () => {
+    const isEditing = !!editingWarning;
     if (!selectedEmployee || !user) {
       toast({
         title: "No employee selected",
@@ -705,7 +747,14 @@ const Employees = () => {
       });
       return;
     }
-    if (warningForm.misconductTypes.length === 0 || !warningForm.issueDate || !isPdfFile(warningForm.fileName) || !warningFile) {
+
+    const missingFile = isEditing ? !editingWarning?.fileUrl : !warningFile;
+    if (
+      warningForm.misconductTypes.length === 0 ||
+      !warningForm.issueDate ||
+      missingFile ||
+      (!isEditing && warningFile && !isPdfFile(warningForm.fileName))
+    ) {
       toast({
         title: "Missing details",
         description: "Please select misconduct, warning type, issue date, and upload a PDF warning.",
@@ -715,60 +764,78 @@ const Employees = () => {
     }
 
     const expiryDate = computeWarningExpiry(warningForm.warningType, warningForm.issueDate);
-    const fileExt = warningFile.name.split(".").pop() || "pdf";
-    const safeName = warningFile.name.replace(/\s+/g, "_");
-    const filePath = `warnings/${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
-
-    const { error: uploadError } = await supabase.storage.from("warnings").upload(filePath, warningFile, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: warningFile.type || "application/pdf",
-    });
-
-    if (uploadError) {
-      toast({
-        title: "Upload failed",
-        description: getSafeErrorMessage(uploadError),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const { data: publicUrlData } = supabase.storage.from("warnings").getPublicUrl(filePath);
-    const fileUrl = publicUrlData.publicUrl;
-
-    const { error: insertError } = await warningTable().insert({
-      company_id: user.id,
-      employee_id: selectedEmployee.id,
+    const warningPayload = {
       misconduct_type: JSON.stringify(warningForm.misconductTypes),
       warning_type: warningForm.warningType,
       issue_date: warningForm.issueDate,
       expiry_date: expiryDate,
-      file_url: fileUrl,
-    });
+    };
 
-    if (insertError) {
-      toast({
-        title: "Unable to save warning",
-        description: getSafeErrorMessage(insertError),
-        variant: "destructive",
+    if (!isEditing) {
+      const safeName = warningFile!.name.replace(/\s+/g, "_");
+      const filePath = `${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage.from("warnings").upload(filePath, warningFile!, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: warningFile!.type || "application/pdf",
       });
-      return;
+
+      if (uploadError) {
+        toast({
+          title: "Upload failed",
+          description: getSafeErrorMessage(uploadError),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error: insertError } = await warningTable().insert({
+        company_id: user.id,
+        employee_id: selectedEmployee.id,
+        ...warningPayload,
+        file_url: filePath,
+      });
+
+      if (insertError) {
+        toast({
+          title: "Unable to save warning",
+          description: getSafeErrorMessage(insertError),
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      const currentWarning = editingWarning;
+      if (!currentWarning) return;
+      const filePath = currentWarning.fileUrl || "";
+      const { error: updateError } = await warningTable()
+        .update({
+          ...warningPayload,
+          file_url: filePath,
+        })
+        .eq("id", currentWarning.id)
+        .eq("company_id", user.id);
+
+      if (updateError) {
+        toast({
+          title: "Unable to update warning",
+          description: getSafeErrorMessage(updateError),
+          variant: "destructive",
+        });
+        return;
+      }
+
     }
 
     await fetchWarnings(selectedEmployee.id);
-
-    setWarningForm({
-      misconductTypes: [],
-      warningType: "First",
-      issueDate: dateToday(),
-      fileName: "",
-    });
-    setWarningFile(null);
+    resetWarningForm();
     setIsWarningDialogOpen(false);
     toast({
-      title: "Warning uploaded",
-      description: "The warning has been saved and will appear in the lists below.",
+      title: isEditing ? "Warning updated" : "Warning uploaded",
+      description: isEditing
+        ? "The warning has been updated."
+        : "The warning has been saved and will appear in the lists below.",
     });
   };
 
@@ -862,6 +929,35 @@ const Employees = () => {
     });
   };
 
+  const handleOpenWarning = async (warning: EmployeeWarning) => {
+    if (!warning.fileUrl) return;
+    const storagePath = getStoragePathFromUrl(warning.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("warnings")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open warning",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleEditWarning = (warning: EmployeeWarning) => {
+    setEditingWarning(warning);
+    setWarningForm({
+      misconductTypes: parseMisconductTypes(warning.misconductType),
+      warningType: warning.warningType,
+      issueDate: warning.issueDate || dateToday(),
+      fileName: warning.fileName || "",
+    });
+    setWarningFile(null);
+    setIsWarningDialogOpen(true);
+  };
+
   const warningsForSelectedEmployee = useMemo(
     () => (selectedEmployee ? warningsByEmployee[selectedEmployee.id] ?? [] : []),
     [selectedEmployee, warningsByEmployee],
@@ -875,6 +971,246 @@ const Employees = () => {
       expired: warningsForSelectedEmployee.filter((w) => !isValid(w)),
     };
   }, [warningsForSelectedEmployee]);
+
+  const canUploadContract =
+    !!selectedEmployee &&
+    contractForm.contractType.trim().length > 0 &&
+    isPdfFile(contractForm.fileName) &&
+    !!contractFile;
+
+  const fetchContracts = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await contractTable()
+        .select("id, contract_type, issue_date, file_url, is_active")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("issue_date", { ascending: false });
+
+      if (error) {
+        toast({
+          title: "Unable to load contracts",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeContract[] =
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          contractType: row.contract_type,
+          issueDate: row.issue_date,
+          fileName: row.file_url ? row.file_url.split("/").pop() || "contract.pdf" : "",
+          fileUrl: row.file_url,
+          isActive: row.is_active ?? false,
+        })) ?? [];
+
+      setContractsByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchContracts(selectedEmployee.id);
+    }
+  }, [selectedEmployee, fetchContracts]);
+
+  const handleAddContract = async () => {
+    if (!selectedEmployee || !user) {
+      toast({
+        title: "No employee selected",
+        description: "Select an employee before adding a contract.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!contractForm.contractType || !isPdfFile(contractForm.fileName) || !contractFile) {
+      toast({
+        title: "Missing details",
+        description: "Please select a contract type and upload a PDF contract.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const safeName = contractFile.name.replace(/\s+/g, "_");
+    const filePath = `${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, contractFile, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: contractFile.type || "application/pdf",
+    });
+
+    if (uploadError) {
+      toast({
+        title: "Upload failed",
+        description: getSafeErrorMessage(uploadError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { data: inserted, error: insertError } = await contractTable()
+      .insert({
+        company_id: user.id,
+        employee_id: selectedEmployee.id,
+        contract_type: contractForm.contractType,
+        issue_date: dateToday(),
+        file_url: filePath,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      toast({
+        title: "Unable to save contract",
+        description: getSafeErrorMessage(insertError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (inserted?.id) {
+      const { error: deactivateError } = await contractTable()
+        .update({ is_active: false })
+        .eq("company_id", user.id)
+        .eq("employee_id", selectedEmployee.id)
+        .neq("id", inserted.id)
+        .eq("is_active", true);
+
+      if (deactivateError) {
+        toast({
+          title: "Contract saved",
+          description: "Unable to deactivate previous contracts automatically.",
+          variant: "destructive",
+        });
+      }
+    }
+
+    await fetchContracts(selectedEmployee.id);
+    setContractForm({
+      contractType: "",
+      fileName: "",
+    });
+    setContractFile(null);
+    setIsContractDialogOpen(false);
+    toast({
+      title: "Contract uploaded",
+      description: "The contract has been saved and will appear in the list below.",
+    });
+  };
+
+  const handleContractFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && !isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      setContractForm((prev) => ({ ...prev, fileName: "" }));
+      setContractFile(null);
+      return;
+    }
+    setContractForm((prev) => ({
+      ...prev,
+      fileName: file?.name || "",
+    }));
+    setContractFile(file ?? null);
+  };
+
+  const handleDeleteContract = async (contractId: string, fileUrl?: string) => {
+    if (!selectedEmployee || !user) return;
+    const confirmed = confirm("Are you sure you want to delete this contract?");
+    if (!confirmed) return;
+    const existing = contractsByEmployee[selectedEmployee.id] ?? [];
+    const contract = existing.find((item) => item.id === contractId);
+    if (!contract) return;
+
+    setContractsByEmployee((prev) => ({
+      ...prev,
+      [selectedEmployee.id]: existing.filter((item) => item.id !== contractId),
+    }));
+
+    const { error: deleteError } = await contractTable()
+      .delete()
+      .eq("id", contractId)
+      .eq("company_id", user.id);
+
+    if (deleteError) {
+      setContractsByEmployee((prev) => ({
+        ...prev,
+        [selectedEmployee.id]: existing,
+      }));
+      toast({
+        title: "Unable to delete contract",
+        description: getSafeErrorMessage(deleteError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const storagePath = getContractStoragePathFromUrl(fileUrl);
+    if (storagePath) {
+      await supabase.storage.from("contracts").remove([storagePath]);
+    }
+
+    toast({
+      title: "Contract deleted",
+      description: "The contract has been removed.",
+    });
+  };
+
+  const handleStartContractUpload = () => {
+    const activeContract = contractsByStatus.active[0];
+    if (activeContract) {
+      const uploadedDate = formatDisplayDate(activeContract.issueDate);
+      const shouldDelete = confirm(
+        `An active contract uploaded on ${uploadedDate} already exists. Click OK to permanently delete it from all records first, or Cancel to keep it and upload a new one (the existing contract will become inactive).`,
+      );
+      if (shouldDelete) {
+        void handleDeleteContract(activeContract.id, activeContract.fileUrl);
+      }
+    }
+    setIsContractDialogOpen(true);
+  };
+
+  const handleOpenContract = async (contract: EmployeeContract) => {
+    if (!contract.fileUrl) return;
+    const storagePath = getContractStoragePathFromUrl(contract.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("contracts")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open contract",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const contractsForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? contractsByEmployee[selectedEmployee.id] ?? [] : []),
+    [selectedEmployee, contractsByEmployee],
+  );
+
+  const contractsByStatus = useMemo(
+    () => ({
+      active: contractsForSelectedEmployee.filter((contract) => contract.isActive),
+      inactive: contractsForSelectedEmployee.filter((contract) => !contract.isActive),
+    }),
+    [contractsForSelectedEmployee],
+  );
 
   const misconductOptions = useMemo(() => {
     if (conductOffences.length > 0) return conductOffences;
@@ -982,7 +1318,7 @@ const Employees = () => {
                 Address
               </TabsTrigger>
               <TabsTrigger value="discipline" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
-                Discipline
+                Warnings
               </TabsTrigger>
               <TabsTrigger value="contracts" className="rounded-none border-b-[3px] border-transparent px-4 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none">
                 Contract
@@ -2177,9 +2513,6 @@ const Employees = () => {
                     </tr>
                   ) : (
                     activeWarnings.map((warning) => {
-                      const openPdf = () => {
-                        if (warning.fileUrl) window.open(warning.fileUrl, "_blank", "noopener,noreferrer");
-                      };
                       const misconductTypes = parseMisconductTypes(warning.misconductType);
                       const primaryMisconduct = misconductTypes[0] || "Misconduct";
                       const otherMisconductTypes = misconductTypes.slice(1);
@@ -2238,12 +2571,22 @@ const Employees = () => {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="text-xs">
+                                <DropdownMenuItem
+                                  className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    handleEditWarning(warning);
+                                  }}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  Edit
+                                </DropdownMenuItem>
                                 {warning.fileUrl && (
                                   <DropdownMenuItem
                                     className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
                                     onSelect={(event) => {
                                       event.preventDefault();
-                                      openPdf();
+                                      void handleOpenWarning(warning);
                                     }}
                                   >
                                     <Download className="h-3.5 w-3.5" />
@@ -2276,22 +2619,142 @@ const Employees = () => {
     );
   };
 
-  const renderContractTab = () => (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <div>
-          <h4 className="text-sm font-semibold">Employment Contract</h4>
-          <p className="text-sm text-muted-foreground">
-            Upload the signed employment contract for this employee.
-          </p>
+  const renderContractTab = () => {
+    const showingActive = contractStatusFilter === "active";
+    const activeContracts = showingActive ? contractsByStatus.active : contractsByStatus.inactive;
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col items-center gap-3">
+          <Button
+            variant="outline"
+            className="h-24 w-40 rounded-xl border-dashed border-2 border-primary/50 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary flex items-center justify-center p-0"
+            onClick={handleStartContractUpload}
+          >
+            <FileUp
+              className="shrink-0 text-primary"
+              strokeWidth={1.25}
+              style={{ width: "56px", height: "56px" }}
+            />
+            <span className="sr-only">Upload contract</span>
+          </Button>
+          <p className="text-sm text-muted-foreground">Click in the box to upload contracts</p>
         </div>
-        <Button type="button" variant="outline" disabled className="gap-2">
-          <FileUp className="h-4 w-4" />
-          Upload Contract (coming soon)
-        </Button>
+
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-slate-900">Contracts</h4>
+              <span className="text-xs rounded-full bg-muted px-2 py-1 text-foreground border border-border/60">
+                {activeContracts.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={contractStatusFilter}
+                onValueChange={(value) => setContractStatusFilter(value as "active" | "inactive")}
+              >
+                <SelectTrigger className={`${fieldSelectTriggerClass} h-8 px-2 text-xs w-[110px]`} showIcon>
+                  <SelectValue placeholder="Filter status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-border/70">
+            <div className="overflow-x-auto">
+              <table className="min-w-full table-fixed">
+                <thead className="bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 w-[44%]">Contract type</th>
+                    <th className="px-3 py-2 text-center w-[16%]">Status</th>
+                    <th className="px-3 py-2 text-center w-[20%]">Uploaded</th>
+                    <th className="px-3 py-2 text-center w-[20%]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y text-[11px]">
+                  {activeContracts.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        {showingActive ? "No active contracts yet." : "No inactive contracts."}
+                      </td>
+                    </tr>
+                  ) : (
+                    activeContracts.map((contract) => {
+                      return (
+                        <tr key={contract.id} className="hover:bg-muted/30">
+                          <td className="px-3 py-2 font-medium text-slate-900 w-[44%]">
+                            {contract.contractType || "Contract"}
+                          </td>
+                          <td className="px-3 py-2 text-center w-[16%]">
+                            <Badge
+                              variant="outline"
+                              className={
+                                contract.isActive
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 bg-slate-50 text-slate-600"
+                              }
+                            >
+                              {contract.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-center text-muted-foreground w-[20%]">
+                            {formatDisplayDate(contract.issueDate)}
+                          </td>
+                          <td className="px-3 py-2 text-center w-[20%]">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
+                                  aria-label="Contract actions"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="text-xs">
+                                {contract.fileUrl && (
+                                  <DropdownMenuItem
+                                    className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      void handleOpenContract(contract);
+                                    }}
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  className="gap-2 border border-transparent text-red-600 focus:text-red-600 hover:bg-transparent hover:border-red-500 focus:bg-transparent focus:border-red-500"
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    handleDeleteContract(contract.id, contract.fileUrl);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
    if (loading) {
      return (
@@ -2710,11 +3173,21 @@ const Employees = () => {
         </div>
       )}
 
-      <Dialog open={isWarningDialogOpen} onOpenChange={setIsWarningDialogOpen}>
+      <Dialog
+        open={isWarningDialogOpen}
+        onOpenChange={(open) => {
+          setIsWarningDialogOpen(open);
+          if (!open) {
+            resetWarningForm();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Upload warning</DialogTitle>
-            <DialogDescription>Add a warning record with auto-calculated validity.</DialogDescription>
+            <DialogTitle>{editingWarning ? "Edit warning" : "Upload warning"}</DialogTitle>
+            <DialogDescription>
+              {editingWarning ? "Update this warning record." : "Add a warning record with auto-calculated validity."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -2863,7 +3336,12 @@ const Employees = () => {
                 </span>
               </div>
             </div>
-            <div className="space-y-2">
+            {editingWarning ? (
+              <p className="text-xs text-muted-foreground">
+                Editing does not replace the file. Delete and re-upload to attach a new document.
+              </p>
+            ) : (
+              <div className="space-y-2">
                 <Label htmlFor="warningFile">Upload signed warning (PDF only)</Label>
                 <Input
                   id="warningFile"
@@ -2872,13 +3350,67 @@ const Employees = () => {
                   required
                   onChange={handleWarningFileChange}
                 />
-              {warningForm.fileName && <p className="text-xs text-muted-foreground">Attached: {warningForm.fileName}</p>}
+                {warningForm.fileName && (
+                  <p className="text-xs text-muted-foreground">Attached: {warningForm.fileName}</p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex w-full justify-center sm:flex-row sm:justify-center sm:space-x-0">
+            <Button
+              onClick={handleSaveWarning}
+              disabled={!canSaveWarning}
+              className="w-48 justify-center py-3 text-base"
+            >
+              {editingWarning ? "Save" : "Upload"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isContractDialogOpen} onOpenChange={setIsContractDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload contract</DialogTitle>
+            <DialogDescription>Add the signed employment contract for this employee.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Contract type</Label>
+              <Select
+                value={contractForm.contractType}
+                onValueChange={(value) =>
+                  setContractForm((prev) => ({ ...prev, contractType: value as ContractFormState["contractType"] }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select contract type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {contractTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contractFile">Upload signed contract (PDF only)</Label>
+              <Input
+                id="contractFile"
+                type="file"
+                accept="application/pdf,.pdf"
+                required
+                onChange={handleContractFileChange}
+              />
+              {contractForm.fileName && <p className="text-xs text-muted-foreground">Attached: {contractForm.fileName}</p>}
             </div>
           </div>
           <DialogFooter className="flex w-full justify-center sm:flex-row sm:justify-center sm:space-x-0">
             <Button
-              onClick={handleAddWarning}
-              disabled={!canUploadWarning}
+              onClick={handleAddContract}
+              disabled={!canUploadContract}
               className="w-48 justify-center py-3 text-base"
             >
               Upload

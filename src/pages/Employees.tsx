@@ -56,7 +56,7 @@ import {
   UsersRound,
   Info,
   ArrowRight,
-  MoreVertical,
+  Menu,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -453,6 +453,7 @@ const Employees = () => {
   const [contractStatusFilter, setContractStatusFilter] = useState<"active" | "inactive">("active");
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
+  const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
   const [misconductSearch, setMisconductSearch] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
@@ -481,6 +482,14 @@ const Employees = () => {
     "h-9 rounded-sm border border-slate-200 bg-white text-sm font-medium text-slate-900 shadow-none placeholder:text-xs focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:border-blue-400 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const fieldInputClass = baseFieldInputClass;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
+  const isReadOnlyTab = activeTab === "discipline" || activeTab === "contracts";
+  const isProfileDirty = useMemo(() => {
+    if (!selectedEmployee) return false;
+    const original = createProfileFormFromEmployee(selectedEmployee);
+    return (Object.keys(original) as Array<keyof EmployeeProfileFormData>).some(
+      (key) => profileForm[key] !== original[key],
+    );
+  }, [profileForm, selectedEmployee]);
 
   useLayoutEffect(() => {
     const updateOffset = () => {
@@ -535,6 +544,12 @@ const Employees = () => {
       navigate("/auth");
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (isReadOnlyTab && isEditMode) {
+      setIsEditMode(false);
+    }
+  }, [isReadOnlyTab, isEditMode]);
 
   useEffect(() => {
     const el = tableScrollRef.current;
@@ -1014,6 +1029,39 @@ const Employees = () => {
     [toast, user],
   );
 
+  const fetchActiveContractsForEmployees = useCallback(
+    async (employeeIds: string[]) => {
+      if (!user) return;
+      if (employeeIds.length === 0) {
+        setActiveContractsByEmployee({});
+        return;
+      }
+
+      const { data, error } = await contractTable()
+        .select("employee_id")
+        .eq("company_id", user.id)
+        .eq("is_active", true)
+        .in("employee_id", employeeIds);
+
+      if (error) {
+        toast({
+          title: "Unable to load contract status",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const activeIds = new Set((data ?? []).map((row: any) => row.employee_id));
+      const next: Record<string, boolean> = {};
+      employeeIds.forEach((id) => {
+        next[id] = activeIds.has(id);
+      });
+      setActiveContractsByEmployee(next);
+    },
+    [toast, user],
+  );
+
   useEffect(() => {
     if (selectedEmployee) {
       fetchContracts(selectedEmployee.id);
@@ -1094,6 +1142,7 @@ const Employees = () => {
     }
 
     await fetchContracts(selectedEmployee.id);
+    void fetchActiveContractsForEmployees(employees.map((employee) => employee.id));
     setContractForm({
       contractType: "",
       fileName: "",
@@ -1166,6 +1215,8 @@ const Employees = () => {
       title: "Contract deleted",
       description: "The contract has been removed.",
     });
+
+    void fetchActiveContractsForEmployees(employees.map((employee) => employee.id));
   };
 
   const handleStartContractUpload = () => {
@@ -1269,27 +1320,26 @@ const Employees = () => {
         <div className="flex items-start justify-between gap-4 pt-2">
           <div className="space-y-6 w-full">
             <div className="flex items-center justify-between gap-3 w-full">
-              <div className="flex items-center gap-1 text-xs font-semibold text-slate-500">
-                <button
-                  type="button"
-                  onClick={closeProfileDialog}
-                  className="underline-offset-2 hover:underline"
-                >
-                  Employees
-                </button>
-                <span aria-hidden="true">&gt;</span>
-                <span>Profile</span>
-              </div>
               <Button
                 variant="outline"
-                className="h-8 px-3 text-xs gap-1.5 rounded-sm"
-                onClick={() => setIsEditMode((prev) => !prev)}
+                className="h-8 px-3 text-xs rounded-sm"
+                onClick={closeProfileDialog}
               >
-                <Pencil className="h-3.5 w-3.5" />
-                {isEditMode ? "Editing" : "Edit"}
+                Back
               </Button>
+              {!isReadOnlyTab && (
+                <Button
+                  variant="outline"
+                  className="h-8 px-3 text-xs gap-1.5 rounded-sm"
+                  onClick={() => setIsEditMode((prev) => !prev)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {isEditMode ? "Cancel" : "Edit"}
+                </Button>
+              )}
             </div>
             <div className="space-y-1">
+              <p className="text-xs font-semibold text-slate-700">Profile of:</p>
               <h1 className="text-3xl font-bold text-blue-700">
                 {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
               </h1>
@@ -1346,21 +1396,16 @@ const Employees = () => {
           </div>
         </Tabs>
 
-        <div className="mt-auto flex items-center justify-between pt-4">
-          <Button
-            variant="outline"
-            className="h-9 px-4 text-xs"
-            onClick={closeProfileDialog}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="h-9 px-4 text-xs"
-            onClick={handleProfileSave}
-            disabled={!isEditMode || isProfileSaving}
-          >
-            {isProfileSaving ? "Saving..." : "Save"}
-          </Button>
+        <div className="mt-auto flex items-center justify-center pt-4">
+          {!isReadOnlyTab && isEditMode && (
+            <Button
+              className="h-9 px-10 text-xs min-w-[200px]"
+              onClick={handleProfileSave}
+              disabled={!isEditMode || !isProfileDirty || isProfileSaving}
+            >
+              {isProfileSaving ? "Saving..." : "Save"}
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -1414,7 +1459,8 @@ const Employees = () => {
 
     setEmployees(sorted);
     setFilteredEmployees(sorted);
-  }, [toast, user, currentPage]);
+    void fetchActiveContractsForEmployees(sorted.map((employee) => employee.id));
+  }, [toast, user, currentPage, fetchActiveContractsForEmployees]);
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
@@ -1748,12 +1794,51 @@ const Employees = () => {
     await fetchEmployees();
   };
 
-   const handleBulkDialogChange = (open: boolean) => {
-     setIsBulkDialogOpen(open);
-     if (!open && fileInputRef.current) {
-       fileInputRef.current.value = "";
-     }
-   };
+  const handleTerminateEmployee = async (employee: Employee) => {
+    if (!user) return;
+    const fullName = `${(employee.employee_name ?? "").trim()} ${(employee.employee_surname ?? "").trim()}`.trim();
+    const confirmed = confirm(`Are you sure you want to terminate ${fullName || "this employee"}?`);
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("employees").delete().eq("id", employee.id);
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Employee terminated",
+      description: `${fullName || "Employee"} deleted successfully.`,
+    });
+
+    setDeleteUndo({
+      deletedEmployees: [employee],
+      expiresAt: Date.now() + 20_000,
+    });
+    setSelectedEmployees((prev) => {
+      if (!prev.has(employee.id)) return prev;
+      const next = new Set(prev);
+      next.delete(employee.id);
+      return next;
+    });
+    if (selectedEmployee?.id === employee.id) {
+      setSelectedEmployee(null);
+      setIsProfilePanelOpen(false);
+    }
+    await fetchEmployees();
+  };
+
+  const handleBulkDialogChange = (open: boolean) => {
+    setIsBulkDialogOpen(open);
+    if (!open && fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
 
    const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
      const file = e.target.files?.[0];
@@ -2533,7 +2618,7 @@ const Employees = () => {
                                       , Other
                                     </button>
                                   </TooltipTrigger>
-                                  <TooltipContent side="top" className="max-w-xs">
+                                  <TooltipContent side="top" className="max-w-xs border border-blue-200 bg-white text-slate-900">
                                     <ul className="list-disc space-y-1 pl-4 text-xs">
                                       {otherMisconductTypes.map((type) => (
                                         <li key={type}>{type}</li>
@@ -2567,7 +2652,7 @@ const Employees = () => {
                                   className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
                                   aria-label="Warning actions"
                                 >
-                                  <MoreVertical className="h-4 w-4" />
+                                  <Menu className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="text-xs">
@@ -2714,7 +2799,7 @@ const Employees = () => {
                                   className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
                                   aria-label="Contract actions"
                                 >
-                                  <MoreVertical className="h-4 w-4" />
+                                  <Menu className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="text-xs">
@@ -2922,7 +3007,7 @@ const Employees = () => {
                               <Info className="h-4 w-4" />
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent side="top">
+                          <TooltipContent side="top" className="border border-blue-200 bg-white text-slate-900">
                             Up to {EMPLOYEE_NUMBER_MAX_LENGTH} characters allowed (letters, numbers, or both).
                           </TooltipContent>
                         </Tooltip>
@@ -3013,7 +3098,7 @@ const Employees = () => {
             ) : (
               <div className="space-y-2">
                 <div ref={tableCardRef} className="relative overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
-                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
+                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
                     <div className="flex items-center justify-center">
                       <Checkbox
                         checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
@@ -3024,6 +3109,7 @@ const Employees = () => {
                     <div className="flex items-center gap-2 leading-tight">ID Number</div>
                     <div className="flex items-center leading-tight">Contract Type</div>
                     <div className="flex items-center leading-tight">Job Title</div>
+                    <div className="flex items-center justify-center leading-tight text-center">Contract Uploaded</div>
                     <div className="flex items-center justify-center leading-tight text-center">Actions</div>
                   </div>
                   <div
@@ -3034,7 +3120,7 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr] items-center gap-2 px-3 py-0.5 text-xs hover:bg-blue-50/70"
+                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 px-3 py-0.5 text-xs hover:bg-blue-50/70"
                       >
                         <div className="flex items-center justify-center">
                           <Checkbox
@@ -3080,9 +3166,16 @@ const Employees = () => {
                         </div>
                         <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
                         <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
+                        <div
+                          className={`flex items-center justify-center leading-tight text-center ${
+                            activeContractsByEmployee[employee.id] ? "text-emerald-600" : "text-red-600"
+                          }`}
+                        >
+                          {activeContractsByEmployee[employee.id] ? "Yes" : "No"}
+                        </div>
                         <div className="flex items-center justify-center">
                           <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                            <div className="flex items-center justify-center gap-1.5">
+                            <div className="flex items-center justify-center gap-0.5">
                               <Tooltip disableHoverableContent>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -3094,7 +3187,9 @@ const Employees = () => {
                                     <Search className="h-3.5 w-3.5" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="rounded">View Profile</TooltipContent>
+                                <TooltipContent side="top" className="rounded">
+                                  View Profile
+                                </TooltipContent>
                               </Tooltip>
                               <Tooltip disableHoverableContent>
                                 <TooltipTrigger asChild>
@@ -3107,7 +3202,9 @@ const Employees = () => {
                                     <FilePlus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="rounded">Add Document</TooltipContent>
+                                <TooltipContent side="top" className="rounded">
+                                  Add Document
+                                </TooltipContent>
                               </Tooltip>
                             </div>
                           </TooltipProvider>

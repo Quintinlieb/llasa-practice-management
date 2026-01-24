@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -542,11 +542,11 @@ const normalizeSections = (value?: OffenceSection[] | null): OffenceSection[] =>
 };
 
 const gridColumns = [
-  { key: "name", label: "Offence", placeholder: "e.g. Arriving late for work" },
-  { key: "first", label: "1st", placeholder: "Outcome for 1st offence" },
-  { key: "second", label: "2nd", placeholder: "Outcome for 2nd offence" },
-  { key: "third", label: "3rd", placeholder: "Outcome for 3rd offence" },
-  { key: "fourth", label: "4th", placeholder: "Outcome for 4th offence" },
+  { key: "name", label: "Misconduct", placeholder: "e.g. Arriving late for work" },
+  { key: "first", label: "1st Offence", placeholder: "Outcome for 1st offence" },
+  { key: "second", label: "2nd Offence", placeholder: "Outcome for 2nd offence" },
+  { key: "third", label: "3rd Offence", placeholder: "Outcome for 3rd offence" },
+  { key: "fourth", label: "4th Offence", placeholder: "Outcome for 4th offence" },
 ] as const;
 
 export default function CodeOfConductPreviewPage() {
@@ -559,13 +559,42 @@ export default function CodeOfConductPreviewPage() {
   const [isRemoteLoading, setIsRemoteLoading] = useState(true);
   const [undoState, setUndoState] = useState<UndoAction | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
+  const [showScrollHint, setShowScrollHint] = useState(false);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableCardRef = useRef<HTMLDivElement | null>(null);
+  const [tableOffsetTop, setTableOffsetTop] = useState(0);
   const { toast } = useToast();
   const selectedSection = useMemo(
     () => sections.find((section) => section.id === activeCategoryId) ?? null,
     [sections, activeCategoryId],
   );
+
+  useLayoutEffect(() => {
+    const updateOffset = () => {
+      if (!tableCardRef.current) return;
+      const rect = tableCardRef.current.getBoundingClientRect();
+      setTableOffsetTop(rect.top);
+    };
+
+    updateOffset();
+    const onResize = () => requestAnimationFrame(updateOffset);
+    window.addEventListener("resize", onResize);
+
+    return () => window.removeEventListener("resize", onResize);
+  }, [activeCategoryId, sections.length, isEditing]);
+
+  const tableBottomGap = 32;
+  const tableFooterHeight = 32;
+  const tableMaxHeight =
+    tableOffsetTop > 0
+      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight}px)`
+      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight}px)`;
+  const tableBodyMaxHeight =
+    tableOffsetTop > 0
+      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
+      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
 
   const printStyles = useMemo(
     () => `
@@ -651,6 +680,29 @@ export default function CodeOfConductPreviewPage() {
 
     loadSections();
   }, [authLoading, user, toast, persistSections]);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) {
+      setShowScrollHint(false);
+      return;
+    }
+
+    const updateHint = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 1;
+      const atBottom = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
+      setShowScrollHint(canScroll && !atBottom);
+    };
+
+    updateHint();
+    el.addEventListener("scroll", updateHint);
+    window.addEventListener("resize", updateHint);
+
+    return () => {
+      el.removeEventListener("scroll", updateHint);
+      window.removeEventListener("resize", updateHint);
+    };
+  }, [selectedSection?.offences.length, isEditing]);
 
   const handleFieldChange = (sectionId: string, rowIndex: number, field: keyof OffenceRow, value: string) => {
     setSections((prev) =>
@@ -966,164 +1018,163 @@ export default function CodeOfConductPreviewPage() {
         </div>
 
         <div className="rounded-sm border border-slate-300 bg-white shadow-sm">
-          <div className="max-h-[calc(100vh-220px)] overflow-y-auto p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
+          <div className="p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
             <Tabs
               value={activeCategoryId}
               onValueChange={(value) => setActiveCategoryId(value as FixedCategoryId)}
               className="space-y-4"
             >
-              <TabsList className="h-auto w-full flex-wrap justify-start gap-0 bg-transparent px-0 py-0 shadow-none">
-                {fixedCategoryOrder.map((id) => (
-                  <TabsTrigger
-                    key={id}
-                    value={id}
-                    className="rounded-none border-b-[3px] border-transparent px-5 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none"
-                  >
-                    {categoryMetadata[id].title.replace(" Offences", "")}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200">
+                <TabsList className="h-auto flex-1 flex-wrap justify-start gap-0 bg-transparent px-0 py-0 shadow-none">
+                  {fixedCategoryOrder.map((id) => (
+                    <TabsTrigger
+                      key={id}
+                      value={id}
+                      className="rounded-none border-b-[3px] border-transparent px-5 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none"
+                    >
+                      {categoryMetadata[id].title.replace(" Offences", "")}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
               {selectedSection && (
-                <div className="rounded-sm bg-white px-4 print-section">
-                  <div className="pb-6 space-y-4">
-                    <div className="hidden md:flex md:items-center md:justify-between md:pb-0 pt-2">
+                <div className="rounded-sm bg-white px-0 print-section">
+                  <div className="pb-2 space-y-2">
+                    <div
+                      ref={tableCardRef}
+                      className="relative overflow-hidden"
+                      style={{ maxHeight: tableMaxHeight }}
+                    >
                       <div
                         className={cn(
-                          "grid flex-1 grid-cols-5 gap-3 text-xs font-semibold tracking-wide underline underline-offset-4",
-                          misconductColorClasses(categoryMetadata[selectedSection.id]?.category ?? "Serious"),
+                          "grid items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4",
+                          isEditing
+                            ? "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr_3rem]"
+                            : "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr]",
                         )}
                       >
-                        {gridColumns.map((column, index) => {
-                          return (
-                            <div
-                              key={column.key}
-                              className={cn(
-                                "flex flex-col gap-1 md:-ml-px",
-                                isEditing && index === 0 && "md:pl-[15px]",
-                                isEditing && column.key === "first" && "md:pl-5",
-                                isEditing && column.key === "second" && "md:pl-6",
-                                isEditing && column.key === "third" && "md:pl-1",
-                                !isEditing && column.key === "third" && "md:-ml-[6px]",
-                                isEditing && column.key === "fourth" && "md:-ml-[10px]",
-                                !isEditing && column.key === "fourth" && "md:-ml-[10px]",
-                                column.key === "name" && "md:pl-3",
-                                column.key === "first" && "md:pl-2",
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  column.key === "first" && isEditing && "md:ml-4",
-                                  column.key === "second" && isEditing && "md:ml-2",
-                                  column.key === "third" && isEditing && "md:ml-8",
-                                  column.key === "fourth" && isEditing && "md:translate-x-14",
-                                )}
-                              >
-                                {column.label}
-                              </span>
-                            </div>
-                          );
-                        })}
+                        {gridColumns.map((column) => (
+                          <div
+                            key={column.key}
+                            className={cn(
+                              "flex items-center leading-tight",
+                              column.key !== "name" && "pl-6",
+                            )}
+                          >
+                            {column.label}
+                          </div>
+                        ))}
+                        {isEditing && <div className="flex items-center justify-center leading-tight">Actions</div>}
                       </div>
-                      {isEditing && <div className="w-16" aria-hidden="true" />}
-                    </div>
-                    <div className="space-y-1.5">
-                      {selectedSection.offences.map((offence, index) => (
-                        <div
-                          key={`${selectedSection.id}-${index}`}
-                          className="rounded-sm bg-white p-2 shadow-sm transition-all duration-150 ease-out hover:shadow-md"
-                        >
-                          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                            <div className="grid flex-1 gap-2 md:grid-cols-5">
-                              {gridColumns.map((column) => {
-                                const isDefaultRow = offence.isDefault === true;
-                                const canEditRow = isEditing && !isDefaultRow;
-                                const showFourthSelect =
-                                  column.key !== "fourth" || offence.fourth !== undefined || isDefaultRow;
+                      <div
+                        ref={tableScrollRef}
+                        className="divide-y employee-table-scroll overflow-y-auto"
+                        style={{ maxHeight: tableBodyMaxHeight }}
+                      >
+                        {selectedSection.offences.map((offence, index) => (
+                          <div
+                            key={`${selectedSection.id}-${index}`}
+                            className={cn(
+                              "grid items-center gap-2 px-3 py-2.5 text-xs hover:bg-blue-50/70",
+                              isEditing
+                                ? "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr_3rem]"
+                                : "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr]",
+                            )}
+                          >
+                            {gridColumns.map((column) => {
+                              const isDefaultRow = offence.isDefault === true;
+                              const canEditRow = isEditing && !isDefaultRow;
+                              const showFourthSelect =
+                                column.key !== "fourth" || offence.fourth !== undefined || isDefaultRow;
 
-                                if (column.key === "fourth" && offence.fourth === undefined && !isEditing) {
-                                  return (
-                                    <div key={`${selectedSection.id}-${index}-fourth`} className="flex flex-col gap-0.5">
-                                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
-                                        4th
-                                      </span>
-                                      <p className="text-xs text-gray-700">--</p>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div key={`${selectedSection.id}-${index}-${column.key}`} className="flex flex-col gap-0.5 md:-ml-px">
-                                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500 md:hidden">
-                                      {column.label}
-                                    </span>
-                                    {column.key === "name" ? (
-                                      isEditing ? (
-                                        <Input
-                                          value={offence.name}
-                                          onChange={(event) =>
-                                            handleFieldChange(selectedSection.id, index, "name", event.target.value)
-                                          }
-                                          placeholder={column.placeholder}
-                                          className="h-8 border-blue-100 text-xs px-1.5 py-1 focus-visible:ring-blue-600"
-                                          readOnly={!canEditRow}
-                                          disabled={!canEditRow}
-                                        />
-                                      ) : (
-                                        <p className="text-xs font-medium text-gray-900">{offence.name}</p>
-                                      )
-                                    ) : isEditing ? (
-                                      showFourthSelect ? (
-                                        <select
-                                          value={offence[column.key] ?? ""}
-                                          onChange={(event) =>
-                                            handleFieldChange(selectedSection.id, index, column.key, event.target.value)
-                                          }
-                                          className="h-8 w-full rounded-md border border-blue-100 bg-white px-1.5 py-1 text-xs text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                                          disabled={!canEditRow}
-                                        >
-                                          <option value="">Not set</option>
-                                          {actionOptions.map((option) => (
-                                            <option key={option} value={option}>
-                                              {option}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      ) : (
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="justify-start border border-blue-200 px-3 text-blue-600 hover:border-2 hover:border-blue-500 hover:bg-white hover:text-blue-700"
-                                          onClick={() => handleAddFourthOutcome(selectedSection.id, index)}
-                                          disabled={!canEditRow}
-                                        >
-                                          <Plus className="mr-1 h-4 w-4" />
-                                          Add 4th offence
-                                        </Button>
-                                      )
-                                    ) : (
-                                      <p className="text-xs text-gray-700">{offence[column.key] || "--"}</p>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            {isEditing && !offence.isDefault && (
-                              <div className="flex items-center justify-end gap-2 pr-1 md:w-16">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="border border-transparent text-red-600 transition hover:border-red-300 hover:bg-white hover:text-red-600"
-                                  onClick={() => confirmDeleteOffence(selectedSection.id, index)}
+                              return (
+                                <div
+                                  key={`${selectedSection.id}-${index}-${column.key}`}
+                                  className={cn(
+                                    "flex items-center leading-tight",
+                                    column.key !== "name" && "pl-6",
+                                  )}
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                  {column.key === "name" ? (
+                                    isEditing ? (
+                                      <Input
+                                        value={offence.name}
+                                        onChange={(event) =>
+                                          handleFieldChange(selectedSection.id, index, "name", event.target.value)
+                                        }
+                                        placeholder={column.placeholder}
+                                        className="h-10 rounded-sm border border-slate-200 bg-white px-2 text-xs font-medium text-slate-900 shadow-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:border-blue-400"
+                                        readOnly={!canEditRow}
+                                        disabled={!canEditRow}
+                                      />
+                                    ) : (
+                                      <span className="font-medium text-gray-900">{offence.name || "--"}</span>
+                                    )
+                                  ) : isEditing ? (
+                                    showFourthSelect ? (
+                                      <select
+                                        value={offence[column.key] ?? ""}
+                                        onChange={(event) =>
+                                          handleFieldChange(selectedSection.id, index, column.key, event.target.value)
+                                        }
+                                        className="h-10 w-full rounded-sm border border-slate-200 bg-white px-2 text-xs text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:border-blue-400"
+                                        disabled={!canEditRow}
+                                      >
+                                        <option value="">Not set</option>
+                                        {actionOptions.map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-10 justify-start rounded-sm border border-blue-200 px-3 text-xs font-medium text-blue-700 hover:border-blue-500 hover:bg-white hover:text-blue-800"
+                                        onClick={() => handleAddFourthOutcome(selectedSection.id, index)}
+                                        disabled={!canEditRow}
+                                      >
+                                        <Plus className="mr-1 h-4 w-4" />
+                                        Add 4th offence
+                                      </Button>
+                                    )
+                                  ) : (
+                                    <span className="text-gray-700">{offence[column.key] || "--"}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {isEditing && (
+                              <div className="flex items-center justify-center">
+                                {!offence.isDefault && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-10 w-10 border border-transparent text-red-600 transition hover:border-red-300 hover:bg-white hover:text-red-600"
+                                    onClick={() => confirmDeleteOffence(selectedSection.id, index)}
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </Button>
+                                )}
                               </div>
                             )}
                           </div>
+                        ))}
+                      </div>
+                      {showScrollHint && (
+                        <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                          <div className="relative rounded-sm border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                            <span
+                              className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]"
+                              aria-hidden="true"
+                            ></span>
+                            <span className="relative">Scroll down</span>
+                          </div>
                         </div>
-                      ))}
+                      )}
                     </div>
                     {isEditing && (
                       <div className="pt-2">

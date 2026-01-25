@@ -13,6 +13,7 @@ import CompanySetup from "./pages/CompanySetup";
 import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import Documents from "./pages/Documents";
+import Assistant from "./pages/Assistant";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
@@ -55,6 +56,7 @@ const App = () => (
               <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+              <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />
               <Route path="/terms" element={<TermsAndConditions />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE - THE CATCH-ALL ROUTE IS LAST */}
               <Route path="*" element={<NotFound />} />

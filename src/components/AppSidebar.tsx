@@ -1,4 +1,4 @@
-import { FileText, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator } from "lucide-react";
+import { FileText, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator, Bot } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
 import {
@@ -22,6 +22,7 @@ const primaryNavItems = [
   { title: "Documents", url: "/documents", icon: FileText },
   { title: "Payroll", url: "/documents/payroll", icon: Calculator },
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
+  { title: "Assistant", url: "/assistant", icon: Bot },
 ];
 
 type AppSidebarProps = {

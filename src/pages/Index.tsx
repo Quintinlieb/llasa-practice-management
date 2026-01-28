@@ -336,9 +336,11 @@ const Index = () => {
               SA labour law aligned
             </div>
             <h1 className="relative mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
-              <span className="pointer-events-none absolute -right-12 top-0 z-0 h-64 w-64 rounded-full bg-blue-200/70 blur-3xl sm:h-72 sm:w-72" />
-              <span className="relative z-10 block">HR paperwork shouldn’t</span>
-              <span className="relative z-10 inline-block">slow you down</span>
+              <span className="relative z-10 block">
+                HR paperwork{" "}
+                <span className="underline decoration-blue-600 decoration-2 underline-offset-4">shouldn’t</span>
+              </span>
+              <span className="relative z-10 inline-block">slow you down!</span>
             </h1>
             <p className="mx-auto mt-5 max-w-3xl text-lg text-slate-600 sm:text-xl">
               Generate compliant HR documents instantly and avoid the delays and high costs of consultants or lawyers.

@@ -1,142 +1,261 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { clearAuthFormDraft } from "@/lib/authFormDraft";
 import {
   ArrowRight,
   Check,
-  CheckCircle2,
-  FileText,
-  Menu,
-  ScanLine,
   Shield,
+  FileText,
   Sparkles,
   Users,
-  X,
+  Calendar,
+  MessageSquare,
+  Lock,
+  Scale,
+  Download,
+  Building2,
+  Home,
+  ChevronDown,
 } from "lucide-react";
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
-declare global {
-  interface Window {
-    nudocDeferredPrompt?: BeforeInstallPromptEvent | null;
-  }
-}
-
-let installPromptListenerRegistered = false;
-const ensureInstallPromptListener = () => {
-  if (installPromptListenerRegistered) return;
-  installPromptListenerRegistered = true;
-  window.addEventListener("beforeinstallprompt", (event: Event) => {
-    event.preventDefault();
-    window.nudocDeferredPrompt = event as BeforeInstallPromptEvent;
-  });
-};
-
-ensureInstallPromptListener();
 
 const navLinks = [
   { label: "Features", href: "#features" },
+  { label: "How it works", href: "#how" },
   { label: "Pricing", href: "#pricing" },
+  { label: "FAQ", href: "#faq" },
 ];
 
-const pinnedFeatures = [
+const trustItems = [
   {
-    title: "Guided incidents",
-    copy: "Capture misconduct with inline hints and policy prompts in under two minutes.",
-    icon: ScanLine,
-  },
-  {
-    title: "Smart clauses",
-    copy: "SA labour-ready language auto-fills warnings, notices, and contracts.",
-    icon: Shield,
-  },
-  {
-    title: "Instant PDFs",
-    copy: "Preview, sign, and export branded PDFs without leaving the flow.",
-    icon: FileText,
-  },
-];
-
-const featureGrid = [
-  {
-    title: "Dynamic doc builder",
-    copy: "Warnings, notices, and contracts adapt to your inputs in real time.",
-    icon: FileText,
-  },
-  {
-    title: "Employee memory",
-    copy: "Profiles carry history, attendance, and contracts into every new doc.",
-    icon: Users,
-  },
-  {
-    title: "Compliance guardrails",
-    copy: "Progressive discipline steps and SA labour alignment baked in.",
-    icon: Shield,
-  },
-  {
-    title: "Audit trail",
-    copy: "Every action is time-stamped so HR can trace decisions quickly.",
+    title: "3 min to PDF",
+    copy: "From blank to compliant document",
     icon: Sparkles,
   },
   {
-    title: "One-click export",
-    copy: "Share, print, or download PDFs with signatures embedded.",
-    icon: ArrowRight,
+    title: "SA labour aligned",
+    copy: "BCEA, LRA & sectoral compliance",
+    icon: Shield,
+  },
+  {
+    title: "Audit-ready",
+    copy: "Full document history & trails",
+    icon: FileText,
+  },
+  {
+    title: "No legal speak",
+    copy: "Plain language, clear terms",
+    icon: MessageSquare,
+  },
+];
+
+const featureCards = [
+  {
+    title: "Guided document creation",
+    copy: "Step-by-step wizards for contracts, policies, and HR letters. No blank-page anxiety.",
+    icon: FileText,
+  },
+  {
+    title: "Instant PDF preview",
+    copy: "See your document as you build it. Preview, tweak, and download in seconds.",
+    icon: Download,
+  },
+  {
+    title: "Employee profiles",
+    copy: "Store employee details, documents, and history in one secure place.",
+    icon: Users,
+  },
+  {
+    title: "Compliance dashboard",
+    copy: "Track document expiry, missing paperwork, and compliance status at a glance.",
+    icon: Scale,
+  },
+  {
+    title: "HR assistant chat",
+    copy: "Get instant answers to HR questions. Powered by SA labour law knowledge.",
+    icon: MessageSquare,
+  },
+  {
+    title: "HR calendar",
+    copy: "Never miss a deadline. Automatic reminders for reviews, renewals, and compliance dates.",
+    icon: Calendar,
+  },
+  {
+    title: "Payslip generator",
+    copy: "Create compliant payslips with UIF, PAYE, and deductions calculated automatically.",
+    icon: FileText,
+  },
+  {
+    title: "Secure onboarding",
+    copy: "Send document packs to new hires. Collect signatures and ID docs digitally.",
+    icon: Lock,
   },
   {
     title: "Template library",
-    copy: "Save your best letters and reuse them across locations.",
-    icon: CheckCircle2,
+    copy: "Growing library of SA-compliant templates. New documents added monthly.",
+    icon: FileText,
+    badge: "Coming soon",
+  },
+];
+
+const steps = [
+  {
+    title: "Add your employee",
+    copy: "Enter basic details or import from an existing profile. Takes 30 seconds.",
+    icon: Users,
+    step: "01",
+  },
+  {
+    title: "Choose your document",
+    copy: "Select from contracts, policies, letters, or forms. All SA-compliant templates.",
+    icon: FileText,
+    step: "02",
+  },
+  {
+    title: "Answer guided questions",
+    copy: "Simple prompts fill in the blanks. No legal jargon, just plain questions.",
+    icon: Sparkles,
+    step: "03",
+  },
+  {
+    title: "Download & send",
+    copy: "Preview instantly, download as PDF, or send for e-signature.",
+    icon: Download,
+    step: "04",
+  },
+];
+
+const planTypes = [
+  {
+    title: "For businesses",
+    subtitle: "SMEs & HR teams",
+    copy: "Full-featured HR document management for growing companies. Handle multiple employees, track compliance, and scale with confidence.",
+    icon: Building2,
+    badge: "Most popular",
+    features: [
+      "Unlimited employee profiles",
+      "Bulk document generation",
+      "Compliance dashboards",
+      "Team collaboration",
+      "Audit trails & history",
+      "Priority support",
+    ],
+    cta: "Get started",
+    primary: true,
+  },
+  {
+    title: "For households",
+    subtitle: "Domestic employers",
+    copy: "Simple, affordable HR compliance for domestic workers. Contracts, payslips, and leave tracking made easy.",
+    icon: Home,
+    features: [
+      "Up to 3 employee profiles",
+      "Domestic worker contracts",
+      "Monthly payslip generator",
+      "Leave & UIF tracking",
+      "Compliance reminders",
+      "Email support",
+    ],
+    cta: "Get started",
+  },
+];
+
+const pricingPlans = [
+  {
+    name: "Starter",
+    subtitle: "For small teams getting started",
+    monthly: 299,
+    features: [
+      "Up to 10 employees",
+      "Core document templates",
+      "PDF download",
+      "Email support",
+      "Basic compliance tracking",
+    ],
+  },
+  {
+    name: "Business",
+    subtitle: "For growing companies",
+    monthly: 799,
+    badge: "Most popular",
+    features: [
+      "Unlimited employees",
+      "All document templates",
+      "HR assistant chat",
+      "Compliance dashboard",
+      "Team collaboration",
+      "Audit trails",
+      "Priority support",
+    ],
+    featured: true,
+  },
+  {
+    name: "Domestic",
+    subtitle: "For household employers",
+    monthly: 99,
+    features: [
+      "Up to 3 employees",
+      "Domestic contracts",
+      "Payslip generator",
+      "Leave tracking",
+      "UIF compliance",
+      "Email support",
+    ],
+  },
+];
+
+const complianceCards = [
+  {
+    title: "SA labour law aligned",
+    copy: "Every template follows BCEA, LRA, and relevant sectoral determinations. Updated when laws change.",
+    icon: Scale,
+  },
+  {
+    title: "POPIA compliant",
+    copy: "Your employee data is protected. We follow strict privacy protocols and never share your information.",
+    icon: Lock,
+  },
+  {
+    title: "Bank-grade security",
+    copy: "256-bit encryption, secure servers, and regular security audits keep your documents safe.",
+    icon: Shield,
+  },
+  {
+    title: "Audit-ready records",
+    copy: "Complete document history, version tracking, and timestamps for CCMA or DoL inspections.",
+    icon: FileText,
   },
 ];
 
 const faqs = [
   {
-    q: "Do I need legal expertise?",
-    a: "No. Clause suggestions follow South African labour standards so managers can act confidently.",
+    q: "What types of documents can I create?",
+    a: "Warnings, contracts, addendums, notices, and more. New templates are added regularly.",
   },
   {
-    q: "Can I reuse employee data?",
-    a: "Yes. Profiles auto-fill every warning, notice, or contract you create.",
+    q: "Are the documents compliant with South African labour law?",
+    a: "Yes. Templates are aligned with BCEA, LRA, and sectoral determinations.",
   },
   {
-    q: "How fast is export?",
-    a: "Most teams generate a PDF with signatures in under three minutes.",
+    q: "Can I use nudoc for domestic workers?",
+    a: "Yes. The Domestic plan is built for household employers and includes payslips and UIF support.",
   },
   {
-    q: "Is my data secure?",
-    a: "Secure auth, role-aware access, and encrypted storage keep sensitive data safe.",
+    q: "How secure is my employee data?",
+    a: "We use bank-grade encryption and strict access controls to protect your data.",
   },
   {
-    q: "Can we standardise templates?",
-    a: "Create, save, and share templates so every manager follows the same playbook.",
+    q: "Can multiple team members access the account?",
+    a: "Yes. The Business plan supports team collaboration and multi-user access.",
   },
 ];
 
+const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
+
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activePin, setActivePin] = useState(0);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [showInstallHint, setShowInstallHint] = useState(false);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
-  const featureRef = useRef<HTMLElement | null>(null);
-  const [featurePinned, setFeaturePinned] = useState(false);
-  const domesticMonthly = 99;
-  const domesticAnnual = Math.round(domesticMonthly * 12 * 0.9);
-  const businessMonthly = 249;
-  const businessAnnual = Math.round(businessMonthly * 12 * 0.9);
-  const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
-
-  useEffect(() => {
-    clearAuthFormDraft();
-  }, []);
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
@@ -146,134 +265,35 @@ const Index = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const installedCheck = () => {
-      const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
-      setIsInstalled(isStandalone);
-    };
-
-    const onInstalled = () => setIsInstalled(true);
-    window.addEventListener("appinstalled", onInstalled);
-
-    // Pick up any cached prompt that may have fired before React mounted
-    if (window.nudocDeferredPrompt) {
-      setDeferredPrompt(window.nudocDeferredPrompt);
-    }
-
-    installedCheck();
-
-    return () => {
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-
-  useEffect(() => {
-    const revealItems = document.querySelectorAll<HTMLElement>(".reveal");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) entry.target.classList.add("show");
-        });
-      },
-      { threshold: 0.14 }
-    );
-    revealItems.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const cards = document.querySelectorAll<HTMLElement>(".pin-card");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const target = entry.target as HTMLElement;
-            const idx = Number(target.dataset.index ?? 0);
-            setActivePin(idx);
-          }
-        });
-      },
-      { threshold: 0.6, rootMargin: "-10% 0px -10% 0px" }
-    );
-    cards.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!featureRef.current) return;
-    const el = featureRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          setFeaturePinned(entry.isIntersecting && entry.intersectionRatio > 0.42);
-        });
-      },
-      { threshold: [0.3, 0.42, 0.6], rootMargin: "-10% 0px -10% 0px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  const handleNavClick = (href: string) => (
-    event: React.MouseEvent<HTMLAnchorElement>
-  ) => {
+  const handleNavClick = (href: string) => (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     const target = document.querySelector(href);
     if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
     setMenuOpen(false);
   };
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt && window.nudocDeferredPrompt) {
-      setDeferredPrompt(window.nudocDeferredPrompt);
-    }
-
-    if (!deferredPrompt && !window.nudocDeferredPrompt) {
-      setShowInstallHint(true);
-      return;
-    }
-
-    const promptEvent = deferredPrompt ?? window.nudocDeferredPrompt;
-    if (!promptEvent) {
-      setShowInstallHint(true);
-      return;
-    }
-
-    promptEvent.prompt();
-    const choice = await promptEvent.userChoice;
-    if (choice.outcome === "accepted") {
-      setDeferredPrompt(null);
-      window.nudocDeferredPrompt = null;
-    }
-  };
+  const annualPrice = (monthly: number) => Math.round(monthly * 12 * 0.9);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/85 backdrop-blur-md">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex flex-1 items-center gap-3">
             <img src="/mainlogo5 .png" alt="nudoc full logo" className="h-8 w-auto" />
           </div>
-          <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-700 md:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-600 md:flex">
             {navLinks.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                onClick={handleNavClick(item.href)}
-                className="transition-colors hover:text-blue-700"
-              >
+              <a key={item.href} href={item.href} onClick={handleNavClick(item.href)} className="hover:text-blue-700">
                 {item.label}
               </a>
             ))}
           </nav>
           <div className="hidden flex-1 items-center justify-end gap-3 md:flex">
-            <Link to="/auth?login=1">
-              <Button variant="outline" className="border-blue-200 text-blue-700">
-                Log in
-              </Button>
+            <Link to="/auth?login=1" className="text-sm font-medium text-slate-600 hover:text-blue-700">
+              Sign in
             </Link>
             <Link to="/auth?new=1">
-              <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
+              <Button className="rounded-full bg-blue-600 px-5 text-white hover:bg-blue-700">Get started</Button>
             </Link>
           </div>
           <button
@@ -281,7 +301,7 @@ const Index = () => {
             aria-label="Toggle menu"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <ChevronDown className={`h-5 w-5 transition ${menuOpen ? "rotate-180" : ""}`} />
           </button>
         </div>
         {menuOpen && (
@@ -297,13 +317,11 @@ const Index = () => {
                   {item.label}
                 </a>
               ))}
-              <Link to="/auth?login=1">
-                <Button variant="outline" className="w-full border-blue-200 text-blue-700">
-                  Log in
-                </Button>
+              <Link to="/auth?login=1" className="rounded-lg px-3 py-2 text-slate-700 hover:bg-slate-100">
+                Sign in
               </Link>
               <Link to="/auth?new=1">
-                <Button className="w-full bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
+                <Button className="w-full rounded-full bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
               </Link>
             </div>
           </div>
@@ -312,541 +330,268 @@ const Index = () => {
 
       <main>
         <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-50 via-white to-white" />
-          <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-16 text-center sm:pt-20">
-            <div className="mx-auto mb-6 w-fit rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700">
-              HR documents, simplified
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-100 via-slate-50 to-slate-50" />
+          <div className="relative mx-auto max-w-5xl px-6 pb-16 pt-16 text-center sm:pt-24">
+            <div className="mx-auto mb-6 w-fit rounded-full bg-blue-100 px-4 py-2 text-xs font-semibold text-blue-700">
+              SA labour law aligned
             </div>
-            <h1 className="mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
-              Generate compliant HR documents with clarity and speed.
+            <h1 className="relative mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
+              <span className="pointer-events-none absolute -right-12 top-0 z-0 h-64 w-64 rounded-full bg-blue-200/70 blur-3xl sm:h-72 sm:w-72" />
+              <span className="relative z-10 block">HR paperwork shouldn’t</span>
+              <span className="relative z-10 inline-block">slow you down</span>
             </h1>
-            <p className="mx-auto mt-4 max-w-3xl text-lg text-slate-600 sm:text-xl">
-              Guided flows, smart clauses, and instant PDFs keep managers on-policy and employees informed.
+            <p className="mx-auto mt-5 max-w-3xl text-lg text-slate-600 sm:text-xl">
+              Generate compliant HR documents instantly and avoid the delays and high costs of consultants or lawyers.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link to="/auth?new=1">
-                <Button className="h-12 rounded-full bg-blue-600 px-7 text-base text-white hover:bg-blue-700">
-                  Get started
+                <Button className="h-12 rounded-full bg-blue-600 px-8 text-base text-white hover:bg-blue-700">
+                  Get started free <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
-              {!isInstalled && (
-                <Button
-                  variant="outline"
-                  onClick={handleInstallClick}
-                  className="h-12 rounded-full border-emerald-200 bg-white px-7 text-base text-emerald-700 hover:border-emerald-300 disabled:opacity-70"
-                  disabled={isInstalled}
-                >
-                  {deferredPrompt ? "Install app" : "Install app"}
-                </Button>
-              )}
+              <Button variant="outline" className="h-12 rounded-full px-7 text-base text-slate-700">
+                Book a demo
+              </Button>
             </div>
-            {!isInstalled && showInstallHint && (
-              <p className="mt-2 text-xs text-emerald-700">
-                If the button stays disabled, open your browser menu and choose Install/Add to Home Screen.
-              </p>
-            )}
+            <p className="mt-6 text-sm text-slate-500">Trusted by 500+ South African businesses</p>
           </div>
         </section>
 
-        <section
-          ref={featureRef}
-          className={`feature-highlight relative overflow-hidden border-y border-slate-200 bg-gradient-to-b from-white via-blue-50/30 to-white ${featurePinned ? "feature-pinned" : ""}`}
-        >
-          <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-            <div className="absolute -top-10 left-[-6%] h-48 w-48 rounded-full bg-blue-100/60 blur-3xl" />
-            <div className="absolute bottom-4 right-[-4%] h-52 w-52 rounded-full bg-emerald-100/60 blur-3xl" />
-          </div>
-          <div className="relative mx-auto max-w-6xl px-6 py-16">
-            <div className="max-w-2xl">
-              <p className="text-xs uppercase tracking-[0.2em] text-blue-700">Feature highlight</p>
-              <h2 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">See how adding an employee works</h2>
-              <p className="mt-3 text-lg text-slate-600">
-                A quick, looping illustration: open the list, click add, and start capturing details without leaving the flow.
-              </p>
-            </div>
-            <div className="mt-8 grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className={`feature-visual relative overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl ${featurePinned ? "is-pinned" : ""}`}>
-                <img
-                  src="/employee-list.png"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = "/placeholder.svg";
-                  }}
-                  alt="Employee list screen"
-                  className="demo-image"
-                />
-              </div>
-              <div className="space-y-5">
-                <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
-                  <p className="text-sm font-semibold text-blue-800">1) Start from your employee list</p>
-                  <p className="text-sm text-slate-700">Browse, search, or filter to find people in seconds.</p>
-                </div>
-                <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 shadow-sm">
-                  <p className="text-sm font-semibold text-emerald-800">2) Click “Add Employee”</p>
-                  <p className="text-sm text-slate-700">The guided modal keeps the basics upfront and ready.</p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-sm font-semibold text-slate-900">3) Capture details, save, and attach docs</p>
-                  <p className="text-sm text-slate-700">Stay in flow—no redirects, instant records, and ready for contracts.</p>
+        <section className="border-y border-slate-200 bg-white">
+          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 py-12 text-center md:grid-cols-4">
+            {trustItems.map((item) => (
+              <div key={item.title} className="space-y-3">
+                <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+                  <item.icon className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-base font-semibold text-slate-900">{item.title}</p>
+                  <p className="text-sm text-slate-500">{item.copy}</p>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-6 pb-12 reveal">
-          <Card className="mx-auto max-w-5xl border-blue-100 bg-white/80 p-6 shadow-sm backdrop-blur">
-            <div className="text-left sm:text-center">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">The easiest way</p>
-              <h3 className="mt-2 text-2xl font-semibold text-slate-900">
-                Generate HR documents without the admin drag
-              </h3>
-              <p className="mt-2 text-sm text-slate-600">
-                A simple, repeatable flow for warnings, notices, contracts, and more.
-              </p>
-            </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                  <Users className="h-5 w-5" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Step 1</p>
-                <p className="text-sm text-slate-600">Add employee</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                  <ScanLine className="h-5 w-5" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Step 2</p>
-                <p className="text-sm text-slate-600">Fill basic details</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Step 3</p>
-                <p className="text-sm text-slate-600">Choose HR document</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4 text-left sm:text-center">
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Step 4</p>
-                <p className="text-sm text-slate-600">Preview or print</p>
-              </div>
-            </div>
-          </Card>
-        </section>
-
-        <section className="border-y border-slate-200 bg-white/80">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-6 text-sm text-slate-700">
-            <div className="flex items-center gap-2 font-semibold text-slate-600">
-              <Sparkles className="h-4 w-4 text-blue-600" />
-              Trusted by teams who need compliant HR docs fast
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <div className="rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-blue-700">3 min to PDF</div>
-              <div className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-emerald-700">Progressive discipline baked in</div>
-              <div className="rounded-full border border-slate-200 bg-white px-4 py-2 text-slate-700">300+ employees tracked</div>
-            </div>
-          </div>
-        </section>
-
-        <section
-          id="product"
-          className="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-[0.9fr_1.1fr]"
-        >
-          <div className="reveal lg:sticky lg:top-28 lg:self-start">
-            <Badge className="bg-blue-100 text-blue-800">Product</Badge>
-            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Pinned view of your core flows</h2>
-            <p className="mt-3 text-lg text-slate-600">
-              Keep the overview fixed while you scroll through guided workflows. Every step is clear, compliant, and ready to export.
+        <section id="how" className="bg-slate-50 px-6 py-16">
+          <div className="mx-auto max-w-6xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">How it works</p>
+            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
+              From blank to compliant in four steps
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+              No templates to decipher. No lawyers to consult. Just answer simple questions and get professional documents.
             </p>
-            <div className="mt-6 space-y-3">
-              {pinnedFeatures.map((item, idx) => (
-                <div
-                  key={item.title}
-                  className={`flex items-start gap-3 rounded-xl border p-4 transition ${
-                    activePin === idx ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <item.icon
-                    className={`mt-1 h-5 w-5 ${activePin === idx ? "text-blue-700" : "text-slate-500"}`}
-                  />
-                  <div>
-                    <p className="font-semibold text-slate-900">{item.title}</p>
-                    <p className="text-sm text-slate-600">{item.copy}</p>
-                  </div>
-                </div>
+            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {steps.map((step) => (
+                <Card key={step.title} className="relative rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
+                  <span className="absolute -top-6 right-6 text-5xl font-bold text-slate-100">{step.step}</span>
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                    <step.icon className="h-6 w-6" />
+                  </span>
+                  <h3 className="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{step.copy}</p>
+                </Card>
               ))}
             </div>
           </div>
-
-          <div className="space-y-6">
-            {pinnedFeatures.map((item, idx) => (
-              <Card
-                key={item.title}
-                data-index={idx}
-                className={`pin-card border ${activePin === idx ? "border-blue-200 shadow-lg" : "border-slate-200 shadow-sm"} bg-white/90 backdrop-blur transition`}
-              >
-                <div className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-full bg-blue-50 p-3 text-blue-700">
-                        <item.icon className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Guided</p>
-                        <h3 className="text-xl font-semibold text-slate-900">{item.title}</h3>
-                      </div>
-                    </div>
-                    <Badge className="bg-orange-100 text-orange-800">Step</Badge>
-                  </div>
-                  <p className="mt-3 text-slate-600">{item.copy}</p>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">Inline policy hints</div>
-                    <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">Auto clauses added</div>
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-slate-700">Export + audit trail</div>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
         </section>
 
-        <section
-          id="features"
-          className="mx-auto max-w-6xl px-6 pb-14 reveal"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <Badge className="bg-blue-100 text-blue-800">Features</Badge>
-              <h2 className="mt-3 text-3xl font-bold text-slate-900 sm:text-4xl">Built for modern HR teams</h2>
-              <p className="text-lg text-slate-600">Everything you need to stay compliant without slowing down.</p>
-            </div>
-            <div className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700">
-              Secure, accurate, fast
-            </div>
-          </div>
+        <section id="features" className="mx-auto max-w-6xl px-6 py-16 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Features</p>
+          <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
+            Everything you need to manage HR docs
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+            From contracts to compliance, nudoc handles the paperwork so you can focus on your people.
+          </p>
+
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {featureGrid.map((item) => (
-              <Card key={item.title} className="border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
-                    <item.icon className="h-5 w-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-900">{item.title}</h3>
+            {featureCards.map((feature) => (
+              <Card key={feature.title} className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                    <feature.icon className="h-6 w-6" />
+                  </span>
+                  {feature.badge && (
+                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-600">
+                      {feature.badge}
+                    </Badge>
+                  )}
                 </div>
-                <p className="mt-3 text-sm text-slate-600">{item.copy}</p>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">{feature.title}</h3>
+                <p className="mt-2 text-sm text-slate-600">{feature.copy}</p>
               </Card>
             ))}
           </div>
         </section>
 
-        <section
-          id="pricing"
-          className="relative w-full px-6 pb-14 pt-6 reveal"
-        >
-          <div
-            className="absolute inset-0 -z-10 bg-gradient-to-b from-blue-50 via-blue-50/60 to-blue-50/20"
-            aria-hidden="true"
-          />
-          <div className="mx-auto max-w-6xl">
-            <div className="mx-auto max-w-5xl text-center">
-              <div className="mx-auto mt-4 w-fit rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                Best Pricing
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold text-slate-900 sm:text-4xl">Transparent Pricing</h2>
-              <p className="mx-auto mt-3 max-w-3xl text-sm text-slate-600 sm:text-base">
-                Choose the plan that fits your goals. No hidden fees, just powerful features.
-              </p>
-              <div className="mt-10 flex justify-center">
-                <div className="inline-flex items-center rounded-full border border-blue-100 bg-white p-1 shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => setBillingCycle("monthly")}
-                    className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                      billingCycle === "monthly"
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBillingCycle("annual")}
-                    className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                      billingCycle === "annual"
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
-                    }`}
-                  >
-                    Annually
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="mx-auto mt-16 max-w-5xl">
-              <div className="grid gap-6 md:grid-cols-3">
-                <div className="relative flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 pt-10 shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-                  <span className="inline-flex items-center rounded-full border border-blue-700 bg-blue-600 px-5 py-2 text-base font-semibold text-white shadow-lg ring-4 ring-white/70">
-                    Free
-                  </span>
-                  <span className="sr-only">Trial plan</span>
-                </div>
-                <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-slate-900">{formatPrice(0)}</span>
-                  <span className="text-sm text-slate-500">/ {billingCycle === "monthly" ? "month" : "year"}</span>
-                </div>
-                <div className="mt-6 h-px w-full bg-slate-200" />
-                <p className="mt-4 text-xs uppercase text-slate-400">Starter plan includes :</p>
-                <ul className="mt-3 space-y-2 text-left text-sm text-slate-600">
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Up to 50 patient records.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Scheduling and appointment
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Analytics & Reporting
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Limited report and analytics.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Email support
-                  </li>
-                </ul>
-                <div className="mt-auto pt-6">
-                  <Link to="/auth?new=1">
-                    <Button variant="outline" className="h-10 w-full rounded-full border-slate-300 text-slate-700 hover:border-slate-400">
-                      Start free trial
-                    </Button>
-                  </Link>
-                </div>
-                </div>
-                <div className="relative flex h-full flex-col rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-6 pt-10 text-white shadow-[0_22px_50px_rgba(15,23,42,0.2)]">
-                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-                  <span className="inline-flex items-center rounded-full border border-white bg-white px-5 py-2 text-base font-semibold text-blue-700 shadow-lg ring-4 ring-blue-500/20">
-                    Domestic
-                  </span>
-                  <span className="sr-only">Domestic plan</span>
-                </div>
-                <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-white">
-                    {billingCycle === "monthly" ? formatPrice(domesticMonthly) : formatPrice(domesticAnnual)}
-                  </span>
-                  <span className="text-sm text-white/80">/ {billingCycle === "monthly" ? "month" : "year"}</span>
-                </div>
-                {billingCycle === "annual" && (
-                  <p className="mt-1 text-xs font-semibold text-white/90">Save 10% on annual</p>
-                )}
-                <div className="mt-6 h-px w-full bg-white/30" />
-                <p className="mt-4 text-xs uppercase text-white/70">Pro plan includes :</p>
-                <ul className="mt-3 space-y-2 text-left text-sm text-white/90">
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Up to 5,000 patient records.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Advanced scheduling with waitlist management
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Comprehensive analytics
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Data portal for self-service scheduling
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Integration with third-party tools
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white">
-                      <Check className="h-3 w-3 text-blue-700" />
-                    </span>
-                    Phone and email support
-                  </li>
-                </ul>
-                <div className="mt-auto pt-6">
-                  <Link to="/auth?new=1">
-                    <Button className="h-10 w-full rounded-full bg-white text-blue-700 hover:bg-blue-50">
-                      Start with Domestic
-                    </Button>
-                  </Link>
-                </div>
-                </div>
-                <div className="relative flex h-full flex-col rounded-2xl border border-blue-100 bg-white p-6 pt-10 shadow-[0_22px_50px_rgba(15,23,42,0.16)]">
-                <div className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center">
-                  <span className="inline-flex items-center rounded-full border border-blue-700 bg-blue-600 px-5 py-2 text-base font-semibold text-white shadow-lg ring-4 ring-white/70">
-                    Business
-                  </span>
-                  <span className="sr-only">Business plan</span>
-                </div>
-                <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-slate-900">
-                    {billingCycle === "monthly" ? formatPrice(businessMonthly) : formatPrice(businessAnnual)}
-                  </span>
-                  <span className="text-sm text-slate-500">/ {billingCycle === "monthly" ? "month" : "year"}</span>
-                </div>
-                {billingCycle === "annual" && (
-                  <p className="mt-1 text-xs font-semibold text-blue-600">Save 10% on annual</p>
-                )}
-                <div className="mt-6 h-px w-full bg-slate-200" />
-                <p className="mt-4 text-xs uppercase text-slate-400">Custom plan includes :</p>
-                <ul className="mt-3 space-y-2 text-left text-sm text-slate-600">
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Unlimited patient records
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Fully customizable workflows and reports.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    Dedicated account manager for setup and support.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    On-site training and implementation assistance.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600">
-                      <Check className="h-3 w-3 text-white" />
-                    </span>
-                    24/7 premium support.
-                  </li>
-                </ul>
-                <div className="mt-auto pt-6">
-                  <Link to="/auth?new=1">
-                    <Button className="h-10 w-full rounded-full bg-blue-600 text-white hover:bg-blue-700">
-                      Start with Business
-                    </Button>
-                  </Link>
-                </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        <section className="mx-auto max-w-6xl px-6 py-16 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Choose your plan type</p>
+          <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
+            Built for businesses and households alike
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+            Whether you’re running a company or employing a domestic worker, nudoc has you covered.
+          </p>
 
-        <section
-          id="why"
-          className="mx-auto max-w-6xl grid gap-10 px-6 pb-14 reveal lg:grid-cols-2"
-        >
-          <div className="space-y-4">
-            <Badge className="bg-blue-100 text-blue-800">Why nudoc</Badge>
-            <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Built for HR leads, loved by managers</h2>
-            <p className="text-lg text-slate-600">Clarity, compliance, and calm for every disciplinary or contract workflow.</p>
-            <ul className="space-y-3 text-slate-700">
-              <li className="flex items-start gap-3">
-                <CheckCircle2 className="mt-1 h-5 w-5 text-blue-700" />
-                <div>
-                  <p className="font-semibold text-slate-900">Consistent every time</p>
-                  <p className="text-sm text-slate-600">Templates and clause packs aligned to your policy.</p>
-                </div>
-              </li>
-              <li className="flex items-start gap-3">
-                <CheckCircle2 className="mt-1 h-5 w-5 text-orange-700" />
-                <div>
-                  <p className="font-semibold text-slate-900">Fast for busy teams</p>
-                  <p className="text-sm text-slate-600">Auto-fill profiles and export-ready PDFs cut admin to minutes.</p>
-                </div>
-              </li>
-              <li className="flex items-start gap-3">
-                <CheckCircle2 className="mt-1 h-5 w-5 text-emerald-700" />
-                <div>
-                  <p className="font-semibold text-slate-900">Transparent for HR</p>
-                  <p className="text-sm text-slate-600">Audit trails keep evidence, notes, and signatures in one place.</p>
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <Card className="border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Control room</p>
-                <h3 className="text-xl font-semibold text-slate-900">Today</h3>
-              </div>
-              <Badge className="bg-emerald-100 text-emerald-800">All clear</Badge>
-            </div>
-            <div className="mt-4 space-y-3">
-              {["Absenteeism warning ready", "Performance review drafted", "New permanent contract"].map((item, idx) => (
-                <div key={item} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
-                  <div className={`mt-1 h-2.5 w-2.5 rounded-full ${idx === 0 ? "bg-blue-600" : idx === 1 ? "bg-orange-500" : "bg-emerald-600"}`} />
+          <div className="mt-12 grid gap-6 md:grid-cols-2">
+            {planTypes.map((plan) => (
+              <Card
+                key={plan.title}
+                className={`relative rounded-2xl border ${plan.primary ? "border-blue-200 shadow-lg" : "border-slate-200"} bg-white p-8 text-left`}
+              >
+                {plan.badge && (
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white">
+                    {plan.badge}
+                  </span>
+                )}
+                <div className="flex items-center gap-4">
+                  <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${plan.primary ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-600"}`}>
+                    <plan.icon className="h-6 w-6" />
+                  </span>
                   <div>
-                    <p className="font-semibold text-slate-900">{item}</p>
-                    <p className="text-sm text-slate-600">Policy aligned | Evidence attached | Signature ready</p>
+                    <h3 className="text-xl font-semibold text-slate-900">{plan.title}</h3>
+                    <p className="text-sm text-slate-500">{plan.subtitle}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </Card>
+                <p className="mt-5 text-sm text-slate-600">{plan.copy}</p>
+                <ul className="mt-6 space-y-3 text-sm text-slate-600">
+                  {plan.features.map((item) => (
+                    <li key={item} className="flex items-center gap-3">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 text-emerald-600">
+                        <Check className="h-3 w-3" />
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-8">
+                  <Link to="/auth?new=1">
+                    <Button
+                      className={`h-11 w-full rounded-full ${plan.primary ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-900 hover:bg-slate-100"}`}
+                    >
+                      {plan.cta}
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
+            ))}
+          </div>
         </section>
 
-        <section
-          id="faq"
-          className="mx-auto max-w-6xl px-6 pb-14 reveal"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <Badge className="bg-blue-100 text-blue-800">FAQ</Badge>
-              <h2 className="mt-3 text-3xl font-bold text-slate-900 sm:text-4xl">Questions, answered</h2>
-              <p className="text-lg text-slate-600">Everything you need to know before rolling out nudoc.</p>
-            </div>
-            <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">
-              Talk to us
-            </Button>
+        <section className="bg-slate-950 px-6 py-16 text-white">
+          <div className="mx-auto max-w-6xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">Compliance & security</p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              Built for compliance, secured for peace of mind
+            </h2>
+            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-300">
+              Your HR documents are legally sound and your data is protected. Always.
+            </p>
           </div>
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {faqs.map((item) => (
-              <details
-                key={item.q}
-                className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          <div className="mx-auto mt-12 grid max-w-6xl gap-6 md:grid-cols-2">
+            {complianceCards.map((item) => (
+              <Card key={item.title} className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left text-white">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600/20 text-blue-300">
+                    <item.icon className="h-6 w-6" />
+                  </span>
+                  <h3 className="text-lg font-semibold">{item.title}</h3>
+                </div>
+                <p className="mt-3 text-sm text-slate-300">{item.copy}</p>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <section id="pricing" className="bg-slate-50 px-6 py-16">
+          <div className="mx-auto max-w-6xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Pricing</p>
+            <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple, transparent pricing</h2>
+            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+              No hidden fees. No long contracts. Start free and upgrade when you’re ready.
+            </p>
+            <div className="mt-8 flex items-center justify-center gap-3 text-sm text-slate-600">
+              <span className={billingCycle === "monthly" ? "text-slate-900" : ""}>Monthly</span>
+              <button
+                type="button"
+                onClick={() => setBillingCycle((prev) => (prev === "monthly" ? "annual" : "monthly"))}
+                className="relative h-7 w-12 rounded-full bg-slate-200"
+                aria-label="Toggle billing cycle"
               >
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+                    billingCycle === "monthly" ? "left-1" : "left-6"
+                  }`}
+                />
+              </button>
+              <span className={billingCycle === "annual" ? "text-slate-900" : ""}>Annual</span>
+            </div>
+          </div>
+
+          <div className="mx-auto mt-12 grid max-w-6xl gap-6 md:grid-cols-3">
+            {pricingPlans.map((plan) => {
+              const price = billingCycle === "monthly" ? plan.monthly : annualPrice(plan.monthly);
+              return (
+                <Card
+                  key={plan.name}
+                  className={`relative rounded-2xl border ${
+                    plan.featured ? "border-blue-200 shadow-xl" : "border-slate-200"
+                  } bg-white p-8 text-left`}
+                >
+                  {plan.badge && (
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white">
+                      {plan.badge}
+                    </span>
+                  )}
+                  <h3 className="text-xl font-semibold text-slate-900">{plan.name}</h3>
+                  <p className="text-sm text-slate-500">{plan.subtitle}</p>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-slate-900">{formatPrice(price)}</span>
+                    <span className="text-sm text-slate-500">/month</span>
+                  </div>
+                  <ul className="mt-6 space-y-3 text-sm text-slate-600">
+                    {plan.features.map((item) => (
+                      <li key={item} className="flex items-center gap-3">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 text-emerald-600">
+                          <Check className="h-3 w-3" />
+                        </span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-8">
+                    <Link to="/auth?new=1">
+                      <Button
+                        className={`h-11 w-full rounded-full ${
+                          plan.featured ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-900 hover:bg-slate-100"
+                        }`}
+                      >
+                        Get started
+                      </Button>
+                    </Link>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+
+        <section id="faq" className="bg-slate-50 px-6 py-16">
+          <div className="mx-auto max-w-4xl text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">FAQ</p>
+            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Frequently asked questions</h2>
+            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+              Can’t find what you’re looking for? Reach out to our support team.
+            </p>
+          </div>
+          <div className="mx-auto mt-10 max-w-3xl space-y-4">
+            {faqs.map((item) => (
+              <details key={item.q} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <summary className="flex cursor-pointer items-center justify-between text-base font-semibold text-slate-900">
                   {item.q}
-                  <ArrowRight className="h-4 w-4 text-blue-700 transition group-open:rotate-90" />
+                  <ChevronDown className="h-5 w-5 text-slate-500 transition group-open:rotate-180" />
                 </summary>
                 <p className="mt-3 text-sm text-slate-600">{item.a}</p>
               </details>
@@ -854,67 +599,80 @@ const Index = () => {
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-6 pb-16">
-          <Card className="reveal border border-blue-200 bg-blue-50/60 p-8 text-center shadow-sm">
-            <h3 className="text-3xl font-bold text-slate-900">Ready to simplify HR documents?</h3>
-            <p className="mt-2 text-lg text-slate-600">
-              Guided flows, compliant clauses, and beautiful exports your team will actually use.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Link to="/auth?new=1">
-                <Button className="bg-blue-600 text-white hover:bg-blue-700">Get started</Button>
-              </Link>
-              <Link to="/auth?login=1">
-                <Button variant="outline" className="border-blue-200 text-blue-700 hover:border-blue-300">
-                  Log in
-                </Button>
-              </Link>
-            </div>
-          </Card>
+        <section className="bg-blue-600 px-6 py-16 text-center text-white">
+          <h2 className="text-3xl font-bold sm:text-4xl">Ready to simplify your HR paperwork?</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-base text-blue-100">
+            Join 500+ South African businesses creating compliant HR documents in minutes, not days.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link to="/auth?new=1">
+              <Button className="h-12 rounded-full bg-white px-8 text-base text-blue-700 hover:bg-blue-50">
+                Get started free <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+            <Button className="h-12 rounded-full bg-blue-500 px-7 text-base text-white hover:bg-blue-400">
+              Book a demo
+            </Button>
+          </div>
+          <p className="mt-4 text-xs text-blue-100">
+            14-day free trial · No credit card required · Cancel anytime
+          </p>
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white/85">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1 text-sm text-slate-600">
-            <p className="font-semibold text-slate-900">nudoc</p>
-            <p>Guided HR documentation for teams that value compliance.</p>
+      <footer className="bg-white">
+        <div className="mx-auto max-w-6xl border-t border-slate-200 px-6 py-10">
+          <div className="grid gap-8 md:grid-cols-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
+                  <FileText className="h-5 w-5" />
+                </span>
+                <span className="text-lg font-semibold text-slate-900">nudoc</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                SA HR documents made simple. Built for compliance, designed for humans.
+              </p>
+            </div>
+            <div className="space-y-2 text-sm text-slate-600">
+              <p className="font-semibold text-slate-900">Product</p>
+              <a href="#features" onClick={handleNavClick("#features")} className="block hover:text-blue-700">
+                Features
+              </a>
+              <a href="#pricing" onClick={handleNavClick("#pricing")} className="block hover:text-blue-700">
+                Pricing
+              </a>
+              <a href="#faq" onClick={handleNavClick("#faq")} className="block hover:text-blue-700">
+                FAQ
+              </a>
+              <span className="block">Templates</span>
+            </div>
+            <div className="space-y-2 text-sm text-slate-600">
+              <p className="font-semibold text-slate-900">Company</p>
+              <span className="block">About</span>
+              <span className="block">Blog</span>
+              <span className="block">Careers</span>
+              <span className="block">Contact</span>
+            </div>
+            <div className="space-y-2 text-sm text-slate-600">
+              <p className="font-semibold text-slate-900">Legal</p>
+              <Link to="/terms" className="block hover:text-blue-700">
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="block hover:text-blue-700">
+                Terms of Service
+              </Link>
+              <span className="block">POPIA Compliance</span>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-            <a href="#pricing" onClick={handleNavClick("#pricing")}>
-              Pricing
-            </a>
-            <a href="#faq" onClick={handleNavClick("#faq")}>
-              Support
-            </a>
-            <a href="#product" onClick={handleNavClick("#product")}>
-              Privacy & Terms
-            </a>
+          <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
+            <span>© 2026 nudoc. All rights reserved.</span>
+            <span>Made with za in South Africa</span>
           </div>
         </div>
       </footer>
-
-      <style>{`
-        .reveal { opacity: 0; transform: translateY(18px); transition: opacity 360ms ease, transform 360ms ease; }
-        .reveal.show { opacity: 1; transform: translateY(0); }
-        .feature-highlight { scroll-margin-top: 96px; }
-        .feature-visual { transition: transform 420ms ease, box-shadow 420ms ease, border-radius 420ms ease; }
-        .feature-highlight.feature-pinned .feature-visual { position: sticky; top: clamp(72px, 12vh, 120px); transform: scale(1.08); box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18), 0 6px 24px rgba(15, 23, 42, 0.14); border-radius: 12px; z-index: 10; }
-        .demo-image { display: block; width: 100%; height: auto; object-fit: contain; }
-      `}</style>
     </div>
   );
 };
 
 export default Index;
-
-
-
-
-
-
-
-
-
-
-

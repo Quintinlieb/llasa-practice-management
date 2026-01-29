@@ -15,8 +15,6 @@ import {
   Lock,
   Scale,
   Download,
-  Building2,
-  Home,
   ChevronDown,
 } from "lucide-react";
 
@@ -126,38 +124,24 @@ const steps = [
   },
 ];
 
-const planTypes = [
+const employerCards = [
   {
-    title: "For businesses",
-    subtitle: "SMEs & HR teams",
-    copy: "Full-featured HR document management for growing companies. Handle multiple employees, track compliance, and scale with confidence.",
-    icon: Building2,
-    badge: "Most popular",
-    features: [
-      "Unlimited employee profiles",
-      "Bulk document generation",
-      "Compliance dashboards",
-      "Team collaboration",
-      "Audit trails & history",
-      "Priority support",
+    title: "Employing someone at home?",
+    copy: "If you have a domestic worker, gardener, or nanny, you're an employer - even if it doesn't feel that way. nudoc makes it easy to do right by them, without needing a law degree.",
+    bullets: [
+      "Step-by-step guidance - no HR experience needed",
+      "Contracts and payslips written in plain language",
+      "Stay compliant without the stress or expense",
     ],
-    cta: "Get started",
-    primary: true,
   },
   {
-    title: "For households",
-    subtitle: "Domestic employers",
-    copy: "Simple, affordable HR compliance for domestic workers. Contracts, payslips, and leave tracking made easy.",
-    icon: Home,
-    features: [
-      "Up to 3 employee profiles",
-      "Domestic worker contracts",
-      "Monthly payslip generator",
-      "Leave & UIF tracking",
-      "Compliance reminders",
-      "Email support",
+    title: "Running a business or HR team?",
+    copy: "Growing a team means more documents, more deadlines, and more risk. nudoc helps you keep everything organised, consistent, and audit-ready - without slowing you down.",
+    bullets: [
+      "Generate compliant documents in minutes, not days",
+      "Cut the cost of consultants and legal delays",
+      "Structured records that grow with your team",
     ],
-    cta: "Get started",
   },
 ];
 
@@ -332,8 +316,8 @@ const Index = () => {
         <section className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-b from-slate-100 via-slate-50 to-slate-50" />
           <div className="relative mx-auto max-w-5xl px-6 pb-16 pt-16 text-center sm:pt-24">
-            <div className="mx-auto mb-6 w-fit rounded-full bg-blue-100 px-4 py-2 text-xs font-semibold text-blue-700">
-              SA labour law aligned
+            <div className="mx-auto mb-6 w-fit rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">
+              Built for South Africa
             </div>
             <h1 className="relative mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
               <span className="relative z-10 block">
@@ -343,9 +327,9 @@ const Index = () => {
               <span className="relative z-10 inline-block">slow you down!</span>
             </h1>
             <p className="mx-auto mt-5 max-w-3xl text-lg text-slate-600 sm:text-xl">
-              Generate compliant HR documents instantly and avoid the delays and high costs of consultants or lawyers.
+              Generate legally compliant documents instantly and avoid the delays and high costs of labour consultants or lawyers.
             </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <div className="mt-14 flex flex-wrap justify-center gap-3">
               <Link to="/auth?new=1">
                 <Button className="h-12 rounded-full bg-blue-600 px-8 text-base text-white hover:bg-blue-700">
                   Get started free <ArrowRight className="ml-2 h-4 w-4" />
@@ -355,7 +339,7 @@ const Index = () => {
                 Book a demo
               </Button>
             </div>
-            <p className="mt-6 text-sm text-slate-500">Trusted by 500+ South African businesses</p>
+            <p className="mt-6 text-sm text-slate-500">Trusted by 1000+ South Africa users</p>
           </div>
         </section>
 
@@ -396,6 +380,13 @@ const Index = () => {
                 </Card>
               ))}
             </div>
+            <div className="mt-10 flex justify-center">
+              <Link to="/try-it-out">
+                <Button className="h-11 rounded-full bg-blue-600 px-6 text-white hover:bg-blue-700">
+                  Try it out <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -429,52 +420,30 @@ const Index = () => {
         </section>
 
         <section className="mx-auto max-w-6xl px-6 py-16 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Choose your plan type</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Made for real employers</p>
           <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
-            Built for businesses and households alike
+            Whether it&apos;s your home or your business
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
-            Whether you’re running a company or employing a domestic worker, nudoc has you covered.
+            You don't need to be an HR expert. nudoc meets you where you are.
           </p>
 
           <div className="mt-12 grid gap-6 md:grid-cols-2">
-            {planTypes.map((plan) => (
-              <Card
-                key={plan.title}
-                className={`relative rounded-2xl border ${plan.primary ? "border-blue-200 shadow-lg" : "border-slate-200"} bg-white p-8 text-left`}
-              >
-                {plan.badge && (
-                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white">
-                    {plan.badge}
-                  </span>
-                )}
-                <div className="flex items-center gap-4">
-                  <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ${plan.primary ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-600"}`}>
-                    <plan.icon className="h-6 w-6" />
-                  </span>
-                  <div>
-                    <h3 className="text-xl font-semibold text-slate-900">{plan.title}</h3>
-                    <p className="text-sm text-slate-500">{plan.subtitle}</p>
-                  </div>
-                </div>
-                <p className="mt-5 text-sm text-slate-600">{plan.copy}</p>
+            {employerCards.map((card) => (
+              <Card key={card.title} className="rounded-2xl border border-slate-200 bg-white p-8 text-left shadow-sm">
+                <h3 className="text-xl font-semibold text-slate-900">{card.title}</h3>
+                <p className="mt-3 text-sm text-slate-600">{card.copy}</p>
                 <ul className="mt-6 space-y-3 text-sm text-slate-600">
-                  {plan.features.map((item) => (
-                    <li key={item} className="flex items-center gap-3">
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 text-emerald-600">
-                        <Check className="h-3 w-3" />
-                      </span>
-                      {item}
+                  {card.bullets.map((item) => (
+                    <li key={item} className="flex items-start gap-3">
+                      <span className="mt-2 inline-flex h-2 w-2 rounded-full bg-blue-600" />
+                      <span>{item}</span>
                     </li>
                   ))}
                 </ul>
                 <div className="mt-8">
-                  <Link to="/auth?new=1">
-                    <Button
-                      className={`h-11 w-full rounded-full ${plan.primary ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-900 hover:bg-slate-100"}`}
-                    >
-                      {plan.cta}
-                    </Button>
+                  <Link to="/auth?new=1" className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-800">
+                    See how it works <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>
               </Card>
@@ -678,3 +647,9 @@ const Index = () => {
 };
 
 export default Index;
+
+
+
+
+
+

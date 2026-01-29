@@ -1416,30 +1416,32 @@ const DemoPermanentContractGenerator = () => {
                             isIdDateInvalid ? "border-red-500 ring-red-500" : ""
                           }`}
                           placeholder={
-                            formData.nationality === "South African" ? "Insert 13-digit ID number" : "Insert passport number"
+                            formData.nationality === "South African"
+                              ? "Insert 13-digit ID number"
+                              : "Insert passport number"
                           }
                         />
                       </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="employeeAge">Age</Label>
-                    <Input
-                      id="employeeAge"
-                      value={derivedAgeDisplay}
-                      readOnly={formData.nationality === "South African"}
-                      onChange={(e) => {
-                        if (formData.nationality === "South African") return;
-                        const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
-                        setFormData((prev) => ({ ...prev, age: digitsOnly }));
-                      }}
-                      inputMode={formData.nationality === "South African" ? "text" : "numeric"}
-                      className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
-                        formData.nationality === "South African" ? "bg-slate-50" : ""
-                      }`}
-                      placeholder={
-                        formData.nationality === "South African" ? "Auto-calculated" : "Insert employee age"
-                      }
-                    />
-                  </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="employeeAge">Age</Label>
+                        <Input
+                          id="employeeAge"
+                          value={derivedAgeDisplay}
+                          readOnly={formData.nationality === "South African"}
+                          onChange={(e) => {
+                            if (formData.nationality === "South African") return;
+                            const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                            setFormData((prev) => ({ ...prev, age: digitsOnly }));
+                          }}
+                          inputMode={formData.nationality === "South African" ? "text" : "numeric"}
+                          className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
+                            formData.nationality === "South African" ? "bg-slate-50" : ""
+                          }`}
+                          placeholder={
+                            formData.nationality === "South African" ? "Auto-calculated" : "Insert employee age"
+                          }
+                        />
+                      </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="employeeNumber">Employee Number</Label>
                         <Input
@@ -1451,12 +1453,14 @@ const DemoPermanentContractGenerator = () => {
                         />
                       </div>
                       <div className="space-y-1.5">
-                    <Label htmlFor="gender">Gender *</Label>
-                    <Select
-                      value={formData.gender}
-                      onValueChange={(value) => setFormData({ ...formData, gender: value as PermanentContractFormData["gender"] })}
-                    >
-                      <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                        <Label htmlFor="gender">Gender *</Label>
+                        <Select
+                          value={formData.gender}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, gender: value as PermanentContractFormData["gender"] })
+                          }
+                        >
+                          <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
                             <SelectValue placeholder="Select gender" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1469,12 +1473,14 @@ const DemoPermanentContractGenerator = () => {
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                    <Label htmlFor="race">Race *</Label>
-                    <Select
-                      value={formData.race}
-                      onValueChange={(value) => setFormData({ ...formData, race: value as PermanentContractFormData["race"] })}
-                    >
-                      <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                        <Label htmlFor="race">Race *</Label>
+                        <Select
+                          value={formData.race}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, race: value as PermanentContractFormData["race"] })
+                          }
+                        >
+                          <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
                             <SelectValue placeholder="Select race" />
                           </SelectTrigger>
                           <SelectContent>
@@ -2497,9 +2503,8 @@ const DemoPermanentContractGenerator = () => {
               </div>
             )}
           </ScrollArea>
-        </DialogContent>
-      </Dialog>
-      </div>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 };

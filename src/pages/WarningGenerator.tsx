@@ -1315,7 +1315,12 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
           <div className="space-y-1">
             <p className="text-xs font-semibold text-slate-700">
               Documents / Discipline /{" "}
-              <span className="text-blue-700 underline underline-offset-4">Warnings</span>
+              <span className="text-blue-700 underline underline-offset-4">
+                Warning Form
+              </span>{" "}
+              <span className="text-slate-700">
+                ({steps[activeStep]})
+              </span>
             </p>
           </div>
         </div>

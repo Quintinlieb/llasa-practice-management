@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { Printer, ArrowLeft, Plus, Loader2, Trash2, X } from "lucide-react";
+import { Printer, Plus, Loader2, Trash2, X } from "lucide-react";
 
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
 
@@ -549,7 +548,7 @@ const gridColumns = [
   { key: "fourth", label: "4th Offence", placeholder: "Outcome for 4th offence" },
 ] as const;
 
-export default function CodeOfConductPreviewPage() {
+export default function CodeOfConductPreviewPage({ embedded = false }: { embedded?: boolean }) {
   const { user, loading: authLoading } = useAuth();
   const [sections, setSections] = useState<OffenceSection[]>([]);
   const [snapshot, setSnapshot] = useState<OffenceSection[] | null>(null);
@@ -908,15 +907,16 @@ export default function CodeOfConductPreviewPage() {
   }, [clearUndoState]);
 
   if ((authLoading || isRemoteLoading) && sections.length === 0) {
-    return (
-      <DashboardLayout>
+    const loadingContent = (
+      <>
         <style>{printStyles}</style>
         <div className="flex min-h-[60vh] items-center justify-center text-muted-foreground">
           <Loader2 className="mr-2 h-5 w-5 animate-spin text-blue-600" />
           Loading your Code of Conduct...
         </div>
-      </DashboardLayout>
+      </>
     );
+    return embedded ? loadingContent : <DashboardLayout>{loadingContent}</DashboardLayout>;
   }
 
   const handleUndoDelete = () => {
@@ -968,8 +968,8 @@ export default function CodeOfConductPreviewPage() {
     }
   };
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       <style>{printStyles}</style>
       {undoState && (
         <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
@@ -993,32 +993,20 @@ export default function CodeOfConductPreviewPage() {
           </div>
         </div>
       )}
-      <div id="code-of-conduct-preview" className="-ml-6 -mr-6 pl-3 pr-3 -mt-3 space-y-3 print:space-y-4">
-        <div className="rounded-sm border border-slate-300 bg-white px-5 py-4 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1">
-              <h1 className="text-xl font-bold uppercase text-blue-700">Code of Conduct</h1>
-              <p className="text-xs text-gray-600">
-                View minor, serious, and dismissible misconduct with their progressive discipline outcomes.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 md:w-auto md:flex-row md:items-center no-print">
-              <Button
-                variant="outline"
-                className="h-8 px-3 text-xs gap-1.5 rounded-sm border-blue-600 text-blue-600 hover:bg-accent hover:text-accent-foreground"
-                asChild
-              >
-                <Link to="/documents/discipline">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-sm border border-slate-300 bg-white shadow-sm">
-          <div className="p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
+      <div
+        id="code-of-conduct-preview"
+        className={cn(
+          "space-y-3 print:space-y-4",
+          embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3 -mt-3",
+        )}
+      >
+        <div className="space-y-4">
+          <p className="text-xs font-semibold text-slate-700">
+            Documents / Discipline /{" "}
+            <span className="text-blue-700 underline underline-offset-4">Code of Conduct</span>
+          </p>
+          <div className="rounded-sm rounded-tr-none rounded-bl-none border border-slate-300 bg-white shadow-sm">
+            <div className="p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
             <Tabs
               value={activeCategoryId}
               onValueChange={(value) => setActiveCategoryId(value as FixedCategoryId)}
@@ -1193,9 +1181,12 @@ export default function CodeOfConductPreviewPage() {
                 </div>
               )}
             </Tabs>
+            </div>
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 }

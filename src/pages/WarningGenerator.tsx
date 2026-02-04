@@ -21,6 +21,7 @@ import { jsPDF } from "jspdf";
 import { warningGeneratorSchema } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
 import type { WarningGeneratorFormData } from "@/lib/validation";
+import { cn } from "@/lib/utils";
 
 const MISCONDUCT_TYPES = [
   "Unauthorised Absenteeism",
@@ -154,7 +155,7 @@ const extractErrorMessage = (error: unknown): string => {
 
   return "Something went wrong. Please try again.";
 };
-const WarningGenerator = () => {
+const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1146,7 +1147,7 @@ const WarningGenerator = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className={cn("flex items-center justify-center", embedded ? "min-h-[60vh]" : "min-h-screen")}>
         <p className="text-muted-foreground">Loading...</p>
       </div>
     );
@@ -1301,25 +1302,25 @@ const WarningGenerator = () => {
     </div>
   );
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       <style>{pulseShadowStyles}</style>
-      <div className="space-y-6 -ml-6 -mr-6 pl-3 pr-3">
+        <div
+          className={cn(
+            "space-y-6",
+            embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3",
+          )}
+        >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <button
-              type="button"
-              onClick={() => navigate("/documents/discipline")}
-              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
-            >
-              Documents &gt; Discipline
-            </button>
-            <h1 className="text-xl font-bold uppercase text-blue-700">Generate Written Warning</h1>
-            <p className="text-xs text-gray-600">Complete the form below to generate a compliant written warning.</p>
+            <p className="text-xs font-semibold text-slate-700">
+              Documents / Discipline /{" "}
+              <span className="text-blue-700 underline underline-offset-4">Warnings</span>
+            </p>
           </div>
         </div>
 
-        <Card className="shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+        <Card className="rounded-sm rounded-tr-none rounded-bl-none shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-center gap-8 w-full">
               {steps.map((label, index) => {
@@ -1355,7 +1356,7 @@ const WarningGenerator = () => {
                               : "border-slate-200 text-slate-500 bg-white"
                         }`}
                       >
-                        <Icon className="h-6 w-6 -translate-y-[1px]" />
+                        <Icon className="h-5 w-5" />
                       </span>
                           </button>
                         </TooltipTrigger>
@@ -1454,15 +1455,16 @@ const WarningGenerator = () => {
               </div>
             </CardContent>
           ) : (
-            <CardContent className="pt-2">
-              <form onSubmit={handleSubmit} className="space-y-6">
+            <CardContent className="pt-6">
+              <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="flex items-center justify-start gap-3 mb-3">
+                <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+              </div>
+
               {activeStep === 0 && (
-                <div className="space-y-4 rounded-xl border border-blue-200 bg-slate-50/70 p-4 shadow-sm">
-                  <Badge className="w-fit rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
-                    Employer Details
-                  </Badge>
+                <div className="space-y-4 rounded-sm border border-blue-200 bg-slate-50/70 p-3 shadow-sm">
                   <div className="space-y-2">
-                    <Label htmlFor="tradingName" className="text-sm font-semibold text-black">
+                    <Label htmlFor="tradingName">
                       Trading Name (optional)
                     </Label>
                       <Input
@@ -1475,19 +1477,19 @@ const WarningGenerator = () => {
                   </div>
                   <div className="grid md:grid-cols-2 gap-4 pt-2">
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-semibold text-black">Company name</Label>
+                      <Label>Company name</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.company_name || "Not set"}
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-sm font-semibold text-black">Registration number</Label>
+                      <Label>Registration number</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.registration_number || "Not set"}
                       </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label className="text-sm font-semibold text-black">Company address</Label>
+                      <Label>Company address</Label>
                       <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
                         {profile?.physical_address || "Not set"}
                       </div>
@@ -1500,12 +1502,9 @@ const WarningGenerator = () => {
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
-                  <Badge className="w-fit rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
-                    Employee Details
-                  </Badge>
+                <div className="space-y-4 rounded-sm border border-blue-200 bg-white p-3 shadow-sm">
                   <div className="space-y-2">
-                    <Label htmlFor="employee" className="text-sm font-semibold text-black">
+                    <Label htmlFor="employee">
                       Select Employee (optional)
                     </Label>
                     <Select key={employeeSelectResetCount} onValueChange={handleEmployeeSelect}>
@@ -1523,7 +1522,7 @@ const WarningGenerator = () => {
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="employeeName" className="text-sm font-semibold text-black">
+                      <Label htmlFor="employeeName">
                         Employee Name *
                       </Label>
                       <Input
@@ -1535,7 +1534,7 @@ const WarningGenerator = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeSurname" className="text-sm font-semibold text-black">
+                      <Label htmlFor="employeeSurname">
                         Employee Surname *
                       </Label>
                       <Input
@@ -1547,7 +1546,7 @@ const WarningGenerator = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeIdNumber" className="text-sm font-semibold text-black">
+                      <Label htmlFor="employeeIdNumber">
                         ID Number *
                       </Label>
                       <Input
@@ -1563,79 +1562,71 @@ const WarningGenerator = () => {
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-4 rounded-xl border border-blue-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge className="rounded-md bg-blue-600 text-white border border-blue-600 text-sm py-1.5 px-3.5 hover:bg-blue-600 hover:text-white hover:border-blue-600">
-                        Warning Details
-                      </Badge>
-                      {activeWarnings.length > 0 && (
-                        <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex cursor-help">
-                                <Badge
-                                  variant="secondary"
-                                  className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300"
-                                >
-                                  <Info className="mr-1 h-3 w-3" />
-                                  {activeWarnings.length} Active Warning{activeWarnings.length === 1 ? "" : "s"}
-                                </Badge>
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="right"
-                              align="start"
-                              className="max-w-[320px] border-blue-200 p-3 text-left"
-                            >
+                <div className="space-y-4 rounded-sm border border-blue-200 bg-white p-3 shadow-sm">
+                  <div className="flex items-center justify-start">
+                    {activeWarnings.length > 0 && (
+                      <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex cursor-help">
+                              <Badge
+                                variant="secondary"
+                                className="bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300"
+                              >
+                                <Info className="mr-1 h-3 w-3" />
+                                {activeWarnings.length} Active Warning{activeWarnings.length === 1 ? "" : "s"}
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="right"
+                            align="start"
+                            className="max-w-[320px] border-blue-200 p-3 text-left"
+                          >
+                            <div className="space-y-2">
+                              <div className="text-xs text-slate-500">Click on warning to view</div>
                               <div className="space-y-2">
-                                <div className="text-xs text-slate-500">Click on warning to view</div>
-                                <div className="space-y-2">
-                                  {activeWarnings.map((warning) => {
-                                    const warningType = coerceWarningType(warning.warning_type);
-                                    const warningTone =
-                                      warningType === "final"
-                                        ? "text-red-700"
-                                        : warningType === "serious"
-                                          ? "text-amber-700"
-                                          : warningType === "first" || warningType === "second"
-                                            ? "text-emerald-700"
-                                            : "text-slate-700";
-                                    const label = warningType ? warningTypeLabels[warningType] : "Warning";
-                                    const expiryDate = getWarningExpiryDate(warning);
-                                    return (
-                                      <div key={warning.id} className="text-xs text-slate-700">
-                                        {warning.file_url ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenWarningFile(warning.file_url)}
-                                            className={`font-semibold ${warningTone} text-left hover:underline hover:decoration-solid hover:underline-offset-2`}
-                                          >
-                                            {warning.misconduct_type || "Misconduct"}
-                                          </button>
-                                        ) : (
-                                          <div className={`font-semibold ${warningTone}`}>
-                                            {warning.misconduct_type || "Misconduct"}
-                                          </div>
-                                        )}
-                                        <div>{label}</div>
-                                        <div>Valid until: {formatDisplayDate(expiryDate)}</div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                {activeWarnings.map((warning) => {
+                                  const warningType = coerceWarningType(warning.warning_type);
+                                  const warningTone =
+                                    warningType === "final"
+                                      ? "text-red-700"
+                                      : warningType === "serious"
+                                        ? "text-amber-700"
+                                        : warningType === "first" || warningType === "second"
+                                          ? "text-emerald-700"
+                                          : "text-slate-700";
+                                  const label = warningType ? warningTypeLabels[warningType] : "Warning";
+                                  const expiryDate = getWarningExpiryDate(warning);
+                                  return (
+                                    <div key={warning.id} className="text-xs text-slate-700">
+                                      {warning.file_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenWarningFile(warning.file_url)}
+                                          className={`font-semibold ${warningTone} text-left hover:underline hover:decoration-solid hover:underline-offset-2`}
+                                        >
+                                          {warning.misconduct_type || "Misconduct"}
+                                        </button>
+                                      ) : (
+                                        <div className={`font-semibold ${warningTone}`}>
+                                          {warning.misconduct_type || "Misconduct"}
+                                        </div>
+                                      )}
+                                      <div>{label}</div>
+                                      <div>Valid until: {formatDisplayDate(expiryDate)}</div>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      )}
-                    </div>
-                    <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-100">
-                      Step 3 of 3
-                    </Badge>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-semibold text-black">Misconduct Type(s) *</Label>
+                    <Label>Misconduct Type(s) *</Label>
                     <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
                       <PopoverTrigger asChild>
                         <Button
@@ -1736,7 +1727,7 @@ const WarningGenerator = () => {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description" className="text-sm font-semibold text-black">
+                    <Label htmlFor="description">
                       Description of Misconduct *
                     </Label>
                     <Textarea
@@ -1751,7 +1742,7 @@ const WarningGenerator = () => {
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="warningType" className="text-sm font-semibold text-black">
+                      <Label htmlFor="warningType">
                         Type of Warning *
                       </Label>
                       <Select
@@ -1774,7 +1765,7 @@ const WarningGenerator = () => {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="validityMonths" className="text-sm font-semibold text-black">
+                      <Label htmlFor="validityMonths">
                         Validity Period (months) *
                       </Label>
                       <Input
@@ -1788,7 +1779,7 @@ const WarningGenerator = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="issuedBy" className="text-sm font-semibold text-black">
+                      <Label htmlFor="issuedBy">
                         Issued By *
                       </Label>
                       <Input
@@ -1800,7 +1791,7 @@ const WarningGenerator = () => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="dateIssued" className="text-sm font-semibold text-black">
+                      <Label htmlFor="dateIssued">
                         Date of Issue *
                       </Label>
                       <Input
@@ -2031,11 +2022,16 @@ const WarningGenerator = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 };
 
 export default WarningGenerator;
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -21,6 +21,7 @@ import JSZip from "jszip";
 import { temporaryContractSchema, salaryFrequencyOptions } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
 import { read, utils, write } from "xlsx";
+import { cn } from "@/lib/utils";
 
 type SalaryFrequency = (typeof salaryFrequencyOptions)[number];
 type InterpreterOption = "yes" | "no";
@@ -146,7 +147,7 @@ const generateCustomClauseId = () =>
     ? crypto.randomUUID()
     : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const TemporaryContractGenerator = () => {
+const TemporaryContractGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -1394,14 +1395,14 @@ const TemporaryContractGenerator = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className={cn("flex items-center justify-center", embedded ? "min-h-[60vh]" : "min-h-screen")}>
         <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
             <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
@@ -1446,103 +1447,104 @@ const TemporaryContractGenerator = () => {
             document.body,
           )
         : null}
-      <div className="space-y-6 -ml-6 -mr-6 pl-3 pr-3" style={{ scrollbarGutter: "stable" }}>
+      <div
+        className={cn(
+          "space-y-6",
+          embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3",
+        )}
+        style={{ scrollbarGutter: "stable" }}
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <button
-              type="button"
-              onClick={() => navigate("/documents/contracts")}
-              className="text-xs font-semibold tracking-wide text-slate-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-sm"
-            >
-              Documents &gt; Contracts
-            </button>
-            <h1 className="text-xl font-bold uppercase text-blue-700">Temporary Contract</h1>
-            <p className="text-xs text-gray-600">
-              Fill out the details in the quick multistep form below to generate a temporary employment contract.
+            <p className="text-xs font-semibold text-slate-700">
+              Documents / Contracts /{" "}
+              <span className="text-blue-700 underline underline-offset-4">Temporary Contract</span>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-4">
-          {steps.map((step, index) => {
-            const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
-            const isDone = index < activeStep || isFinalizedCurrent;
-            const isActive = index === activeStep && !isFinalizedCurrent;
-            const Icon = isDone ? Check : [Building2, User2, Briefcase][index];
-            const circleClasses = isDone
-              ? "bg-[#04b81f] text-white"
-              : isActive
-                ? "bg-blue-600 text-white"
-                : "bg-slate-200 text-slate-500";
-            const connectorClasses = isDone ? "bg-[#04b81f]" : isActive ? "bg-blue-400" : "bg-slate-200";
-            const canClick = showFinalActions || index < activeStep;
-            const handleClick = () => {
-              if (showFinalActions) {
-                setShowFinalActions(false);
-                setActiveStep(index);
-              } else if (canNavigateToStep(index)) {
-                handleStepClick(index);
-              }
-            };
-
-            return (
-              <div key={step} className="flex items-center gap-4">
-                <div
-                  className={`flex flex-col items-center gap-2 ${
-                    canClick ? "cursor-pointer group" : "cursor-default opacity-90"
-                  }`}
-                  role={canClick ? "button" : undefined}
-                  tabIndex={canClick ? 0 : -1}
-                  onClick={canClick ? handleClick : undefined}
-                  onKeyDown={
-                    canClick
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            handleClick();
-                          }
-                        }
-                      : undefined
-                  }
-                  aria-disabled={!canClick}
-                  aria-label={canClick ? `Go to ${step}` : undefined}
-                >
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-transform duration-200 ease-out transform-gpu ${circleClasses} shadow-sm ${canClick ? "group-hover:scale-105" : ""}`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <span
-                    className={`text-xs font-semibold text-gray-800 transition-all duration-200 ease-out transform-gpu ${
-                      canClick ? "group-hover:text-blue-600 group-hover:scale-105" : ""
-                    }`}
-                  >
-                    {step}
-                  </span>
-                </div>
-                {index < steps.length - 1 && (
-                  <div
-                    className={`h-1 w-16 rounded-full transition-all duration-300 ${connectorClasses} self-center -mt-5`}
-                    aria-hidden="true"
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-
         {!showFinalActions ? (
-          <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
-            <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <span className="inline-flex h-8 items-center rounded-md bg-blue-600 px-3 py-0 text-sm font-semibold leading-none text-white shadow-sm">
-                {steps[activeStep]}
-              </span>
+          <Card className="rounded-sm rounded-tr-none rounded-bl-none mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-center gap-8 w-full">
+                {steps.map((step, index) => {
+                  const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
+                  const isDone = index < activeStep || isFinalizedCurrent;
+                  const isActive = index === activeStep && !isFinalizedCurrent;
+                  const Icon = [Building2, User2, Briefcase][index];
+                  const circleClasses = isDone
+                    ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
+                    : isActive
+                      ? "border-blue-300 text-blue-700 bg-blue-100"
+                      : "border-slate-200 text-slate-500 bg-white";
+                  const canClick = showFinalActions || index < activeStep;
+                  const handleClick = () => {
+                    if (showFinalActions) {
+                      setShowFinalActions(false);
+                      setActiveStep(index);
+                    } else if (canNavigateToStep(index)) {
+                      handleStepClick(index);
+                    }
+                  };
+
+                  return (
+                    <div key={step} className="flex items-center gap-4">
+                      <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={!canClick}
+                              aria-label={step}
+                              onClick={canClick ? handleClick : undefined}
+                              onKeyDown={
+                                canClick
+                                  ? (e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        handleClick();
+                                      }
+                                    }
+                                  : undefined
+                              }
+                              className={`flex flex-col items-start gap-1 transition ${
+                                canClick
+                                  ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                  : "cursor-default"
+                              }`}
+                            >
+                              <div
+                                className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}
+                              >
+                                <Icon className="h-5 w-5" />
+                              </div>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="center" className="text-xs">
+                            {step}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      {index < steps.length - 1 && (
+                        <div
+                          className={`h-px w-16 ${
+                            index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                          }`}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardHeader>
+          <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+            <div className="flex items-center justify-start gap-3 mb-3">
               <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
             </div>
             <div className="space-y-4">
               {activeStep === 0 && (
-                <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="companyName">Company name</Label>
@@ -1609,7 +1611,7 @@ const TemporaryContractGenerator = () => {
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-3 rounded-xl border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1718,7 +1720,7 @@ const TemporaryContractGenerator = () => {
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3 rounded-xl border border-blue-400 bg-white p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-white p-3 shadow-sm">
                   <div className="space-y-3">
                     <div className="rounded-lg border border-blue-100 bg-slate-50/80 p-3">
                       <p className="text-sm font-semibold text-gray-900 mb-2">How will the contract end?</p>
@@ -1971,7 +1973,7 @@ const TemporaryContractGenerator = () => {
             </CardContent>
           </Card>
         ) : (
-            <Card className="mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <Card className="rounded-sm rounded-tr-none rounded-bl-none mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
               <CardHeader className="pt-4 pb-0" />
               <CardContent className="space-y-6 pt-2">
                 <div className="flex flex-col items-center gap-3">
@@ -2684,8 +2686,12 @@ const TemporaryContractGenerator = () => {
           </ScrollArea>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 };
 
 export default TemporaryContractGenerator;
+
+

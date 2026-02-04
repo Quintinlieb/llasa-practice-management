@@ -1,58 +1,73 @@
-import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { Suspense, lazy, useEffect, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import {
+  ScaleIcon,
+  DocumentTextIcon,
+  ChartBarIcon,
+  BellAlertIcon,
+  ChevronDownIcon,
+} from "@heroicons/react/24/outline";
+
+type DocumentKey =
+  | "codeOfConduct"
+  | "warnings"
+  | "permanentContract"
+  | "temporaryContract"
+  | "addendum";
 
 type DocumentItem = {
+  id?: DocumentKey;
   label: string;
-  href?: string;
   active: boolean;
 };
 
 type DocumentCategory = {
   title: string;
-  description: string;
-  badgeClass: string;
-  extraLink?: {
-    label: string;
-    href: string;
-  };
+  icon: (props: SVGProps<SVGSVGElement>) => JSX.Element;
   items: DocumentItem[];
+};
+
+type StoredProfile = {
+  user_name?: string;
+  user_surname?: string;
+};
+
+const documentComponents: Record<DocumentKey, ComponentType<{ embedded?: boolean }>> = {
+  codeOfConduct: lazy(() => import("./documents/discipline/CodeOfConductPreview")),
+  warnings: lazy(() => import("./WarningGenerator")),
+  permanentContract: lazy(() => import("./PermanentContractGenerator")),
+  temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
+  addendum: lazy(() => import("./AddendumGenerator")),
 };
 
 const documentCategories: DocumentCategory[] = [
   {
     title: "Discipline",
-    description: "Pick a discipline document below to generate in a few clicks.",
-    badgeClass: "bg-blue-100 text-blue-800 border-blue-200",
+    icon: ScaleIcon,
     items: [
-      { label: "Warnings", href: "/documents/discipline/warnings", active: true },
+      { id: "codeOfConduct", label: "Code of Conduct", active: true },
+      { id: "warnings", label: "Warnings", active: true },
       { label: "Counselling", active: false },
     ],
-    extraLink: { label: "View Code of Conduct", href: "/documents/discipline/code-of-conduct/preview" },
   },
   {
     title: "Contracts",
-    description: "Choose a contract type below to generate instantly.",
-    badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    icon: DocumentTextIcon,
     items: [
-      { label: "Permanent Contract", href: "/documents/contracts/permanent", active: true },
-      { label: "Temporary Contract", href: "/documents/contracts/temporary", active: true },
-      { label: "Addendum", href: "/documents/contracts/addendum", active: true },
+      { id: "permanentContract", label: "Permanent Contract", active: true },
+      { id: "temporaryContract", label: "Temporary Contract", active: true },
+      { id: "addendum", label: "Addendum", active: true },
     ],
   },
   {
     title: "Performance",
-    description: "Select a performance document to create from this list.",
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-200",
+    icon: ChartBarIcon,
     items: [{ label: "Performance Appraisal Form", active: false }],
   },
   {
     title: "Notices",
-    description: "Choose a notice template below to generate.",
-    badgeClass: "bg-rose-100 text-rose-800 border-rose-200",
+    icon: BellAlertIcon,
     items: [
       { label: "Notice of Hearing - Poor Performance", active: false },
       { label: "Notice of Demotion", active: false },
@@ -65,8 +80,39 @@ const documentCategories: DocumentCategory[] = [
 ];
 
 const Documents = () => {
-  const navigate = useNavigate();
-  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string>(() => documentCategories[0]?.title ?? "");
+  const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
+  const [profile, setProfile] = useState<StoredProfile | null>(null);
+
+  useEffect(() => {
+    const readProfile = () => {
+      try {
+        const raw = sessionStorage.getItem("header:profile");
+        return raw ? (JSON.parse(raw) as StoredProfile) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const stored = readProfile();
+    if (stored) {
+      setProfile(stored);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const next = readProfile();
+      if (next) {
+        setProfile(next);
+        clearInterval(interval);
+      }
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
+  const greetingName = [profile?.user_name, profile?.user_surname].filter(Boolean).join(" ");
 
   return (
     <DashboardLayout>
@@ -78,76 +124,105 @@ const Documents = () => {
           </p>
         </header>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 items-start">
-          {documentCategories.map((category) => {
-            const isOpen = openCategory === category.title;
-            return (
-              <div
-                key={category.title}
-                onMouseEnter={() => setOpenCategory(category.title)}
-                onMouseLeave={() => setOpenCategory(null)}
-                className={cn(
-                  "rounded-sm border border-slate-300 bg-white/55 shadow-sm transition-all hover:shadow-lg",
-                  isOpen && "shadow-lg ring-1 ring-blue-100",
-                )}
-              >
-                <button
-                  type="button"
-                  className="w-full rounded-2xl px-4 py-4 text-left"
-                  onFocus={() => setOpenCategory(category.title)}
-                  onBlur={() => setOpenCategory(null)}
-                >
-                  <div className="flex flex-col gap-2">
-                    <Badge
-                      variant="outline"
-                      className={cn("w-fit rounded-full px-3 py-1.5 text-sm font-semibold", category.badgeClass)}
-                    >
-                      {category.title}
-                    </Badge>
-                    <span className="text-[13px] leading-snug text-gray-600">
-                      {category.description}{" "}
-                      {category.extraLink && (
-                        <button
-                          type="button"
-                          onClick={() => navigate(category.extraLink!.href)}
-                          className="font-semibold text-blue-700 hover:text-blue-800 focus:outline-none focus:underline"
-                        >
-                          {category.extraLink.label}
-                        </button>
-                      )}
-                    </span>
-                  </div>
-                </button>
-                {isOpen && (
-                  <div className="px-4 pb-4 pt-1">
-                    <div className="flex flex-wrap gap-2">
-                      {category.items.map((item) =>
-                        item.active && item.href ? (
-                          <Button
-                            key={item.label}
-                            size="sm"
-                            variant="outline"
-                            className="rounded-full justify-start min-w-[12rem] text-xs bg-white border border-slate-200 text-slate-800 shadow-sm transition-all hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 hover:shadow"
-                            onClick={() => navigate(item.href!)}
-                          >
-                            {item.label}
-                          </Button>
-                        ) : (
-                          <Badge
-                            key={item.label}
-                            variant="outline"
-                            className="rounded-full border-dashed bg-muted/30 text-muted-foreground min-w-[12rem] justify-center text-[12px]"
-                          >
-                            {item.label}
-                          </Badge>
-                        ),
+        <div className="rounded-sm border border-slate-300 bg-white/55 shadow-sm min-h-[70vh] pb-0">
+          <div className="grid min-h-[70vh] gap-3 lg:grid-cols-[180px_1fr] items-stretch">
+            <aside className="border-b border-slate-200 bg-[#2D4256] text-white lg:border-b-0 lg:border-r lg:border-slate-200 rounded-l-sm">
+              <div className="flex flex-col">
+                {documentCategories.map((category, index) => {
+                  const isOpen = openCategory === category.title;
+                  const CategoryIcon = category.icon;
+                  return (
+                    <div key={category.title} className="flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenCategory((prev) => (prev === category.title ? "" : category.title))
+                        }
+                        className={cn(
+                          "group flex h-[42px] w-full items-center gap-3 rounded-none border-b border-white/10 px-4 py-0 text-left text-xs leading-none transition-all duration-150",
+                          "hover:bg-[#010D1A] hover:text-white",
+                          index === 0 && "rounded-tl-sm",
+                          isOpen && "bg-[#010D1A] text-white border-b-2 border-blue-500",
+                        )}
+                      >
+                        <CategoryIcon className="h-4 w-4 text-white" />
+                        <span className="flex flex-1 items-center justify-between gap-2">
+                          <span className="text-xs font-normal text-white">
+                            {category.title}
+                          </span>
+                          <ChevronDownIcon
+                            className={cn(
+                              "h-3.5 w-3.5 text-white transition-transform duration-150",
+                              isOpen && "rotate-180",
+                            )}
+                          />
+                        </span>
+                      </button>
+                      {isOpen && (
+                        <div className="border-b border-white/10 bg-[#233549] px-2 py-2">
+                          <div className="flex flex-col gap-1">
+                            {category.items.map((item) =>
+                              item.active && item.id ? (
+                                <button
+                                  key={item.label}
+                                  type="button"
+                                  onClick={() => setSelectedDocument(item.id!)}
+                                  className={cn(
+                                    "w-full rounded-none border-l-2 border-transparent px-2 py-2 text-left text-[11px]",
+                                    "text-white/80 hover:text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-0",
+                                    selectedDocument === item.id && "bg-white/10 text-white border-blue-500",
+                                  )}
+                                >
+                                  {item.label}
+                                </button>
+                              ) : (
+                                <div
+                                  key={item.label}
+                                  className="w-full rounded-none px-2 py-2 text-left text-[11px] text-white/40"
+                                >
+                                  {item.label}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
-            );
-          })}
+            </aside>
+
+            <section className="min-h-[60vh] overflow-x-hidden">
+              {SelectedComponent ? (
+                <Suspense
+                  fallback={
+                    <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
+                      Loading document...
+                    </div>
+                  }
+                >
+                  <SelectedComponent embedded />
+                </Suspense>
+              ) : (
+                <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-10 text-center">
+                  <div className="space-y-2">
+                    <p className="text-lg font-semibold text-slate-800">
+                      Hi{greetingName ? `, ${greetingName}` : ""}.
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      Select a category and document to the left to start drafting.
+                    </p>
+                  </div>
+                  <img
+                    src="/Hello Illustration.png"
+                    alt="Hello"
+                    className="w-full max-w-[210px] object-contain"
+                  />
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </DashboardLayout>

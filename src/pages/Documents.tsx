@@ -80,7 +80,7 @@ const documentCategories: DocumentCategory[] = [
 ];
 
 const Documents = () => {
-  const [openCategory, setOpenCategory] = useState<string>(() => documentCategories[0]?.title ?? "");
+  const [openCategory, setOpenCategory] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
   const [profile, setProfile] = useState<StoredProfile | null>(null);
 
@@ -112,6 +112,12 @@ const Documents = () => {
   }, []);
 
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
+  const activeCategoryTitle =
+    selectedDocument
+      ? documentCategories.find((category) =>
+          category.items.some((item) => item.id === selectedDocument),
+        )?.title ?? ""
+      : "";
   const greetingName = [profile?.user_name, profile?.user_surname].filter(Boolean).join(" ");
 
   return (
@@ -130,6 +136,7 @@ const Documents = () => {
               <div className="flex flex-col">
                 {documentCategories.map((category, index) => {
                   const isOpen = openCategory === category.title;
+                  const isActive = activeCategoryTitle === category.title;
                   const CategoryIcon = category.icon;
                   return (
                     <div key={category.title} className="flex flex-col">
@@ -142,7 +149,8 @@ const Documents = () => {
                           "group flex h-[42px] w-full items-center gap-3 rounded-none border-b border-white/10 px-4 py-0 text-left text-xs leading-none transition-all duration-150",
                           "hover:bg-[#010D1A] hover:text-white",
                           index === 0 && "rounded-tl-sm",
-                          isOpen && "bg-[#010D1A] text-white border-b-2 border-blue-500",
+                          (isOpen || isActive) && "bg-[#010D1A] text-white",
+                          isActive && "border-b-2 border-blue-500",
                         )}
                       >
                         <CategoryIcon className="h-4 w-4 text-white" />

@@ -1308,7 +1308,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
         <div
           className={cn(
             "space-y-6",
-            embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3",
+            embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
           )}
         >
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1325,7 +1325,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
           </div>
         </div>
 
-        <Card className="rounded-sm rounded-tr-none rounded-bl-none shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+        <Card className="rounded-sm shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-center gap-8 w-full">
               {steps.map((label, index) => {

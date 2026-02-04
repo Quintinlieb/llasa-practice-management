@@ -997,7 +997,7 @@ export default function CodeOfConductPreviewPage({ embedded = false }: { embedde
         id="code-of-conduct-preview"
         className={cn(
           "space-y-3 print:space-y-4",
-          embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3 -mt-3",
+          embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3 -mt-3",
         )}
       >
         <div className="space-y-4">
@@ -1005,7 +1005,7 @@ export default function CodeOfConductPreviewPage({ embedded = false }: { embedde
             Documents / Discipline /{" "}
             <span className="text-blue-700 underline underline-offset-4">Code of Conduct</span>
           </p>
-          <div className="rounded-sm rounded-tr-none rounded-bl-none border border-slate-300 bg-white shadow-sm">
+          <div className="rounded-sm border border-slate-300 bg-white shadow-sm">
             <div className="p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
             <Tabs
               value={activeCategoryId}

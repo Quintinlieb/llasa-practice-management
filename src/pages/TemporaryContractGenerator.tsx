@@ -1450,7 +1450,7 @@ const TemporaryContractGenerator = ({ embedded = false }: { embedded?: boolean }
       <div
         className={cn(
           "space-y-6",
-          embedded ? "px-0 pt-4" : "-ml-6 -mr-6 pl-3 pr-3",
+          embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
         )}
         style={{ scrollbarGutter: "stable" }}
       >
@@ -1469,7 +1469,7 @@ const TemporaryContractGenerator = ({ embedded = false }: { embedded?: boolean }
         </div>
 
         {!showFinalActions ? (
-          <Card className="rounded-sm rounded-tr-none rounded-bl-none mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+          <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-center gap-8 w-full">
                 {steps.map((step, index) => {
@@ -1978,7 +1978,7 @@ const TemporaryContractGenerator = ({ embedded = false }: { embedded?: boolean }
             </CardContent>
           </Card>
         ) : (
-            <Card className="rounded-sm rounded-tr-none rounded-bl-none mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
               <CardHeader className="pt-4 pb-0" />
               <CardContent className="space-y-6 pt-2">
                 <div className="flex flex-col items-center gap-3">

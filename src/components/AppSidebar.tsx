@@ -1,4 +1,4 @@
-import { FileText, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator, Bot } from "lucide-react";
+import { FolderOpen, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator, Bot } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
 import {
@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/useAuth";
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
-  { title: "Documents", url: "/documents", icon: FileText },
+  { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Payroll", url: "/documents/payroll", icon: Calculator },
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
   { title: "Assistant", url: "/assistant", icon: Bot },

@@ -1824,6 +1824,7 @@ const DemoPermanentContractGenerator = () => {
                           className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
                         >
                           Next
+                          <ArrowRight className="h-4 w-4" />
                         </Button>
                       )}
                     </div>

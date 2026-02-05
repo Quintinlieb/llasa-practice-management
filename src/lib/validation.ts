@@ -299,7 +299,7 @@ export const sanitizeEmployeeNumber = (value?: string | null): string =>
         .slice(0, EMPLOYEE_NUMBER_MAX_LENGTH)
     : "";
 
-const companySetupBaseSchema = z.object({
+export const companySetupBaseSchema = z.object({
   physicalAddressLine1: z
     .string()
     .max(200, "Address line 1 must not exceed 200 characters")
@@ -748,6 +748,14 @@ export const warningGeneratorSchema = z.object({
     .max(200, "Trading name must not exceed 200 characters")
     .optional()
     .transform((val) => (val ? sanitizeText(val) : "")),
+  employerContact: z
+    .string()
+    .regex(/^\d{10}$/, "Employer contact must be exactly 10 digits")
+    .transform(sanitizeText),
+  employerEmail: z
+    .string()
+    .email("Invalid employer email address")
+    .transform((val) => sanitizeText(val.toLowerCase())),
   employeeName: z
     .string()
     .min(2, "Name must be at least 2 characters")

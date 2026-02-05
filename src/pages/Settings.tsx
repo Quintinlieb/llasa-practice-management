@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
-import { companySetupSchema, southAfricanProvinces } from "@/lib/validation";
+import { companySetupBaseSchema, companySetupSchema, southAfricanProvinces } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const passwordSchema = z.string()
@@ -121,7 +121,7 @@ const Settings = () => {
 
     try {
       // Validate user fields using existing schema
-      const validated = companySetupSchema.pick({
+      const validated = companySetupBaseSchema.pick({
         userName: true,
         userSurname: true,
         userEmail: true,

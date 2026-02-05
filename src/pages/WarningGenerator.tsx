@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,8 @@ type WarningFormData = {
 } & Pick<
   WarningGeneratorFormData,
   | "tradingName"
+  | "employerContact"
+  | "employerEmail"
   | "employeeName"
   | "employeeSurname"
   | "employeeIdNumber"
@@ -203,6 +206,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const [duplicateOverrideAccepted, setDuplicateOverrideAccepted] = useState(false);
   const [formData, setFormData] = useState<WarningFormData>({
     tradingName: "",
+    employerContact: "",
+    employerEmail: "",
     employeeId: "",
     employeeName: "",
     employeeSurname: "",
@@ -219,6 +224,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const stepIcons = [Building2, User2, TriangleAlert] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showFinalActions, setShowFinalActions] = useState(false);
+  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
+  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2;
   const snippetContainerWidthMm = 150;
@@ -246,6 +253,12 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
       navigate("/auth");
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (hasDismissedEmployeeHint) return;
+    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    return () => clearTimeout(timer);
+  }, [hasDismissedEmployeeHint]);
 
   useEffect(() => {
     if (isEmployeePrefillState(location.state)) {
@@ -345,6 +358,16 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
       fetchConductOffences();
     }
   }, [user, fetchProfile, fetchEmployees, fetchConductOffences]);
+
+  useEffect(() => {
+    if (profile) {
+      setFormData((prev) => ({
+        ...prev,
+        employerContact: prev.employerContact || profile.company_contact || "",
+        employerEmail: prev.employerEmail || profile.company_email || "",
+      }));
+    }
+  }, [profile]);
 
   const fetchEmployeeWarnings = useCallback(
     async (employeeId: string) => {
@@ -770,6 +793,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
       if (formData.tradingName) {
         renderLabelValue("Trading As:", formData.tradingName);
       }
+      renderLabelValue("Employer Contact:", formData.employerContact || "-");
+      renderLabelValue("Employer Email:", formData.employerEmail || "-");
       yPosition += 4;
     }
 
@@ -869,6 +894,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
       // Validate and sanitize input
       const validatedData = warningGeneratorSchema.parse({
         tradingName: formData.tradingName,
+        employerContact: formData.employerContact,
+        employerEmail: formData.employerEmail,
         employeeName: formData.employeeName,
         employeeSurname: formData.employeeSurname,
         employeeIdNumber: formData.employeeIdNumber,
@@ -951,8 +978,16 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
       });
       return;
     }
-    if (!formData.description || !formData.employeeName || !formData.employeeSurname || 
-        !formData.employeeIdNumber || !formData.warningType || !formData.issuedBy) {
+    if (
+      !formData.employerContact ||
+      !formData.employerEmail ||
+      !formData.description ||
+      !formData.employeeName ||
+      !formData.employeeSurname ||
+      !formData.employeeIdNumber ||
+      !formData.warningType ||
+      !formData.issuedBy
+    ) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
@@ -978,6 +1013,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const handleResetForm = () => {
     setFormData({
       tradingName: "",
+      employerContact: "",
+      employerEmail: "",
       employeeId: "",
       employeeName: "",
       employeeSurname: "",
@@ -1052,6 +1089,8 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const isFormValid = () => {
     return (
       formData.misconductTypes.length > 0 &&
+      formData.employerContact &&
+      formData.employerEmail &&
       formData.description &&
       formData.employeeName &&
       formData.employeeSurname &&
@@ -1061,7 +1100,10 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
     );
   };
 
-  const isEmployerStepComplete = true;
+  const isEmployerStepComplete = useMemo(
+    () => Boolean(formData.employerContact && formData.employerEmail),
+    [formData.employerContact, formData.employerEmail],
+  );
   const isEmployeeStepComplete = useMemo(
     () => Boolean(formData.employeeName && formData.employeeSurname && formData.employeeIdNumber),
     [formData.employeeIdNumber, formData.employeeName, formData.employeeSurname],
@@ -1100,6 +1142,12 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const handleNext = () => {
     if (activeStep >= steps.length - 1) return;
     if (!canGoNext) return;
+    if (activeStep === 0) {
+      setHasDismissedEmployeeHint(true);
+      if (showEmployeeHint) {
+        setShowEmployeeHint(false);
+      }
+    }
     setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
   };
 
@@ -1188,6 +1236,14 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
                   <span>{formData.tradingName}</span>
                 </div>
               )}
+              <div className="grid grid-cols-[140px,1fr] gap-2">
+                <span className="font-semibold">Employer Contact:</span>
+                <span>{formData.employerContact || "-"}</span>
+              </div>
+              <div className="grid grid-cols-[140px,1fr] gap-2">
+                <span className="font-semibold">Employer Email:</span>
+                <span>{formData.employerEmail || "-"}</span>
+              </div>
             </div>
           </div>
         )}
@@ -1305,13 +1361,58 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
   const content = (
     <>
       <style>{pulseShadowStyles}</style>
+      {showEmployeeHint && typeof document !== "undefined"
+        ? createPortal(
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+              <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
+                  aria-hidden="true"
+                ></span>
+                <div className="pointer-events-auto flex items-center gap-2">
+                  <span className="text-orange-600">
+                    TIP!{" "}
+                    <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                      Add the employee to your Employee List before generating a warning
+                      <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                      navigate("/employees");
+                    }}
+                  >
+                    Employees page
+                  </button>
+                  <button
+                    type="button"
+                    className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                    onClick={() => {
+                      setHasDismissedEmployeeHint(true);
+                      setShowEmployeeHint(false);
+                    }}
+                    aria-label="Dismiss employee guidance message"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
         <div
           className={cn(
             "space-y-6",
             embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
           )}
+          style={{ scrollbarGutter: "stable" }}
         >
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <p className="text-xs font-semibold text-slate-700">
               Documents / Discipline /{" "}
@@ -1325,7 +1426,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
           </div>
         </div>
 
-        <Card className="rounded-sm shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+        <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-center gap-8 w-full">
               {steps.map((label, index) => {
@@ -1460,54 +1561,82 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
               </div>
             </CardContent>
           ) : (
-            <CardContent className="pt-6">
-              <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex items-center justify-start gap-3 mb-3">
-                <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+            <CardContent className="pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+              <form onSubmit={handleSubmit} className="space-y-2">
+              <div className="flex items-center justify-start gap-3 mb-0">
+                <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
               </div>
 
+              <div className="space-y-2">
               {activeStep === 0 && (
-                <div className="space-y-4 rounded-sm border border-blue-200 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="space-y-2">
-                    <Label htmlFor="tradingName">
-                      Trading Name (optional)
-                    </Label>
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="companyName">Company name</Label>
+                      <Input
+                        id="companyName"
+                        value={profile?.company_name || ""}
+                        readOnly
+                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="registrationNumber">Registration number</Label>
+                      <Input
+                        id="registrationNumber"
+                        value={profile?.registration_number || ""}
+                        readOnly
+                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="physicalAddress">Registered address</Label>
+                      <Input
+                        id="physicalAddress"
+                        value={profile?.physical_address || ""}
+                        readOnly
+                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="tradingName">Trading name</Label>
                       <Input
                         id="tradingName"
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
-                        placeholder="Enter trading name if different from company name"
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        placeholder="If different from registered name"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
                       />
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4 pt-2">
-                    <div className="space-y-1.5">
-                      <Label>Company name</Label>
-                      <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
-                        {profile?.company_name || "Not set"}
-                      </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Registration number</Label>
-                      <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
-                        {profile?.registration_number || "Not set"}
-                      </div>
+                      <Label htmlFor="employerContact">Employer contact *</Label>
+                      <Input
+                        id="employerContact"
+                        value={formData.employerContact}
+                        onChange={(e) => {
+                          const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setFormData({ ...formData, employerContact: digitsOnly });
+                        }}
+                        placeholder="10-digit contact number"
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label>Company address</Label>
-                      <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-sm text-slate-800">
-                        {profile?.physical_address || "Not set"}
-                      </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="employerEmail">Employer email *</Label>
+                      <Input
+                        id="employerEmail"
+                        type="email"
+                        value={formData.employerEmail}
+                        onChange={(e) => setFormData({ ...formData, employerEmail: e.target.value })}
+                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      />
                     </div>
                   </div>
-                  <p className="text-xs text-slate-600">
-                    We'll pull employer details from your profile automatically; add a trading name if needed.
-                  </p>
                 </div>
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-4 rounded-sm border border-blue-200 bg-white p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
                   <div className="space-y-2">
                     <Label htmlFor="employee">
                       Select Employee (optional)
@@ -1525,7 +1654,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="employeeName">
                         Employee Name *
@@ -1567,7 +1696,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-4 rounded-sm border border-blue-200 bg-white p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-blue-400 bg-white p-3 shadow-sm">
                   <div className="flex items-center justify-start">
                     {activeWarnings.length > 0 && (
                       <TooltipProvider delayDuration={0} skipDelayDuration={0}>
@@ -1874,20 +2003,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
                         </Button>
                       )}
                     </div>
-                    <div className="flex-1 flex justify-center">
-                      {activeStep === 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={handleResetEmployeeStep}
-                          disabled={isLoading}
-                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          Reset
-                        </Button>
-                      )}
-                    </div>
+                    <div className="flex-1" />
                     <div className="flex-none">
                       {activeStep < steps.length - 1 && (
                         <Button
@@ -1903,6 +2019,7 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
                     </div>
                   </div>
                 )}
+              </div>
               </div>
               </form>
             </CardContent>

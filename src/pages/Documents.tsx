@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
+import { useLocation } from "react-router-dom";
 import {
   ScaleIcon,
   DocumentTextIcon,
@@ -80,9 +81,17 @@ const documentCategories: DocumentCategory[] = [
 ];
 
 const Documents = () => {
+  const location = useLocation();
   const [openCategory, setOpenCategory] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
   const [profile, setProfile] = useState<StoredProfile | null>(null);
+
+  useEffect(() => {
+    const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
+    if (nextSelected && documentComponents[nextSelected]) {
+      setSelectedDocument(nextSelected);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     const readProfile = () => {

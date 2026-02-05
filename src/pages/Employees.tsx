@@ -172,6 +172,8 @@ type DocumentOption = {
   active: boolean;
 };
 
+type DocumentKey = "warnings" | "permanentContract" | "temporaryContract" | "addendum";
+
 type ConductOffence = {
   category: "Minor" | "Serious" | "Dismissible";
   name: string;
@@ -411,6 +413,13 @@ const documentOptions: DocumentOption[] = [
   },
 ];
 
+const documentPathToKey: Record<string, DocumentKey> = {
+  "/documents/discipline/warnings": "warnings",
+  "/documents/contracts/permanent": "permanentContract",
+  "/documents/contracts/temporary": "temporaryContract",
+  "/documents/contracts/addendum": "addendum",
+};
+
 const Employees = () => {
  const { user, loading } = useAuth();
  const navigate = useNavigate();
@@ -418,8 +427,11 @@ const Employees = () => {
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [totalPermanentEmployees, setTotalPermanentEmployees] = useState<number | null>(null);
+  const [totalTemporaryEmployees, setTotalTemporaryEmployees] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalEmployees, setTotalEmployees] = useState<number | null>(null);
+  const [totalFilteredEmployees, setTotalFilteredEmployees] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
@@ -515,22 +527,33 @@ const Employees = () => {
     tableOffsetTop > 0
       ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
       : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
-  const totalPages = totalEmployees !== null ? Math.ceil(totalEmployees / DEFAULT_PAGE_SIZE) : null;
+  const totalPages =
+    totalFilteredEmployees !== null ? Math.ceil(totalFilteredEmployees / DEFAULT_PAGE_SIZE) : null;
   const isFirstPage = currentPage === 1;
   const isLastPage =
-    totalEmployees !== null ? currentPage >= Math.max(totalPages ?? 1, 1) : employees.length < DEFAULT_PAGE_SIZE;
+    totalFilteredEmployees !== null
+      ? currentPage >= Math.max(totalPages ?? 1, 1)
+      : employees.length < DEFAULT_PAGE_SIZE;
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
-    const state = targetEmployee
-      ? {
-          employeeName: (targetEmployee.employee_name ?? "").trim(),
-          employeeSurname: (targetEmployee.employee_surname ?? "").trim(),
-          employeeIdNumber: targetEmployee.id_number ?? "",
-        }
-      : undefined;
+    const selectedDocument = documentPathToKey[path];
+    const state = {
+      ...(targetEmployee
+        ? {
+            employeeName: (targetEmployee.employee_name ?? "").trim(),
+            employeeSurname: (targetEmployee.employee_surname ?? "").trim(),
+            employeeIdNumber: targetEmployee.id_number ?? "",
+          }
+        : {}),
+      ...(selectedDocument ? { selectedDocument } : {}),
+    };
     setDocumentDialogEmployee(null);
-    navigate(path, { state });
+    if (selectedDocument) {
+      navigate("/documents", { state });
+      return;
+    }
+    navigate(path, { state: Object.keys(state).length > 0 ? state : undefined });
   };
 
   useEffect(() => {
@@ -1415,13 +1438,27 @@ const Employees = () => {
     if (!user) return;
     const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
     const to = from + DEFAULT_PAGE_SIZE - 1;
-    const { data, error, count } = await (supabase as any)
+    const queryText = searchQuery.trim();
+    let query = (supabase as any)
       .from("employees")
       .select(
         "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
         { count: "exact" },
       )
-      .eq("company_id", user.id)
+      .eq("company_id", user.id);
+
+    if (contractFilter !== "all") {
+      query = query.ilike("contract_type", contractFilter);
+    }
+
+    if (queryText.length > 0) {
+      const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
+      query = query.or(
+        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%`,
+      );
+    }
+
+    const { data, error, count } = await query
       .order("employee_name", { ascending: true, nullsFirst: false })
       .order("employee_surname", { ascending: true, nullsFirst: false })
       .range(from, to);
@@ -1437,7 +1474,7 @@ const Employees = () => {
     }
 
     if (typeof count === "number") {
-      setTotalEmployees(count);
+      setTotalFilteredEmployees(count);
       if (count === 0 && currentPage !== 1) {
         setCurrentPage(1);
         return;
@@ -1448,8 +1485,29 @@ const Employees = () => {
         return;
       }
     } else {
-      setTotalEmployees(null);
+      setTotalFilteredEmployees(null);
     }
+
+    const [{ count: totalCount }, { count: permanentCount }, { count: temporaryCount }] = await Promise.all([
+      (supabase as any)
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", user.id),
+      (supabase as any)
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", user.id)
+        .ilike("contract_type", "permanent"),
+      (supabase as any)
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", user.id)
+        .ilike("contract_type", "temporary"),
+    ]);
+
+    setTotalEmployees(typeof totalCount === "number" ? totalCount : null);
+    setTotalPermanentEmployees(typeof permanentCount === "number" ? permanentCount : null);
+    setTotalTemporaryEmployees(typeof temporaryCount === "number" ? temporaryCount : null);
 
     const sorted = (data ?? []).sort((a, b) => {
       const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
@@ -1460,7 +1518,7 @@ const Employees = () => {
     setEmployees(sorted);
     setFilteredEmployees(sorted);
     void fetchActiveContractsForEmployees(sorted.map((employee) => employee.id));
-  }, [toast, user, currentPage, fetchActiveContractsForEmployees]);
+  }, [toast, user, currentPage, fetchActiveContractsForEmployees, searchQuery, contractFilter]);
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
@@ -1522,6 +1580,10 @@ const Employees = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [user?.id]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, contractFilter]);
 
   useEffect(() => {
     const query = searchQuery.toLowerCase();
@@ -3066,19 +3128,19 @@ const Employees = () => {
                     <SelectItem value="all" className="group text-xs">
                       All employees{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
-                        ({filteredEmployees.length})
+                        ({totalEmployees ?? employees.length})
                       </span>
                     </SelectItem>
                     <SelectItem value="permanent" className="group text-xs">
                       Permanent{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
-                        ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
+                        ({totalPermanentEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
                       </span>
                     </SelectItem>
                     <SelectItem value="temporary" className="group text-xs">
                       Temporary{" "}
                       <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
-                        ({employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
+                        ({totalTemporaryEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
                       </span>
                     </SelectItem>
                   </SelectContent>
@@ -3229,7 +3291,7 @@ const Employees = () => {
                       onClick={goToPreviousPage}
                       disabled={isFirstPage}
                       aria-label="Previous page"
-                      className="h-8 w-8 hover:bg-transparent"
+                      className="h-8 w-8 hover:bg-transparent hover:text-blue-600"
                     >
                       <ArrowLeft className="h-3.5 w-3.5" />
                     </Button>
@@ -3243,7 +3305,7 @@ const Employees = () => {
                       onClick={goToNextPage}
                       disabled={isLastPage}
                       aria-label="Next page"
-                      className="h-8 w-8 hover:bg-transparent"
+                      className="h-8 w-8 hover:bg-transparent hover:text-blue-600"
                     >
                       <ArrowRight className="h-3.5 w-3.5" />
                     </Button>

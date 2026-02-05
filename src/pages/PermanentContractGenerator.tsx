@@ -1465,9 +1465,9 @@ const PermanentContractGenerator = ({ embedded = false }: { embedded?: boolean }
                 })}
               </div>
             </CardHeader>
-          <CardContent className="pt-6 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
-            <div className="flex items-center justify-start gap-3 mb-3">
-              <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+          <CardContent className="pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
+            <div className="flex items-center justify-start gap-3 mb-2">
+              <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
             </div>
             <div className="space-y-4">
               {activeStep === 0 && (
@@ -2024,6 +2024,7 @@ const PermanentContractGenerator = ({ embedded = false }: { embedded?: boolean }
                           className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
                         >
                           Next
+                          <ArrowRight className="h-4 w-4" />
                         </Button>
                       )}
                     </div>

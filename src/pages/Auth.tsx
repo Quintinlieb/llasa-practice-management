@@ -35,6 +35,7 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [heroLoaded, setHeroLoaded] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [accountType, setAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
   const [selectedAccountType, setSelectedAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
@@ -61,6 +62,13 @@ const Auth = () => {
     setSelectedAccountType(draft.accountType);
     setAcceptedTerms(draft.acceptedTerms);
   }, [location.search]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/AuthImage.png";
+    img.onload = () => setHeroLoaded(true);
+    img.onerror = () => setHeroLoaded(true);
+  }, []);
 
   useEffect(() => {
     writeAuthFormDraft({
@@ -250,7 +258,12 @@ const Auth = () => {
             <img
               src="/AuthImage.png"
               alt="Team collaborating"
-              className="h-full w-full object-cover opacity-[0.28]"
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
+              onLoad={() => setHeroLoaded(true)}
+              onError={() => setHeroLoaded(true)}
+              className={`h-full w-full object-cover opacity-[0.28] transition-opacity duration-300 ${heroLoaded ? "opacity-[0.28]" : "opacity-0"}`}
               style={{ objectPosition: "20% center" }}
             />
           </div>

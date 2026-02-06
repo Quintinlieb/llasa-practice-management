@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
 import { useLocation } from "react-router-dom";
@@ -9,13 +9,15 @@ import {
   BellAlertIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
+import { Gavel } from "lucide-react";
 
 type DocumentKey =
   | "codeOfConduct"
   | "warnings"
   | "permanentContract"
   | "temporaryContract"
-  | "addendum";
+  | "addendum"
+  | "disciplinaryHearing";
 
 type DocumentItem = {
   id?: DocumentKey;
@@ -40,6 +42,7 @@ const documentComponents: Record<DocumentKey, ComponentType<{ embedded?: boolean
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
+  disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
 
 const documentCategories: DocumentCategory[] = [
@@ -67,6 +70,16 @@ const documentCategories: DocumentCategory[] = [
     items: [{ label: "Performance Appraisal Form", active: false }],
   },
   {
+    title: "Outcomes",
+    icon: (props) => <Gavel {...props} />,
+    items: [
+      { id: "disciplinaryHearing", label: "Disciplinary Hearing", active: true },
+      { label: "Incapacity Hearing", active: false },
+      { label: "Retrenchment Consultation", active: false },
+      { label: "Grievance", active: false },
+    ],
+  },
+  {
     title: "Notices",
     icon: BellAlertIcon,
     items: [
@@ -85,6 +98,8 @@ const Documents = () => {
   const [openCategory, setOpenCategory] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
   const [profile, setProfile] = useState<StoredProfile | null>(null);
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollHint, setShowScrollHint] = useState(false);
 
   useEffect(() => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
@@ -120,6 +135,25 @@ const Documents = () => {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const el = contentScrollRef.current;
+    if (!el) return;
+    const checkScroll = () => {
+      const canScroll = el.scrollHeight > el.clientHeight + 4;
+      const atTop = el.scrollTop <= 8;
+      setShowScrollHint(canScroll && atTop);
+    };
+    checkScroll();
+    const onScroll = () => checkScroll();
+    el.addEventListener("scroll", onScroll);
+    const onResize = () => checkScroll();
+    window.addEventListener("resize", onResize);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [selectedDocument]);
+
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
   const activeCategoryTitle =
     selectedDocument
@@ -140,8 +174,8 @@ const Documents = () => {
         </header>
 
         <div className="rounded-sm border border-slate-300 bg-white/55 shadow-sm min-h-[70vh] pb-0">
-          <div className="grid min-h-[70vh] gap-3 lg:grid-cols-[180px_1fr] items-stretch">
-            <aside className="border-b border-slate-200 bg-[#2D4256] text-white lg:border-b-0 lg:border-r lg:border-slate-200 rounded-l-sm">
+          <div className="grid h-[74vh] gap-3 lg:grid-cols-[180px_1fr] items-stretch">
+            <aside className="h-full border-b border-slate-200 bg-[#2D4256] text-white lg:border-b-0 lg:border-r lg:border-slate-200 rounded-l-sm">
               <div className="flex flex-col">
                 {documentCategories.map((category, index) => {
                   const isOpen = openCategory === category.title;
@@ -210,7 +244,11 @@ const Documents = () => {
               </div>
             </aside>
 
-            <section className="min-h-[60vh] overflow-x-hidden">
+            <section
+              ref={contentScrollRef}
+              data-documents-scroll
+              className="relative h-full overflow-y-auto overflow-x-hidden"
+            >
               {SelectedComponent ? (
                 <Suspense
                   fallback={
@@ -236,6 +274,17 @@ const Documents = () => {
                     alt="Hello"
                     className="w-full max-w-[210px] object-contain"
                   />
+                </div>
+              )}
+              {showScrollHint && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+                  <div className="relative rounded-sm border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                    <span
+                      className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]"
+                      aria-hidden="true"
+                    ></span>
+                    <span className="relative">Scroll down</span>
+                  </div>
                 </div>
               )}
             </section>

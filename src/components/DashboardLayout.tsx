@@ -202,7 +202,7 @@ export default function DashboardLayout({
                 <button
                   type="button"
                   onClick={() => setIsCollapsed((prev) => !prev)}
-                  className="h-9 w-9 p-0 flex items-center justify-start text-slate-700 hover:text-blue-600"
+                  className="h-9 w-9 -ml-2 p-0 flex items-center justify-start text-slate-700 hover:text-blue-600"
                 >
                   <Icon
                     icon="material-symbols:menu-open-sharp"

@@ -18,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogClose,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -57,6 +58,7 @@ import {
   Info,
   ArrowRight,
   Menu,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -434,6 +436,9 @@ const Employees = () => {
   const [totalFilteredEmployees, setTotalFilteredEmployees] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
+  const [genderFilter, setGenderFilter] = useState<"all" | EmployeeProfileFormData["gender"]>("all");
+  const [raceFilter, setRaceFilter] = useState<"all" | EmployeeProfileFormData["race"]>("all");
+  const [nationalityFilter, setNationalityFilter] = useState<"all" | EmployeeProfileFormData["nationality"]>("all");
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
@@ -1583,7 +1588,7 @@ const Employees = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, contractFilter]);
+  }, [searchQuery, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
     const query = searchQuery.toLowerCase();
@@ -1601,7 +1606,15 @@ const Employees = () => {
         (contractFilter === "permanent" && contractType === "permanent") ||
         (contractFilter === "temporary" && contractType === "temporary");
 
-      return matchesSearch && matchesContract;
+      const genderValue = (emp.gender ?? "").toLowerCase();
+      const raceValue = (emp.race ?? "").toLowerCase();
+      const nationalityValue = (emp.nationality ?? "").toLowerCase();
+      const matchesGender = genderFilter === "all" || genderValue === genderFilter.toLowerCase();
+      const matchesRace = raceFilter === "all" || raceValue === raceFilter.toLowerCase();
+      const matchesNationality =
+        nationalityFilter === "all" || nationalityValue === nationalityFilter.toLowerCase();
+
+      return matchesSearch && matchesContract && matchesGender && matchesRace && matchesNationality;
     });
 
     const sorted = filtered.sort((a, b) => {
@@ -1611,7 +1624,7 @@ const Employees = () => {
     });
 
     setFilteredEmployees(sorted);
-  }, [employees, searchQuery, contractFilter]);
+  }, [employees, searchQuery, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
     // Keep selections in sync with the currently filtered list to avoid deleting hidden rows.
@@ -2915,199 +2928,24 @@ const Employees = () => {
 
   return (
     <DashboardLayout>
-      <div className="-ml-6 -mr-6 pl-3 pr-3 -mt-3">
-          <div className="relative">
-            <div className="space-y-3">
-              <div className="rounded-sm px-5 py-4 bg-white border border-slate-300">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="space-y-1">
-                    <h1 className="text-xl font-bold uppercase text-blue-700">Employee List</h1>
-                    <p className="text-xs text-gray-600">
-                      Browse, search, and manage your employees and attach their documents.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3 justify-end">
-              <Button
-                variant="outline"
-                onClick={handleBulkDelete}
-                disabled={selectedEmployees.size === 0}
-                className={`h-8 px-3 text-xs gap-1.5 ${
-                  selectedEmployees.size > 0
-                    ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
-                    : ""
-                } rounded-sm`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
-              </Button>
-
-              <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="h-8 px-3 text-xs gap-1.5 rounded-sm">
-                    <Upload className="h-3.5 w-3.5" />
-                    Bulk Upload
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader className="flex flex-col gap-2">
-                    <div className="flex items-center gap-4">
-                      <UsersRound className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
-                      <div>
-                        <DialogTitle>Bulk Upload</DialogTitle>
-                        <DialogDescription>Add all your employees with a single upload.</DialogDescription>
-                      </div>
-                    </div>
-                  </DialogHeader>
-                  <div className="space-y-8">
-                    <div>
-                      <div className="space-y-3">
-                        <div className="h-px bg-muted" />
-                        <h4 className="text-sm font-semibold">Step 1: Download</h4>
-                      </div>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Download the spreadsheet to capture your employee information.
-                      </p>
-                      <Button variant="outline" className="mt-4 gap-2 w-full text-primary [&_svg]:text-primary" onClick={downloadTemplate}>
-                        <Download className="h-4 w-4" />
-                        Download Template
-                      </Button>
-                    </div>
-                    <div>
-                      <div className="space-y-3">
-                        <div className="h-px bg-muted" />
-                        <h4 className="text-sm font-semibold">Step 2: Upload</h4>
-                      </div>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Upload spreadsheet. Accepted formats: .xlsx or .xls
-                      </p>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleBulkUpload}
-                        className="hidden"
-                        id="bulk-upload"
-                      />
-                      <Button className="mt-4 gap-2 w-full" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
-                        <Upload className="h-4 w-4" />
-                        Upload File
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="h-8 px-3 text-xs gap-1.5 rounded-sm">
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Employee
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader className="flex flex-col gap-2">
-                  <div className="flex items-center gap-4">
-                    <User className="h-10 w-10 flex-shrink-0 text-primary" aria-hidden="true" />
-                    <div>
-                      <DialogTitle>Add New Employee</DialogTitle>
-                      <DialogDescription>Capture the employee&apos;s basic details to get started.</DialogDescription>
-                    </div>
-                  </div>
-                </DialogHeader>
-                <form onSubmit={handleAddEmployee} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="employeeName">Name *</Label>
-                    <Input
-                      id="employeeName"
-                      value={addForm.employeeName}
-                      onChange={(e) =>
-                        setAddForm((prev) => ({
-                          ...prev,
-                          employeeName: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="employeeSurname">Surname *</Label>
-                    <Input
-                      id="employeeSurname"
-                      value={addForm.employeeSurname}
-                      onChange={(e) =>
-                        setAddForm((prev) => ({
-                          ...prev,
-                          employeeSurname: e.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="idNumber">ID Number</Label>
-                    <Input
-                      id="idNumber"
-                      value={addForm.idNumber}
-                      onChange={(e) =>
-                        setAddForm((prev) => ({
-                          ...prev,
-                          idNumber: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="addEmployeeNumber">Employee Number (optional)</Label>
-                      <TooltipProvider delayDuration={0}>
-                        <Tooltip disableHoverableContent>
-                          <TooltipTrigger asChild>
-                            <span
-                              className="inline-flex cursor-default text-muted-foreground transition-colors hover:text-foreground"
-                              aria-hidden="true"
-                            >
-                              <Info className="h-4 w-4" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="border border-blue-200 bg-white text-slate-900">
-                            Up to {EMPLOYEE_NUMBER_MAX_LENGTH} characters allowed (letters, numbers, or both).
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    <Input
-                      id="addEmployeeNumber"
-                      value={addForm.employeeNumber}
-                      maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
-                      onChange={(e) =>
-                        setAddForm((prev) => ({
-                          ...prev,
-                          employeeNumber: sanitizeEmployeeNumber(e.target.value),
-                        }))
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">Leave blank to assign later.</p>
-                  </div>
-                  <div className="mt-8 border-t border-dashed border-muted/60 pt-6">
-                    <Button
-                      type="submit"
-                      className="w-full disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:cursor-not-allowed"
-                      disabled={isAddFormSubmitDisabled}
-                    >
-                      {isLoading ? "Saving..." : "Add Employee"}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-      </div>
-
-        <Card className="rounded-sm bg-white border border-slate-300">
-          <CardHeader className="px-6 pt-5 pb-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative w-full sm:max-w-lg">
+      <div className="space-y-0 -m-6">
+        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
+          <div className="flex h-full flex-col">
+            <div className="pl-4 pr-4 pt-1">
+              <div className="pt-5 pb-2">
+                <h1 className="text-4xl font-normal text-blue-600">Employees</h1>
+                <p className="text-xs text-slate-600 mt-2">
+                  Browse, search, and manage your employees and attach their documents.
+                </p>
+              </div>
+            </div>
+            <section className="relative flex-1 overflow-y-auto overflow-x-hidden pr-2">
+              <div className="space-y-0 p-0">
+        <Card className="rounded-none bg-white border-0 shadow-none">
+          <CardHeader className="pl-4 pr-4 pt-5 pb-3 space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative w-full sm:w-[460px]">
                 <Input
                   placeholder="Search employees..."
                   value={searchQuery}
@@ -3115,13 +2953,13 @@ const Employees = () => {
                   className="h-10 rounded-sm border-2 border-primary/30 bg-white/30 pr-12 text-xs shadow-md placeholder:text-xs focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
                 />
                 <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
-              </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-                <Select
-                  value={contractFilter}
-                  onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
-                >
-                  <SelectTrigger className="w-full sm:w-52 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                  <Select
+                    value={contractFilter}
+                    onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
+                  >
+                  <SelectTrigger className="w-full sm:w-32 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
                     <SelectValue placeholder="Filter by contract" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3145,10 +2983,119 @@ const Employees = () => {
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                <Select
+                  value={genderFilter}
+                  onValueChange={(value) => setGenderFilter(value as "all" | EmployeeProfileFormData["gender"])}
+                >
+                  <SelectTrigger className="w-full sm:w-32 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
+                    <SelectValue placeholder="Gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">
+                      All genders
+                    </SelectItem>
+                    {genderOptions.map((option) => (
+                      <SelectItem key={option} value={option} className="text-xs">
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={raceFilter}
+                  onValueChange={(value) => setRaceFilter(value as "all" | EmployeeProfileFormData["race"])}
+                >
+                  <SelectTrigger className="w-full sm:w-40 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
+                    <SelectValue placeholder="Race" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">
+                      All races
+                    </SelectItem>
+                    {raceOptions.map((option) => (
+                      <SelectItem key={option} value={option} className="text-xs">
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={nationalityFilter}
+                  onValueChange={(value) =>
+                    setNationalityFilter(value as "all" | EmployeeProfileFormData["nationality"])
+                  }
+                >
+                  <SelectTrigger className="w-full sm:w-48 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
+                    <SelectValue placeholder="Nationality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">
+                      All nationalities
+                    </SelectItem>
+                    {nationalityOptions.map((option) => (
+                      <SelectItem key={option} value={option} className="text-xs">
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              </div>
+              <div className="flex flex-wrap gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={handleBulkDelete}
+                  disabled={selectedEmployees.size === 0}
+                  className={`h-8 px-3 text-xs gap-1.5 ${
+                    selectedEmployees.size > 0
+                      ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
+                      : ""
+                  } rounded-sm`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="h-9 rounded-sm p-0 text-xs overflow-hidden bg-blue-600 hover:bg-blue-700">
+                      <span className="inline-flex items-center gap-2 px-4 py-2">
+                        <Plus className="h-4 w-4" />
+                        New
+                      </span>
+                      <span className="h-full w-px bg-white/60" aria-hidden="true" />
+                      <span className="inline-flex items-center justify-center px-3 py-2">
+                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="text-xs">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setIsAddDialogOpen(true);
+                      }}
+                      className="gap-2 cursor-pointer hover:bg-transparent focus:bg-transparent hover:text-blue-600 focus:text-blue-600"
+                    >
+                      <User className="h-3.5 w-3.5" />
+                      Single employee
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        handleBulkDialogChange(true);
+                      }}
+                      className="gap-2 cursor-pointer hover:bg-transparent focus:bg-transparent hover:text-blue-600 focus:text-blue-600"
+                    >
+                      <UsersRound className="h-3.5 w-3.5" />
+                      Bulk employees
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pb-2">
+          <CardContent className="pl-4 pr-4 pb-2">
             {employees.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
@@ -3160,8 +3107,8 @@ const Employees = () => {
             ) : (
               <div className="space-y-2">
                 <div ref={tableCardRef} className="relative overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
-                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 border-b bg-transparent px-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
-                    <div className="flex items-center justify-center">
+                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 border-b bg-transparent pl-0 pr-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
+                    <div className="flex items-center justify-start pl-0">
                       <Checkbox
                         checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
                         onCheckedChange={toggleSelectAll}
@@ -3182,9 +3129,9 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 px-3 py-0.5 text-xs hover:bg-blue-50/70"
+                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 pl-0 pr-3 py-0.5 text-xs hover:bg-blue-50/70"
                       >
-                        <div className="flex items-center justify-center">
+                        <div className="flex items-center justify-start pl-0">
                           <Checkbox
                             checked={selectedEmployees.has(employee.id)}
                             onCheckedChange={() => toggleSelectEmployee(employee.id)}
@@ -3314,10 +3261,170 @@ const Employees = () => {
               </div>
             )}
           </CardContent>
-        </Card>
-            </div>
+                </Card>
+
+                <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
+                  <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+                    <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+                      <div className="flex items-center gap-2 pl-2">
+                        <UsersRound className="h-4 w-4 text-white" />
+                        <DialogTitle className="text-sm font-semibold text-white">New Bulk Employees</DialogTitle>
+                      </div>
+                      <DialogClose asChild>
+                        <button type="button" className="text-white hover:text-white/80">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </DialogClose>
+                    </div>
+                    <div className="px-6 pt-0 pb-2"></div>
+                    <div className="px-6 pb-6">
+                      <div className="grid gap-6 sm:grid-cols-2 pt-4">
+                        <div className="space-y-4 ml-3">
+                          <button
+                            type="button"
+                            onClick={downloadTemplate}
+                            className="flex h-14 w-24 items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600"
+                          >
+                            <Download className="h-5 w-5" />
+                          </button>
+                          <h4 className="text-sm font-semibold">Step 1: Download</h4>
+                          <p className="text-[11px] text-slate-600 min-h-[32px]">
+                            Download the bulk employee spreadsheet.
+                          </p>
+                        </div>
+                        <div className="space-y-4">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isLoading}
+                            className="flex h-14 w-24 items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Upload className="h-5 w-5" />
+                          </button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".xlsx,.xls"
+                            onChange={handleBulkUpload}
+                            className="hidden"
+                            id="bulk-upload"
+                            hidden
+                          />
+                          <h4 className="text-sm font-semibold">Step 2: Upload</h4>
+                          <p className="text-[11px] text-slate-600 min-h-[32px]">
+                            Upload the completed spreadsheet.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                  <DialogContent className="p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+                    <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+                      <div className="flex items-center gap-2 pl-2">
+                        <User className="h-4 w-4 text-white" />
+                        <DialogTitle className="text-sm font-semibold text-white">New Employee</DialogTitle>
+                      </div>
+                      <DialogClose asChild>
+                        <button type="button" className="text-white hover:text-white/80">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </DialogClose>
+                    </div>
+                    <div className="px-6 pt-0 pb-2"></div>
+                    <form onSubmit={handleAddEmployee} className="space-y-4 px-6 pb-6 pt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="employeeName" className="text-slate-500">Name *</Label>
+                        <Input
+                          id="employeeName"
+                          value={addForm.employeeName}
+                          onChange={(e) =>
+                            setAddForm((prev) => ({
+                              ...prev,
+                              employeeName: e.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="employeeSurname" className="text-slate-500">Surname *</Label>
+                        <Input
+                          id="employeeSurname"
+                          value={addForm.employeeSurname}
+                          onChange={(e) =>
+                            setAddForm((prev) => ({
+                              ...prev,
+                              employeeSurname: e.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="idNumber" className="text-slate-500">ID Number</Label>
+                        <Input
+                          id="idNumber"
+                          value={addForm.idNumber}
+                          onChange={(e) =>
+                            setAddForm((prev) => ({
+                              ...prev,
+                              idNumber: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="addEmployeeNumber" className="text-slate-500">Employee Number (optional)</Label>
+                          <TooltipProvider delayDuration={0}>
+                            <Tooltip disableHoverableContent>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex cursor-default text-muted-foreground transition-colors hover:text-foreground"
+                                  aria-hidden="true"
+                                >
+                                  <Info className="h-4 w-4" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="border border-blue-200 bg-white text-slate-900">
+                                Up to {EMPLOYEE_NUMBER_MAX_LENGTH} characters allowed (letters, numbers, or both).
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <Input
+                          id="addEmployeeNumber"
+                          value={addForm.employeeNumber}
+                          maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
+                          onChange={(e) =>
+                            setAddForm((prev) => ({
+                              ...prev,
+                              employeeNumber: sanitizeEmployeeNumber(e.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="mt-8 border-t border-dashed border-muted/60 pt-6 flex justify-center">
+                        <Button
+                          type="submit"
+                          variant="ghost"
+                          className="w-1/2 border border-blue-600 bg-transparent text-blue-600 hover:bg-transparent hover:text-blue-600 hover:border-blue-600 disabled:text-muted-foreground disabled:cursor-not-allowed"
+                          disabled={isAddFormSubmitDisabled}
+                        >
+                          {isLoading ? "Saving..." : "Add Employee"}
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </section>
           </div>
         </div>
+      </div>
       {isProfilePanelOpen && (
         <div className="fixed inset-0 z-50">
           <button
@@ -3579,9 +3686,7 @@ const Employees = () => {
       </Dialog>
 
       {deleteUndo && (
-        <div
-          className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4"
-        >
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
           <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
             <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(59,130,246,0.35)] animate-pulse" aria-hidden="true"></span>
             <div className="pointer-events-auto flex items-center gap-2">
@@ -3602,9 +3707,9 @@ const Employees = () => {
               >
                 <X className="h-4 w-4" />
               </button>
-                  </div>
-                </div>
-              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {warningDeleteUndo && (
@@ -3638,55 +3743,55 @@ const Employees = () => {
         </div>
       )}
 
-    <Dialog
-      open={Boolean(documentDialogEmployee)}
-      onOpenChange={(open) => {
-        if (!open) setDocumentDialogEmployee(null);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
-            Documents
-          </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Select a document to generate for this employee.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-5">
-          <div className="space-y-1">
-            <Label htmlFor="document-select">Choose a document</Label>
-            <Select
-              value={selectedDocumentPath || ""}
-              onValueChange={setSelectedDocumentPath}
+      <Dialog
+        open={Boolean(documentDialogEmployee)}
+        onOpenChange={(open) => {
+          if (!open) setDocumentDialogEmployee(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
+              Documents
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Select a document to generate for this employee.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="space-y-1">
+              <Label htmlFor="document-select">Choose a document</Label>
+              <Select
+                value={selectedDocumentPath || ""}
+                onValueChange={setSelectedDocumentPath}
+              >
+                <SelectTrigger id="document-select">
+                  <SelectValue placeholder="Select a document to generate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {documentOptions.map((doc) => (
+                    <SelectItem key={doc.path} value={doc.path} disabled={!doc.active}>
+                      {doc.label} {!doc.active ? "(coming soon)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => {
+                const selected = documentOptions.find((d) => d.path === selectedDocumentPath);
+                if (selected?.active) {
+                  handleDocumentCategorySelect(selected.path);
+                }
+              }}
+              disabled={!documentOptions.find((d) => d.path === selectedDocumentPath && d.active)}
             >
-              <SelectTrigger id="document-select">
-                <SelectValue placeholder="Select a document to generate" />
-              </SelectTrigger>
-              <SelectContent>
-                {documentOptions.map((doc) => (
-                  <SelectItem key={doc.path} value={doc.path} disabled={!doc.active}>
-                    {doc.label} {!doc.active ? "(coming soon)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              Go
+            </Button>
           </div>
-          <Button
-            className="w-full"
-            onClick={() => {
-              const selected = documentOptions.find((d) => d.path === selectedDocumentPath);
-              if (selected?.active) {
-                handleDocumentCategorySelect(selected.path);
-              }
-            }}
-            disabled={!documentOptions.find((d) => d.path === selectedDocumentPath && d.active)}
-          >
-            Go
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
   </DashboardLayout>
 );
  };

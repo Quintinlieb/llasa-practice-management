@@ -209,8 +209,7 @@ const Documents = () => {
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-0 pb-2">
-                <p className="text-[11px] text-slate-400 mb-4">{breadcrumbParts.join(" / ")}</p>
+              <div className="pt-5 pb-2">
                 <h1 className="text-4xl font-normal text-blue-600">Documents</h1>
               </div>
               <div className="border-b border-slate-300 bg-white shadow-sm mt-2">

@@ -170,7 +170,7 @@ const Documents = () => {
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-1 pt-4">
               <div className="pb-1">
-                <h1 className="text-3xl font-normal text-slate-900">Documents</h1>
+                <h1 className="text-3xl font-normal text-blue-600">Documents</h1>
               </div>
               <div className="border-b border-slate-300 bg-white shadow-sm mt-2">
                 <div className="relative flex flex-wrap items-center gap-0 px-0 py-0">

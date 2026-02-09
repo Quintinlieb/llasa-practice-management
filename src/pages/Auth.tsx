@@ -268,7 +268,7 @@ const Auth = () => {
             />
           </div>
           <div className="relative z-10 flex h-full w-full flex-col items-center justify-center p-14 text-white">
-            <img src="/mainlogo4.png" alt="Hure Systems" className="mx-auto h-auto w-56" />
+            <img src="/zappir_logo_white&blue(1).png" alt="Zappir logo" className="mx-auto h-auto w-56" />
             <p className="mt-10 max-w-lg text-center text-[0.8125rem] text-white/80">
               {isLogin
                 ? "Welcome back to Nudoc\u2122. A secure and reliable platform that simplifies the drafting and storage of your most important HR documents."
@@ -292,7 +292,7 @@ const Auth = () => {
           <div className="w-full max-w-md space-y-4">
             <div className="text-center space-y-3">
               <div className="mx-auto flex items-center justify-center">
-                <img src="/nudocthumbnail1.png" alt="thumbnail logo" className="h-12 w-12" />
+                <img src="/zappir_thumbnail_blue.png" alt="Zappir thumbnail logo" className="h-12 w-12" />
               </div>
               <div className="space-y-1">
                 <h1 className="text-[1.35rem] font-semibold text-foreground">

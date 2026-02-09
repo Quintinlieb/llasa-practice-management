@@ -263,7 +263,7 @@ const Index = () => {
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex flex-1 items-center gap-3">
-            <img src="/mainlogo5 .png" alt="nudoc full logo" className="h-8 w-auto" />
+            <img src="/zappir_logo_black(1).png" alt="zappir logo" className="h-8 w-auto" />
           </div>
           <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-600 md:flex">
             {navLinks.map((item) => (

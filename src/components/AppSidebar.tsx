@@ -65,17 +65,17 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
         >
           {!isCollapsed && (
             <img
-              src="/mainlogo4.png"
+              src="/zappir_logo_white&blue(1).png"
               alt="logo"
-              className="absolute left-6 top-[53%] h-8 w-auto -translate-y-1/2 object-contain"
+              className="absolute left-6 top-[53%] h-6 w-auto -translate-y-1/2 object-contain"
               style={{ imageRendering: "crisp-edges" }}
             />
           )}
           {isCollapsed && (
             <img
-              src="/nudocthumbnail1.png"
+              src="/zappir_thumbnail_blue.png"
               alt="logo"
-              className="absolute left-10 top-[55%] h-10 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
+              className="absolute left-10 top-[55%] h-6 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
               style={{ imageRendering: "crisp-edges" }}
             />
           )}

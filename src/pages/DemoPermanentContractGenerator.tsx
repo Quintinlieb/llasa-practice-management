@@ -1276,7 +1276,6 @@ const DemoPermanentContractGenerator = () => {
               <span className="inline-flex h-8 items-center rounded-md bg-blue-600 px-3 py-0 text-sm font-semibold leading-none text-white shadow-sm">
                 {steps[activeStep]}
               </span>
-              <span className="text-xs text-slate-500">Step {activeStep + 1} of {steps.length}</span>
             </div>
             <div className="space-y-4">
               {activeStep === 0 && (

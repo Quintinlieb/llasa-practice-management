@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -551,9 +551,19 @@ const gridColumns = [
 export default function CodeOfConductPreviewPage({
   embedded = false,
   onStepChange,
+  onStepMetaChange,
 }: {
   embedded?: boolean;
   onStepChange?: (step: string | null) => void;
+  onStepMetaChange?: (meta: {
+    steps: readonly string[];
+    activeStep: number;
+    icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
+    canGoNext?: boolean;
+    canGoBack?: boolean;
+    onNext?: () => void;
+    onBack?: () => void;
+  }) => void;
 }) {
   const { user, loading: authLoading } = useAuth();
   const [sections, setSections] = useState<OffenceSection[]>([]);
@@ -580,6 +590,16 @@ export default function CodeOfConductPreviewPage({
     if (!embedded) return;
     onStepChange?.(null);
   }, [embedded, onStepChange]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    onStepMetaChange?.({
+      steps: ["Code of Conduct"],
+      activeStep: 0,
+      canGoNext: false,
+      canGoBack: false,
+    });
+  }, [embedded, onStepMetaChange]);
 
   useLayoutEffect(() => {
     const updateOffset = () => {

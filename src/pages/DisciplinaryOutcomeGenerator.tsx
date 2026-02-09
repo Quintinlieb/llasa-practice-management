@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -147,7 +147,7 @@ const DisciplinaryOutcomeGenerator = ({
   onStepMetaChange?: (meta: {
     steps: readonly string[];
     activeStep: number;
-    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
+    icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;
@@ -280,7 +280,7 @@ const DisciplinaryOutcomeGenerator = ({
   }, [loading, navigate, user]);
 
   useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
+    if (hasDismissedEmployeeHint || activeStep !== 0) {
       setShowEmployeeHint(false);
       return;
     }
@@ -756,6 +756,18 @@ const DisciplinaryOutcomeGenerator = ({
     }
   };
 
+  const canAdvance = activeStep === steps.length - 1 ? isFormComplete : canGoNext;
+
+  const handleNextOrFinish = () => {
+    if (activeStep === steps.length - 1) {
+      if (isFormComplete) {
+        handleFinish();
+      }
+      return;
+    }
+    handleNext();
+  };
+
   const handleBack = () => {
     if (activeStep > 0) {
       setActiveStep((prev) => prev - 1);
@@ -768,12 +780,22 @@ const DisciplinaryOutcomeGenerator = ({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext,
+      canGoNext: canAdvance,
       canGoBack: activeStep > 0,
-      onNext: handleNext,
+      onNext: handleNextOrFinish,
       onBack: handleBack,
     });
-  }, [activeStep, embedded, onStepMetaChange, steps, stepIcons, canGoNext, handleNext, handleBack]);
+  }, [
+    activeStep,
+    embedded,
+    onStepMetaChange,
+    steps,
+    stepIcons,
+    canAdvance,
+    handleNextOrFinish,
+    handleBack,
+    isFormComplete,
+  ]);
 
   const validateData = () =>
     permanentContractSchema.parse({
@@ -1633,8 +1655,8 @@ const DisciplinaryOutcomeGenerator = ({
     <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-            <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
-              <div className="relative flex items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
+              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
                   aria-hidden="true"
@@ -1787,19 +1809,13 @@ const DisciplinaryOutcomeGenerator = ({
                   </div>
                 </CardHeader>
               )}
-          <CardContent
-            className={cn(
-              "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
-              !embedded && "flex-1 min-h-0 overflow-y-auto",
-            )}
-          >
-              {!embedded && (
-                <div className="flex items-center justify-start gap-3 mb-0 pl-3">
-                  <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">
-                    Step {activeStep + 1} of {steps.length}
-                  </span>
-                </div>
+            <CardContent
+              className={cn(
+                "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                embedded && "px-0",
+                !embedded && "flex-1 min-h-0 overflow-y-auto",
               )}
+            >
             <div className="space-y-4">
               {activeStep === 0 && (
                 <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
@@ -2540,20 +2556,22 @@ const DisciplinaryOutcomeGenerator = ({
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="flex-none relative">
-                      <Button
-                        type="button"
-                        onClick={handleFinish}
-                        disabled={!isFormComplete || isGenerating}
-                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                          isFormComplete && !isGenerating
-                            ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                            : "bg-primary hover:bg-primary/90 border border-primary/60"
-                        }`}
-                      >
-                        Finish
-                      </Button>
-                    </div>
+                    {!embedded && (
+                      <div className="flex-none relative">
+                        <Button
+                          type="button"
+                          onClick={handleFinish}
+                          disabled={!isFormComplete || isGenerating}
+                          className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
+                            isFormComplete && !isGenerating
+                              ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
+                              : "bg-primary hover:bg-primary/90 border border-primary/60"
+                          }`}
+                        >
+                          Finish
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   !embedded && (

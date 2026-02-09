@@ -27,7 +27,7 @@ type DocumentItem = {
 
 type DocumentCategory = {
   title: string;
-  icon: (props: SVGProps<SVGSVGElement>) => JSX.Element;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
   items: DocumentItem[];
 };
 
@@ -42,7 +42,7 @@ type DocumentComponentProps = {
   onStepMetaChange?: (meta: {
     steps: readonly string[];
     activeStep: number;
-    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
+    icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;
@@ -118,7 +118,7 @@ const Documents = () => {
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
-    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
+    icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;
@@ -206,7 +206,7 @@ const Documents = () => {
       <div className="space-y-0 -m-6">
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
-            <div className="pl-6 pr-1 pt-1">
+            <div className="pl-4 pr-4 pt-1">
               <div className="pt-0 pb-2">
                 <p className="text-[11px] text-slate-400 mb-4">{breadcrumbParts.join(" / ")}</p>
                 <h1 className="text-4xl font-normal text-blue-600">Documents</h1>
@@ -277,7 +277,7 @@ const Documents = () => {
             <section
               ref={contentScrollRef}
               data-documents-scroll
-              className="relative flex-1 overflow-y-auto overflow-x-hidden pl-6 pr-1"
+              className="relative flex-1 overflow-y-auto overflow-x-hidden pr-2"
             >
               {SelectedComponent ? (
                 <Suspense
@@ -287,67 +287,96 @@ const Documents = () => {
                     </div>
                   }
                 >
-                  <div className="space-y-4 mt-[25px]">
-                    {stepMeta?.steps?.length ? (
+                  <div className="space-y-2 mt-[25px] pl-4 pr-2">
+                    {stepMeta?.steps?.length && selectedDocument !== "codeOfConduct" ? (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-4">
-                          <button
-                            type="button"
-                            onClick={stepMeta.onBack}
-                            disabled={!stepMeta.onBack || !stepMeta.canGoBack}
-                            className="flex items-center gap-2 text-xs font-semibold text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed"
-                          >
-                            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                            Back
-                          </button>
-                          <div className="flex-1 flex items-center justify-center">
-                            <div className="flex items-center justify-center gap-8 w-full">
-                              {stepMeta.steps.map((step, index) => {
-                                const isFinalizedCurrent = false;
-                                const isDone = index < stepMeta.activeStep || isFinalizedCurrent;
-                                const isActive = index === stepMeta.activeStep && !isFinalizedCurrent;
-                                const Icon = stepMeta.icons?.[index];
-                                const circleClasses = isDone
-                                  ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
-                                  : isActive
-                                    ? "border-blue-300 text-blue-700 bg-blue-100"
-                                    : "border-slate-200 text-slate-500 bg-white";
-                                return (
-                                  <div key={step} className="flex items-center gap-4">
-                                    <div className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}>
-                                      {Icon ? <Icon className="h-5 w-5" /> : <span className="text-xs font-semibold">{index + 1}</span>}
+                        <div className="flex items-start">
+                          <div className="w-[140px] flex justify-start ml-[300px]">
+                            {stepMeta.onBack ? (
+                              <button
+                                type="button"
+                                onClick={stepMeta.onBack}
+                                disabled={!stepMeta.canGoBack}
+                                className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:underline disabled:text-slate-300 disabled:cursor-not-allowed"
+                              >
+                                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                                Previous step
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="flex-1">
+                            <div className="space-y-3">
+                              <div className="relative px-3">
+                                <div className="absolute left-[96px] right-[96px] top-1/2 h-[2px] -translate-y-1/2 bg-blue-200">
+                                  <div
+                                    className="absolute left-0 top-0 h-full bg-blue-600 transition-[width]"
+                                    style={{
+                                      width:
+                                        stepMeta.steps.length > 1
+                                          ? `${(stepMeta.activeStep / (stepMeta.steps.length - 1)) * 100}%`
+                                          : "0%",
+                                    }}
+                                  />
+                                </div>
+                                <div
+                                  className="grid items-center"
+                                  style={{
+                                    gridTemplateColumns: `repeat(${stepMeta.steps.length}, minmax(0, 1fr))`,
+                                  }}
+                                >
+                                  {stepMeta.steps.map((step, index) => {
+                                    const isDone = index <= stepMeta.activeStep;
+                                    return (
+                                      <div key={step} className="relative z-10 flex h-6 w-6 items-center justify-center justify-self-center rounded-full">
+                                        <span
+                                          className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                                            isDone ? "border-blue-600 bg-blue-600" : "border-blue-200 bg-white"
+                                          }`}
+                                        >
+                                          {isDone ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div
+                                className="grid px-3"
+                                style={{
+                                  gridTemplateColumns: `repeat(${stepMeta.steps.length}, minmax(0, 1fr))`,
+                                }}
+                              >
+                                {stepMeta.steps.map((step, index) => {
+                                  const Icon = stepMeta.icons?.[index];
+                                  const isActive = index === stepMeta.activeStep;
+                                  const isDone = index <= stepMeta.activeStep;
+                                  return (
+                                    <div key={step} className="flex flex-col items-center gap-1 text-center">
+                                      {Icon ? (
+                                        <Icon className={`h-4 w-4 ${isDone ? "text-blue-600" : "text-slate-400"}`} />
+                                      ) : null}
+                                      <span className={`text-[11px] font-medium ${isDone ? "text-blue-600" : "text-slate-500"}`}>
+                                        {step}
+                                      </span>
                                     </div>
-                                    {index < stepMeta.steps.length - 1 && (
-                                      <div
-                                        className={`h-px w-16 ${
-                                          index < stepMeta.activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
-                                        }`}
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={stepMeta.onNext}
-                            disabled={
-                              !stepMeta.onNext ||
-                              !stepMeta.canGoNext ||
-                              stepMeta.activeStep >= stepMeta.steps.length - 1
-                            }
-                            className="flex items-center gap-2 text-xs font-semibold text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed"
-                          >
-                            Next
-                            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-start gap-3 pl-3">
-                          <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">
-                            Step {stepMeta.activeStep + 1} of {stepMeta.steps.length}
-                          </span>
+                          <div className="w-[140px] flex justify-end mr-[300px]">
+                            {stepMeta.onNext ? (
+                              <button
+                                type="button"
+                                onClick={stepMeta.onNext}
+                                disabled={!stepMeta.canGoNext}
+                                className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:underline disabled:text-slate-300 disabled:cursor-not-allowed"
+                              >
+                                {stepMeta.activeStep >= stepMeta.steps.length - 1 ? "Finish" : "Next step"}
+                                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
                     ) : null}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, type SVGProps } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type ComponentType, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -168,7 +168,7 @@ const WarningGenerator = ({
   onStepMetaChange?: (meta: {
     steps: readonly string[];
     activeStep: number;
-    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
+    icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;
@@ -1173,6 +1173,18 @@ const WarningGenerator = ({
     setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
   };
 
+  const canAdvance = activeStep === steps.length - 1 ? isWarningStepComplete : canGoNext;
+
+  const handleNextOrFinish = () => {
+    if (activeStep === steps.length - 1) {
+      if (isWarningStepComplete) {
+        handleFinish();
+      }
+      return;
+    }
+    handleNext();
+  };
+
   const handleBack = () => {
     if (showFinalActions) {
       setShowFinalActions(false);
@@ -1188,12 +1200,22 @@ const WarningGenerator = ({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext,
+      canGoNext: canAdvance,
       canGoBack: activeStep > 0,
-      onNext: handleNext,
+      onNext: handleNextOrFinish,
       onBack: handleBack,
     });
-  }, [activeStep, embedded, onStepMetaChange, steps, stepIcons, canGoNext, handleNext, handleBack]);
+  }, [
+    activeStep,
+    embedded,
+    onStepMetaChange,
+    steps,
+    stepIcons,
+    canAdvance,
+    handleNextOrFinish,
+    handleBack,
+    isWarningStepComplete,
+  ]);
 
   const handleFinish = () => {
     if (!isFormValid()) {
@@ -1398,8 +1420,8 @@ const WarningGenerator = ({
       <style>{pulseShadowStyles}</style>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-            <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
-              <div className="relative flex items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
+              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
                   aria-hidden="true"
@@ -1552,17 +1574,11 @@ const WarningGenerator = ({
                   <CardContent
                     className={cn(
                       "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                      embedded && "px-0",
                       !embedded && "flex-1 min-h-0 overflow-y-auto",
                     )}
                   >
                     <form onSubmit={handleSubmit} className="space-y-4">
-                      {!embedded && (
-                        <div className="flex items-center justify-start gap-3 mb-0 pl-3">
-                          <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">
-                            Step {activeStep + 1} of {steps.length}
-                          </span>
-                        </div>
-                      )}
 
                       <div className="space-y-4">
                 {activeStep === 0 && (
@@ -1972,20 +1988,22 @@ const WarningGenerator = ({
                           Reset form
                         </Button>
                       </div>
-                      <div className="flex-none relative">
-                        <Button
-                          type="button"
-                          onClick={handleFinish}
-                          disabled={!isWarningStepComplete || isLoading}
-                          className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                            isWarningStepComplete && !isLoading
-                              ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                              : "bg-primary hover:bg-primary/90 border border-primary/60"
-                          }`}
-                        >
-                          Finish
-                        </Button>
-                      </div>
+                      {!embedded && (
+                        <div className="flex-none relative">
+                          <Button
+                            type="button"
+                            onClick={handleFinish}
+                            disabled={!isWarningStepComplete || isLoading}
+                            className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
+                              isWarningStepComplete && !isLoading
+                                ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
+                                : "bg-primary hover:bg-primary/90 border border-primary/60"
+                            }`}
+                          >
+                            Finish
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     !embedded && (

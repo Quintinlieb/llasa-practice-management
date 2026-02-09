@@ -1001,10 +1001,12 @@ export default function CodeOfConductPreviewPage({ embedded = false }: { embedde
         )}
       >
         <div className="space-y-4">
-          <p className="text-xs font-semibold text-slate-700">
-            Documents / Discipline /{" "}
-            <span className="text-blue-700 underline underline-offset-4">Code of Conduct</span>
-          </p>
+          {!embedded && (
+            <p className="text-xs font-semibold text-slate-700">
+              Documents / Discipline /{" "}
+              <span className="text-blue-700 underline underline-offset-4">Code of Conduct</span>
+            </p>
+          )}
           <div className="rounded-sm border border-slate-300 bg-white shadow-sm">
             <div className="p-4 sm:p-6 space-y-4 print:max-h-none print:overflow-visible">
             <Tabs

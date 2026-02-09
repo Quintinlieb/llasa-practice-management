@@ -1639,27 +1639,40 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
         <div
           ref={contentRootRef}
           className={cn(
-            "relative space-y-6",
-            embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+            "relative",
+            embedded ? "px-0 pt-4 pr-1 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
           )}
           style={{ scrollbarGutter: "stable" }}
         >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-slate-700">
-              Documents / Contracts /{" "}
-              <span className="text-blue-700 underline underline-offset-4">
-                Disciplinary Outcome
-              </span>{" "}
-              <span className="text-slate-700">
-                ({steps[activeStep]})
-              </span>
-            </p>
-          </div>
-        </div>
+          <div
+            className={cn(
+              "flex min-h-0 flex-col gap-6",
+              embedded
+                ? ""
+                : "h-[calc(100dvh-var(--app-header-height,5rem)-3rem)] overflow-hidden",
+            )}
+          >
+            {!embedded && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Documents / Contracts /{" "}
+                    <span className="text-blue-700 underline underline-offset-4">
+                      Disciplinary Outcome
+                    </span>{" "}
+                    <span className="text-slate-700">({steps[activeStep]})</span>
+                  </p>
+                </div>
+              </div>
+            )}
 
-        {!showFinalActions ? (
-          <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            {!showFinalActions ? (
+              <Card
+                className={cn(
+                  "flex-1 rounded-sm -mt-3 shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                  !embedded && "flex min-h-0 flex-col",
+                )}
+              >
             <CardHeader className="pb-2">
               <div className="flex items-center justify-center gap-8 w-full">
                 {steps.map((step, index) => {
@@ -1733,9 +1746,14 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
                 })}
               </div>
             </CardHeader>
-          <CardContent className="pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
-            <div className="flex items-center justify-start gap-3 mb-2">
-              <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+          <CardContent
+            className={cn(
+              "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+              !embedded && "flex-1 min-h-0 overflow-y-auto",
+            )}
+          >
+            <div className="flex items-center justify-start gap-3 mb-0 pl-3">
+              <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
             </div>
             <div className="space-y-4">
               {activeStep === 0 && (
@@ -2526,9 +2544,19 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
           </CardContent>
           </Card>
           ) : (
-            <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <Card
+              className={cn(
+                "flex-1 rounded-sm -mt-3 shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                !embedded && "flex min-h-0 flex-col",
+              )}
+            >
               <CardHeader className="pt-4 pb-0" />
-              <CardContent className="space-y-6 pt-2">
+              <CardContent
+                className={cn(
+                  "space-y-6 pt-2",
+                  !embedded && "flex-1 min-h-0 overflow-y-auto",
+                )}
+              >
                 <div className="flex flex-col items-center gap-3">
                   <div
                     className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
@@ -2624,6 +2652,7 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
             </div>
           )}
         </div>
+      </div>
 
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl h-[90vh] p-0">

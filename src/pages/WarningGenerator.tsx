@@ -1412,19 +1412,19 @@ const WarningGenerator = ({ embedded = false }: { embedded?: boolean }) => {
           )}
           style={{ scrollbarGutter: "stable" }}
         >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-slate-700">
-              Documents / Discipline /{" "}
-              <span className="text-blue-700 underline underline-offset-4">
-                Warning Form
-              </span>{" "}
-              <span className="text-slate-700">
-                ({steps[activeStep]})
-              </span>
-            </p>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-slate-700">
+                Documents / Discipline /{" "}
+                <span className="text-blue-700 underline underline-offset-4">
+                  Warning Form
+                </span>{" "}
+                <span className="text-slate-700">({steps[activeStep]})</span>
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
           <CardHeader className="pb-2">

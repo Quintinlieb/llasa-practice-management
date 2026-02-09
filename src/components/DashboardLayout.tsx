@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -9,6 +9,9 @@ import { Icon } from "@iconify/react";
 
 interface DashboardLayoutProps {
   children: ReactNode;
+  headerTitle?: string;
+  headerDescription?: string;
+  profileSubtitleMode?: "email" | "company";
 }
 
 interface Profile {
@@ -41,8 +44,14 @@ const getStoredProfile = (): Profile | null => {
   }
 };
 
-export default function DashboardLayout({ children }: DashboardLayoutProps) {
+export default function DashboardLayout({
+  children,
+  headerTitle,
+  headerDescription,
+  profileSubtitleMode = "email",
+}: DashboardLayoutProps) {
   const { user } = useAuth();
+  const headerRef = useRef<HTMLElement | null>(null);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED) === "1";
@@ -69,6 +78,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     if (!profile?.user_name || !profile?.user_surname) return "U";
     return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
   }, [profile]);
+  const companyDisplay = [companyName, companyType].filter(Boolean).join(" ");
 
   useEffect(() => {
     if (!user?.id) return;
@@ -91,6 +101,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       // ignore storage errors
     }
   }, [isCollapsed]);
+
+  useLayoutEffect(() => {
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
+
+    const setHeaderHeight = () => {
+      const height = headerEl.offsetHeight;
+      document.documentElement.style.setProperty("--app-header-height", `${height}px`);
+    };
+
+    setHeaderHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", setHeaderHeight);
+      return () => window.removeEventListener("resize", setHeaderHeight);
+    }
+
+    const observer = new ResizeObserver(() => setHeaderHeight());
+    observer.observe(headerEl);
+    return () => observer.disconnect();
+  }, []);
+
 
 
   useEffect(() => {
@@ -161,47 +193,55 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         />
         <div className="flex flex-1 min-h-screen flex-col bg-transparent">
           <header
+            ref={headerRef}
             className="fixed top-0 z-40 bg-transparent transition-[left] duration-200 ease-linear"
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
-            <div className="relative w-full bg-white pl-1 pr-6 py-3 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-3">
+            <div className="relative w-full bg-white pl-1 pr-6 py-1 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setIsCollapsed((prev) => !prev)}
-                  className="h-12 w-12 text-slate-700 hover:text-blue-600"
+                  className="h-9 w-9 text-slate-700 hover:text-blue-600"
                 >
                   <Icon
                     icon="material-symbols:menu-open-sharp"
-                    width={28}
-                    height={28}
+                    width={22}
+                    height={22}
                     className={isCollapsed ? "rotate-180" : undefined}
                   />
                   <span className="sr-only">Toggle sidebar</span>
                 </button>
-                {companyName && (
-                  <h1 className="text-xl font-semibold">
-                    {companyName}
-                    {companyType ? ` ${companyType}` : ""}
-                  </h1>
+                {headerTitle ? (
+                  <div className="flex flex-col gap-1">
+                    <h1 className="text-xl font-semibold text-slate-900">{headerTitle}</h1>
+                    {headerDescription && (
+                      <p className="text-xs text-slate-600">{headerDescription}</p>
+                    )}
+                  </div>
+                ) : (
+                  companyName && (
+                    <h1 className="text-sm font-semibold -ml-1">
+                      {companyName}
+                      {companyType ? ` ${companyType}` : ""}
+                    </h1>
+                  )
                 )}
               </div>
               {profile && (
                 <div className="flex items-center gap-3">
                   <span className="h-10 w-px bg-slate-200 self-center" aria-hidden="true" />
                   <div className="flex flex-col items-end text-right leading-tight">
-                    <span className="text-sm font-medium text-slate-700">
-                      Welcome, {profile.user_name} {profile.user_surname}
+                    <span className="text-xs font-medium text-slate-700">
+                      Hi, {profile.user_name} {profile.user_surname}
                     </span>
-                    <span className="mt-1 h-px w-12 bg-slate-200" aria-hidden="true" />
-                    <span className="text-[11px] text-blue-600">{profile.user_email}</span>
                   </div>
                 </div>
               )}
             </div>
           </header>
 
-          <div className="flex-1 min-w-0 flex flex-col bg-transparent pt-20">
+          <div className="flex-1 min-w-0 flex flex-col bg-transparent pt-[var(--app-header-height,5rem)]">
             <main className="flex-1 w-full p-6">{children}</main>
           </div>
         </div>

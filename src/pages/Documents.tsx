@@ -164,90 +164,81 @@ const Documents = () => {
   const greetingName = [profile?.user_name, profile?.user_surname].filter(Boolean).join(" ");
 
   return (
-    <DashboardLayout>
-      <div className="space-y-3 -ml-6 -mr-6 pl-3 pr-3 -mt-3">
-        <header className="rounded-sm px-5 py-4 space-y-1 bg-white border border-slate-300">
-          <h1 className="text-xl font-bold uppercase text-blue-700">Generate HR Documents</h1>
-          <p className="text-xs text-gray-600 max-w-3xl">
-            One hub for your HR paperwork. Generate the documents you need instantly.
-          </p>
-        </header>
-
-        <div className="rounded-sm border border-slate-300 bg-white/55 shadow-sm min-h-[70vh] pb-0">
-          <div className="grid h-[74vh] gap-3 lg:grid-cols-[180px_1fr] items-stretch">
-            <aside className="h-full border-b border-slate-200 bg-[#2D4256] text-white lg:border-b-0 lg:border-r lg:border-slate-200 rounded-l-sm">
-              <div className="flex flex-col">
-                {documentCategories.map((category, index) => {
-                  const isOpen = openCategory === category.title;
-                  const isActive = activeCategoryTitle === category.title;
-                  const CategoryIcon = category.icon;
-                  return (
-                    <div key={category.title} className="flex flex-col">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenCategory((prev) => (prev === category.title ? "" : category.title))
-                        }
-                        className={cn(
-                          "group flex h-[42px] w-full items-center gap-3 rounded-none border-b border-white/10 px-4 py-0 text-left text-xs leading-none transition-all duration-150",
-                          "hover:bg-[#010D1A] hover:text-white",
-                          index === 0 && "rounded-tl-sm",
-                          (isOpen || isActive) && "bg-[#010D1A] text-white",
-                          isActive && "border-b-2 border-blue-500",
-                        )}
-                      >
-                        <CategoryIcon className="h-4 w-4 text-white" />
-                        <span className="flex flex-1 items-center justify-between gap-2">
-                          <span className="text-xs font-normal text-white">
-                            {category.title}
-                          </span>
-                          <ChevronDownIcon
-                            className={cn(
-                              "h-3.5 w-3.5 text-white transition-transform duration-150",
-                              isOpen && "rotate-180",
-                            )}
-                          />
-                        </span>
-                      </button>
-                      {isOpen && (
-                        <div className="border-b border-white/10 bg-[#233549] px-2 py-2">
-                          <div className="flex flex-col gap-1">
-                            {category.items.map((item) =>
-                              item.active && item.id ? (
-                                <button
-                                  key={item.label}
-                                  type="button"
-                                  onClick={() => setSelectedDocument(item.id!)}
-                                  className={cn(
-                                    "w-full rounded-none border-l-2 border-transparent px-2 py-2 text-left text-[11px]",
-                                    "text-white/80 hover:text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-0",
-                                    selectedDocument === item.id && "bg-white/10 text-white border-blue-500",
-                                  )}
-                                >
-                                  {item.label}
-                                </button>
-                              ) : (
-                                <div
-                                  key={item.label}
-                                  className="w-full rounded-none px-2 py-2 text-left text-[11px] text-white/40"
-                                >
-                                  {item.label}
-                                </div>
-                              ),
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+    <DashboardLayout profileSubtitleMode="company">
+      <div className="space-y-0 -m-6">
+        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
+          <div className="flex h-full flex-col">
+            <div className="pl-4 pr-1 pt-4">
+              <div className="pb-1">
+                <h1 className="text-3xl font-normal text-slate-900">Documents</h1>
               </div>
-            </aside>
+              <div className="border-b border-slate-300 bg-white shadow-sm mt-2">
+                <div className="relative flex flex-wrap items-center gap-0 px-0 py-0">
+                  {documentCategories.map((category, index) => {
+                    const isSelectedCategory = activeCategoryTitle === category.title;
+                    const hasItems = category.items.length > 0;
+                    return (
+                      <div
+                        key={category.title}
+                        className="relative"
+                        onMouseEnter={() => setOpenCategory(category.title)}
+                        onMouseLeave={() => setOpenCategory("")}
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "h-[38px] min-w-[140px] rounded-none border-b-0 border-transparent px-3 text-xs font-medium transition-all duration-150",
+                            isSelectedCategory
+                              ? "bg-white text-black border-b-2 border-blue-500 font-semibold"
+                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 hover:border-b-0 hover:border-transparent",
+                          )}
+                        >
+                          <span className="flex w-full items-center justify-between gap-2">
+                            <span className="text-[11px]">{category.title}</span>
+                            <ChevronDownIcon className="h-3.5 w-3.5 text-slate-400" />
+                          </span>
+                        </button>
+                        {openCategory === category.title && hasItems && (
+                          <div className="absolute left-0 top-full z-30 min-w-[180px] border border-slate-200 bg-white">
+                            <div className="flex flex-col">
+                              {category.items.map((item) =>
+                                item.active && item.id ? (
+                                  <button
+                                    key={item.label}
+                                    type="button"
+                                    onClick={() => setSelectedDocument(item.id!)}
+                                    className={cn(
+                                      "w-full rounded-none border-b-2 border-transparent px-3 py-2 text-left text-[11px] transition-all duration-150",
+                                      "text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-0",
+                                      selectedDocument === item.id &&
+                                        "bg-white text-black border-b-0 border-transparent font-semibold",
+                                    )}
+                                  >
+                                    {item.label}
+                                  </button>
+                                ) : (
+                                  <div
+                                    key={item.label}
+                                    className="w-full rounded-none px-3 py-2 text-left text-[11px] text-slate-400"
+                                  >
+                                    {item.label}
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             <section
               ref={contentScrollRef}
               data-documents-scroll
-              className="relative h-full overflow-y-auto overflow-x-hidden"
+              className="relative flex-1 overflow-y-auto overflow-x-hidden pl-4 pr-1"
             >
               {SelectedComponent ? (
                 <Suspense

@@ -152,6 +152,7 @@ const DisciplinaryOutcomeGenerator = ({
     canGoBack?: boolean;
     onNext?: () => void;
     onBack?: () => void;
+    isFinished?: boolean;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -769,6 +770,10 @@ const DisciplinaryOutcomeGenerator = ({
   };
 
   const handleBack = () => {
+    if (showFinalActions) {
+      setShowFinalActions(false);
+      return;
+    }
     if (activeStep > 0) {
       setActiveStep((prev) => prev - 1);
     }
@@ -781,9 +786,10 @@ const DisciplinaryOutcomeGenerator = ({
       activeStep,
       icons: stepIcons,
       canGoNext: canAdvance,
-      canGoBack: activeStep > 0,
+      canGoBack: showFinalActions || activeStep > 0,
       onNext: handleNextOrFinish,
       onBack: handleBack,
+      isFinished: showFinalActions,
     });
   }, [
     activeStep,
@@ -795,6 +801,7 @@ const DisciplinaryOutcomeGenerator = ({
     handleNextOrFinish,
     handleBack,
     isFormComplete,
+    showFinalActions,
   ]);
 
   const validateData = () =>
@@ -2686,16 +2693,6 @@ const DisciplinaryOutcomeGenerator = ({
                     </div>
 
                 <div className="flex w-full items-center gap-2">
-                  <div className="flex-none">
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowFinalActions(false)}
-                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                    >
-                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                      Back to form
-                    </Button>
-                  </div>
                   <div className="flex-1" />
                   <div className="flex-none opacity-0 pointer-events-none">
                     <Button variant="outline" className="gap-2 border-transparent">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -161,9 +161,19 @@ const extractErrorMessage = (error: unknown): string => {
 const WarningGenerator = ({
   embedded = false,
   onStepChange,
+  onStepMetaChange,
 }: {
   embedded?: boolean;
   onStepChange?: (step: string | null) => void;
+  onStepMetaChange?: (meta: {
+    steps: readonly string[];
+    activeStep: number;
+    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    canGoNext?: boolean;
+    canGoBack?: boolean;
+    onNext?: () => void;
+    onBack?: () => void;
+  }) => void;
 }) => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -248,6 +258,7 @@ const WarningGenerator = ({
     if (!embedded) return;
     onStepChange?.(steps[activeStep] ?? null);
   }, [activeStep, embedded, onStepChange, steps]);
+
 
   useEffect(() => {
     if (formData.misconductTypes.length === 0) {
@@ -1171,6 +1182,19 @@ const WarningGenerator = ({
     setActiveStep((prev) => Math.max(prev - 1, 0));
   };
 
+  useEffect(() => {
+    if (!embedded) return;
+    onStepMetaChange?.({
+      steps,
+      activeStep,
+      icons: stepIcons,
+      canGoNext,
+      canGoBack: activeStep > 0,
+      onNext: handleNext,
+      onBack: handleBack,
+    });
+  }, [activeStep, embedded, onStepMetaChange, steps, stepIcons, canGoNext, handleNext, handleBack]);
+
   const handleFinish = () => {
     if (!isFormValid()) {
       toast({
@@ -1416,173 +1440,135 @@ const WarningGenerator = ({
             document.body,
           )
         : null}
-        <div
-          className={cn(
-            "space-y-6",
-            embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
-          )}
-          style={{ scrollbarGutter: "stable" }}
-        >
-        {!embedded && (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-slate-700">
-                Documents / Discipline /{" "}
-                <span className="text-blue-700 underline underline-offset-4">
-                  Warning Form
-                </span>{" "}
-                <span className="text-slate-700">({steps[activeStep]})</span>
-              </p>
-            </div>
-          </div>
-        )}
+          <div
+            className={cn(
+              "relative",
+              embedded ? "px-0 pt-4 pr-1 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+            )}
+            style={{ scrollbarGutter: "stable" }}
+          >
+            <div
+              className={cn(
+                "flex min-h-0 flex-col gap-6",
+                embedded ? "" : "h-[calc(100dvh-var(--app-header-height,5rem)-3rem)] overflow-hidden",
+              )}
+            >
+              {!embedded && (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-slate-700">
+                      Documents / Discipline /{" "}
+                      <span className="text-blue-700 underline underline-offset-4">
+                        Warning Form
+                      </span>{" "}
+                      <span className="text-slate-700">({steps[activeStep]})</span>
+                    </p>
+                  </div>
+                </div>
+              )}
 
-        <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-center gap-8 w-full">
-              {steps.map((label, index) => {
-                const Icon = stepIcons[index];
-                const isDone = index < activeStep || isFinalizedCurrent;
-                const isActive = index === activeStep && !isFinalizedCurrent;
-                const canClick = isFinalizedCurrent || index < activeStep;
-                  return (
-                  <div key={label} className="flex items-center gap-4">
-                    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={!canClick}
-                            aria-label={label}
-                            onClick={() => {
-                              setShowFinalActions(false);
-                              if (canClick) setActiveStep(index);
-                            }}
-                            className={`flex flex-col items-start gap-1 transition ${
-                              canClick
-                                ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
-                                : "cursor-default"
-                            }`}
-                          >
-                      <span
-                        className={`flex h-11 w-11 items-center justify-center rounded-full border ${
-                          isDone
+                {!showFinalActions ? (
+                <div className="translate-y-[-10px]">
+                  <Card
+                    className={cn(
+                      "flex-1 rounded-sm shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                      !embedded && "flex min-h-0 flex-col",
+                    )}
+                  >
+                    {!embedded && (
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-center gap-8 w-full">
+                        {steps.map((label, index) => {
+                          const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
+                          const isDone = index < activeStep || isFinalizedCurrent;
+                          const isActive = index === activeStep && !isFinalizedCurrent;
+                          const Icon = stepIcons[index];
+                          const circleClasses = isDone
                             ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
                             : isActive
                               ? "border-blue-300 text-blue-700 bg-blue-100"
-                              : "border-slate-200 text-slate-500 bg-white"
-                        }`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </span>
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" align="center" className="text-xs">
-                          {label}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    {index < steps.length - 1 ? (
-                    <div
-                      className={`h-px w-16 ${
-                        index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
-                      }`}
-                    />
-                    ) : null}
-                  </div>
-                );
-                })}
-            </div>
-          </CardHeader>
+                              : "border-slate-200 text-slate-500 bg-white";
+                          const canClick = showFinalActions || index < activeStep;
+                          const handleClick = () => {
+                            if (showFinalActions) {
+                              setShowFinalActions(false);
+                              setActiveStep(index);
+                            } else if (index < activeStep) {
+                              setActiveStep(index);
+                            }
+                          };
 
-          {showFinalActions ? (
-            <CardContent className="space-y-6 pt-2">
-              <div className="flex flex-col items-center gap-4">
-                <div
-                  className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200 shadow-inner"
-                  style={{
-                    width: `${snippetContainerWidthMm}mm`,
-                    height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
-                  }}
-                >
-                  <div className="relative h-full w-full overflow-hidden">
-                    <div
-                      className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
-                      style={{
-                        width: "210mm",
-                        height: `${snippetVisibleHeightMm}mm`,
-                        overflow: "hidden",
-                        marginTop: `${snippetPaddingTopMm}mm`,
-                        transform: `translateX(-50%) scale(${snippetScale})`,
-                        transformOrigin: "top center",
-                      }}
-                    >
-                      <div style={{ height: "297mm", overflow: "hidden" }}>{renderPreviewPage()}</div>
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="flex items-center justify-center gap-3">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={handlePreview}
-                          disabled={isLoading}
-                          aria-label="Preview"
-                          className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileText />
-                            <span className="text-sm font-semibold">Preview</span>
-                          </div>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={handleDownload}
-                          disabled={isLoading}
-                          aria-label="Download PDF"
-                          className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Download />
-                            <span className="text-sm font-semibold">Download</span>
-                          </div>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex w-full items-center gap-2">
-                  <div className="flex-none">
-                    <Button
-                      variant="outline"
-                      onClick={handleBack}
-                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                    >
-                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                      Back to form
-                    </Button>
-                  </div>
-                  <div className="flex-1" />
-                  <div className="flex-none opacity-0 pointer-events-none">
-                    <Button variant="outline" className="gap-2 border-transparent">
-                      Placeholder
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          ) : (
-            <CardContent className="pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
-              <form onSubmit={handleSubmit} className="space-y-2">
-              <div className="flex items-center justify-start gap-3 mb-0">
-                <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
-              </div>
+                          return (
+                            <div key={label} className="flex items-center gap-4">
+                              <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      disabled={!canClick}
+                                      aria-label={label}
+                                      onClick={canClick ? handleClick : undefined}
+                                      onKeyDown={
+                                        canClick
+                                          ? (e) => {
+                                              if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                handleClick();
+                                              }
+                                            }
+                                          : undefined
+                                      }
+                                      className={`flex flex-col items-start gap-1 transition ${
+                                        canClick
+                                          ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                          : "cursor-default"
+                                      }`}
+                                    >
+                                      <div className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}>
+                                        <Icon className="h-5 w-5" />
+                                      </div>
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" align="center" className="text-xs">
+                                    {label}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                              {index < steps.length - 1 && (
+                                <div
+                                  className={`h-px w-16 ${
+                                    index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                        </div>
+                      </CardHeader>
+                    )}
 
-              <div className="space-y-2">
-              {activeStep === 0 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
+                  <CardContent
+                    className={cn(
+                      "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                      !embedded && "flex-1 min-h-0 overflow-y-auto",
+                    )}
+                  >
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      {!embedded && (
+                        <div className="flex items-center justify-start gap-3 mb-0 pl-3">
+                          <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">
+                            Step {activeStep + 1} of {steps.length}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                {activeStep === 0 && (
+                  <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
                       <Label htmlFor="companyName">Company name</Label>
                       <Input
                         id="companyName"
@@ -1958,85 +1944,182 @@ const WarningGenerator = ({
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                {activeStep === steps.length - 1 ? (
-                  <div className="flex w-full items-center gap-3 flex-wrap justify-between">
-                    <div className="flex-none">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleBack}
-                        className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        Back
-                      </Button>
-                    </div>
-                    <div className="flex-1 flex justify-center">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={handleResetWarningStep}
-                        disabled={isLoading}
-                        className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        Reset form
-                      </Button>
-                    </div>
-                    <div className="flex-none relative">
-                      <Button
-                        type="button"
-                        onClick={handleFinish}
-                        disabled={!isWarningStepComplete || isLoading}
-                        className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                          isWarningStepComplete && !isLoading
-                            ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                            : "bg-primary hover:bg-primary/90 border border-primary/60"
-                        }`}
-                      >
-                        Finish
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex w-full items-center justify-between gap-2 flex-wrap">
-                    <div className="flex-none">
-                      {activeStep > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  {activeStep === steps.length - 1 ? (
+                    <div className="flex w-full items-center gap-3 flex-wrap justify-between">
+                      {!embedded && (
+                        <div className="flex-none">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleBack}
+                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Back
+                          </Button>
+                        </div>
+                      )}
+                      <div className="flex-1 flex justify-center">
                         <Button
                           type="button"
-                          variant="outline"
-                          onClick={handleBack}
-                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                          variant="ghost"
+                          onClick={handleResetWarningStep}
+                          disabled={isLoading}
+                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                         >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
+                          <RotateCcw className="h-4 w-4" />
+                          Reset form
                         </Button>
-                      )}
-                    </div>
-                    <div className="flex-1" />
-                    <div className="flex-none">
-                      {activeStep < steps.length - 1 && (
+                      </div>
+                      <div className="flex-none relative">
                         <Button
                           type="button"
-                          onClick={handleNext}
-                          disabled={!canGoNext}
-                          className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                          onClick={handleFinish}
+                          disabled={!isWarningStepComplete || isLoading}
+                          className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
+                            isWarningStepComplete && !isLoading
+                              ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
+                              : "bg-primary hover:bg-primary/90 border border-primary/60"
+                          }`}
                         >
-                          Next
-                          <ArrowRight className="h-4 w-4" />
+                          Finish
                         </Button>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-              </div>
-              </form>
-            </CardContent>
-          )}
-        </Card>
-      </div>
+                  ) : (
+                    !embedded && (
+                      <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                        <div className="flex-none">
+                          {activeStep > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleBack}
+                              className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                            >
+                              <ArrowLeft className="h-4 w-4" />
+                              Back
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex-1" />
+                        <div className="flex-none">
+                          {activeStep < steps.length - 1 && (
+                            <Button
+                              type="button"
+                              onClick={handleNext}
+                              disabled={!canGoNext}
+                              className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              Next
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+                    </div>
+                    </form>
+                  </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="translate-y-[-10px]">
+                  <Card
+                    className={cn(
+                      "flex-1 rounded-sm shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                      !embedded && "flex min-h-0 flex-col",
+                    )}
+                  >
+                  <CardHeader className="pt-4 pb-0" />
+                  <CardContent
+                    className={cn(
+                      "space-y-6 pt-2",
+                      !embedded && "flex-1 min-h-0 overflow-y-auto",
+                    )}
+                  >
+                    <div className="flex flex-col items-center gap-4">
+                      <div
+                        className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
+                        style={{
+                          width: `${snippetContainerWidthMm}mm`,
+                          height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
+                        }}
+                      >
+                        <div className="relative h-full w-full overflow-hidden">
+                          <div
+                            className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
+                            style={{
+                              width: "210mm",
+                              height: `${snippetVisibleHeightMm}mm`,
+                              overflow: "hidden",
+                              marginTop: `${snippetPaddingTopMm}mm`,
+                              transform: `translateX(-50%) scale(${snippetScale})`,
+                              transformOrigin: "top center",
+                            }}
+                          >
+                            <div style={{ height: "297mm", overflow: "hidden" }}>{renderPreviewPage()}</div>
+                          </div>
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handlePreview}
+                                disabled={isLoading}
+                                aria-label="Preview"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <FileText />
+                                  <span className="text-sm font-semibold">Preview</span>
+                                </div>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={handleDownload}
+                                disabled={isLoading}
+                                aria-label="Download PDF"
+                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Download />
+                                  <span className="text-sm font-semibold">Download</span>
+                                </div>
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex w-full items-center gap-2">
+                        <div className="flex-none">
+                          <Button
+                            variant="outline"
+                            onClick={handleBack}
+                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                          >
+                            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                            Back to form
+                          </Button>
+                        </div>
+                        <div className="flex-1" />
+                        <div className="flex-none opacity-0 pointer-events-none">
+                          <Button variant="outline" className="gap-2 border-transparent">
+                            Placeholder
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+          </div>
 
         {/* Preview Dialog */}
         <Dialog open={showPreview} onOpenChange={setShowPreview}>

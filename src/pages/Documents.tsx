@@ -9,7 +9,7 @@ import {
   BellAlertIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { Gavel } from "lucide-react";
+import { ArrowLeft, ArrowRight, Gavel } from "lucide-react";
 
 type DocumentKey =
   | "codeOfConduct"
@@ -39,6 +39,15 @@ type StoredProfile = {
 type DocumentComponentProps = {
   embedded?: boolean;
   onStepChange?: (step: string | null) => void;
+  onStepMetaChange?: (meta: {
+    steps: readonly string[];
+    activeStep: number;
+    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    canGoNext?: boolean;
+    canGoBack?: boolean;
+    onNext?: () => void;
+    onBack?: () => void;
+  }) => void;
 };
 
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
@@ -106,6 +115,15 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
+  const [stepMeta, setStepMeta] = useState<{
+    steps: readonly string[];
+    activeStep: number;
+    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    canGoNext?: boolean;
+    canGoBack?: boolean;
+    onNext?: () => void;
+    onBack?: () => void;
+  } | null>(null);
 
   useEffect(() => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
@@ -269,7 +287,76 @@ const Documents = () => {
                     </div>
                   }
                 >
-                  <SelectedComponent embedded onStepChange={setBreadcrumbStep} />
+                  <div className="space-y-4 mt-[25px]">
+                    {stepMeta?.steps?.length ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={stepMeta.onBack}
+                            disabled={!stepMeta.onBack || !stepMeta.canGoBack}
+                            className="flex items-center gap-2 text-xs font-semibold text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                            Back
+                          </button>
+                          <div className="flex-1 flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-8 w-full">
+                              {stepMeta.steps.map((step, index) => {
+                                const isFinalizedCurrent = false;
+                                const isDone = index < stepMeta.activeStep || isFinalizedCurrent;
+                                const isActive = index === stepMeta.activeStep && !isFinalizedCurrent;
+                                const Icon = stepMeta.icons?.[index];
+                                const circleClasses = isDone
+                                  ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
+                                  : isActive
+                                    ? "border-blue-300 text-blue-700 bg-blue-100"
+                                    : "border-slate-200 text-slate-500 bg-white";
+                                return (
+                                  <div key={step} className="flex items-center gap-4">
+                                    <div className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}>
+                                      {Icon ? <Icon className="h-5 w-5" /> : <span className="text-xs font-semibold">{index + 1}</span>}
+                                    </div>
+                                    {index < stepMeta.steps.length - 1 && (
+                                      <div
+                                        className={`h-px w-16 ${
+                                          index < stepMeta.activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                                        }`}
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={stepMeta.onNext}
+                            disabled={
+                              !stepMeta.onNext ||
+                              !stepMeta.canGoNext ||
+                              stepMeta.activeStep >= stepMeta.steps.length - 1
+                            }
+                            className="flex items-center gap-2 text-xs font-semibold text-blue-700 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          >
+                            Next
+                            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-start gap-3 pl-3">
+                          <span className="inline-block -translate-y-[2px] text-[9px] text-slate-500">
+                            Step {stepMeta.activeStep + 1} of {stepMeta.steps.length}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+                    <SelectedComponent
+                      embedded
+                      onStepChange={setBreadcrumbStep}
+                      onStepMetaChange={setStepMeta}
+                    />
+                  </div>
                 </Suspense>
               ) : (
                 <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-16 text-center">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -150,9 +150,19 @@ const generateCustomClauseId = () =>
 const TemporaryContractGenerator = ({
   embedded = false,
   onStepChange,
+  onStepMetaChange,
 }: {
   embedded?: boolean;
   onStepChange?: (step: string | null) => void;
+  onStepMetaChange?: (meta: {
+    steps: readonly string[];
+    activeStep: number;
+    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    canGoNext?: boolean;
+    canGoBack?: boolean;
+    onNext?: () => void;
+    onBack?: () => void;
+  }) => void;
 }) => {
   const { user, loading } = useAuth();
   const { toast } = useToast();
@@ -176,6 +186,7 @@ const TemporaryContractGenerator = ({
   const [newClauseTitle, setNewClauseTitle] = useState("");
   const [newClauseBody, setNewClauseBody] = useState("");
   const steps = ["Employer Details", "Employee Details", "Employment Details"] as const;
+  const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
   const currentYear = new Date().getFullYear();
   const [issueYear, setIssueYear] = useState<string>(String(currentYear));
@@ -210,6 +221,7 @@ const TemporaryContractGenerator = ({
     if (!embedded) return;
     onStepChange?.(steps[activeStep] ?? null);
   }, [activeStep, embedded, onStepChange, steps]);
+
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
@@ -610,6 +622,19 @@ const TemporaryContractGenerator = ({
       setActiveStep((prev) => prev - 1);
     }
   };
+
+  useEffect(() => {
+    if (!embedded) return;
+    onStepMetaChange?.({
+      steps,
+      activeStep,
+      icons: stepIcons,
+      canGoNext,
+      canGoBack: activeStep > 0,
+      onNext: handleNext,
+      onBack: handleBack,
+    });
+  }, [activeStep, embedded, onStepMetaChange, steps, stepIcons, canGoNext, handleNext, handleBack]);
 
   const validateData = (): ValidatedTempData => {
     if (!primaryEmployee) {
@@ -1468,83 +1493,87 @@ const TemporaryContractGenerator = ({
       >
         {!showFinalActions ? (
           <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-center gap-8 w-full">
-                {steps.map((step, index) => {
-                  const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
-                  const isDone = index < activeStep || isFinalizedCurrent;
-                  const isActive = index === activeStep && !isFinalizedCurrent;
-                  const Icon = [Building2, User2, Briefcase][index];
-                  const circleClasses = isDone
-                    ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
-                    : isActive
-                      ? "border-blue-300 text-blue-700 bg-blue-100"
-                      : "border-slate-200 text-slate-500 bg-white";
-                  const canClick = showFinalActions || index < activeStep;
-                  const handleClick = () => {
-                    if (showFinalActions) {
-                      setShowFinalActions(false);
-                      setActiveStep(index);
-                    } else if (canNavigateToStep(index)) {
-                      handleStepClick(index);
-                    }
-                  };
+            {!embedded && (
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-center gap-8 w-full">
+                  {steps.map((step, index) => {
+                    const isFinalizedCurrent = showFinalActions && index === steps.length - 1;
+                    const isDone = index < activeStep || isFinalizedCurrent;
+                    const isActive = index === activeStep && !isFinalizedCurrent;
+                    const Icon = stepIcons[index];
+                    const circleClasses = isDone
+                      ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
+                      : isActive
+                        ? "border-blue-300 text-blue-700 bg-blue-100"
+                        : "border-slate-200 text-slate-500 bg-white";
+                    const canClick = showFinalActions || index < activeStep;
+                    const handleClick = () => {
+                      if (showFinalActions) {
+                        setShowFinalActions(false);
+                        setActiveStep(index);
+                      } else if (canNavigateToStep(index)) {
+                        handleStepClick(index);
+                      }
+                    };
 
-                  return (
-                    <div key={step} className="flex items-center gap-4">
-                      <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              disabled={!canClick}
-                              aria-label={step}
-                              onClick={canClick ? handleClick : undefined}
-                              onKeyDown={
-                                canClick
-                                  ? (e) => {
-                                      if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        handleClick();
+                    return (
+                      <div key={step} className="flex items-center gap-4">
+                        <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={!canClick}
+                                aria-label={step}
+                                onClick={canClick ? handleClick : undefined}
+                                onKeyDown={
+                                  canClick
+                                    ? (e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                          e.preventDefault();
+                                          handleClick();
+                                        }
                                       }
-                                    }
-                                  : undefined
-                              }
-                              className={`flex flex-col items-start gap-1 transition ${
-                                canClick
-                                  ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
-                                  : "cursor-default"
-                              }`}
-                            >
-                              <div
-                                className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}
+                                    : undefined
+                                }
+                                className={`flex flex-col items-start gap-1 transition ${
+                                  canClick
+                                    ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                    : "cursor-default"
+                                }`}
                               >
-                                <Icon className="h-5 w-5" />
-                              </div>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" align="center" className="text-xs">
-                            {step}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      {index < steps.length - 1 && (
-                        <div
-                          className={`h-px w-16 ${
-                            index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
-                          }`}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardHeader>
+                                <div
+                                  className={`flex h-11 w-11 items-center justify-center rounded-full border ${circleClasses}`}
+                                >
+                                  <Icon className="h-5 w-5" />
+                                </div>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" align="center" className="text-xs">
+                              {step}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        {index < steps.length - 1 && (
+                          <div
+                            className={`h-px w-16 ${
+                              index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                            }`}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardHeader>
+            )}
           <CardContent className="pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm">
-            <div className="flex items-center justify-start gap-3 mb-2">
-              <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
-            </div>
+              {!embedded && (
+                <div className="flex items-center justify-start gap-3 mb-2">
+                  <span className="text-[11px] text-slate-500">Step {activeStep + 1} of {steps.length}</span>
+                </div>
+              )}
             <div className="space-y-4">
               {activeStep === 0 && (
                 <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
@@ -1895,17 +1924,19 @@ const TemporaryContractGenerator = ({
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 {activeStep === steps.length - 1 ? (
                   <div className="flex w-full items-center gap-3 flex-wrap justify-between">
-                    <div className="flex-none">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleBack}
-                        className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        Back
-                      </Button>
-                    </div>
+                    {!embedded && (
+                      <div className="flex-none">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          Back
+                        </Button>
+                      </div>
+                    )}
                     <div className="flex-1 flex justify-center">
                       <TooltipProvider delayDuration={0}>
                         <Tooltip>
@@ -1942,35 +1973,37 @@ const TemporaryContractGenerator = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex w-full items-center justify-between gap-2 flex-wrap">
-                    <div className="flex-none">
-                      {activeStep > 0 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleBack}
-                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </Button>
-                      )}
+                  !embedded && (
+                    <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                      <div className="flex-none">
+                        {activeStep > 0 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleBack}
+                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            Back
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex-1" />
+                      <div className="flex-none">
+                        {activeStep < steps.length - 1 && (
+                          <Button
+                            type="button"
+                            onClick={handleNext}
+                            disabled={!canGoNext}
+                            className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                          >
+                            Next
+                            <ArrowRight className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex-1" />
-                    <div className="flex-none">
-                      {activeStep < steps.length - 1 && (
-                        <Button
-                          type="button"
-                          onClick={handleNext}
-                          disabled={!canGoNext}
-                          className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
-                        >
-                          Next
-                          <ArrowRight className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                  )
                 )}
               </div>
             </div>

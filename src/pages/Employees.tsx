@@ -2933,7 +2933,7 @@ const Employees = () => {
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
               <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-blue-600">Employees</h1>
+                <h1 className="text-4xl font-normal text-blue-600 -ml-1">Employees</h1>
                 <p className="text-xs text-slate-600 mt-2">
                   Browse, search, and manage your employees and attach their documents.
                 </p>

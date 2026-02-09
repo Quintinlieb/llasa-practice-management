@@ -210,7 +210,10 @@ const Documents = () => {
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
               <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-blue-600">Documents</h1>
+                <h1 className="text-4xl font-normal text-blue-600 -ml-1">Documents</h1>
+                <p className="text-xs text-slate-600 mt-2">
+                  Generate HR documents quickly with guided step-by-step forms.
+                </p>
               </div>
               <div className="border-b border-slate-300 bg-white shadow-sm mt-2">
                 <div className="relative flex flex-wrap items-center gap-0 px-0 py-0">

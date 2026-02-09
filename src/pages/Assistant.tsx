@@ -342,15 +342,16 @@ const Assistant = () => {
 
   return (
     <DashboardLayout>
-      <div className="-ml-6 -mr-6 pl-3 pr-3 -mt-3">
-        <div className="flex h-full w-full">
-          <div
-            className={`mb-2 flex w-full flex-col rounded-sm border border-slate-300 bg-white px-6 text-center shadow-sm ${
+      <div className="space-y-0 -m-6">
+        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
+          <div className="flex h-full w-full">
+            <div
+            className={`mb-0 flex w-full flex-col rounded-none border-0 bg-white px-6 text-center shadow-none ${
               isChatOpen
                 ? "h-[calc(100vh-8rem)] items-stretch justify-start overflow-hidden pt-3 pb-4"
                 : "min-h-[calc(100vh-8rem)] items-center justify-center py-12"
             }`}
-          >
+            >
             {!isChatOpen ? (
               <>
                 <span className="inline-flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm">
@@ -562,6 +563,7 @@ const Assistant = () => {
                 </form>
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>

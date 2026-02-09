@@ -445,6 +445,7 @@ const Employees = () => {
  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
    const [isLoading, setIsLoading] = useState(false);
+  const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
    const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
@@ -1571,9 +1572,19 @@ const Employees = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user) {
-      void fetchEmployees();
-    }
+    if (!user) return;
+    let cancelled = false;
+
+    const loadEmployees = async () => {
+      setIsEmployeesLoading(true);
+      await fetchEmployees();
+      if (!cancelled) setIsEmployeesLoading(false);
+    };
+
+    void loadEmployees();
+    return () => {
+      cancelled = true;
+    };
   }, [user, fetchEmployees]);
 
   useEffect(() => {
@@ -2945,7 +2956,7 @@ const Employees = () => {
           <CardHeader className="pl-4 pr-4 pt-5 pb-3 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative w-full sm:w-[460px]">
+                <div className="relative w-full sm:w-[400px]">
                 <Input
                   placeholder="Search employees..."
                   value={searchQuery}
@@ -3096,7 +3107,16 @@ const Employees = () => {
             </div>
           </CardHeader>
           <CardContent className="pl-4 pr-4 pb-2">
-            {employees.length === 0 ? (
+            {isEmployeesLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <img
+                  src="/zappir_thumbnail_blue.png"
+                  alt="Loading"
+                  className="h-12 w-12 animate-spin"
+                  style={{ animationDuration: "2s" }}
+                />
+              </div>
+            ) : employees.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
                 <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">

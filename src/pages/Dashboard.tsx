@@ -299,7 +299,12 @@ const Dashboard = () => {
   if (loading || isLoadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <img
+          src="/zappir_thumbnail_blue.png"
+          alt="Loading"
+          className="h-12 w-12 animate-spin"
+          style={{ animationDuration: "2s" }}
+        />
       </div>
     );
   }

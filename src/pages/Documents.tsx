@@ -36,7 +36,12 @@ type StoredProfile = {
   user_surname?: string;
 };
 
-const documentComponents: Record<DocumentKey, ComponentType<{ embedded?: boolean }>> = {
+type DocumentComponentProps = {
+  embedded?: boolean;
+  onStepChange?: (step: string | null) => void;
+};
+
+const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazy(() => import("./documents/discipline/CodeOfConductPreview")),
   warnings: lazy(() => import("./WarningGenerator")),
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
@@ -100,6 +105,7 @@ const Documents = () => {
   const [profile, setProfile] = useState<StoredProfile | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
+  const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
 
   useEffect(() => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
@@ -107,6 +113,10 @@ const Documents = () => {
       setSelectedDocument(nextSelected);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    setBreadcrumbStep(null);
+  }, [selectedDocument]);
 
   useEffect(() => {
     const readProfile = () => {
@@ -161,16 +171,27 @@ const Documents = () => {
           category.items.some((item) => item.id === selectedDocument),
         )?.title ?? ""
       : "";
-  const greetingName = [profile?.user_name, profile?.user_surname].filter(Boolean).join(" ");
+  const activeDocumentLabel =
+    selectedDocument
+      ? documentCategories
+          .flatMap((category) => category.items)
+          .find((item) => item.id === selectedDocument)?.label ?? ""
+      : "";
+  const greetingName = profile?.user_name ?? "";
+  const breadcrumbParts: string[] = [];
+  if (activeCategoryTitle) breadcrumbParts.push(activeCategoryTitle);
+  if (activeDocumentLabel) breadcrumbParts.push(activeDocumentLabel);
+  if (breadcrumbStep) breadcrumbParts.push(breadcrumbStep);
 
   return (
     <DashboardLayout profileSubtitleMode="company">
       <div className="space-y-0 -m-6">
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
-            <div className="pl-4 pr-1 pt-4">
-              <div className="pb-1">
-                <h1 className="text-3xl font-normal text-blue-600">Documents</h1>
+            <div className="pl-6 pr-1 pt-1">
+              <div className="pt-0 pb-2">
+                <p className="text-[11px] text-slate-400 mb-4">{breadcrumbParts.join(" / ")}</p>
+                <h1 className="text-4xl font-normal text-blue-600">Documents</h1>
               </div>
               <div className="border-b border-slate-300 bg-white shadow-sm mt-2">
                 <div className="relative flex flex-wrap items-center gap-0 px-0 py-0">
@@ -194,12 +215,12 @@ const Documents = () => {
                           )}
                         >
                           <span className="flex w-full items-center justify-between gap-2">
-                            <span className="text-[11px]">{category.title}</span>
+                            <span className="text-xs">{category.title}</span>
                             <ChevronDownIcon className="h-3.5 w-3.5 text-slate-400" />
                           </span>
                         </button>
                         {openCategory === category.title && hasItems && (
-                          <div className="absolute left-0 top-full z-30 min-w-[180px] border border-slate-200 bg-white">
+                          <div className="absolute left-0 top-full z-30 min-w-[180px] rounded-b-sm border border-slate-200 bg-white">
                             <div className="flex flex-col">
                               {category.items.map((item) =>
                                 item.active && item.id ? (
@@ -208,7 +229,7 @@ const Documents = () => {
                                     type="button"
                                     onClick={() => setSelectedDocument(item.id!)}
                                     className={cn(
-                                      "w-full rounded-none border-b-2 border-transparent px-3 py-2 text-left text-[11px] transition-all duration-150",
+                                      "w-full rounded-none border-b-2 border-transparent px-3 py-2 text-left text-xs transition-all duration-150",
                                       "text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-0",
                                       selectedDocument === item.id &&
                                         "bg-white text-black border-b-0 border-transparent font-semibold",
@@ -219,7 +240,7 @@ const Documents = () => {
                                 ) : (
                                   <div
                                     key={item.label}
-                                    className="w-full rounded-none px-3 py-2 text-left text-[11px] text-slate-400"
+                                    className="w-full rounded-none px-3 py-2 text-left text-xs text-slate-400"
                                   >
                                     {item.label}
                                   </div>
@@ -238,7 +259,7 @@ const Documents = () => {
             <section
               ref={contentScrollRef}
               data-documents-scroll
-              className="relative flex-1 overflow-y-auto overflow-x-hidden pl-4 pr-1"
+              className="relative flex-1 overflow-y-auto overflow-x-hidden pl-6 pr-1"
             >
               {SelectedComponent ? (
                 <Suspense
@@ -248,22 +269,28 @@ const Documents = () => {
                     </div>
                   }
                 >
-                  <SelectedComponent embedded />
+                  <SelectedComponent embedded onStepChange={setBreadcrumbStep} />
                 </Suspense>
               ) : (
-                <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-10 text-center">
+                <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-16 text-center">
                   <div className="space-y-2">
-                    <p className="text-lg font-semibold text-slate-800">
-                      Hi{greetingName ? `, ${greetingName}` : ""}.
+                    <p className="text-3xl font-semibold text-slate-800">
+                      Hi
+                      {greetingName ? (
+                        <>
+                          , <span className="text-blue-600">{greetingName}</span>
+                        </>
+                      ) : null}
+                      .
                     </p>
                     <p className="text-sm text-slate-600">
-                      Select a category and document to the left to start drafting.
+                      Please select the document you wish to generate, and let's draft it together.
                     </p>
                   </div>
                   <img
-                    src="/Hello Illustration.png"
+                    src="/hello_Illustration(2).png"
                     alt="Hello"
-                    className="w-full max-w-[210px] object-contain"
+                    className="mt-10 w-full max-w-[420px] object-contain"
                   />
                 </div>
               )}

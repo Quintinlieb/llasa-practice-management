@@ -197,12 +197,12 @@ export default function DashboardLayout({
             className="fixed top-0 z-40 bg-transparent transition-[left] duration-200 ease-linear"
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
-            <div className="relative w-full bg-white pl-1 pr-6 py-1 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-1">
+            <div className="relative w-full bg-white pl-6 pr-6 py-1 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsCollapsed((prev) => !prev)}
-                  className="h-9 w-9 text-slate-700 hover:text-blue-600"
+                  className="h-9 w-9 p-0 flex items-center justify-start text-slate-700 hover:text-blue-600"
                 >
                   <Icon
                     icon="material-symbols:menu-open-sharp"

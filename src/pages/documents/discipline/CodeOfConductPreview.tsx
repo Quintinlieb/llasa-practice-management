@@ -548,7 +548,13 @@ const gridColumns = [
   { key: "fourth", label: "4th Offence", placeholder: "Outcome for 4th offence" },
 ] as const;
 
-export default function CodeOfConductPreviewPage({ embedded = false }: { embedded?: boolean }) {
+export default function CodeOfConductPreviewPage({
+  embedded = false,
+  onStepChange,
+}: {
+  embedded?: boolean;
+  onStepChange?: (step: string | null) => void;
+}) {
   const { user, loading: authLoading } = useAuth();
   const [sections, setSections] = useState<OffenceSection[]>([]);
   const [snapshot, setSnapshot] = useState<OffenceSection[] | null>(null);
@@ -569,6 +575,11 @@ export default function CodeOfConductPreviewPage({ embedded = false }: { embedde
     () => sections.find((section) => section.id === activeCategoryId) ?? null,
     [sections, activeCategoryId],
   );
+
+  useEffect(() => {
+    if (!embedded) return;
+    onStepChange?.(null);
+  }, [embedded, onStepChange]);
 
   useLayoutEffect(() => {
     const updateOffset = () => {

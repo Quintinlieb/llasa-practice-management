@@ -137,7 +137,13 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
-const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean }) => {
+const DisciplinaryOutcomeGenerator = ({
+  embedded = false,
+  onStepChange,
+}: {
+  embedded?: boolean;
+  onStepChange?: (step: string | null) => void;
+}) => {
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -200,6 +206,11 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
     [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
 
+  useEffect(() => {
+    if (!embedded) return;
+    onStepChange?.(steps[activeStep] ?? null);
+  }, [activeStep, embedded, onStepChange, steps]);
+
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
     age: "",
@@ -257,10 +268,13 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
   }, [loading, navigate, user]);
 
   useEffect(() => {
-    if (hasDismissedEmployeeHint) return;
+    if (hasDismissedEmployeeHint || activeStep !== 1) {
+      setShowEmployeeHint(false);
+      return;
+    }
     const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
     return () => clearTimeout(timer);
-  }, [hasDismissedEmployeeHint]);
+  }, [activeStep, hasDismissedEmployeeHint]);
 
   useEffect(() => {
     if (activeStep !== 1) {
@@ -1594,18 +1608,18 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
     <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-            <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
-              <div className="relative flex items-center gap-3 rounded-full border border-orange-200 bg-white/95 px-4 py-3 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(234,88,12,0.28)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+              <div className="relative flex items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
-                  className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(234,88,12,0.32)] animate-pulse"
+                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
                   aria-hidden="true"
                 ></span>
                 <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-orange-600">
+                  <span className="text-blue-400">
                     TIP!{" "}
-                    <span className="text-blue-900 inline-flex items-center gap-1 ml-2">
+                    <span className="text-white inline-flex items-center gap-1 ml-2">
                       Add the employee to your Employee List before generating a contract
-                      <ArrowRight className="h-4 w-4 text-orange-500" aria-hidden="true" />
+                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
                     </span>
                   </span>
                   <button
@@ -1621,7 +1635,7 @@ const DisciplinaryOutcomeGenerator = ({ embedded = false }: { embedded?: boolean
                   </button>
                   <button
                     type="button"
-                    className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
+                    className="text-white hover:text-white focus-visible:text-white"
                     onClick={() => {
                       setHasDismissedEmployeeHint(true);
                       setShowEmployeeHint(false);

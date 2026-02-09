@@ -42,7 +42,7 @@ type DocumentComponentProps = {
   onStepMetaChange?: (meta: {
     steps: readonly string[];
     activeStep: number;
-    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;
@@ -118,7 +118,7 @@ const Documents = () => {
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
-    icons?: Array<(props: SVGProps<SVGSVGElement>) => JSX.Element>;
+    icons?: readonly React.ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
     onNext?: () => void;

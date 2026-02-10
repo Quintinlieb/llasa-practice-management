@@ -54,6 +54,8 @@ import {
   X,
   FileUp,
   User,
+  UserPlus,
+  Users,
   UsersRound,
   Info,
   ArrowRight,
@@ -438,7 +440,7 @@ const Employees = () => {
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
   const [genderFilter, setGenderFilter] = useState<"all" | EmployeeProfileFormData["gender"]>("all");
   const [raceFilter, setRaceFilter] = useState<"all" | EmployeeProfileFormData["race"]>("all");
-  const [nationalityFilter, setNationalityFilter] = useState<"all" | EmployeeProfileFormData["nationality"]>("all");
+  const [nationalityFilter, setNationalityFilter] = useState<"all" | "RSA" | "Other">("all");
    const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
@@ -540,6 +542,11 @@ const Employees = () => {
     totalFilteredEmployees !== null
       ? currentPage >= Math.max(totalPages ?? 1, 1)
       : employees.length < DEFAULT_PAGE_SIZE;
+  const contractFilterLabel =
+    contractFilter === "all" ? "All" : contractFilter === "permanent" ? "Permanent" : "Temporary";
+  const genderFilterLabel = genderFilter === "all" ? "All" : genderFilter;
+  const raceFilterLabel = raceFilter === "all" ? "All" : raceFilter;
+  const nationalityFilterLabel = nationalityFilter === "all" ? "All" : nationalityFilter;
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
@@ -1619,11 +1626,12 @@ const Employees = () => {
 
       const genderValue = (emp.gender ?? "").toLowerCase();
       const raceValue = (emp.race ?? "").toLowerCase();
-      const nationalityValue = (emp.nationality ?? "").toLowerCase();
+      const nationalityValue = (emp.nationality ?? "").trim().toLowerCase();
+      const nationalityGroup = nationalityValue === "south african" ? "rsa" : "other";
       const matchesGender = genderFilter === "all" || genderValue === genderFilter.toLowerCase();
       const matchesRace = raceFilter === "all" || raceValue === raceFilter.toLowerCase();
       const matchesNationality =
-        nationalityFilter === "all" || nationalityValue === nationalityFilter.toLowerCase();
+        nationalityFilter === "all" || nationalityGroup === nationalityFilter.toLowerCase();
 
       return matchesSearch && matchesContract && matchesGender && matchesRace && matchesNationality;
     });
@@ -2961,34 +2969,47 @@ const Employees = () => {
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10 rounded-sm border-2 border-primary/30 bg-white/30 pr-12 text-xs shadow-md placeholder:text-xs focus-visible:border-primary focus-visible:ring-0 dark:bg-background"
+                  className="h-8 rounded-sm border border-slate-200 bg-white pr-9 !text-[11px] font-semibold shadow-sm placeholder:!text-[11px] focus-visible:!border focus-visible:!border-blue-600 focus-visible:ring-0 dark:bg-background"
                 />
-                <Search className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-primary" aria-hidden="true" />
+                <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-3 justify-end">
                 <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                   <Select
                     value={contractFilter}
                     onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
                   >
-                  <SelectTrigger className="w-full sm:w-32 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
-                    <SelectValue placeholder="Filter by contract" />
+                  <SelectTrigger className="h-8 w-full sm:w-40 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                    <span className="truncate">
+                      Contract: <span className="font-semibold">{contractFilterLabel}</span>
+                    </span>
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="group text-xs">
+                  <SelectContent className="text-[11px]">
+                    <SelectItem
+                      value="all"
+                      className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       All employees{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
+                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-400 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
                         ({totalEmployees ?? employees.length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="permanent" className="group text-xs">
+                    <SelectItem
+                      value="permanent"
+                      className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       Permanent{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
+                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-400 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
                         ({totalPermanentEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
                       </span>
                     </SelectItem>
-                    <SelectItem value="temporary" className="group text-xs">
+                    <SelectItem
+                      value="temporary"
+                      className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       Temporary{" "}
-                      <span className="text-primary text-[0.65rem] font-semibold transition-colors group-hover:text-white">
+                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-400 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
                         ({totalTemporaryEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
                       </span>
                     </SelectItem>
@@ -2998,15 +3019,24 @@ const Employees = () => {
                   value={genderFilter}
                   onValueChange={(value) => setGenderFilter(value as "all" | EmployeeProfileFormData["gender"])}
                 >
-                  <SelectTrigger className="w-full sm:w-32 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
-                    <SelectValue placeholder="Gender" />
+                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                    <span className="truncate">
+                      Gender: <span className="font-semibold">{genderFilterLabel}</span>
+                    </span>
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">
+                  <SelectContent className="text-[11px]">
+                    <SelectItem
+                      value="all"
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       All genders
                     </SelectItem>
                     {genderOptions.map((option) => (
-                      <SelectItem key={option} value={option} className="text-xs">
+                      <SelectItem
+                        key={option}
+                        value={option}
+                        className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                      >
                         {option}
                       </SelectItem>
                     ))}
@@ -3016,15 +3046,24 @@ const Employees = () => {
                   value={raceFilter}
                   onValueChange={(value) => setRaceFilter(value as "all" | EmployeeProfileFormData["race"])}
                 >
-                  <SelectTrigger className="w-full sm:w-40 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
-                    <SelectValue placeholder="Race" />
+                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                    <span className="truncate">
+                      Race: <span className="font-semibold">{raceFilterLabel}</span>
+                    </span>
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">
+                  <SelectContent className="text-[11px]">
+                    <SelectItem
+                      value="all"
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       All races
                     </SelectItem>
                     {raceOptions.map((option) => (
-                      <SelectItem key={option} value={option} className="text-xs">
+                      <SelectItem
+                        key={option}
+                        value={option}
+                        className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                      >
                         {option}
                       </SelectItem>
                     ))}
@@ -3032,74 +3071,62 @@ const Employees = () => {
                 </Select>
                 <Select
                   value={nationalityFilter}
-                  onValueChange={(value) =>
-                    setNationalityFilter(value as "all" | EmployeeProfileFormData["nationality"])
-                  }
+                  onValueChange={(value) => setNationalityFilter(value as "all" | "RSA" | "Other")}
                 >
-                  <SelectTrigger className="w-full sm:w-48 text-xs rounded-sm bg-white/30 border-2 border-primary/30">
-                    <SelectValue placeholder="Nationality" />
+                  <SelectTrigger className="h-8 w-full sm:w-36 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                    <span className="truncate">
+                      Nationality: <span className="font-semibold">{nationalityFilterLabel}</span>
+                    </span>
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">
+                  <SelectContent className="text-[11px]">
+                    <SelectItem
+                      value="all"
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
                       All nationalities
                     </SelectItem>
-                    {nationalityOptions.map((option) => (
-                      <SelectItem key={option} value={option} className="text-xs">
-                        {option}
-                      </SelectItem>
-                    ))}
+                    <SelectItem
+                      value="RSA"
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
+                      RSA
+                    </SelectItem>
+                    <SelectItem
+                      value="Other"
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
+                      Other
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              </div>
-              <div className="flex flex-wrap gap-3 justify-end">
-                <Button
-                  variant="outline"
-                  onClick={handleBulkDelete}
-                  disabled={selectedEmployees.size === 0}
-                  className={`h-8 px-3 text-xs gap-1.5 ${
-                    selectedEmployees.size > 0
-                      ? "border-destructive text-destructive hover:bg-destructive hover:text-white"
-                      : ""
-                  } rounded-sm`}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </Button>
-
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button className="h-9 rounded-sm p-0 text-xs overflow-hidden bg-blue-600 hover:bg-blue-700">
-                      <span className="inline-flex items-center gap-2 px-4 py-2">
-                        <Plus className="h-4 w-4" />
-                        New
-                      </span>
-                      <span className="h-full w-px bg-white/60" aria-hidden="true" />
-                      <span className="inline-flex items-center justify-center px-3 py-2">
-                        <ChevronDown className="h-4 w-4" aria-hidden="true" />
-                      </span>
+                    <Button className="h-8 w-36 justify-between rounded-sm px-3 text-[11px] bg-blue-600 hover:bg-blue-700 inline-flex items-center">
+                      <span className="truncate">New Employee</span>
+                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="text-xs">
+                  <DropdownMenuContent align="end" className="w-36 text-[11px]">
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
                         setIsAddDialogOpen(true);
                       }}
-                      className="gap-2 cursor-pointer hover:bg-transparent focus:bg-transparent hover:text-blue-600 focus:text-blue-600"
+                      className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400"
                     >
-                      <User className="h-3.5 w-3.5" />
-                      Single employee
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Single
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
                         handleBulkDialogChange(true);
                       }}
-                      className="gap-2 cursor-pointer hover:bg-transparent focus:bg-transparent hover:text-blue-600 focus:text-blue-600"
+                      className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-400 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-400"
                     >
-                      <UsersRound className="h-3.5 w-3.5" />
-                      Bulk employees
+                      <Users className="h-3.5 w-3.5" />
+                      Multiple
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -3126,19 +3153,19 @@ const Employees = () => {
               </div>
             ) : (
               <div className="space-y-2">
-                <div ref={tableCardRef} className="relative overflow-hidden" style={{ maxHeight: tableMaxHeight }}>
-                  <div className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 border-b bg-transparent pl-0 pr-3 py-3 text-xs font-semibold text-muted-foreground underline underline-offset-4">
-                    <div className="flex items-center justify-start pl-0">
-                      <Checkbox
-                        checked={filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length}
-                        onCheckedChange={toggleSelectAll}
-                      />
-                    </div>
+                <div
+                  ref={tableCardRef}
+                  className="relative overflow-hidden rounded-sm border border-slate-200"
+                  style={{ maxHeight: tableMaxHeight }}
+                >
+                  <div className="grid grid-cols-[2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-4 pr-3 py-3 text-xs font-semibold text-white">
                     <div className="flex items-center leading-tight">Employee</div>
                     <div className="flex items-center gap-2 leading-tight">ID Number</div>
                     <div className="flex items-center leading-tight">Contract Type</div>
+                    <div className="flex items-center leading-tight text-left">Start Date</div>
                     <div className="flex items-center leading-tight">Job Title</div>
-                    <div className="flex items-center justify-center leading-tight text-center">Contract Uploaded</div>
+                    <div className="flex items-center leading-tight text-left">Cell Number</div>
+                    <div className="flex items-center leading-tight text-left">Nationality</div>
                     <div className="flex items-center justify-center leading-tight text-center">Actions</div>
                   </div>
                   <div
@@ -3149,14 +3176,8 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[3rem_2fr_1.5fr_1.5fr_1.5fr_1fr_1fr] items-center gap-2 pl-0 pr-3 py-0.5 text-xs hover:bg-blue-50/70"
+                        className="grid grid-cols-[2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 pl-4 pr-3 py-1 text-xs hover:bg-blue-50/70"
                       >
-                        <div className="flex items-center justify-start pl-0">
-                          <Checkbox
-                            checked={selectedEmployees.has(employee.id)}
-                            onCheckedChange={() => toggleSelectEmployee(employee.id)}
-                          />
-                        </div>
                         <div className="font-medium leading-tight">
                           <button
                             type="button"
@@ -3190,30 +3211,32 @@ const Employees = () => {
                             className="h-6 w-6 p-0"
                             title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
                           >
-                            {revealedIds.has(employee.id) ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+                            {revealedIds.has(employee.id) ? <EyeOff className="h-2.5 w-2.5" strokeWidth={1.5} /> : <Eye className="h-2.5 w-2.5" strokeWidth={1.5} />}
                           </Button>
                         </div>
                         <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
+                        <div className="flex items-center leading-tight text-left">
+                          {formatDisplayDate(employee.start_date)}
+                        </div>
                         <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
-                        <div
-                          className={`flex items-center justify-center leading-tight text-center ${
-                            activeContractsByEmployee[employee.id] ? "text-emerald-600" : "text-red-600"
-                          }`}
-                        >
-                          {activeContractsByEmployee[employee.id] ? "Yes" : "No"}
+                        <div className="flex items-center leading-tight text-left">
+                          {employee.cell_number?.trim() || "--"}
+                        </div>
+                        <div className="flex items-center leading-tight text-left">
+                          {employee.nationality?.trim() || "--"}
                         </div>
                         <div className="flex items-center justify-center">
                           <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                            <div className="flex items-center justify-center gap-0.5">
+                            <div className="flex items-center justify-center gap-1 ml-1">
                               <Tooltip disableHoverableContent>
                                 <TooltipTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => openProfileDialog(employee)}
-                                    className="hover:text-primary hover:bg-muted/50 bg-transparent"
+                                    className="h-6 w-6 p-0 hover:text-primary hover:bg-muted/50 bg-transparent"
                                   >
-                                    <Search className="h-3.5 w-3.5" />
+                                    <Search className="h-3 w-3" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="rounded">
@@ -3226,13 +3249,28 @@ const Employees = () => {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setDocumentDialogEmployee(employee)}
-                                    className="group hover:bg-muted/50 bg-transparent"
+                                    className="h-6 w-6 p-0 group hover:bg-muted/50 bg-transparent"
                                   >
-                                    <FilePlus className="h-3.5 w-3.5 transition-colors group-hover:text-primary" />
+                                    <FilePlus className="h-3 w-3 transition-colors group-hover:text-primary" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="top" className="rounded">
                                   Add Document
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip disableHoverableContent>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => void handleTerminateEmployee(employee)}
+                                    className="h-6 w-6 p-0 group hover:bg-muted/50 bg-transparent"
+                                  >
+                                    <Trash2 className="h-3 w-3 transition-colors group-hover:text-red-600" strokeWidth={1.5} />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="rounded">
+                                  Delete Employee
                                 </TooltipContent>
                               </Tooltip>
                             </div>

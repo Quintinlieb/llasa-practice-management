@@ -3195,24 +3195,42 @@ const Employees = () => {
                                 : maskSAIdNumber(employee.id_number)
                               : "N/A"}
                           </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const next = new Set(revealedIds);
-                              if (next.has(employee.id)) {
-                                next.delete(employee.id);
-                              } else {
-                                next.add(employee.id);
-                              }
-                              setRevealedIds(next);
-                            }}
-                            className="h-6 w-6 p-0"
-                            title={revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
-                          >
-                            {revealedIds.has(employee.id) ? <EyeOff className="h-2.5 w-2.5" strokeWidth={1.5} /> : <Eye className="h-2.5 w-2.5" strokeWidth={1.5} />}
-                          </Button>
+                          <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                            <Tooltip disableHoverableContent>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const next = new Set(revealedIds);
+                                    if (next.has(employee.id)) {
+                                      next.delete(employee.id);
+                                    } else {
+                                      next.add(employee.id);
+                                    }
+                                    setRevealedIds(next);
+                                  }}
+                                  className="h-6 w-6 p-0 hover:bg-transparent group"
+                                >
+                                  {revealedIds.has(employee.id) ? (
+                                    <EyeOff
+                                      className="h-2.5 w-2.5 text-slate-600 group-hover:text-blue-600"
+                                      strokeWidth={1.5}
+                                    />
+                                  ) : (
+                                    <Eye
+                                      className="h-2.5 w-2.5 text-slate-600 group-hover:text-blue-600"
+                                      strokeWidth={1.5}
+                                    />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="rounded">
+                                {revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </div>
                         <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
                         <div className="flex items-center leading-tight text-left">

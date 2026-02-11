@@ -4556,7 +4556,7 @@ const Employees = () => {
           </CardHeader>
           <CardContent className="pl-4 pr-4 pb-2">
             {isEmployeesLoading ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center pt-[210px] pb-10">
                 <img
                   src="/zappir_thumbnail_blue.png"
                   alt="Loading"

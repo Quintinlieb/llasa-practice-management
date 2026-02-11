@@ -86,28 +86,43 @@ export type Database = {
         Row: {
           company_id: string
           created_at: string | null
+          citizenship_status: string | null
+          date_of_birth: string | null
+          disability_status: boolean | null
           employee_name: string
           employee_surname: string
           id: string
           id_number: string
+          income_tax_number: string | null
+          uif_number: string | null
           updated_at: string | null
         }
         Insert: {
           company_id: string
           created_at?: string | null
+          citizenship_status?: string | null
+          date_of_birth?: string | null
+          disability_status?: boolean | null
           employee_name: string
           employee_surname: string
           id?: string
           id_number: string
+          income_tax_number?: string | null
+          uif_number?: string | null
           updated_at?: string | null
         }
         Update: {
           company_id?: string
           created_at?: string | null
+          citizenship_status?: string | null
+          date_of_birth?: string | null
+          disability_status?: boolean | null
           employee_name?: string
           employee_surname?: string
           id?: string
           id_number?: string
+          income_tax_number?: string | null
+          uif_number?: string | null
           updated_at?: string | null
         }
         Relationships: []

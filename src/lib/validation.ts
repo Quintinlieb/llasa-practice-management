@@ -90,6 +90,11 @@ export const southAfricanProvinces = [
 ] as const;
 
 export const contractTypes = ["Permanent", "Temporary", "Part-Time", "Independent", "Locum"] as const;
+export const citizenshipStatusOptions = [
+  "SA Citizen",
+  "Permanent Resident",
+  "Foreign National",
+] as const;
 export const genderOptions = ["Male", "Female", "Other"] as const;
 export const raceOptions = ["African", "Coloured", "Indian", "White", "Other"] as const;
 
@@ -487,12 +492,21 @@ export const employeeProfileSchema = z
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? sanitizeText(val) : "")),
+    dateOfBirth: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? val : ""))
+      .refine((val) => !val || dateRegex.test(val), {
+        message: "Invalid date format (YYYY-MM-DD)",
+      }),
     startDate: z
       .string()
       .regex(dateRegex, "Invalid date format (YYYY-MM-DD)"),
-    contractType: z.enum(contractTypes, {
-      errorMap: () => ({ message: "Please select a contract type" }),
-    }),
+    contractType: z
+      .string()
+      .min(2, "Please select a contract type")
+      .transform((val) => (val ? sanitizeText(val) : "")),
     endDate: z
       .string()
       .regex(dateRegex, "Invalid date format (YYYY-MM-DD)")
@@ -500,18 +514,32 @@ export const employeeProfileSchema = z
       .or(z.literal(""))
       .transform((val) => (val ? val : "")),
     gender: z
-      .enum(genderOptions)
+      .string()
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? sanitizeText(val) : "")),
+    disabilityStatus: z.boolean().optional(),
+    citizenshipStatus: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine(
+        (val) =>
+          !val || citizenshipStatusOptions.includes(val as (typeof citizenshipStatusOptions)[number]),
+        {
+          message: "Please select a valid citizenship status",
+        },
+      ),
     race: z
-      .enum(raceOptions)
+      .string()
       .optional()
       .or(z.literal(""))
       .transform((val) => (val ? sanitizeText(val) : "")),
-    nationality: z.enum(nationalityOptions, {
-      errorMap: () => ({ message: "Please select a nationality" }),
-    }),
+    nationality: z
+      .string()
+      .min(2, "Please select a nationality")
+      .transform((val) => (val ? sanitizeText(val) : "")),
     employeeNumber: z
       .string()
       .optional()
@@ -649,6 +677,19 @@ export const employeeProfileSchema = z
       .refine((val) => !val || saPhoneRegex.test(val), {
         message: "Invalid phone number (e.g., 0123456789 or +27123456789)",
       }),
+    incomeTaxNumber: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : ""))
+      .refine((val) => !val || /^\d{10}$/.test(val), {
+        message: "Income tax number must be exactly 10 digits",
+      }),
+    uifNumber: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
   })
   .superRefine((data, ctx) => {
     if (data.contractType === "Temporary" && !data.endDate) {
@@ -657,6 +698,17 @@ export const employeeProfileSchema = z
         path: ["endDate"],
         message: "End date is required for temporary contracts",
       });
+    }
+    const nationality = (data.nationality ?? "").toString().trim().toLowerCase();
+    if (nationality === "south african") {
+      const digits = (data.idNumber ?? "").replace(/\D/g, "");
+      if (digits.length > 0 && digits.length !== 13) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["idNumber"],
+          message: "ID number must be 13 digits",
+        });
+      }
     }
   });
 

@@ -524,7 +524,7 @@ const Employees = () => {
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalFilteredEmployees, setTotalFilteredEmployees] = useState<number | null>(null);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
   const [genderFilter, setGenderFilter] = useState<"all" | EmployeeProfileFormData["gender"]>("all");
@@ -567,6 +567,8 @@ const Employees = () => {
   const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
   const [misconductSearch, setMisconductSearch] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
+  const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
+  const [hasLoadedConductOffences, setHasLoadedConductOffences] = useState(false);
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const [nationalityOpen, setNationalityOpen] = useState(false);
   const [nationalityQuery, setNationalityQuery] = useState("");
@@ -790,13 +792,8 @@ const Employees = () => {
     tableOffsetTop > 0
       ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
       : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
-  const totalPages =
-    totalFilteredEmployees !== null ? Math.ceil(totalFilteredEmployees / DEFAULT_PAGE_SIZE) : null;
   const isFirstPage = currentPage === 1;
-  const isLastPage =
-    totalFilteredEmployees !== null
-      ? currentPage >= Math.max(totalPages ?? 1, 1)
-      : employees.length < DEFAULT_PAGE_SIZE;
+  const isLastPage = !hasNextPage;
   const contractFilterLabel =
     contractFilter === "all" ? "All" : contractFilter === "permanent" ? "Permanent" : "Temporary";
   const genderFilterLabel = genderFilter === "all" ? "All" : genderFilter;
@@ -2098,13 +2095,12 @@ const Employees = () => {
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
     const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
-    const to = from + DEFAULT_PAGE_SIZE - 1;
+    const to = from + DEFAULT_PAGE_SIZE;
     const queryText = searchQuery.trim();
     let query = (supabase as any)
       .from("employees")
       .select(
         "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
-        { count: "exact" },
       )
       .eq("company_id", user.id);
 
@@ -2119,7 +2115,7 @@ const Employees = () => {
       );
     }
 
-    const { data, error, count } = await query
+    const { data, error } = await query
       .order("employee_name", { ascending: true, nullsFirst: false })
       .order("employee_surname", { ascending: true, nullsFirst: false })
       .range(from, to);
@@ -2133,22 +2129,17 @@ const Employees = () => {
       return;
     }
 
-    if (typeof count === "number") {
-      setTotalFilteredEmployees(count);
-      if (count === 0 && currentPage !== 1) {
-        setCurrentPage(1);
-        return;
-      }
-      if (count > 0 && from >= count && currentPage > 1) {
-        const lastPage = Math.max(1, Math.ceil(count / DEFAULT_PAGE_SIZE));
-        setCurrentPage(lastPage);
-        return;
-      }
-    } else {
-      setTotalFilteredEmployees(null);
+    const rows = Array.isArray(data) ? data : [];
+    const hasExtraRow = rows.length > DEFAULT_PAGE_SIZE;
+    const pageRows = hasExtraRow ? rows.slice(0, DEFAULT_PAGE_SIZE) : rows;
+    setHasNextPage(hasExtraRow);
+
+    if (pageRows.length === 0 && currentPage > 1) {
+      setCurrentPage((prev) => Math.max(1, prev - 1));
+      return;
     }
 
-    const sorted = (data ?? []).sort((a, b) => {
+    const sorted = pageRows.sort((a, b) => {
       const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
       const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
       return nameA.localeCompare(nameB);
@@ -2241,18 +2232,38 @@ const Employees = () => {
   }, [user, fetchEmployees]);
 
   useEffect(() => {
-    if (!user) return;
-    void fetchAllEmployees();
-  }, [user, fetchAllEmployees]);
+    if (!user || !isProfilePanelOpen || hasLoadedAllEmployees) return;
+    let cancelled = false;
+    const loadAllEmployees = async () => {
+      await fetchAllEmployees();
+      if (!cancelled) setHasLoadedAllEmployees(true);
+    };
+    void loadAllEmployees();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isProfilePanelOpen, hasLoadedAllEmployees, fetchAllEmployees]);
 
   useEffect(() => {
-    if (user) {
-      void fetchConductOffences();
-    }
-  }, [user, fetchConductOffences]);
+    if (!user || !isProfilePanelOpen || activeTab !== "discipline" || hasLoadedConductOffences) return;
+    let cancelled = false;
+    const loadConductOffences = async () => {
+      await fetchConductOffences();
+      if (!cancelled) setHasLoadedConductOffences(true);
+    };
+    void loadConductOffences();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isProfilePanelOpen, activeTab, hasLoadedConductOffences, fetchConductOffences]);
 
   useEffect(() => {
     setCurrentPage(1);
+    setHasNextPage(false);
+    setHasLoadedAllEmployees(false);
+    setHasLoadedConductOffences(false);
+    setAllEmployees([]);
+    setConductOffences([]);
   }, [user?.id]);
 
   useEffect(() => {
@@ -4705,10 +4716,7 @@ const Employees = () => {
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </Button>
-                    <span className="text-[10px] font-medium text-primary">
-                      Page {currentPage}
-                      {totalPages !== null && totalPages > 0 ? ` of ${Math.max(totalPages, 1)}` : ""}
-                    </span>
+                    <span className="text-[10px] font-medium text-primary">Page {currentPage}</span>
                     <Button
                       variant="ghost"
                       size="icon"

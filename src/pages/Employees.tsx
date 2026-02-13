@@ -523,10 +523,7 @@ const Employees = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
-  const [totalPermanentEmployees, setTotalPermanentEmployees] = useState<number | null>(null);
-  const [totalTemporaryEmployees, setTotalTemporaryEmployees] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalEmployees, setTotalEmployees] = useState<number | null>(null);
   const [totalFilteredEmployees, setTotalFilteredEmployees] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
@@ -2128,7 +2125,6 @@ const Employees = () => {
       .range(from, to);
 
     if (error) {
-      setTotalEmployees(null);
       toast({
         title: "Error",
         description: error.message,
@@ -2151,27 +2147,6 @@ const Employees = () => {
     } else {
       setTotalFilteredEmployees(null);
     }
-
-    const [{ count: totalCount }, { count: permanentCount }, { count: temporaryCount }] = await Promise.all([
-      (supabase as any)
-        .from("employees")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", user.id),
-      (supabase as any)
-        .from("employees")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", user.id)
-        .ilike("contract_type", "permanent"),
-      (supabase as any)
-        .from("employees")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", user.id)
-        .ilike("contract_type", "temporary"),
-    ]);
-
-    setTotalEmployees(typeof totalCount === "number" ? totalCount : null);
-    setTotalPermanentEmployees(typeof permanentCount === "number" ? permanentCount : null);
-    setTotalTemporaryEmployees(typeof temporaryCount === "number" ? temporaryCount : null);
 
     const sorted = (data ?? []).sort((a, b) => {
       const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
@@ -4411,28 +4386,19 @@ const Employees = () => {
                       value="all"
                       className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                     >
-                      All employees{" "}
-                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-600 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
-                        ({totalEmployees ?? employees.length})
-                      </span>
+                      All employees
                     </SelectItem>
                     <SelectItem
                       value="permanent"
                       className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                     >
-                      Permanent{" "}
-                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-600 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
-                        ({totalPermanentEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "permanent").length})
-                      </span>
+                      Permanent
                     </SelectItem>
                     <SelectItem
                       value="temporary"
                       className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                     >
-                      Temporary{" "}
-                      <span className="text-slate-700 text-[0.65rem] font-semibold transition-colors group-hover:text-blue-600 group-data-[state=checked]:text-slate-700 group-data-[state=checked]:group-hover:text-slate-700">
-                        ({totalTemporaryEmployees ?? employees.filter((emp) => (emp.contract_type ?? "").toLowerCase() === "temporary").length})
-                      </span>
+                      Temporary
                     </SelectItem>
                   </SelectContent>
                 </Select>

@@ -85,6 +85,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import {
   EMPLOYEE_NUMBER_MAX_LENGTH,
@@ -145,6 +146,7 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   start_date?: string | null;
   end_date?: string | null;
   nationality?: string | null;
+  gender?: string | null;
   date_of_birth?: string | null;
   disability_status?: boolean | null;
   citizenship_status?: string | null;
@@ -2641,6 +2643,7 @@ const Employees = () => {
             employeeName: getColumnValue(row, "Name", "First Name", "employee_name"),
             employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
+            gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
             contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
             nationality: normalizeEnumValue(getColumnValue(row, "Nationality", "nationality"), nationalityOptions),
             jobTitle: getColumnValue(row, "Job Title", "job_title"),
@@ -2654,6 +2657,7 @@ const Employees = () => {
             id_number: validated.idNumber || null,
             employee_number: validated.employeeNumber || null,
             contract_type: validated.contractType || null,
+            gender: validated.gender || null,
             nationality: validated.nationality || null,
             job_title: validated.jobTitle || null,
           });
@@ -2697,45 +2701,84 @@ const Employees = () => {
     }
    };
 
-  const downloadTemplate = () => {
-    const wb = XLSX.utils.book_new();
-    const wsData = [
-      ["Employee Number", "Name", "Surname", "ID Number", "Nationality", "Contract Type", "Job Title"],
-      ["A0001", "John", "Doe", "9001015009087", "South African", "Permanent", "Store Manager"],
-      ["B0002", "Jane", "Smith", "8505125800082", "Namibian", "Temporary", ""],
+  const downloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Employees");
+
+    worksheet.columns = [
+      { header: "Employee Number", key: "employeeNumber", width: 18 },
+      { header: "Name", key: "employeeName", width: 18 },
+      { header: "Surname", key: "employeeSurname", width: 18 },
+      { header: "ID Number", key: "idNumber", width: 18 },
+      { header: "Gender", key: "gender", width: 12 },
+      { header: "Nationality", key: "nationality", width: 18 },
+      { header: "Contract Type", key: "contractType", width: 16 },
+      { header: "Job Title", key: "jobTitle", width: 20 },
     ];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const idNumberColumnIndex = 3;
-    for (let rowIndex = 1; rowIndex < wsData.length; rowIndex++) {
-      const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: idNumberColumnIndex });
-      const cell = ws[cellRef];
-      if (cell) {
-        const numericValue = Number(cell.v);
-        if (!Number.isNaN(numericValue)) {
-          cell.t = "n";
-          cell.v = numericValue;
-          cell.z = "0";
-        }
-      }
+
+    worksheet.addRow({
+      employeeNumber: "A0001",
+      employeeName: "John",
+      employeeSurname: "Doe",
+      idNumber: "9001015009087",
+      gender: "Male",
+      nationality: "South African",
+      contractType: "Permanent",
+      jobTitle: "Store Manager",
+    });
+
+    worksheet.addRow({
+      employeeNumber: "B0002",
+      employeeName: "Jane",
+      employeeSurname: "Smith",
+      idNumber: "8505125800082",
+      gender: "Female",
+      nationality: "Namibian",
+      contractType: "Temporary",
+      jobTitle: "",
+    });
+
+    worksheet.getColumn(4).numFmt = "0";
+
+    const listSheet = workbook.addWorksheet("Lists");
+    listSheet.getColumn(1).values = ["", ...genderOptions];
+    listSheet.getColumn(2).values = ["", ...nationalityOptions];
+    listSheet.state = "veryHidden";
+
+    const validationStartRow = 2;
+    const validationEndRow = 500;
+    const genderFormula = `Lists!$A$2:$A$${genderOptions.length + 1}`;
+    const nationalityFormula = `Lists!$B$2:$B$${nationalityOptions.length + 1}`;
+
+    for (let row = validationStartRow; row <= validationEndRow; row++) {
+      worksheet.getCell(row, 5).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [genderFormula],
+      };
+      worksheet.getCell(row, 6).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [nationalityFormula],
+      };
     }
-    ws["!cols"] = [
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 16 },
-      { wch: 20 },
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, "Employees");
-    XLSX.writeFile(wb, "employee_upload_template.xlsx");
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "employee_upload_template.xlsx";
+    link.click();
+    window.URL.revokeObjectURL(url);
+
     toast({
       title: "Template Downloaded",
       description: "Check your downloads folder for the Excel template.",
-     });
-   };
+    });
+  };
 
    const goToPreviousPage = () => {
      if (isFirstPage) return;
@@ -4739,7 +4782,7 @@ const Employees = () => {
                     <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
                       <div className="flex items-center gap-2 pl-2">
                         <UsersRound className="h-4 w-4 text-white" />
-                        <DialogTitle className="text-sm font-semibold text-white">New Bulk Employees</DialogTitle>
+                        <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
                       </div>
                       <DialogClose asChild>
                         <button type="button" className="text-white hover:text-white/80">
@@ -4750,27 +4793,34 @@ const Employees = () => {
                     <div className="px-6 pt-0 pb-2"></div>
                     <div className="px-6 pb-6">
                       <div className="grid gap-6 sm:grid-cols-2 pt-4">
-                        <div className="space-y-4 ml-3">
+                        <div className="space-y-4 ml-6">
+                          <h4 className="text-sm font-semibold">Step1</h4>
                           <button
                             type="button"
                             onClick={downloadTemplate}
-                            className="flex h-14 w-24 items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600"
+                            className="group flex h-14 w-24 flex-col items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600"
                           >
-                            <Download className="h-5 w-5" />
+                            <Download className="h-5 w-5 transition-transform duration-150 group-hover:-translate-y-1.5" />
+                            <span className="max-h-0 overflow-hidden text-[10px] text-blue-600 opacity-0 transition-all duration-150 group-hover:max-h-4 group-hover:opacity-100">
+                              Download
+                            </span>
                           </button>
-                          <h4 className="text-sm font-semibold">Step 1: Download</h4>
-                          <p className="text-[11px] text-slate-600 min-h-[32px]">
-                            Download the bulk employee spreadsheet.
+                          <p className="text-[11px] text-slate-600 min-h-[32px] max-w-[calc(100%-20px)]">
+                            Click in box above to download the .xlsx file for bulk upload.
                           </p>
                         </div>
-                        <div className="space-y-4">
+                        <div className="space-y-4 ml-6">
+                          <h4 className="text-sm font-semibold">Step 2</h4>
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isLoading}
-                            className="flex h-14 w-24 items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="group flex h-14 w-24 flex-col items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            <Upload className="h-5 w-5" />
+                            <Upload className="h-5 w-5 transition-transform duration-150 group-hover:-translate-y-1.5" />
+                            <span className="max-h-0 overflow-hidden text-[10px] text-blue-600 opacity-0 transition-all duration-150 group-hover:max-h-4 group-hover:opacity-100">
+                              Upload
+                            </span>
                           </button>
                           <input
                             ref={fileInputRef}
@@ -4781,9 +4831,8 @@ const Employees = () => {
                             id="bulk-upload"
                             hidden
                           />
-                          <h4 className="text-sm font-semibold">Step 2: Upload</h4>
-                          <p className="text-[11px] text-slate-600 min-h-[32px]">
-                            Upload the completed spreadsheet.
+                          <p className="text-[11px] text-slate-600 min-h-[32px] max-w-[calc(100%-10px)]">
+                            Click in box above to upload the completed .xlsx file.
                           </p>
                         </div>
                       </div>

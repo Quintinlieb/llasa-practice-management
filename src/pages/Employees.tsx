@@ -660,12 +660,11 @@ const Employees = () => {
         "employeeSurname",
         "idNumber",
         "nationality",
-        "gender",
         "dateOfBirth",
       ]),
-      equity: compare(["race", "disabilityStatus", "citizenshipStatus"]),
+      equity: compare(["race", "gender", "disabilityStatus", "citizenshipStatus"]),
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
-      statutory: compare(["incomeTaxNumber", "uifNumber"]),
+      statutory: compare(["incomeTaxNumber"]),
       employment: compare(["startDate", "contractType", "endDate", "jobTitle", "employeeNumber"]),
       homeAddress: compare([
         "physicalAddressLine1",
@@ -696,7 +695,6 @@ const Employees = () => {
         employeeSurname: true,
         idNumber: true,
         nationality: true,
-        gender: true,
         dateOfBirth: true,
       }),
     [profileSchemaBase],
@@ -706,6 +704,7 @@ const Employees = () => {
     () =>
       profileSchemaBase.pick({
         race: true,
+        gender: true,
         disabilityStatus: true,
         citizenshipStatus: true,
       }),
@@ -727,7 +726,6 @@ const Employees = () => {
     () =>
       profileSchemaBase.pick({
         incomeTaxNumber: true,
-        uifNumber: true,
       }),
     [profileSchemaBase],
   );
@@ -1553,16 +1551,15 @@ const Employees = () => {
       { label: "ID Number", value: profileForm.idNumber },
       { label: "Date of Birth", value: derivedDob },
       { label: "Nationality", value: profileForm.nationality },
-      { label: "Gender", value: profileForm.gender },
       { label: "Race", value: profileForm.race },
+      { label: "Gender", value: profileForm.gender },
       { label: "Disability Status", value: profileForm.disabilityStatus ? "Yes" : "No" },
       { label: "Citizenship Status", value: profileForm.citizenshipStatus },
       { label: "Cell Number", value: profileForm.cellNumber },
       { label: "Email", value: profileForm.email },
-      { label: "Emergency Contact", value: profileForm.emergencyContactName },
+      { label: "Emergency Contact Name", value: profileForm.emergencyContactName },
       { label: "Emergency Contact Number", value: profileForm.emergencyContactNumber },
       { label: "Income Tax Number", value: profileForm.incomeTaxNumber },
-      { label: "UIF Number", value: profileForm.uifNumber },
       { label: "Start Date", value: profileForm.startDate },
       { label: "Contract Type", value: profileForm.contractType },
       { label: "Job Title", value: profileForm.jobTitle },
@@ -2853,19 +2850,18 @@ const Employees = () => {
               employee_surname: validated.employeeSurname,
               id_number: validated.idNumber || null,
               nationality: validated.nationality,
-              gender: validated.gender,
               date_of_birth: validated.dateOfBirth || null,
             }
           : section === "equity"
             ? {
                 race: validated.race,
+                gender: validated.gender,
                 disability_status: validated.disabilityStatus ?? false,
                 citizenship_status: validated.citizenshipStatus || null,
               }
             : section === "statutory"
               ? {
                   income_tax_number: validated.incomeTaxNumber || null,
-                  uif_number: validated.uifNumber || null,
                 }
             : section === "contact"
               ? {
@@ -3164,62 +3160,6 @@ const Employees = () => {
                 }
               />
             </div>
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Gender</Label>
-              <Popover
-                open={genderOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                    enableEditMode();
-                  }
-                  setGenderOpen(open);
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        enableEditMode();
-                      }
-                    }}
-                  >
-                    <span className="truncate">{profileForm.gender || "Select gender"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandList>
-                      <CommandGroup>
-                        {genderOptions.map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
-                            onSelect={(value) => {
-                              setProfileForm((prev) => ({
-                                ...prev,
-                                gender: value as EmployeeProfileFormData["gender"],
-                              }));
-                              setGenderOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {profileForm.gender === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
           </div>
         </div>
 
@@ -3299,6 +3239,62 @@ const Employees = () => {
                           >
                             <span>{option}</span>
                             {profileForm.race === option && (
+                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                            )}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Gender</Label>
+              <Popover
+                open={genderOpen}
+                onOpenChange={(open) => {
+                  if (open && !isEditMode) {
+                    enableEditMode();
+                  }
+                  setGenderOpen(open);
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                    onPointerDown={(event) => {
+                      if (!isEditMode) {
+                        enableEditMode();
+                      }
+                    }}
+                  >
+                    <span className="truncate">{profileForm.gender || "Select gender"}</span>
+                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandList>
+                      <CommandGroup>
+                        {genderOptions.map((option) => (
+                          <CommandItem
+                            key={option}
+                            value={option}
+                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            onSelect={(value) => {
+                              setProfileForm((prev) => ({
+                                ...prev,
+                                gender: value as EmployeeProfileFormData["gender"],
+                              }));
+                              setGenderOpen(false);
+                            }}
+                          >
+                            <span>{option}</span>
+                            {profileForm.gender === option && (
                               <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
                             )}
                           </CommandItem>
@@ -3455,7 +3451,7 @@ const Employees = () => {
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Emergency Contact</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Emergency Contact Name</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
@@ -3533,23 +3529,6 @@ const Employees = () => {
                   setProfileForm((prev) => ({
                     ...prev,
                     incomeTaxNumber: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>UIF Number</Label>
-              <Input
-                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                placeholder="Please insert"
-                value={profileForm.uifNumber}
-                readOnly={!isEditMode}
-                onFocus={enableEditMode}
-                onMouseDown={enableEditMode}
-                onChange={(e) =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    uifNumber: e.target.value,
                   }))
                 }
               />
@@ -4714,9 +4693,30 @@ const Employees = () => {
                       aria-label="Previous page"
                       className="h-8 w-8 hover:bg-transparent hover:text-blue-600"
                     >
-                      <ChevronLeft className="h-3.5 w-3.5" />
+                      <ArrowRight className="h-3.5 w-3.5 rotate-180" />
                     </Button>
-                    <span className="text-[10px] font-medium text-primary">Page {currentPage}</span>
+                    <span className="text-[10px] font-medium text-slate-500">
+                      {hasNextPage || currentPage > 1 ? (
+                        <>
+                          Pages{" "}
+                          {currentPage > 1 && (
+                            <span className="text-slate-500 font-semibold">
+                              {currentPage - 1}
+                              {currentPage !== 1 || hasNextPage ? ", " : ""}
+                            </span>
+                          )}
+                          <span className="text-blue-600 font-semibold text-[12px] underline">{currentPage}</span>
+                          {hasNextPage && (
+                            <>
+                              {", "}
+                              <span className="text-slate-500 font-semibold">{currentPage + 1}</span>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>Page {currentPage}</>
+                      )}
+                    </span>
                     <Button
                       variant="ghost"
                       size="icon"

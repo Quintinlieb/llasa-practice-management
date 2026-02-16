@@ -111,6 +111,7 @@ const warningTable = () => (supabase as any).from("employee_warnings");
 const contractTable = () => (supabase as any).from("employee_contracts");
 
 type Employee = Tables<"employees"> & {
+  status?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   contract_type?: string | null;
@@ -147,6 +148,7 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   end_date?: string | null;
   nationality?: string | null;
   gender?: string | null;
+  status?: string | null;
   date_of_birth?: string | null;
   disability_status?: boolean | null;
   citizenship_status?: string | null;
@@ -442,6 +444,137 @@ const parseMisconductTypes = (value?: string | null) => {
 };
 
 const DEFAULT_PAGE_SIZE = 25;
+const employmentStatusOptions = ["Active", "Inactive"] as const;
+const departmentOptions = [
+  "Administration",
+  "Accounts Payable",
+  "Accounts Receivable",
+  "Actuarial",
+  "Agronomy",
+  "Asset Management",
+  "Audit",
+  "Aviation Operations",
+  "Banking Operations",
+  "Biotechnology",
+  "Board of Directors",
+  "Brand Management",
+  "Business Intelligence",
+  "Business Operations",
+  "Business Strategy",
+  "Call Centre",
+  "Capital Projects",
+  "Cash Management",
+  "Chemical Processing",
+  "Civil Engineering",
+  "Client Relations",
+  "Commercial",
+  "Communications",
+  "Community Relations",
+  "Compliance",
+  "Construction",
+  "Corporate Affairs",
+  "Corporate Finance",
+  "Corporate Governance",
+  "Credit Control",
+  "Customer Experience",
+  "Customer Service",
+  "Cybersecurity",
+  "Data Science",
+  "Debt Collection",
+  "Design",
+  "Digital Marketing",
+  "Distribution",
+  "E-Commerce",
+  "Economic Development",
+  "Electrical Engineering",
+  "Employee Relations",
+  "Energy Operations",
+  "Engineering",
+  "Enterprise Risk",
+  "Environmental Management",
+  "Events Management",
+  "Executive Management",
+  "Facilities Management",
+  "Finance",
+  "Financial Planning",
+  "Fleet Management",
+  "Food Production",
+  "Forestry",
+  "Fraud Prevention",
+  "Fund Management",
+  "General Management",
+  "Governance",
+  "Health & Safety",
+  "Healthcare Services",
+  "Hospitality",
+  "Human Capital",
+  "Human Resources",
+  "Industrial Relations",
+  "Information Security",
+  "Information Technology",
+  "Infrastructure",
+  "Innovation",
+  "Insurance Operations",
+  "Internal Audit",
+  "Inventory Management",
+  "Investment Management",
+  "IT Support",
+  "Legal",
+  "Logistics",
+  "Maintenance",
+  "Management",
+  "Manufacturing",
+  "Marine Operations",
+  "Marketing",
+  "Mechanical Engineering",
+  "Media Relations",
+  "Mining Operations",
+  "Network Operations",
+  "Operations",
+  "Payroll",
+  "Pharmaceutical Services",
+  "Policy & Regulatory Affairs",
+  "Procurement",
+  "Production",
+  "Product Development",
+  "Project Management",
+  "Property Management",
+  "Public Relations",
+  "Quality Assurance",
+  "Quality Control",
+  "Quantity Surveying",
+  "Real Estate",
+  "Research & Development",
+  "Retail Operations",
+  "Risk Management",
+  "Sales",
+  "Security",
+  "Social Development",
+  "Software Development",
+  "Supply Chain",
+  "Technical Services",
+  "Telecommunications",
+  "Training & Development",
+  "Transport",
+  "Treasury",
+  "Urban Planning",
+  "Utilities",
+  "Warehouse Management",
+  "Water & Sanitation",
+  "Wealth Management",
+] as const;
+const salaryTypeOptions = ["Per hour", "Per day", "Per week", "Per fortnight", "Per month"] as const;
+const unionMemberOptions = ["Yes", "No"] as const;
+const tradeUnionOptions = ["NUMSA", "GIWUSA", "SAEWA", "LEWUSA", "NUM", "Other"] as const;
+const terminationReasons = [
+  "Dismissed",
+  "Resigned",
+  "Retrenched/Staff reduction",
+  "Retired",
+  "Contract expired",
+  "Illness/Medically boarded",
+  "Absconded",
+] as const;
 const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
   First: 6,
   Second: 6,
@@ -571,6 +704,19 @@ const Employees = () => {
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
   const [hasLoadedConductOffences, setHasLoadedConductOffences] = useState(false);
+  const [employmentStatus, setEmploymentStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
+  const [employeeStatus, setEmployeeStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
+  const [probationPeriod, setProbationPeriod] = useState("");
+  const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
+  const [branch, setBranch] = useState("");
+  const [reportingTo, setReportingTo] = useState("");
+  const [occupationalLevel, setOccupationalLevel] = useState("");
+  const [salaryType, setSalaryType] = useState<(typeof salaryTypeOptions)[number] | "">("");
+  const [basicSalary, setBasicSalary] = useState("");
+  const [workEmail, setWorkEmail] = useState("");
+  const [workCellNumber, setWorkCellNumber] = useState("");
+  const [unionMember, setUnionMember] = useState<(typeof unionMemberOptions)[number] | "">("");
+  const [tradeUnion, setTradeUnion] = useState<(typeof tradeUnionOptions)[number] | "">("");
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const [nationalityOpen, setNationalityOpen] = useState(false);
   const [nationalityQuery, setNationalityQuery] = useState("");
@@ -579,6 +725,8 @@ const Employees = () => {
   const [citizenshipOpen, setCitizenshipOpen] = useState(false);
   const [contractTypeOpen, setContractTypeOpen] = useState(false);
   const [contractTypeQuery, setContractTypeQuery] = useState("");
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [departmentQuery, setDepartmentQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
   const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
@@ -634,6 +782,56 @@ const Employees = () => {
       }));
     }
   }, [isSouthAfricanNationality, profileForm.dateOfBirth, profileForm.idNumber]);
+
+  useEffect(() => {
+    const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
+    if (nextStatus === "inactive") {
+      setEmployeeStatus("Inactive");
+      return;
+    }
+    if (nextStatus === "active") {
+      setEmployeeStatus("Active");
+      return;
+    }
+    setEmployeeStatus("");
+  }, [selectedEmployee]);
+
+  const updateEmployeeStatus = useCallback(
+    async (nextStatus: "active" | "inactive") => {
+      if (!selectedEmployee || !user) return;
+      const { error } = await supabase
+        .from("employees")
+        .update({ status: nextStatus } as unknown as TablesInsert<"employees">)
+        .eq("id", selectedEmployee.id);
+      if (error) {
+        toast({
+          title: "Unable to update status",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const displayStatus = nextStatus === "inactive" ? "Inactive" : "Active";
+      setEmployeeStatus(displayStatus);
+      setSelectedEmployee((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+      );
+      setFilteredEmployees((prev) =>
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+      );
+      setAllEmployees((prev) =>
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+      );
+
+      toast({
+        title: "Employee status updated",
+        description: `Status set to ${displayStatus}.`,
+      });
+    },
+    [selectedEmployee, user, toast],
+  );
 
   const isProfileDirty = useMemo(() => {
     if (!originalProfile) return false;
@@ -1945,7 +2143,13 @@ const Employees = () => {
                     </span>
                     <div>
                       <p className="text-[10px] text-slate-400">Status</p>
-                      <p className="text-[11px] font-semibold text-slate-800">Active</p>
+                      <p
+                        className={`text-[11px] font-semibold ${
+                          employeeStatus === "Inactive" ? "text-red-600" : "text-emerald-600"
+                        }`}
+                      >
+                        {employeeStatus || "Active"}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -2036,7 +2240,35 @@ const Employees = () => {
                       className="rounded-sm border border-slate-300 bg-white p-5"
                     >
                       <div className="mb-3 flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-slate-900">Employment</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-slate-900">Employment</h3>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 w-28 justify-between rounded-sm px-2 text-[11px] inline-flex items-center bg-white text-slate-700 border border-slate-200 hover:border-red-500 hover:bg-white hover:text-red-600 data-[state=open]:border-blue-600 data-[state=open]:bg-white data-[state=open]:text-slate-700 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ml-[23px]"
+                              >
+                                <span className="truncate">Terminate</span>
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-40 text-[11px]">
+                              {terminationReasons.map((reason) => (
+                                <DropdownMenuItem
+                                  key={reason}
+                                  onClick={() => {
+                                    void updateEmployeeStatus("inactive");
+                                  }}
+                                  className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                >
+                                  {reason}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         <button
                           type="button"
                           className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
@@ -2099,7 +2331,7 @@ const Employees = () => {
     let query = (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id);
 
@@ -2155,7 +2387,7 @@ const Employees = () => {
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id)
       .order("employee_name", { ascending: true, nullsFirst: false })
@@ -3857,184 +4089,468 @@ const Employees = () => {
 
   const renderEmploymentTab = () => (
     <div className="space-y-5">
-      <div className="mt-2 space-y-2">
-        <div className="flex items-center gap-3">
-          <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Start Date</Label>
-          <Input
-            className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-            placeholder="Please insert"
-            type="date"
-            value={profileForm.startDate}
-            readOnly={!isEditMode}
-            onFocus={enableEditMode}
-            onMouseDown={enableEditMode}
-            ref={startDateInputRef}
-            onClick={() => {
-              if (!isEditMode) {
-                enableEditMode();
-                requestAnimationFrame(() => openDatePicker(startDateInputRef.current));
-                return;
-              }
-              openDatePicker(startDateInputRef.current);
-            }}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                startDate: e.target.value,
-              }))
-            }
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Contract Type</Label>
-          <Popover
-            open={contractTypeOpen}
-            onOpenChange={(open) => {
-              if (open && !isEditMode) {
-                enableEditMode();
-              }
-              setContractTypeOpen(open);
-              if (open) {
-                setContractTypeQuery("");
-              }
-            }}
-          >
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                role="combobox"
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
-                onPointerDown={(event) => {
-                  if (!isEditMode) {
-                    enableEditMode();
-                  }
-                }}
+      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+        <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Employee Status</Label>
+            <Select
+              value={employeeStatus}
+              onValueChange={(value) => {
+                if (value === "Active") {
+                  void updateEmployeeStatus("active");
+                }
+              }}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+              disabled={employeeStatus !== "Inactive" || !isEditMode}
+            >
+            <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                disabled={employeeStatus !== "Inactive" || !isEditMode}
               >
-                <span className="truncate">{profileForm.contractType || "Select contract type"}</span>
-                <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-              </Button>
-            </PopoverTrigger>
+                <SelectValue placeholder="Active" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {employmentStatusOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    onSelect={() => {
+                      if (option === "Active") {
+                        void updateEmployeeStatus("active");
+                      }
+                    }}
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Employee Number</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              value={profileForm.employeeNumber}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
+              onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
+              placeholder="Please insert"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Contract Type</Label>
+            <Popover
+              open={contractTypeOpen}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+                setContractTypeOpen(open);
+                if (open) {
+                  setContractTypeQuery("");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                  onPointerDown={(event) => {
+                    if (!isEditMode) {
+                      enableEditMode();
+                    }
+                  }}
+                  disabled={!isEditMode}
+                >
+                  <span className="truncate">{profileForm.contractType || "Select contract type"}</span>
+                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
               <Command shouldFilter={false}>
-                <CommandInput
-                  placeholder="Type contract type..."
-                  value={contractTypeQuery}
-                  onValueChange={setContractTypeQuery}
-                />
                 <CommandList>
-                  <CommandEmpty>No contract type found.</CommandEmpty>
                   <CommandGroup>
-                    {contractTypes
-                      .filter((option) =>
-                        option.toLowerCase().includes(contractTypeQuery.trim().toLowerCase()),
-                      )
-                      .map((option) => (
-                        <CommandItem
-                          key={option}
-                          value={option}
-                          className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
-                          onSelect={(value) => {
-                            setProfileForm((prev) => ({
-                              ...prev,
-                              contractType: value as EmployeeProfileFormData["contractType"],
-                              endDate: value === "Temporary" ? prev.endDate : "",
-                            }));
-                            setContractTypeOpen(false);
-                          }}
-                        >
-                          <span>{option}</span>
-                          {profileForm.contractType === option && (
-                            <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                          )}
-                        </CommandItem>
-                      ))}
-                    {contractTypeQuery.trim().length > 0 &&
-                      !contractTypes.some(
-                        (option) => option.toLowerCase() === contractTypeQuery.trim().toLowerCase(),
-                      ) && (
-                        <CommandItem
-                          value={contractTypeQuery.trim()}
-                          className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
-                          onSelect={(value) => {
-                            setProfileForm((prev) => ({
-                              ...prev,
-                              contractType: value as EmployeeProfileFormData["contractType"],
-                              endDate: value === "Temporary" ? prev.endDate : "",
-                            }));
-                            setContractTypeOpen(false);
-                          }}
-                        >
-                          <span>Use "{contractTypeQuery.trim()}"</span>
-                          {profileForm.contractType === contractTypeQuery.trim() && (
-                            <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                          )}
-                        </CommandItem>
-                      )}
+                    {contractTypes.map((option) => (
+                      <CommandItem
+                        key={option}
+                        value={option}
+                        className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                        onSelect={(value) => {
+                          setProfileForm((prev) => ({
+                            ...prev,
+                            contractType: value as EmployeeProfileFormData["contractType"],
+                            endDate: value === "Temporary" ? prev.endDate : "",
+                          }));
+                          setContractTypeOpen(false);
+                        }}
+                      >
+                        <span>{option}</span>
+                        {profileForm.contractType === option && (
+                          <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                        )}
+                      </CommandItem>
+                    ))}
                   </CommandGroup>
                 </CommandList>
               </Command>
             </PopoverContent>
-          </Popover>
-        </div>
-        {profileForm.contractType === "Temporary" && (
+            </Popover>
+          </div>
           <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>End Date</Label>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Start Date</Label>
             <Input
               className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
               placeholder="Please insert"
               type="date"
-              value={profileForm.endDate}
+              value={profileForm.startDate}
               readOnly={!isEditMode}
               onFocus={enableEditMode}
               onMouseDown={enableEditMode}
-              ref={endDateInputRef}
+              ref={startDateInputRef}
               onClick={() => {
                 if (!isEditMode) {
                   enableEditMode();
-                  requestAnimationFrame(() => openDatePicker(endDateInputRef.current));
+                  requestAnimationFrame(() => openDatePicker(startDateInputRef.current));
                   return;
                 }
-                openDatePicker(endDateInputRef.current);
+                openDatePicker(startDateInputRef.current);
               }}
               onChange={(e) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  endDate: e.target.value,
+                  startDate: e.target.value,
                 }))
               }
             />
           </div>
-        )}
-        <div className="flex items-center gap-3">
-          <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Job Title</Label>
-          <Input
-            className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-            placeholder="Please insert"
-            value={profileForm.jobTitle}
-            readOnly={!isEditMode}
-            onFocus={enableEditMode}
-            onMouseDown={enableEditMode}
-            onChange={(e) =>
-              setProfileForm((prev) => ({
-                ...prev,
-                jobTitle: e.target.value,
-              }))
-            }
-          />
+          {profileForm.contractType === "Temporary" && (
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>End Date</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                type="date"
+                value={profileForm.endDate}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                ref={endDateInputRef}
+                onClick={() => {
+                  if (!isEditMode) {
+                    enableEditMode();
+                    requestAnimationFrame(() => openDatePicker(endDateInputRef.current));
+                    return;
+                  }
+                  openDatePicker(endDateInputRef.current);
+                }}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    endDate: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Probation Period</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="e.g. 3 months"
+              value={probationPeriod}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setProbationPeriod(e.target.value)}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Employee Number</Label>
-          <Input
-            className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-            value={profileForm.employeeNumber}
-            readOnly={!isEditMode}
-            onFocus={enableEditMode}
-            onMouseDown={enableEditMode}
-            maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
-            onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
-            placeholder="Please insert"
-          />
+      </div>
+
+      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+        <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Job Title</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={profileForm.jobTitle}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  jobTitle: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Department</Label>
+            <Popover
+              open={departmentOpen}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+                setDepartmentOpen(open);
+                if (open) {
+                  setDepartmentQuery("");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                  onPointerDown={(event) => {
+                    if (!isEditMode) {
+                      enableEditMode();
+                    }
+                  }}
+                  disabled={!isEditMode}
+                >
+                  <span className="truncate">{department || "Select department"}</span>
+                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Type department..."
+                    value={departmentQuery}
+                    onValueChange={setDepartmentQuery}
+                  />
+                  <CommandList>
+                    <CommandEmpty>No department found.</CommandEmpty>
+                    <CommandGroup>
+                      {departmentOptions
+                        .filter((option) =>
+                          option.toLowerCase().includes(departmentQuery.trim().toLowerCase()),
+                        )
+                        .map((option) => (
+                          <CommandItem
+                            key={option}
+                            value={option}
+                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            onSelect={(value) => {
+                              setDepartment(value as (typeof departmentOptions)[number]);
+                              setDepartmentOpen(false);
+                            }}
+                          >
+                            <span>{option}</span>
+                            {department === option && (
+                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                            )}
+                          </CommandItem>
+                        ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branch</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={branch}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setBranch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Reporting To</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={reportingTo}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setReportingTo(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Occupational Level</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={occupationalLevel}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setOccupationalLevel(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+        <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Salary Type</Label>
+            <Select
+              value={salaryType}
+              onValueChange={(value) =>
+                setSalaryType(value as (typeof salaryTypeOptions)[number])
+              }
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+            >
+            <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select salary type" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {salaryTypeOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Basic Salary (R)</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="e.g. 25000"
+              inputMode="decimal"
+              value={basicSalary}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setBasicSalary(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+        <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Work Email</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={workEmail}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setWorkEmail(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Work Cell Number</Label>
+            <Input
+              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+              placeholder="Please insert"
+              value={workCellNumber}
+              readOnly={!isEditMode}
+              onFocus={enableEditMode}
+              onMouseDown={enableEditMode}
+              onChange={(e) => setWorkCellNumber(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+        <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Union Member</Label>
+            <Select
+              value={unionMember}
+              onValueChange={(value) =>
+                setUnionMember(value as (typeof unionMemberOptions)[number])
+              }
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+            >
+            <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {unionMemberOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Trade Union</Label>
+            <Select
+              value={tradeUnion}
+              onValueChange={(value) =>
+                setTradeUnion(value as (typeof tradeUnionOptions)[number])
+              }
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+            >
+            <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select trade union" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {tradeUnionOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
     </div>

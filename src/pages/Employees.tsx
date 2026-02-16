@@ -2237,57 +2237,7 @@ const Employees = () => {
                       }}
                       onPointerDownCapture={(event) => handleSectionInteract("employment", event)}
                       onFocusCapture={(event) => handleSectionInteract("employment", event)}
-                      className="rounded-sm border border-slate-300 bg-white p-5"
                     >
-                      <div className="mb-3 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-slate-900">Employment</h3>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-8 w-28 justify-between rounded-sm px-2 text-[11px] inline-flex items-center bg-white text-slate-700 border border-slate-200 hover:border-red-500 hover:bg-white hover:text-red-600 data-[state=open]:border-blue-600 data-[state=open]:bg-white data-[state=open]:text-slate-700 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ml-[23px]"
-                              >
-                                <span className="truncate">Terminate</span>
-                                <ChevronDown className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-40 text-[11px]">
-                              {terminationReasons.map((reason) => (
-                                <DropdownMenuItem
-                                  key={reason}
-                                  onClick={() => {
-                                    void updateEmployeeStatus("inactive");
-                                  }}
-                                  className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                                >
-                                  {reason}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <button
-                          type="button"
-                          className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-                          onClick={(event) => {
-                            if (sectionDirty.employment && !isProfileSaving) {
-                              void handleSectionSave("employment");
-                              return;
-                            }
-                            handleSectionInteract("employment", event);
-                          }}
-                          aria-label={sectionDirty.employment ? "Save employment details" : "Edit employment details"}
-                        >
-                          {sectionDirty.employment ? (
-                            <Save className="h-3.5 w-3.5" />
-                          ) : (
-                            <Pencil className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
                       {renderEmploymentTab()}
                     </div>
                   </div>
@@ -4090,7 +4040,51 @@ const Employees = () => {
   const renderEmploymentTab = () => (
     <div className="space-y-5">
       <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-        <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-28 justify-between rounded-sm px-2 text-[11px] inline-flex items-center bg-white text-slate-700 border border-slate-200 hover:border-red-500 hover:bg-white hover:text-red-600 data-[state=open]:border-blue-600 data-[state=open]:bg-white data-[state=open]:text-slate-700 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ml-[23px]"
+                >
+                  <span className="truncate">Terminate</span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-40 text-[11px]">
+                {terminationReasons.map((reason) => (
+                  <DropdownMenuItem
+                    key={reason}
+                    onClick={() => {
+                      void updateEmployeeStatus("inactive");
+                    }}
+                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    {reason}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+            onClick={(event) => {
+              if (sectionDirty.employment && !isProfileSaving) {
+                void handleSectionSave("employment");
+                return;
+              }
+              handleSectionInteract("employment", event);
+            }}
+            aria-label={sectionDirty.employment ? "Save employment details" : "Edit employment details"}
+          >
+            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          </button>
+        </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Employee Status</Label>
@@ -4109,7 +4103,7 @@ const Employees = () => {
               disabled={employeeStatus !== "Inactive" || !isEditMode}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 disabled={employeeStatus !== "Inactive" || !isEditMode}
               >
                 <SelectValue placeholder="Active" />
@@ -4278,7 +4272,23 @@ const Employees = () => {
       </div>
 
       <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-        <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+            onClick={(event) => {
+              if (sectionDirty.employment && !isProfileSaving) {
+                void handleSectionSave("employment");
+                return;
+              }
+              handleSectionInteract("employment", event);
+            }}
+            aria-label={sectionDirty.employment ? "Save organisational details" : "Edit organisational details"}
+          >
+            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          </button>
+        </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Job Title</Label>
@@ -4404,7 +4414,23 @@ const Employees = () => {
       </div>
 
       <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-        <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+            onClick={(event) => {
+              if (sectionDirty.employment && !isProfileSaving) {
+                void handleSectionSave("employment");
+                return;
+              }
+              handleSectionInteract("employment", event);
+            }}
+            aria-label={sectionDirty.employment ? "Save remuneration details" : "Edit remuneration details"}
+          >
+            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          </button>
+        </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Salary Type</Label>
@@ -4420,7 +4446,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select salary type" />
@@ -4455,7 +4481,23 @@ const Employees = () => {
       </div>
 
       <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-        <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+            onClick={(event) => {
+              if (sectionDirty.employment && !isProfileSaving) {
+                void handleSectionSave("employment");
+                return;
+              }
+              handleSectionInteract("employment", event);
+            }}
+            aria-label={sectionDirty.employment ? "Save work contact details" : "Edit work contact details"}
+          >
+            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          </button>
+        </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Work Email</Label>
@@ -4485,7 +4527,23 @@ const Employees = () => {
       </div>
 
       <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-        <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+            onClick={(event) => {
+              if (sectionDirty.employment && !isProfileSaving) {
+                void handleSectionSave("employment");
+                return;
+              }
+              handleSectionInteract("employment", event);
+            }}
+            aria-label={sectionDirty.employment ? "Save union details" : "Edit union details"}
+          >
+            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+          </button>
+        </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Union Member</Label>
@@ -4501,7 +4559,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select" />
@@ -4533,7 +4591,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select trade union" />

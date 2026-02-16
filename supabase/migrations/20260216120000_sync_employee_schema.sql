@@ -1,0 +1,18 @@
+-- Sync employees table with current UI/production schema.
+ALTER TABLE public.employees
+  ADD COLUMN IF NOT EXISTS postal_address_line1 TEXT,
+  ADD COLUMN IF NOT EXISTS postal_address_line2 TEXT,
+  ADD COLUMN IF NOT EXISTS postal_city TEXT,
+  ADD COLUMN IF NOT EXISTS postal_province TEXT,
+  ADD COLUMN IF NOT EXISTS postal_area_code TEXT,
+  ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+  ADD COLUMN IF NOT EXISTS disability_status BOOLEAN,
+  ADD COLUMN IF NOT EXISTS citizenship_status TEXT,
+  ADD COLUMN IF NOT EXISTS income_tax_number TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT,
+  ADD COLUMN IF NOT EXISTS probation_period TEXT,
+  ADD COLUMN IF NOT EXISTS union_member TEXT,
+  ADD COLUMN IF NOT EXISTS trade_union TEXT,
+  ADD COLUMN IF NOT EXISTS department TEXT,
+  ADD COLUMN IF NOT EXISTS reporting_to TEXT,
+  ADD COLUMN IF NOT EXISTS occupational_level TEXT;

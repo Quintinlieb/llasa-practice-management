@@ -80,6 +80,7 @@ import {
   Calendar,
   BadgeCheck,
   BriefcaseBusiness,
+  LogOut,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -115,6 +116,12 @@ type Employee = Tables<"employees"> & {
   start_date?: string | null;
   end_date?: string | null;
   contract_type?: string | null;
+  probation_period?: string | null;
+  union_member?: string | null;
+  trade_union?: string | null;
+  department?: string | null;
+  reporting_to?: string | null;
+  occupational_level?: string | null;
   nationality?: string | null;
   employee_number?: string | null;
   job_title?: string | null;
@@ -146,6 +153,12 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   job_title?: string | null;
   start_date?: string | null;
   end_date?: string | null;
+  probation_period?: string | null;
+  union_member?: string | null;
+  trade_union?: string | null;
+  department?: string | null;
+  reporting_to?: string | null;
+  occupational_level?: string | null;
   nationality?: string | null;
   gender?: string | null;
   status?: string | null;
@@ -176,7 +189,11 @@ type ProfileSectionKey =
   | "equity"
   | "contact"
   | "statutory"
-  | "employment"
+  | "employmentStatus"
+  | "employmentOrg"
+  | "employmentRemuneration"
+  | "employmentWorkContact"
+  | "employmentUnion"
   | "homeAddress"
   | "postalAddress";
 type EmployeeWarning = {
@@ -565,7 +582,44 @@ const departmentOptions = [
 ] as const;
 const salaryTypeOptions = ["Per hour", "Per day", "Per week", "Per fortnight", "Per month"] as const;
 const unionMemberOptions = ["Yes", "No"] as const;
-const tradeUnionOptions = ["NUMSA", "GIWUSA", "SAEWA", "LEWUSA", "NUM", "Other"] as const;
+const occupationalLevelOptions = [
+  "Top Management",
+  "Senior Management",
+  "Professionally Qualified and Experienced Specialists and Mid-Management",
+  "Skilled Technical and Academically Qualified Workers, Junior Management, Supervisors, Foremen and Superintendents",
+  "Semi-Skilled and Discretionary Decision Making",
+  "Unskilled and Defined Decision Making",
+] as const;
+const tradeUnionOptions = [
+  "AMCU - Association of Mineworkers and Construction Union",
+  "DENOSA - Democratic Nursing Organisation of South Africa",
+  "FAWU - Food and Allied Workers Union",
+  "GIWUSA - General Industries Workers Union of South Africa",
+  "HOSPERSA - Health and Other Service Personnel Trade Union of South Africa",
+  "IMATU - Independent Municipal and Allied Trade Union",
+  "LEWUSA - Liberated Metalworkers Union of South Africa",
+  "MISA - Motor Industry Staff Association",
+  "NAPTOSA - National Professional Teachers' Organisation of South Africa",
+  "NEHAWU - National Education Health and Allied Workers Union",
+  "NUM - National Union of Mineworkers",
+  "NUMSA - National Union of Metalworkers of South Africa",
+  "NUPSAW - National Union of Public Service and Allied Workers",
+  "PAWUSA - Paper, Printing, Wood and Allied Workers Union",
+  "POPCRU - Police and Prisons Civil Rights Union",
+  "PSA - Public Servants Association of South Africa",
+  "SAEWA - South African Equity Workers Association",
+  "SACCAWU - South African Commercial, Catering and Allied Workers Union",
+  "SADTU - South African Democratic Teachers Union",
+  "SAEPU - South African Emergency Personnel Union",
+  "SAOU - Suid-Afrikaanse Onderwysersunie",
+  "SAPU - South African Policing Union",
+  "SASBO - South African Society of Bank Officials",
+  "SATAWU - South African Transport and Allied Workers Union",
+  "SAMWU - South African Municipal Workers Union",
+  "Solidarity",
+  "TAWUSA - Transport and Allied Workers Union of South Africa",
+  "UASA - The Union",
+] as const;
 const terminationReasons = [
   "Dismissed",
   "Resigned",
@@ -614,6 +668,17 @@ const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issue
   const expiry = new Date(base);
   expiry.setMonth(expiry.getMonth() + months);
   return expiry.toISOString().split("T")[0];
+};
+
+const computeProbationEndDate = (startDate?: string, probationPeriod?: string) => {
+  if (!startDate || !probationPeriod) return "";
+  const months = Number.parseInt(probationPeriod, 10);
+  if (!Number.isFinite(months) || months <= 0) return "";
+  const base = new Date(startDate);
+  if (Number.isNaN(base.getTime())) return "";
+  const end = new Date(base);
+  end.setMonth(end.getMonth() + months);
+  return end.toISOString().split("T")[0];
 };
 
 const documentOptions: DocumentOption[] = [
@@ -710,13 +775,16 @@ const Employees = () => {
   const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
   const [branch, setBranch] = useState("");
   const [reportingTo, setReportingTo] = useState("");
-  const [occupationalLevel, setOccupationalLevel] = useState("");
+  const [occupationalLevel, setOccupationalLevel] = useState<(typeof occupationalLevelOptions)[number] | "">("");
   const [salaryType, setSalaryType] = useState<(typeof salaryTypeOptions)[number] | "">("");
   const [basicSalary, setBasicSalary] = useState("");
   const [workEmail, setWorkEmail] = useState("");
   const [workCellNumber, setWorkCellNumber] = useState("");
   const [unionMember, setUnionMember] = useState<(typeof unionMemberOptions)[number] | "">("");
-  const [tradeUnion, setTradeUnion] = useState<(typeof tradeUnionOptions)[number] | "">("");
+  const [tradeUnion, setTradeUnion] = useState("");
+  const [tradeUnionOpen, setTradeUnionOpen] = useState(false);
+  const [tradeUnionQuery, setTradeUnionQuery] = useState("");
+  const tradeUnionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const [nationalityOpen, setNationalityOpen] = useState(false);
   const [nationalityQuery, setNationalityQuery] = useState("");
@@ -727,6 +795,8 @@ const Employees = () => {
   const [contractTypeQuery, setContractTypeQuery] = useState("");
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [departmentQuery, setDepartmentQuery] = useState("");
+  const [reportingToOpen, setReportingToOpen] = useState(false);
+  const [reportingToQuery, setReportingToQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
   const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
@@ -751,7 +821,11 @@ const Employees = () => {
     equity: null,
     contact: null,
     statutory: null,
-    employment: null,
+    employmentStatus: null,
+    employmentOrg: null,
+    employmentRemuneration: null,
+    employmentWorkContact: null,
+    employmentUnion: null,
     homeAddress: null,
     postalAddress: null,
   });
@@ -771,6 +845,46 @@ const Employees = () => {
     () => (selectedEmployee ? createProfileFormFromEmployee(selectedEmployee) : null),
     [selectedEmployee],
   );
+  const originalProbationPeriod = useMemo(
+    () => (selectedEmployee?.probation_period ?? ""),
+    [selectedEmployee],
+  );
+  const originalUnionMember = useMemo(
+    () => ((selectedEmployee?.union_member ?? "") as (typeof unionMemberOptions)[number] | ""),
+    [selectedEmployee],
+  );
+  const originalTradeUnion = useMemo(
+    () => (selectedEmployee?.trade_union ?? ""),
+    [selectedEmployee],
+  );
+  const reportingToOptions = useMemo(() => {
+    const source = allEmployees.length > 0 ? allEmployees : employees;
+    return source
+      .map((emp) => `${(emp.employee_name ?? "").trim()} ${(emp.employee_surname ?? "").trim()}`.trim())
+      .filter(Boolean);
+  }, [allEmployees, employees]);
+  const [originalDepartment, setOriginalDepartment] = useState("");
+  const [originalBranch, setOriginalBranch] = useState("");
+  const [originalReportingTo, setOriginalReportingTo] = useState("");
+  const [originalOccupationalLevel, setOriginalOccupationalLevel] = useState("");
+  const [originalSalaryType, setOriginalSalaryType] = useState<(typeof salaryTypeOptions)[number] | "">("");
+  const [originalBasicSalary, setOriginalBasicSalary] = useState("");
+  const [originalWorkEmail, setOriginalWorkEmail] = useState("");
+  const [originalWorkCellNumber, setOriginalWorkCellNumber] = useState("");
+
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    setOriginalDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
+    setOriginalBranch(branch);
+    setOriginalReportingTo(selectedEmployee.reporting_to ?? "");
+    setOriginalOccupationalLevel(
+      (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+    );
+    setOriginalSalaryType(salaryType);
+    setOriginalBasicSalary(basicSalary);
+    setOriginalWorkEmail(workEmail);
+    setOriginalWorkCellNumber(workCellNumber);
+  }, [selectedEmployee]);
 
   useEffect(() => {
     if (!isSouthAfricanNationality) return;
@@ -847,7 +961,11 @@ const Employees = () => {
         equity: false,
         contact: false,
         statutory: false,
-        employment: false,
+        employmentStatus: false,
+        employmentOrg: false,
+        employmentRemuneration: false,
+        employmentWorkContact: false,
+        employmentUnion: false,
         homeAddress: false,
         postalAddress: false,
       };
@@ -865,7 +983,21 @@ const Employees = () => {
       equity: compare(["race", "gender", "disabilityStatus", "citizenshipStatus"]),
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
       statutory: compare(["incomeTaxNumber"]),
-      employment: compare(["startDate", "contractType", "endDate", "jobTitle", "employeeNumber"]),
+      employmentStatus:
+        compare(["startDate", "contractType", "endDate", "employeeNumber"]) ||
+        probationPeriod !== originalProbationPeriod,
+      employmentOrg:
+        compare(["jobTitle"]) ||
+        department !== originalDepartment ||
+        branch !== originalBranch ||
+        reportingTo !== originalReportingTo ||
+        occupationalLevel !== originalOccupationalLevel,
+      employmentRemuneration:
+        salaryType !== originalSalaryType || basicSalary !== originalBasicSalary,
+      employmentWorkContact:
+        workEmail !== originalWorkEmail || workCellNumber !== originalWorkCellNumber,
+      employmentUnion:
+        unionMember !== originalUnionMember || tradeUnion !== originalTradeUnion,
       homeAddress: compare([
         "physicalAddressLine1",
         "physicalAddressLine2",
@@ -881,7 +1013,32 @@ const Employees = () => {
         "postalAreaCode",
       ]),
     };
-  }, [profileForm, originalProfile]);
+  }, [
+    profileForm,
+    originalProfile,
+    probationPeriod,
+    originalProbationPeriod,
+    department,
+    originalDepartment,
+    branch,
+    originalBranch,
+    reportingTo,
+    originalReportingTo,
+    occupationalLevel,
+    originalOccupationalLevel,
+    salaryType,
+    originalSalaryType,
+    basicSalary,
+    originalBasicSalary,
+    workEmail,
+    originalWorkEmail,
+    workCellNumber,
+    originalWorkCellNumber,
+    unionMember,
+    originalUnionMember,
+    tradeUnion,
+    originalTradeUnion,
+  ]);
 
   const profileSchemaBase = useMemo(() => {
     const schema = employeeProfileSchema as unknown as { _def?: { schema?: any } };
@@ -1890,6 +2047,15 @@ const Employees = () => {
       if (!nextEmployee) return;
       setSelectedEmployee(nextEmployee);
       setProfileForm(createProfileFormFromEmployee(nextEmployee));
+      setProbationPeriod(nextEmployee.probation_period ?? "");
+      setUnionMember((nextEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
+      setTradeUnion(nextEmployee.trade_union ?? "");
+      setDepartment((nextEmployee.department as (typeof departmentOptions)[number]) ?? "");
+      setReportingTo(nextEmployee.reporting_to ?? "");
+      setOccupationalLevel(
+        (nextEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      );
+      setBranch("");
       setActiveTab("personal");
       setIsEditMode(false);
     },
@@ -1918,7 +2084,11 @@ const Employees = () => {
     equity: "Employment Equity",
     contact: "Contact Information",
     statutory: "Statutory Information",
-    employment: "Employment",
+    employmentStatus: "Employment Status",
+    employmentOrg: "Organisational Details",
+    employmentRemuneration: "Remuneration Information",
+    employmentWorkContact: "Work Contact Information",
+    employmentUnion: "Union Association",
     homeAddress: "Home Address",
     postalAddress: "Postal Address",
   };
@@ -2075,7 +2245,7 @@ const Employees = () => {
                 </div>
               </div>
 
-              <div className="px-5 pb-6 pt-6">
+              <div className="px-5 pb-4 pt-6">
 
               <div className="space-y-1">
                 <div className="flex items-baseline gap-3.5">
@@ -2161,6 +2331,33 @@ const Employees = () => {
                       <p className="text-[11px] font-semibold text-slate-800">{profileForm.contractType || "--"}</p>
                     </div>
                   </div>
+                  <div className="pt-3 flex justify-center">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center bg-red-600 text-white border-[0.5px] border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border data-[state=open]:border-red-700 data-[state=open]:bg-red-600 data-[state=open]:text-white focus:border focus:border-red-700 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0"
+                        >
+                          <span className="truncate font-semibold group-hover:underline">Terminate</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center" className="w-40 text-[11px] text-center">
+                        {terminationReasons.map((reason) => (
+                          <DropdownMenuItem
+                            key={reason}
+                            onClick={() => {
+                              void updateEmployeeStatus("inactive");
+                            }}
+                            className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                          >
+                            {reason}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2231,15 +2428,7 @@ const Employees = () => {
                 </TabsContent>
                 <TabsContent value="employment" className="mt-0 pb-0 flex-1 min-h-0">
                   <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
-                    <div
-                      ref={(el) => {
-                        sectionRefs.current.employment = el;
-                      }}
-                      onPointerDownCapture={(event) => handleSectionInteract("employment", event)}
-                      onFocusCapture={(event) => handleSectionInteract("employment", event)}
-                    >
-                      {renderEmploymentTab()}
-                    </div>
+                    {renderEmploymentTab()}
                   </div>
                 </TabsContent>
                 <TabsContent value="address" className="mt-0 pb-0 flex-1 min-h-0">
@@ -2281,7 +2470,7 @@ const Employees = () => {
     let query = (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id);
 
@@ -2337,7 +2526,7 @@ const Employees = () => {
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id)
       .order("employee_name", { ascending: true, nullsFirst: false })
@@ -2993,6 +3182,15 @@ const Employees = () => {
   const openProfileDialog = (employee: Employee) => {
     setSelectedEmployee(employee);
     setProfileForm(createProfileFormFromEmployee(employee));
+    setProbationPeriod(employee.probation_period ?? "");
+    setUnionMember((employee.union_member as (typeof unionMemberOptions)[number]) ?? "");
+    setTradeUnion(employee.trade_union ?? "");
+    setDepartment((employee.department as (typeof departmentOptions)[number]) ?? "");
+    setReportingTo(employee.reporting_to ?? "");
+    setOccupationalLevel(
+      (employee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+    );
+    setBranch("");
    setActiveTab("personal");
    setIsEditMode(false);
    setActiveEditSection(null);
@@ -3004,12 +3202,29 @@ const Employees = () => {
     setSelectedEmployee(null);
     setIsEditMode(false);
     setActiveEditSection(null);
+    setProbationPeriod("");
+    setUnionMember("");
+    setTradeUnion("");
+    setTradeUnionOpen(false);
+    setTradeUnionQuery("");
+    setDepartment("");
+    setReportingTo("");
+    setOccupationalLevel("");
+    setBranch("");
+    setReportingToOpen(false);
+    setReportingToQuery("");
    };
 
   const handleSectionSave = async (section: ProfileSectionKey) => {
     if (!selectedEmployee) return;
     setIsProfileSaving(true);
     try {
+      const isEmploymentSection =
+        section === "employmentStatus" ||
+        section === "employmentOrg" ||
+        section === "employmentRemuneration" ||
+        section === "employmentWorkContact" ||
+        section === "employmentUnion";
       let validated: any = null;
       switch (section) {
         case "identity":
@@ -3024,7 +3239,11 @@ const Employees = () => {
         case "statutory":
           validated = statutorySectionSchema.parse(profileForm);
           break;
-        case "employment":
+        case "employmentStatus":
+        case "employmentOrg":
+        case "employmentRemuneration":
+        case "employmentWorkContact":
+        case "employmentUnion":
           validated = employmentSectionSchema.parse(profileForm);
           if (validated.contractType === "Temporary" && !validated.endDate) {
             throw new Error("End date is required for temporary contracts");
@@ -3040,7 +3259,7 @@ const Employees = () => {
           return;
       }
 
-      if (section === "employment") {
+      if (isEmploymentSection) {
         const finalEmployeeNumber = validated.employeeNumber || null;
         const normalizedNumber = normalizeEmployeeNumber(finalEmployeeNumber);
         const duplicate = normalizedNumber
@@ -3062,9 +3281,9 @@ const Employees = () => {
       }
 
       const endDateValue =
-        section === "employment" && validated.contractType === "Temporary" && validated.endDate
+        isEmploymentSection && validated.contractType === "Temporary" && validated.endDate
           ? validated.endDate
-          : section === "employment"
+          : isEmploymentSection
             ? null
             : undefined;
 
@@ -3095,13 +3314,19 @@ const Employees = () => {
                   emergency_contact_name: validated.emergencyContactName || null,
                   emergency_contact_number: validated.emergencyContactNumber || null,
                 }
-              : section === "employment"
+              : isEmploymentSection
                 ? {
                     start_date: validated.startDate,
                     contract_type: validated.contractType,
                     end_date: endDateValue ?? null,
                     employee_number: validated.employeeNumber || null,
                     job_title: validated.jobTitle || null,
+                    probation_period: probationPeriod || null,
+                    union_member: unionMember || null,
+                    trade_union: unionMember === "Yes" ? tradeUnion || null : null,
+                    department: department || null,
+                    reporting_to: reportingTo || null,
+                    occupational_level: occupationalLevel || null,
                   }
                 : section === "homeAddress"
                   ? {
@@ -3138,6 +3363,24 @@ const Employees = () => {
 
       setSelectedEmployee(updatedEmployee);
       setProfileForm(createProfileFormFromEmployee(updatedEmployee));
+      setProbationPeriod(updatedEmployee.probation_period ?? "");
+      setUnionMember((updatedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
+      setTradeUnion(updatedEmployee.trade_union ?? "");
+      setDepartment((updatedEmployee.department as (typeof departmentOptions)[number]) ?? "");
+      setReportingTo(updatedEmployee.reporting_to ?? "");
+      setOccupationalLevel(
+        (updatedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      );
+      if (isEmploymentSection) {
+        setOriginalDepartment(department);
+        setOriginalBranch(branch);
+        setOriginalReportingTo(reportingTo);
+        setOriginalOccupationalLevel(occupationalLevel);
+        setOriginalSalaryType(salaryType);
+        setOriginalBasicSalary(basicSalary);
+        setOriginalWorkEmail(workEmail);
+        setOriginalWorkCellNumber(workCellNumber);
+      }
       setIsEditMode(false);
       setActiveEditSection(null);
       await fetchEmployees();
@@ -4038,51 +4281,32 @@ const Employees = () => {
   );
 
   const renderEmploymentTab = () => (
-    <div className="space-y-5">
-      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+    <div className="space-y-3">
+      <div
+        ref={(el) => {
+          sectionRefs.current.employmentStatus = el;
+        }}
+        onPointerDownCapture={(event) => handleSectionInteract("employmentStatus", event)}
+        onFocusCapture={(event) => handleSectionInteract("employmentStatus", event)}
+        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+      >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 w-28 justify-between rounded-sm px-2 text-[11px] inline-flex items-center bg-white text-slate-700 border border-slate-200 hover:border-red-500 hover:bg-white hover:text-red-600 data-[state=open]:border-blue-600 data-[state=open]:bg-white data-[state=open]:text-slate-700 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ml-[23px]"
-                >
-                  <span className="truncate">Terminate</span>
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-40 text-[11px]">
-                {terminationReasons.map((reason) => (
-                  <DropdownMenuItem
-                    key={reason}
-                    onClick={() => {
-                      void updateEmployeeStatus("inactive");
-                    }}
-                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                  >
-                    {reason}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
             onClick={(event) => {
-              if (sectionDirty.employment && !isProfileSaving) {
-                void handleSectionSave("employment");
+              if (sectionDirty.employmentStatus && !isProfileSaving) {
+                void handleSectionSave("employmentStatus");
                 return;
               }
-              handleSectionInteract("employment", event);
+              handleSectionInteract("employmentStatus", event);
             }}
-            aria-label={sectionDirty.employment ? "Save employment details" : "Edit employment details"}
+            aria-label={sectionDirty.employmentStatus ? "Save employment details" : "Edit employment details"}
           >
-            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            {sectionDirty.employmentStatus ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
           </button>
         </div>
         <div className="mt-3 space-y-2">
@@ -4258,35 +4482,81 @@ const Employees = () => {
           )}
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Probation Period</Label>
+            <Select
+              value={probationPeriod}
+              onValueChange={(value) => setProbationPeriod(value)}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+              disabled={!isEditMode}
+            >
+              <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                <SelectItem
+                  value="No probation"
+                  className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                >
+                  No probation
+                </SelectItem>
+                {Array.from({ length: 12 }, (_, idx) => {
+                  const months = idx + 1;
+                  return (
+                    <SelectItem
+                      key={months}
+                      value={`${months} ${months === 1 ? "month" : "months"}`}
+                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    >
+                      {months} {months === 1 ? "month" : "months"}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Probation End</Label>
             <Input
               className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="e.g. 3 months"
-              value={probationPeriod}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setProbationPeriod(e.target.value)}
+              value={formatDisplayDate(
+                computeProbationEndDate(profileForm.startDate, probationPeriod),
+              )}
+              readOnly
+              disabled
             />
           </div>
         </div>
       </div>
 
-      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+      <div
+        ref={(el) => {
+          sectionRefs.current.employmentOrg = el;
+        }}
+        onPointerDownCapture={(event) => handleSectionInteract("employmentOrg", event)}
+        onFocusCapture={(event) => handleSectionInteract("employmentOrg", event)}
+        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+      >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
             onClick={(event) => {
-              if (sectionDirty.employment && !isProfileSaving) {
-                void handleSectionSave("employment");
+              if (sectionDirty.employmentOrg && !isProfileSaving) {
+                void handleSectionSave("employmentOrg");
                 return;
               }
-              handleSectionInteract("employment", event);
+              handleSectionInteract("employmentOrg", event);
             }}
-            aria-label={sectionDirty.employment ? "Save organisational details" : "Edit organisational details"}
+            aria-label={sectionDirty.employmentOrg ? "Save organisational details" : "Edit organisational details"}
           >
-            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            {sectionDirty.employmentOrg ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
           </button>
         </div>
         <div className="mt-3 space-y-2">
@@ -4375,60 +4645,130 @@ const Employees = () => {
             </Popover>
           </div>
           <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branch</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              value={branch}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setBranch(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Reporting To</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              value={reportingTo}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setReportingTo(e.target.value)}
-            />
+            <Popover
+              open={reportingToOpen}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+                setReportingToOpen(open);
+                if (open) {
+                  setReportingToQuery("");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                  onPointerDown={(event) => {
+                    if (!isEditMode) {
+                      enableEditMode();
+                    }
+                  }}
+                  disabled={!isEditMode}
+                >
+                  <span className="truncate">{reportingTo || "Select employee"}</span>
+                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Type employee name..."
+                    value={reportingToQuery}
+                    onValueChange={setReportingToQuery}
+                  />
+                  <CommandList>
+                    <CommandEmpty>No employee found.</CommandEmpty>
+                    <CommandGroup>
+                      {reportingToOptions
+                        .filter((option) =>
+                          option.toLowerCase().includes(reportingToQuery.trim().toLowerCase()),
+                        )
+                        .map((option) => (
+                          <CommandItem
+                            key={option}
+                            value={option}
+                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            onSelect={(value) => {
+                              setReportingTo(value);
+                              setReportingToOpen(false);
+                            }}
+                          >
+                            <span>{option}</span>
+                            {reportingTo === option && (
+                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                            )}
+                          </CommandItem>
+                        ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Occupational Level</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
+            <Select
               value={occupationalLevel}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setOccupationalLevel(e.target.value)}
-            />
+              onValueChange={(value) =>
+                setOccupationalLevel(value as (typeof occupationalLevelOptions)[number])
+              }
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  enableEditMode();
+                }
+              }}
+            >
+              <SelectTrigger
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select occupational level" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {occupationalLevelOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </div>
 
-      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+      <div
+        ref={(el) => {
+          sectionRefs.current.employmentRemuneration = el;
+        }}
+        onPointerDownCapture={(event) => handleSectionInteract("employmentRemuneration", event)}
+        onFocusCapture={(event) => handleSectionInteract("employmentRemuneration", event)}
+        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+      >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
             onClick={(event) => {
-              if (sectionDirty.employment && !isProfileSaving) {
-                void handleSectionSave("employment");
+              if (sectionDirty.employmentRemuneration && !isProfileSaving) {
+                void handleSectionSave("employmentRemuneration");
                 return;
               }
-              handleSectionInteract("employment", event);
+              handleSectionInteract("employmentRemuneration", event);
             }}
-            aria-label={sectionDirty.employment ? "Save remuneration details" : "Edit remuneration details"}
+            aria-label={sectionDirty.employmentRemuneration ? "Save remuneration details" : "Edit remuneration details"}
           >
-            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            {sectionDirty.employmentRemuneration ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
           </button>
         </div>
         <div className="mt-3 space-y-2">
@@ -4480,22 +4820,29 @@ const Employees = () => {
         </div>
       </div>
 
-      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+      <div
+        ref={(el) => {
+          sectionRefs.current.employmentWorkContact = el;
+        }}
+        onPointerDownCapture={(event) => handleSectionInteract("employmentWorkContact", event)}
+        onFocusCapture={(event) => handleSectionInteract("employmentWorkContact", event)}
+        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+      >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
             onClick={(event) => {
-              if (sectionDirty.employment && !isProfileSaving) {
-                void handleSectionSave("employment");
+              if (sectionDirty.employmentWorkContact && !isProfileSaving) {
+                void handleSectionSave("employmentWorkContact");
                 return;
               }
-              handleSectionInteract("employment", event);
+              handleSectionInteract("employmentWorkContact", event);
             }}
-            aria-label={sectionDirty.employment ? "Save work contact details" : "Edit work contact details"}
+            aria-label={sectionDirty.employmentWorkContact ? "Save work contact details" : "Edit work contact details"}
           >
-            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            {sectionDirty.employmentWorkContact ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
           </button>
         </div>
         <div className="mt-3 space-y-2">
@@ -4526,22 +4873,29 @@ const Employees = () => {
         </div>
       </div>
 
-      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+      <div
+        ref={(el) => {
+          sectionRefs.current.employmentUnion = el;
+        }}
+        onPointerDownCapture={(event) => handleSectionInteract("employmentUnion", event)}
+        onFocusCapture={(event) => handleSectionInteract("employmentUnion", event)}
+        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+      >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
             onClick={(event) => {
-              if (sectionDirty.employment && !isProfileSaving) {
-                void handleSectionSave("employment");
+              if (sectionDirty.employmentUnion && !isProfileSaving) {
+                void handleSectionSave("employmentUnion");
                 return;
               }
-              handleSectionInteract("employment", event);
+              handleSectionInteract("employmentUnion", event);
             }}
-            aria-label={sectionDirty.employment ? "Save union details" : "Edit union details"}
+            aria-label={sectionDirty.employmentUnion ? "Save union details" : "Edit union details"}
           >
-            {sectionDirty.employment ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            {sectionDirty.employmentUnion ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
           </button>
         </div>
         <div className="mt-3 space-y-2">
@@ -4549,9 +4903,17 @@ const Employees = () => {
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Union Member</Label>
             <Select
               value={unionMember}
-              onValueChange={(value) =>
-                setUnionMember(value as (typeof unionMemberOptions)[number])
-              }
+              onValueChange={(value) => {
+                const nextValue = value as (typeof unionMemberOptions)[number];
+                setUnionMember(nextValue);
+                if (nextValue !== "Yes") {
+                  setTradeUnion("");
+                  return;
+                }
+                requestAnimationFrame(() => {
+                  tradeUnionTriggerRef.current?.focus();
+                });
+              }}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
                   enableEditMode();
@@ -4577,38 +4939,93 @@ const Employees = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Trade Union</Label>
-            <Select
-              value={tradeUnion}
-              onValueChange={(value) =>
-                setTradeUnion(value as (typeof tradeUnionOptions)[number])
-              }
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  enableEditMode();
-                }
-              }}
-            >
-            <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
-                disabled={!isEditMode}
+          {unionMember === "Yes" && (
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Trade Union</Label>
+              <Popover
+                open={tradeUnionOpen}
+                onOpenChange={(open) => {
+                  if (open && !isEditMode) {
+                    enableEditMode();
+                  }
+                  setTradeUnionOpen(open);
+                  if (open) {
+                    setTradeUnionQuery("");
+                  }
+                }}
               >
-                <SelectValue placeholder="Select trade union" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {tradeUnionOptions.map((option) => (
-                  <SelectItem
-                    key={option}
-                    value={option}
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    ref={tradeUnionTriggerRef}
+                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
+                    onPointerDown={(event) => {
+                      if (!isEditMode) {
+                        enableEditMode();
+                      }
+                    }}
                   >
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                    <span className="truncate">{tradeUnion || "Select trade union"}</span>
+                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Type trade union..."
+                      value={tradeUnionQuery}
+                      onValueChange={setTradeUnionQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty>No trade union found.</CommandEmpty>
+                      <CommandGroup>
+                        {tradeUnionOptions
+                          .filter((option) =>
+                            option.toLowerCase().includes(tradeUnionQuery.trim().toLowerCase()),
+                          )
+                          .map((option) => (
+                            <CommandItem
+                              key={option}
+                              value={option}
+                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              onSelect={(value) => {
+                                setTradeUnion(value);
+                                setTradeUnionOpen(false);
+                              }}
+                            >
+                              <span>{option}</span>
+                              {tradeUnion === option && (
+                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                              )}
+                            </CommandItem>
+                          ))}
+                        {tradeUnionQuery.trim().length > 0 &&
+                          !tradeUnionOptions.some(
+                            (option) => option.toLowerCase() === tradeUnionQuery.trim().toLowerCase(),
+                          ) && (
+                            <CommandItem
+                              value={tradeUnionQuery.trim()}
+                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              onSelect={(value) => {
+                                setTradeUnion(value);
+                                setTradeUnionOpen(false);
+                              }}
+                            >
+                              <span>Use "{tradeUnionQuery.trim()}"</span>
+                              {tradeUnion === tradeUnionQuery.trim() && (
+                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                              )}
+                            </CommandItem>
+                          )}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
         </div>
       </div>
     </div>

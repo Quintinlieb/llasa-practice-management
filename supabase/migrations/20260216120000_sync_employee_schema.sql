@@ -15,4 +15,8 @@ ALTER TABLE public.employees
   ADD COLUMN IF NOT EXISTS trade_union TEXT,
   ADD COLUMN IF NOT EXISTS department TEXT,
   ADD COLUMN IF NOT EXISTS reporting_to TEXT,
-  ADD COLUMN IF NOT EXISTS occupational_level TEXT;
+  ADD COLUMN IF NOT EXISTS occupational_level TEXT,
+  ADD COLUMN IF NOT EXISTS salary_type TEXT,
+  ADD COLUMN IF NOT EXISTS basic_salary TEXT,
+  ADD COLUMN IF NOT EXISTS work_email TEXT,
+  ADD COLUMN IF NOT EXISTS work_cell_number TEXT;

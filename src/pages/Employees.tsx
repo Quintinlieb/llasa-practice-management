@@ -122,6 +122,10 @@ type Employee = Tables<"employees"> & {
   department?: string | null;
   reporting_to?: string | null;
   occupational_level?: string | null;
+  salary_type?: string | null;
+  basic_salary?: string | null;
+  work_email?: string | null;
+  work_cell_number?: string | null;
   nationality?: string | null;
   employee_number?: string | null;
   job_title?: string | null;
@@ -159,6 +163,10 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   department?: string | null;
   reporting_to?: string | null;
   occupational_level?: string | null;
+  salary_type?: string | null;
+  basic_salary?: string | null;
+  work_email?: string | null;
+  work_cell_number?: string | null;
   nationality?: string | null;
   gender?: string | null;
   status?: string | null;
@@ -580,7 +588,7 @@ const departmentOptions = [
   "Water & Sanitation",
   "Wealth Management",
 ] as const;
-const salaryTypeOptions = ["Per hour", "Per day", "Per week", "Per fortnight", "Per month"] as const;
+const salaryTypeOptions = ["Hourly", "Daily", "Weekly", "Fortnightly", "Monthly"] as const;
 const unionMemberOptions = ["Yes", "No"] as const;
 const occupationalLevelOptions = [
   "Top Management",
@@ -880,10 +888,10 @@ const Employees = () => {
     setOriginalOccupationalLevel(
       (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
-    setOriginalSalaryType(salaryType);
-    setOriginalBasicSalary(basicSalary);
-    setOriginalWorkEmail(workEmail);
-    setOriginalWorkCellNumber(workCellNumber);
+    setOriginalSalaryType((selectedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setOriginalBasicSalary(selectedEmployee.basic_salary ?? "");
+    setOriginalWorkEmail(selectedEmployee.work_email ?? "");
+    setOriginalWorkCellNumber(selectedEmployee.work_cell_number ?? "");
   }, [selectedEmployee]);
 
   useEffect(() => {
@@ -1921,6 +1929,13 @@ const Employees = () => {
       { label: "Contract Type", value: profileForm.contractType },
       { label: "Job Title", value: profileForm.jobTitle },
       { label: "Employee Number", value: profileForm.employeeNumber },
+      { label: "Probation Period", value: probationPeriod },
+      { label: "Department", value: department },
+      { label: "Reporting To", value: reportingTo },
+      { label: "Occupational Level", value: occupationalLevel },
+      { label: "Salary Cycle", value: salaryType },
+      { label: "Basic Salary", value: basicSalary },
+      { label: "Union Member", value: unionMember },
     ];
 
     if (profileForm.contractType === "Temporary") {
@@ -1929,23 +1944,18 @@ const Employees = () => {
 
     const physicalLineGroup = [profileForm.physicalAddressLine1, profileForm.physicalAddressLine2];
     const postalLineGroup = [profileForm.postalAddressLine1, profileForm.postalAddressLine2];
-    const physicalFields = [
-      ...physicalLineGroup,
-      profileForm.city,
-      profileForm.province,
-      profileForm.areaCode,
-    ];
-    const postalFields = [
-      ...postalLineGroup,
-      profileForm.postalCity,
-      profileForm.postalProvince,
-      profileForm.postalAreaCode,
-    ];
-
     const physicalLineComplete = physicalLineGroup.some((value) => String(value ?? "").trim().length > 0);
     const postalLineComplete = postalLineGroup.some((value) => String(value ?? "").trim().length > 0);
-    const physicalComplete = physicalFields.every((value) => String(value ?? "").trim().length > 0);
-    const postalComplete = postalFields.every((value) => String(value ?? "").trim().length > 0);
+    const physicalComplete =
+      physicalLineComplete &&
+      String(profileForm.city ?? "").trim().length > 0 &&
+      String(profileForm.province ?? "").trim().length > 0 &&
+      String(profileForm.areaCode ?? "").trim().length > 0;
+    const postalComplete =
+      postalLineComplete &&
+      String(profileForm.postalCity ?? "").trim().length > 0 &&
+      String(profileForm.postalProvince ?? "").trim().length > 0 &&
+      String(profileForm.postalAreaCode ?? "").trim().length > 0;
 
     const filled = fields.filter((field) => String(field.value ?? "").trim().length > 0).length;
     const addressFilledCount =
@@ -1988,7 +1998,18 @@ const Employees = () => {
       missingFields,
       missingContract: !hasContract,
     };
-  }, [profileForm, contractsForSelectedEmployee, isSouthAfricanNationality]);
+  }, [
+    profileForm,
+    contractsForSelectedEmployee,
+    isSouthAfricanNationality,
+    probationPeriod,
+    department,
+    reportingTo,
+    occupationalLevel,
+    salaryType,
+    basicSalary,
+    unionMember,
+  ]);
 
   const contractsByStatus = useMemo(
     () => ({
@@ -2055,6 +2076,10 @@ const Employees = () => {
       setOccupationalLevel(
         (nextEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
       );
+      setSalaryType((nextEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+      setBasicSalary(nextEmployee.basic_salary ?? "");
+      setWorkEmail(nextEmployee.work_email ?? "");
+      setWorkCellNumber(nextEmployee.work_cell_number ?? "");
       setBranch("");
       setActiveTab("personal");
       setIsEditMode(false);
@@ -2190,7 +2215,7 @@ const Employees = () => {
         </div>
 
         <div className="mt-3 grid h-full flex-1 min-h-0 gap-3 grid-cols-[320px_1fr]">
-          <aside className="h-full min-h-0 space-y-4">
+          <aside className="h-full min-h-0 space-y-4 overflow-y-auto pr-1">
 
             <div className="rounded-sm border border-slate-300 bg-white overflow-hidden">
               <div className="relative bg-slate-100">
@@ -2470,7 +2495,7 @@ const Employees = () => {
     let query = (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id);
 
@@ -2526,7 +2551,7 @@ const Employees = () => {
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
+        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
       )
       .eq("company_id", user.id)
       .order("employee_name", { ascending: true, nullsFirst: false })
@@ -3190,6 +3215,10 @@ const Employees = () => {
     setOccupationalLevel(
       (employee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
+    setSalaryType((employee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setBasicSalary(employee.basic_salary ?? "");
+    setWorkEmail(employee.work_email ?? "");
+    setWorkCellNumber(employee.work_cell_number ?? "");
     setBranch("");
    setActiveTab("personal");
    setIsEditMode(false);
@@ -3210,6 +3239,10 @@ const Employees = () => {
     setDepartment("");
     setReportingTo("");
     setOccupationalLevel("");
+    setSalaryType("");
+    setBasicSalary("");
+    setWorkEmail("");
+    setWorkCellNumber("");
     setBranch("");
     setReportingToOpen(false);
     setReportingToQuery("");
@@ -3257,6 +3290,16 @@ const Employees = () => {
           break;
         default:
           return;
+      }
+
+      if (section === "employmentUnion" && unionMember === "Yes" && tradeUnion.trim().length === 0) {
+        toast({
+          title: "Trade union required",
+          description: "Select a trade union or enter a custom trade union when Union Member is set to Yes.",
+          variant: "destructive",
+        });
+        setIsProfileSaving(false);
+        return;
       }
 
       if (isEmploymentSection) {
@@ -3327,6 +3370,10 @@ const Employees = () => {
                     department: department || null,
                     reporting_to: reportingTo || null,
                     occupational_level: occupationalLevel || null,
+                    salary_type: salaryType || null,
+                    basic_salary: basicSalary || null,
+                    work_email: workEmail || null,
+                    work_cell_number: workCellNumber || null,
                   }
                 : section === "homeAddress"
                   ? {
@@ -3371,6 +3418,10 @@ const Employees = () => {
       setOccupationalLevel(
         (updatedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
       );
+      setSalaryType((updatedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+      setBasicSalary(updatedEmployee.basic_salary ?? "");
+      setWorkEmail(updatedEmployee.work_email ?? "");
+      setWorkCellNumber(updatedEmployee.work_cell_number ?? "");
       if (isEmploymentSection) {
         setOriginalDepartment(department);
         setOriginalBranch(branch);
@@ -4015,7 +4066,7 @@ const Employees = () => {
         }}
         onPointerDownCapture={(event) => handleSectionInteract("homeAddress", event)}
         onFocusCapture={(event) => handleSectionInteract("homeAddress", event)}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="flex items-center justify-between">
         <Label className="text-sm font-semibold text-slate-900">Home Address</Label>
@@ -4139,7 +4190,7 @@ const Employees = () => {
         }}
         onPointerDownCapture={(event) => handleSectionInteract("postalAddress", event)}
         onFocusCapture={(event) => handleSectionInteract("postalAddress", event)}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -4638,6 +4689,24 @@ const Employees = () => {
                             )}
                           </CommandItem>
                         ))}
+                      {departmentQuery.trim().length > 0 &&
+                        !departmentOptions.some(
+                          (option) => option.toLowerCase() === departmentQuery.trim().toLowerCase(),
+                        ) && (
+                          <CommandItem
+                            value={departmentQuery.trim()}
+                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            onSelect={(value) => {
+                              setDepartment(value as (typeof departmentOptions)[number]);
+                              setDepartmentOpen(false);
+                            }}
+                          >
+                            <span>Use "{departmentQuery.trim()}"</span>
+                            {department === departmentQuery.trim() && (
+                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
+                            )}
+                          </CommandItem>
+                        )}
                     </CommandGroup>
                   </CommandList>
                 </Command>
@@ -4773,7 +4842,7 @@ const Employees = () => {
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Salary Type</Label>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Salary Cycle</Label>
             <Select
               value={salaryType}
               onValueChange={(value) =>
@@ -4789,7 +4858,7 @@ const Employees = () => {
                 className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 disabled={!isEditMode}
               >
-                <SelectValue placeholder="Select salary type" />
+                <SelectValue placeholder="Please select a cycle" />
               </SelectTrigger>
               <SelectContent className="text-[11px]">
                 {salaryTypeOptions.map((option) => (
@@ -5944,9 +6013,11 @@ const Employees = () => {
             aria-label="Close employee profile"
             onClick={closeProfileDialog}
           />
-          <section className="fixed left-[50%] top-[50%] w-full sm:w-[75vw] max-w-[980px] h-[92vh] -translate-x-1/2 -translate-y-1/2 rounded-sm bg-blue-50 shadow-2xl overflow-hidden">
-            {renderProfilePanel()}
-          </section>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <section className="relative z-10 w-full sm:w-[75vw] max-w-[980px] h-[92vh] rounded-sm bg-blue-50 shadow-2xl overflow-y-auto overflow-x-hidden">
+              {renderProfilePanel()}
+            </section>
+          </div>
         </div>
       )}
 

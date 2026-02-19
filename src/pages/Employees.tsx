@@ -62,7 +62,6 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  FileUp,
   User,
   UserPlus,
   Users,
@@ -221,6 +220,14 @@ type EmployeeContract = {
   fileUrl?: string;
   isActive: boolean;
 };
+type DocumentsViewFilter =
+  | "all"
+  | "warnings"
+  | "contracts"
+  | "idPassport"
+  | "licence"
+  | "training"
+  | "education";
 type OffenceSection = {
   title?: string;
   offences?: Array<{ name?: string; category?: string; first?: string }>;
@@ -770,6 +777,7 @@ const Employees = () => {
     fileName: "",
   });
   const [contractStatusFilter, setContractStatusFilter] = useState<"active" | "inactive">("active");
+  const [documentsViewFilter, setDocumentsViewFilter] = useState<DocumentsViewFilter>("all");
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
   const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
@@ -2425,24 +2433,97 @@ const Employees = () => {
                 >
                   Address
                 </TabsTrigger>
-                <TabsTrigger
-                  value="discipline"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
-                  onPointerDown={(event) => {
-                    guardUnsavedSection(event);
-                  }}
-                >
-                  Warnings
-                </TabsTrigger>
-                <TabsTrigger
-                  value="contracts"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
-                  onPointerDown={(event) => {
-                    guardUnsavedSection(event);
-                  }}
-                >
-                  Contract
-                </TabsTrigger>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onPointerDown={(event) => {
+                        guardUnsavedSection(event);
+                      }}
+                      className={`rounded-t-sm border-b-[3px] px-4 h-8 inline-flex items-center text-left text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
+                        activeTab === "discipline"
+                          ? "bg-blue-600 border-transparent text-white hover:bg-blue-600 hover:text-white"
+                          : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
+                      }`}
+                    >
+                      <span>Documents</span>
+                      <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="text-[11px]">
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("all");
+                      }}
+                    >
+                      All documents
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("warnings");
+                      }}
+                    >
+                      Warnings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("contracts");
+                      }}
+                    >
+                      Contracts
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("idPassport");
+                      }}
+                    >
+                      ID/Passport
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("licence");
+                      }}
+                    >
+                      Licence
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("training");
+                      }}
+                    >
+                      Training
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        setActiveTab("discipline");
+                        setDocumentsViewFilter("education");
+                      }}
+                    >
+                      Education
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </TabsList>
               </div>
               <div className="flex min-h-0 flex-1 flex-col px-0">
@@ -2463,16 +2544,46 @@ const Employees = () => {
                 </TabsContent>
                 <TabsContent value="discipline" className="mt-0 pb-0 flex-1 min-h-0">
                   <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
-                    <div className="rounded-sm border border-slate-300 bg-white p-5">
-                      {renderDisciplineTab()}
-                    </div>
-                  </div>
-                </TabsContent>
-                <TabsContent value="contracts" className="mt-0 pb-0 flex-1 min-h-0">
-                  <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
-                    <div className="rounded-sm border border-slate-300 bg-white p-5">
-                      {renderContractTab()}
-                    </div>
+                    {(documentsViewFilter === "all" || documentsViewFilter === "warnings") && (
+                      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+                        {renderDisciplineTab()}
+                      </div>
+                    )}
+                    {(documentsViewFilter === "all" || documentsViewFilter === "contracts") && (
+                      <div
+                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
+                      >
+                        {renderContractTab()}
+                      </div>
+                    )}
+                    {(documentsViewFilter === "all" || documentsViewFilter === "idPassport") && (
+                      <div
+                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
+                      >
+                        {renderSimpleDocumentCard("ID/Passport", "No ID/Passport documents yet.", () => {})}
+                      </div>
+                    )}
+                    {(documentsViewFilter === "all" || documentsViewFilter === "licence") && (
+                      <div
+                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
+                      >
+                        {renderSimpleDocumentCard("Licence", "No licence documents yet.", () => {})}
+                      </div>
+                    )}
+                    {(documentsViewFilter === "all" || documentsViewFilter === "training") && (
+                      <div
+                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
+                      >
+                        {renderSimpleDocumentCard("Training", "No training documents yet.", () => {})}
+                      </div>
+                    )}
+                    {(documentsViewFilter === "all" || documentsViewFilter === "education") && (
+                      <div
+                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
+                      >
+                        {renderSimpleDocumentCard("Education", "No education documents yet.", () => {})}
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               </div>
@@ -5118,62 +5229,68 @@ const Employees = () => {
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col items-center gap-3">
-          <Button
-            variant="outline"
-            className="h-24 w-40 rounded-xl border-dashed border-2 border-primary/50 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary flex items-center justify-center p-0"
-            onClick={() => setIsWarningDialogOpen(true)}
-          >
-            <FileUp
-              className="shrink-0 text-primary"
-              strokeWidth={1.25}
-              style={{ width: "56px", height: "56px" }}
-            />
-            <span className="sr-only">Upload warning</span>
-          </Button>
-          <p className="text-sm text-muted-foreground">Click in the box to upload warnings</p>
-        </div>
-
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold text-slate-900">Warnings</h4>
-              <span className="text-xs rounded-full bg-muted px-2 py-1 text-foreground border border-border/60">
-                {activeWarnings.length}
-              </span>
             </div>
             <div className="flex items-center gap-2">
               <Select
                 value={warningFilter}
                 onValueChange={(value) => setWarningFilter(value as "valid" | "expired")}
+                onOpenChange={(open) => {
+                  if (!open && document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                }}
               >
-                <SelectTrigger className={`${fieldSelectTriggerClass} h-8 px-2 text-xs w-[96px]`} showIcon>
+                <SelectTrigger
+                  className="h-7 w-[96px] rounded border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-900 shadow-none justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-blue-600 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  showIcon
+                >
                 <SelectValue placeholder="Filter warnings" />
               </SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="valid">Valid</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
+              <SelectContent className="text-[11px]">
+                  <SelectItem
+                    value="valid"
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    Valid
+                  </SelectItem>
+                  <SelectItem
+                    value="expired"
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    Expired
+                  </SelectItem>
               </SelectContent>
-            </Select>
+              </Select>
+              <Button
+                type="button"
+                className="h-7 min-w-[92px] rounded px-2.5 text-[10px] inline-flex items-center justify-center gap-1.5 border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white [&_svg]:h-3.5 [&_svg]:w-3.5"
+                onClick={() => setIsWarningDialogOpen(true)}
+              >
+                <Upload className="h-2.5 w-2.5" />
+                Upload
+              </Button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-border/70">
+          <div className="overflow-hidden rounded-sm border border-slate-300">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed">
-                <thead className="bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
+                <thead className="bg-blue-100/70 text-xs font-semibold text-slate-500">
                   <tr className="text-left">
-                    <th className="px-3 py-2 w-[40%]">Misconduct</th>
-                    <th className="px-3 py-2 text-center w-[12%]">Type</th>
-                    <th className="px-3 py-2 text-center w-[16%]">Issued</th>
-                    <th className="px-3 py-2 text-center w-[16%]">{showingValid ? "Expiry" : "Expired"}</th>
-                    <th className="px-3 py-2 text-center w-[16%]">Actions</th>
+                    <th className="pl-4 pr-3 py-2 w-[48%]">Misconduct</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[12%]">Type</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[20%]">{showingValid ? "Expiry" : "Expired"}</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[20%]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y text-[11px]">
                   {activeWarnings.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
                         {showingValid ? "No valid warnings yet." : "No expired warnings."}
                       </td>
                     </tr>
@@ -5186,7 +5303,7 @@ const Employees = () => {
 
                       return (
                         <tr key={warning.id} className="hover:bg-muted/30">
-                          <td className="px-3 py-2 font-medium text-slate-900 w-[40%]">
+                          <td className="px-3 py-2 font-medium text-slate-900 w-[48%]">
                             <span>{primaryMisconduct}</span>
                             {hasOtherMisconduct && (
                               <TooltipProvider delayDuration={0}>
@@ -5218,27 +5335,34 @@ const Employees = () => {
                               {warningTypeTag[warning.warningType] || warning.warningType}
                             </Badge>
                           </td>
-                          <td className="px-3 py-2 text-center text-muted-foreground w-[16%]">
-                            {formatDisplayDate(warning.issueDate)}
-                          </td>
-                          <td className="px-3 py-2 text-center text-muted-foreground w-[16%]">
+                          <td className="px-3 py-2 text-center text-muted-foreground w-[20%]">
                             {formatDisplayDate(warning.expiryDate)}
                           </td>
-                          <td className="px-3 py-2 text-center w-[16%]">
-                            <DropdownMenu>
+                          <td className="px-3 py-2 text-center w-[20%]">
+                            <DropdownMenu
+                              onOpenChange={(open) => {
+                                if (!open && document.activeElement instanceof HTMLElement) {
+                                  document.activeElement.blur();
+                                }
+                              }}
+                            >
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
+                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none"
                                   aria-label="Warning actions"
                                 >
                                   <Menu className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-xs">
+                              <DropdownMenuContent
+                                align="end"
+                                className="border-0 text-[11px]"
+                                onCloseAutoFocus={(event) => event.preventDefault()}
+                              >
                                 <DropdownMenuItem
-                                  className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                  className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                                   onSelect={(event) => {
                                     event.preventDefault();
                                     handleEditWarning(warning);
@@ -5249,7 +5373,7 @@ const Employees = () => {
                                 </DropdownMenuItem>
                                 {warning.fileUrl && (
                                   <DropdownMenuItem
-                                    className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenWarning(warning);
@@ -5260,7 +5384,7 @@ const Employees = () => {
                                   </DropdownMenuItem>
                                 )}
                                 <DropdownMenuItem
-                                  className="gap-2 border border-transparent text-red-600 focus:text-red-600 hover:bg-transparent hover:border-red-500 focus:bg-transparent focus:border-red-500"
+                                  className="gap-2 cursor-pointer text-[11px] text-red-600 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600"
                                   onSelect={(event) => {
                                     event.preventDefault();
                                     handleDeleteWarning(warning.id, warning.fileUrl);
@@ -5292,55 +5416,62 @@ const Employees = () => {
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col items-center gap-3">
-          <Button
-            variant="outline"
-            className="h-24 w-40 rounded-xl border-dashed border-2 border-primary/50 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary flex items-center justify-center p-0"
-            onClick={handleStartContractUpload}
-          >
-            <FileUp
-              className="shrink-0 text-primary"
-              strokeWidth={1.25}
-              style={{ width: "56px", height: "56px" }}
-            />
-            <span className="sr-only">Upload contract</span>
-          </Button>
-          <p className="text-sm text-muted-foreground">Click in the box to upload contracts</p>
-        </div>
-
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold text-slate-900">Contracts</h4>
-              <span className="text-xs rounded-full bg-muted px-2 py-1 text-foreground border border-border/60">
-                {activeContracts.length}
-              </span>
             </div>
             <div className="flex items-center gap-2">
               <Select
                 value={contractStatusFilter}
                 onValueChange={(value) => setContractStatusFilter(value as "active" | "inactive")}
+                onOpenChange={(open) => {
+                  if (!open && document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                  }
+                }}
               >
-                <SelectTrigger className={`${fieldSelectTriggerClass} h-8 px-2 text-xs w-[110px]`} showIcon>
+                <SelectTrigger
+                  className="h-7 w-[110px] rounded border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-900 shadow-none justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-blue-600 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  showIcon
+                >
                   <SelectValue placeholder="Filter status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectContent className="text-[11px]">
+                  <SelectItem
+                    value="active"
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    Active
+                  </SelectItem>
+                  <SelectItem
+                    value="inactive"
+                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  >
+                    Inactive
+                  </SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                type="button"
+                className="h-7 min-w-[92px] rounded px-2.5 text-[10px] inline-flex items-center justify-center gap-1.5 border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white [&_svg]:h-3.5 [&_svg]:w-3.5"
+                onClick={handleStartContractUpload}
+              >
+                <Upload className="h-2.5 w-2.5" />
+                Upload
+              </Button>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg border border-border/70">
+          <div className="overflow-hidden rounded-sm border border-slate-300">
             <div className="overflow-x-auto">
               <table className="min-w-full table-fixed">
-                <thead className="bg-muted/40 text-[11px] font-semibold uppercase text-muted-foreground">
+                <thead className="bg-blue-100/70 text-xs font-semibold text-slate-500">
                   <tr className="text-left">
-                    <th className="px-3 py-2 w-[44%]">Contract type</th>
-                    <th className="px-3 py-2 text-center w-[16%]">Status</th>
-                    <th className="px-3 py-2 text-center w-[20%]">Uploaded</th>
-                    <th className="px-3 py-2 text-center w-[20%]">Actions</th>
+                    <th className="pl-4 pr-3 py-2 w-[44%]">Contract type</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[16%]">Status</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[20%]">Uploaded</th>
+                    <th className="pl-4 pr-3 py-2 text-center w-[20%]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y text-[11px]">
@@ -5373,21 +5504,31 @@ const Employees = () => {
                             {formatDisplayDate(contract.issueDate)}
                           </td>
                           <td className="px-3 py-2 text-center w-[20%]">
-                            <DropdownMenu>
+                            <DropdownMenu
+                              onOpenChange={(open) => {
+                                if (!open && document.activeElement instanceof HTMLElement) {
+                                  document.activeElement.blur();
+                                }
+                              }}
+                            >
                               <DropdownMenuTrigger asChild>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent"
+                                  className="h-7 w-7 text-slate-700 hover:text-blue-600 hover:bg-transparent !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none"
                                   aria-label="Contract actions"
                                 >
                                   <Menu className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="text-xs">
+                              <DropdownMenuContent
+                                align="end"
+                                className="border-0 text-[11px]"
+                                onCloseAutoFocus={(event) => event.preventDefault()}
+                              >
                                 {contract.fileUrl && (
                                   <DropdownMenuItem
-                                    className="gap-2 border border-transparent text-slate-700 hover:bg-transparent hover:border-blue-500 focus:bg-transparent focus:border-blue-500 hover:text-slate-700 focus:text-slate-700"
+                                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenContract(contract);
@@ -5398,7 +5539,7 @@ const Employees = () => {
                                   </DropdownMenuItem>
                                 )}
                                 <DropdownMenuItem
-                                  className="gap-2 border border-transparent text-red-600 focus:text-red-600 hover:bg-transparent hover:border-red-500 focus:bg-transparent focus:border-red-500"
+                                  className="gap-2 cursor-pointer text-[11px] text-red-600 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600"
                                   onSelect={(event) => {
                                     event.preventDefault();
                                     handleDeleteContract(contract.id, contract.fileUrl);
@@ -5420,6 +5561,53 @@ const Employees = () => {
           </div>
         </div>
 
+      </div>
+    );
+  };
+
+  const renderSimpleDocumentCard = (
+    heading: string,
+    emptyMessage: string,
+    onUpload: () => void,
+  ) => {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">{heading}</h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              className="h-7 min-w-[92px] rounded px-2.5 text-[10px] inline-flex items-center justify-center gap-1.5 border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white [&_svg]:h-3.5 [&_svg]:w-3.5"
+              onClick={onUpload}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Upload
+            </Button>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-sm border border-slate-300">
+          <div className="overflow-x-auto">
+            <table className="min-w-full table-fixed">
+              <thead className="bg-blue-100/70 text-xs font-semibold text-slate-500">
+                <tr className="text-left">
+                  <th className="pl-4 pr-3 py-2 w-[60%]">Document</th>
+                  <th className="pl-4 pr-3 py-2 text-center w-[20%]">Uploaded</th>
+                  <th className="pl-4 pr-3 py-2 text-center w-[20%]">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y text-[11px]">
+                <tr>
+                  <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                    {emptyMessage}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     );
   };
@@ -5469,7 +5657,7 @@ const Employees = () => {
                     value={contractFilter}
                     onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
                   >
-                  <SelectTrigger className="h-8 w-full sm:w-40 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                  <SelectTrigger className="h-8 w-full sm:w-40 text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
                     <span className="truncate">
                       Contract: <span className="font-semibold">{contractFilterLabel}</span>
                     </span>
@@ -5499,7 +5687,7 @@ const Employees = () => {
                   value={genderFilter}
                   onValueChange={(value) => setGenderFilter(value as "all" | EmployeeProfileFormData["gender"])}
                 >
-                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
                     <span className="truncate">
                       Gender: <span className="font-semibold">{genderFilterLabel}</span>
                     </span>
@@ -5526,7 +5714,7 @@ const Employees = () => {
                   value={raceFilter}
                   onValueChange={(value) => setRaceFilter(value as "all" | EmployeeProfileFormData["race"])}
                 >
-                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                  <SelectTrigger className="h-8 w-full sm:w-32 text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
                     <span className="truncate">
                       Race: <span className="font-semibold">{raceFilterLabel}</span>
                     </span>
@@ -5553,7 +5741,7 @@ const Employees = () => {
                   value={nationalityFilter}
                   onValueChange={(value) => setNationalityFilter(value as "all" | "RSA" | "Other")}
                 >
-                  <SelectTrigger className="h-8 w-full sm:w-36 text-[11px] rounded-sm bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
+                  <SelectTrigger className="h-8 w-full sm:w-36 text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-blue-600 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
                     <span className="truncate">
                       Nationality: <span className="font-semibold">{nationalityFilterLabel}</span>
                     </span>
@@ -5582,7 +5770,7 @@ const Employees = () => {
               </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button className="h-8 w-36 justify-between rounded-sm px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white">
+                    <Button className="h-8 w-36 justify-between rounded px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white">
                       <span className="truncate">New Employee</span>
                       <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>

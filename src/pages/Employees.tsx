@@ -4179,8 +4179,8 @@ const Employees = () => {
         onFocusCapture={(event) => handleSectionInteract("homeAddress", event)}
         className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
-        <div className="flex items-center justify-between">
-        <Label className="text-sm font-semibold text-slate-900">Home Address</Label>
+        <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-900">Home Address</h3>
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
@@ -4260,7 +4260,7 @@ const Employees = () => {
               }
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >
@@ -4303,9 +4303,9 @@ const Employees = () => {
         onFocusCapture={(event) => handleSectionInteract("postalAddress", event)}
         className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
-        <div className="flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Label className="text-sm font-semibold text-slate-900">Postal Address</Label>
+            <h3 className="text-sm font-semibold text-slate-900">Postal Address</h3>
             <Button
               type="button"
               variant="outline"
@@ -4405,7 +4405,7 @@ const Employees = () => {
               }
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto`}
+                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-blue-600 data-[state=open]:bg-white`}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >

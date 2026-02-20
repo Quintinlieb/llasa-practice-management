@@ -66,7 +66,6 @@ import {
   UserPlus,
   Users,
   UsersRound,
-  Info,
   ArrowRight,
   Menu,
   ChevronDown,
@@ -269,7 +268,7 @@ type ContractFormState = {
   contractType: (typeof contractTypes)[number] | "";
   fileName: string;
 };
-type AddEmployeeIdType = "id" | "passport";
+type AddEmployeeIdType = "id" | "passport" | "";
 type AddEmployeeFormState = {
   employeeName: string;
   employeeSurname: string;
@@ -385,7 +384,7 @@ const MISCONDUCT_TYPES = [
 const createBlankAddForm = (): AddEmployeeFormState => ({
   employeeName: "",
   employeeSurname: "",
-  idType: "id",
+  idType: "",
   idNumber: "",
   employeeNumber: "",
   gender: "",
@@ -904,10 +903,18 @@ const Employees = () => {
     postalAddress: null,
   });
   const addFormIdDigits = addForm.idNumber.replace(/\D/g, "");
+  const isAddFormIdTypeSelected = addForm.idType === "id" || addForm.idType === "passport";
+  const isAddFormIdNumberComplete =
+    addForm.idType === "passport"
+      ? addForm.idNumber.trim().length > 0
+      : addForm.idType === "id"
+        ? addFormIdDigits.length === 13
+        : false;
   const isAddFormStepOneComplete =
     addForm.employeeName.trim().length > 0 &&
     addForm.employeeSurname.trim().length > 0 &&
-    (addForm.idType === "passport" ? addForm.idNumber.trim().length > 0 : addFormIdDigits.length === 13);
+    isAddFormIdTypeSelected &&
+    isAddFormIdNumberComplete;
   const isAddFormStepTwoComplete =
     addForm.jobTitle.trim().length > 0 &&
     addForm.contractType.trim().length > 0 &&
@@ -921,12 +928,16 @@ const Employees = () => {
   const fieldWrapperClass = "space-y-1";
   const fieldLabelClass = "text-[10px] font-semibold text-slate-500 block";
   const baseFieldInputClass =
-    "h-8 rounded-sm border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const fieldInputClass = baseFieldInputClass;
-  const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-muted-foreground data-[placeholder]:text-xs`;
-  const addModalFieldInputClass = `${fieldInputClass} !focus-visible:border-slate-300`;
+  const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs`;
+  const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300`;
   const addModalFieldSelectTriggerClass =
-    `${fieldSelectTriggerClass} !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
+    `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
+  const getAddModalInputClass = (isComplete: boolean) =>
+    `${addModalFieldInputClass} ${isComplete ? "!border-emerald-500" : ""}`;
+  const getAddModalSelectTriggerClass = (isComplete: boolean) =>
+    `${addModalFieldSelectTriggerClass} ${isComplete ? "!border-emerald-500" : ""}`;
   const isReadOnlyTab = activeTab === "discipline" || activeTab === "contracts";
   const isSouthAfricanNationality = (profileForm.nationality || "").trim().toLowerCase() === "south african";
 
@@ -3284,7 +3295,7 @@ const Employees = () => {
           ...prev,
           employeeName: "",
           employeeSurname: "",
-          idType: "id",
+          idType: "",
           idNumber: "",
           gender: "",
           race: "",
@@ -6308,7 +6319,7 @@ const Employees = () => {
 
                 <Dialog open={isAddDialogOpen} onOpenChange={handleAddDialogChange}>
                   <DialogContent
-                    className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                    className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
                     onCloseAutoFocus={(event) => event.preventDefault()}
                   >
                     <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
@@ -6324,26 +6335,33 @@ const Employees = () => {
                     </div>
                     <div className="px-6 pt-0 pb-2"></div>
                     <form onSubmit={handleAddEmployee} className="space-y-4 px-6 pb-6 pt-2">
-                      <div className="flex w-full items-start py-4">
-                        {[
-                          { step: 1 as const, label: "Basic Details" },
-                          { step: 2 as const, label: "Job Details" },
-                          { step: 3 as const, label: "Address" },
-                        ].map((item, index, arr) => {
-                          const isActive = addFormStep === item.step;
-                          const isComplete = item.step === 1 ? isAddFormStepOneComplete : item.step === 2 ? isAddFormStepTwoComplete : false;
-                          const canOpen = canAccessAddFormStep(item.step);
-                          const isConnectorComplete =
-                            (item.step === 1 && (isAddFormStepOneComplete || addFormStep > 1)) ||
-                            (item.step === 2 && (isAddFormStepTwoComplete || addFormStep > 2));
+                      <div className="mx-auto w-full max-w-[320px] py-4">
+                        <div className="relative grid grid-cols-3 items-start">
+                          <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
+                          <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
+                          {(isAddFormStepOneComplete || addFormStep > 1) && (
+                            <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-blue-600" />
+                          )}
+                          {(isAddFormStepTwoComplete || addFormStep > 2) && (
+                            <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-blue-600" />
+                          )}
+                          {[
+                            { step: 1 as const, label: "Basic Details" },
+                            { step: 2 as const, label: "Job Details" },
+                            { step: 3 as const, label: "Address" },
+                          ].map((item) => {
+                            const isActive = addFormStep === item.step;
+                            const isComplete =
+                              item.step === 1 ? isAddFormStepOneComplete : item.step === 2 ? isAddFormStepTwoComplete : false;
+                            const canOpen = canAccessAddFormStep(item.step);
 
-                          return (
-                            <div key={item.step} className="flex min-w-0 flex-1 items-start">
+                            return (
                               <button
+                                key={item.step}
                                 type="button"
                                 onClick={() => goToAddFormStep(item.step)}
                                 disabled={!canOpen}
-                                className={`flex w-full max-w-[140px] shrink-0 flex-col items-center text-center ${canOpen ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
+                                className={`z-10 flex flex-col items-center text-center ${canOpen ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
                               >
                                 <span
                                   className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
@@ -6351,266 +6369,247 @@ const Employees = () => {
                                       ? "bg-blue-600 text-white"
                                       : isActive
                                         ? "bg-blue-600 text-white"
-                                        : "border border-slate-300 text-slate-500"
+                                        : "bg-slate-500 text-white"
                                   }`}
                                 >
                                   {isComplete ? <Check className="h-3 w-3" /> : item.step}
                                 </span>
-                                <span className="mt-3 text-[11px] font-semibold text-slate-700">{item.label}</span>
+                                <span className="mt-3 text-[10px] font-semibold text-slate-700">{item.label}</span>
                               </button>
-                              {index < arr.length - 1 && (
-                                <div className="mt-2 h-[2px] flex-1 bg-slate-300">
-                                  <div
-                                    className={`h-full ${isConnectorComplete ? "bg-blue-600" : "bg-slate-300"}`}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
 
+                      <div className="h-[330px]">
                       {addFormStep === 1 && (
-                        <div className="space-y-2">
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="employeeName" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Name <span className="text-red-600">*</span></Label>
-                            <Input id="employeeName" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert name" value={addForm.employeeName} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeName: e.target.value }))} />
+                        <div className="w-full space-y-4">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Name <span className="text-red-600">*</span>
+                              </span>
+                              <Input
+                                id="employeeName"
+                                className={getAddModalInputClass(addForm.employeeName.trim().length > 0)}
+                                placeholder="Please insert name"
+                                value={addForm.employeeName}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, employeeName: e.target.value }))}
+                              />
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="employeeSurname" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Surname <span className="text-red-600">*</span></Label>
-                            <Input id="employeeSurname" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert surname" value={addForm.employeeSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeSurname: e.target.value }))} />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Surname <span className="text-red-600">*</span>
+                              </span>
+                              <Input id="employeeSurname" className={getAddModalInputClass(addForm.employeeSurname.trim().length > 0)} placeholder="Please insert surname" value={addForm.employeeSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeSurname: e.target.value }))} />
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>ID / Passport <span className="text-red-600">*</span></Label>
-                            <Select value={addForm.idType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, idType: value as AddEmployeeIdType, idNumber: "" }))}>
-                              <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                <SelectItem value="id" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">ID Number</SelectItem>
-                                <SelectItem value="passport" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">Passport Number</SelectItem>
-                              </SelectContent>
-                            </Select>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                ID / Passport <span className="text-red-600">*</span>
+                              </span>
+                              <Select value={addForm.idType || undefined} onValueChange={(value) => setAddForm((prev) => ({ ...prev, idType: value as AddEmployeeIdType, idNumber: "" }))}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(isAddFormIdTypeSelected)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                  <SelectValue placeholder="Please select option" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  <SelectItem value="id" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">ID Number</SelectItem>
+                                  <SelectItem value="passport" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">Passport Number</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="idNumber" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>
-                              {addForm.idType === "id" ? "ID Number" : "Passport Number"} <span className="text-red-600">*</span>
-                            </Label>
-                            <Input id="idNumber" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: prev.idType === "id" ? e.target.value.replace(/\D/g, "").slice(0, 13) : e.target.value }))} placeholder={addForm.idType === "id" ? "Please insert ID number" : "Please insert passport number"} />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                {addForm.idType === "id" ? "ID Number" : addForm.idType === "passport" ? "Passport Number" : "ID / Passport Number"} <span className="text-red-600">*</span>
+                              </span>
+                              <Input id="idNumber" className={getAddModalInputClass(isAddFormIdNumberComplete)} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: prev.idType === "id" ? e.target.value.replace(/\D/g, "").slice(0, 13) : e.target.value }))} placeholder={addForm.idType === "id" ? "Please insert ID number" : addForm.idType === "passport" ? "Please insert passport number" : "Please select option first"} />
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Gender</Label>
-                            <Select value={addForm.gender} onValueChange={(value) => setAddForm((prev) => ({ ...prev, gender: value as AddEmployeeFormState["gender"] }))}>
-                              <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                <SelectValue placeholder="Select gender" />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                {genderOptions.map((option) => (
-                                  <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Gender
+                              </span>
+                              <Select value={addForm.gender} onValueChange={(value) => setAddForm((prev) => ({ ...prev, gender: value as AddEmployeeFormState["gender"] }))}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.gender.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                  <SelectValue placeholder="Select gender" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {genderOptions.map((option) => (
+                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Race</Label>
-                            <Select value={addForm.race} onValueChange={(value) => setAddForm((prev) => ({ ...prev, race: value as AddEmployeeFormState["race"] }))}>
-                              <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                <SelectValue placeholder="Select race" />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                {raceOptions.map((option) => (
-                                  <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Race
+                              </span>
+                              <Select value={addForm.race} onValueChange={(value) => setAddForm((prev) => ({ ...prev, race: value as AddEmployeeFormState["race"] }))}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.race.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                  <SelectValue placeholder="Select race" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {raceOptions.map((option) => (
+                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="cellNumber" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Cell Number</Label>
-                            <Input id="cellNumber" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert cell number" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: e.target.value }))} />
-                          </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="email" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Email</Label>
-                            <Input id="email" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} type="email" placeholder="Please insert email" value={addForm.email} onChange={(e) => setAddForm((prev) => ({ ...prev, email: e.target.value }))} />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Cell Number
+                              </span>
+                              <Input id="cellNumber" className={getAddModalInputClass(addForm.cellNumber.trim().length > 0)} placeholder="Please insert cell number" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: e.target.value }))} />
+                            </div>
                           </div>
                         </div>
                       )}
 
                       {addFormStep === 2 && (
-                        <div className="space-y-2">
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <div className="flex items-center gap-2 sm:w-44 sm:shrink-0">
-                              <Label htmlFor="addEmployeeNumber" className={`${fieldLabelClass} sm:text-left`}>Employee Number</Label>
-                              <TooltipProvider delayDuration={0}>
-                                <Tooltip disableHoverableContent>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex cursor-default text-muted-foreground transition-colors hover:text-foreground" aria-hidden="true">
-                                      <Info className="h-4 w-4" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="border border-blue-200 bg-white text-slate-900">
-                                    Up to {EMPLOYEE_NUMBER_MAX_LENGTH} characters allowed (letters, numbers, or both).
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                        <div className="w-full space-y-4">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Employee Number
+                              </span>
+                              <Input id="addEmployeeNumber" className={getAddModalInputClass(addForm.employeeNumber.trim().length > 0)} placeholder="Please insert employee number" value={addForm.employeeNumber} maxLength={EMPLOYEE_NUMBER_MAX_LENGTH} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeNumber: sanitizeEmployeeNumber(e.target.value) }))} />
                             </div>
-                            <Input id="addEmployeeNumber" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert employee number" value={addForm.employeeNumber} maxLength={EMPLOYEE_NUMBER_MAX_LENGTH} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeNumber: sanitizeEmployeeNumber(e.target.value) }))} />
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="jobTitle" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Job Title <span className="text-red-600">*</span></Label>
-                            <Input id="jobTitle" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert job title" value={addForm.jobTitle} onChange={(e) => setAddForm((prev) => ({ ...prev, jobTitle: e.target.value }))} />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Job Title <span className="text-red-600">*</span>
+                              </span>
+                              <Input id="jobTitle" className={getAddModalInputClass(addForm.jobTitle.trim().length > 0)} placeholder="Please insert job title" value={addForm.jobTitle} onChange={(e) => setAddForm((prev) => ({ ...prev, jobTitle: e.target.value }))} />
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Contract Type <span className="text-red-600">*</span></Label>
-                            <Select value={addForm.contractType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, contractType: value as AddEmployeeFormState["contractType"], endDate: value === "Temporary" ? prev.endDate : "" }))}>
-                              <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                <SelectValue placeholder="Select contract type" />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                {contractTypes.map((option) => (
-                                  <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Contract Type <span className="text-red-600">*</span>
+                              </span>
+                              <Select value={addForm.contractType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, contractType: value as AddEmployeeFormState["contractType"], endDate: value === "Temporary" ? prev.endDate : "" }))}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.contractType.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                  <SelectValue placeholder="Select contract type" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {contractTypes.map((option) => (
+                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="startDate" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Start Date <span className="text-red-600">*</span></Label>
-                            <Input id="startDate" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} type="date" placeholder="Please insert start date" value={addForm.startDate} onChange={(e) => setAddForm((prev) => ({ ...prev, startDate: e.target.value }))} />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Start Date <span className="text-red-600">*</span>
+                              </span>
+                              <Input id="startDate" className={getAddModalInputClass(addForm.startDate.trim().length > 0)} type="date" placeholder="Please insert start date" value={addForm.startDate} onChange={(e) => setAddForm((prev) => ({ ...prev, startDate: e.target.value }))} />
+                            </div>
                           </div>
                           {addForm.contractType === "Temporary" && (
-                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                              <Label htmlFor="endDate" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>End Date <span className="text-red-600">*</span></Label>
-                              <Input id="endDate" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} type="date" placeholder="Please insert end date" value={addForm.endDate} onChange={(e) => setAddForm((prev) => ({ ...prev, endDate: e.target.value }))} />
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                              <div className="relative w-full max-w-none">
+                                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                  End Date <span className="text-red-600">*</span>
+                                </span>
+                                <Input id="endDate" className={getAddModalInputClass(addForm.endDate.trim().length > 0)} type="date" placeholder="Please insert end date" value={addForm.endDate} onChange={(e) => setAddForm((prev) => ({ ...prev, endDate: e.target.value }))} />
+                              </div>
                             </div>
                           )}
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Salary Cycle</Label>
-                            <Select value={addForm.salaryType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, salaryType: value as AddEmployeeFormState["salaryType"] }))}>
-                              <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                <SelectValue placeholder="Select salary cycle" />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                {salaryTypeOptions.map((option) => (
-                                  <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Salary Cycle
+                              </span>
+                              <Select value={addForm.salaryType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, salaryType: value as AddEmployeeFormState["salaryType"] }))}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.salaryType.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                  <SelectValue placeholder="Select salary cycle" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {salaryTypeOptions.map((option) => (
+                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                            <Label htmlFor="basicSalary" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Basic Salary (R)</Label>
-                            <Input
-                              id="basicSalary"
-                              className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`}
-                              placeholder="Please insert basic salary"
-                              inputMode="numeric"
-                              value={formatThousandsWithCommas(addForm.basicSalary)}
-                              onChange={(e) =>
-                                setAddForm((prev) => ({
-                                  ...prev,
-                                  basicSalary: e.target.value.replace(/\D/g, ""),
-                                }))
-                              }
-                            />
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Basic Salary (R)
+                              </span>
+                              <Input
+                                id="basicSalary"
+                                className={getAddModalInputClass(addForm.basicSalary.trim().length > 0)}
+                                placeholder="Please insert basic salary"
+                                inputMode="numeric"
+                                value={formatThousandsWithCommas(addForm.basicSalary)}
+                                onChange={(e) =>
+                                  setAddForm((prev) => ({
+                                    ...prev,
+                                    basicSalary: e.target.value.replace(/\D/g, ""),
+                                  }))
+                                }
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
 
                       {addFormStep === 3 && (
-                        <div className="space-y-4">
+                        <div className="w-full space-y-5">
                           <div className="rounded-sm border border-slate-200 bg-white p-3">
                             <h4 className="mb-2 text-xs font-semibold text-slate-900">Home Address</h4>
-                            <div className="space-y-2">
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="physicalAddressLine1" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Address Line 1 <span className="text-red-600">*</span></Label>
-                                <Input id="physicalAddressLine1" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert address line 1" value={addForm.physicalAddressLine1} onChange={(e) => setAddForm((prev) => ({ ...prev, physicalAddressLine1: e.target.value }))} />
+                            <div className="space-y-4">
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
+                                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                    Address Line 1 <span className="text-red-600">*</span>
+                                  </span>
+                                  <Input id="physicalAddressLine1" className={getAddModalInputClass(addForm.physicalAddressLine1.trim().length > 0)} placeholder="Please insert address line 1" value={addForm.physicalAddressLine1} onChange={(e) => setAddForm((prev) => ({ ...prev, physicalAddressLine1: e.target.value }))} />
+                                </div>
                               </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="physicalAddressLine2" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Address Line 2</Label>
-                                <Input id="physicalAddressLine2" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert address line 2" value={addForm.physicalAddressLine2} onChange={(e) => setAddForm((prev) => ({ ...prev, physicalAddressLine2: e.target.value }))} />
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
+                                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                    Address Line 2
+                                  </span>
+                                  <Input id="physicalAddressLine2" className={getAddModalInputClass(addForm.physicalAddressLine2.trim().length > 0)} placeholder="Please insert address line 2" value={addForm.physicalAddressLine2} onChange={(e) => setAddForm((prev) => ({ ...prev, physicalAddressLine2: e.target.value }))} />
+                                </div>
                               </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="homeCity" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>City <span className="text-red-600">*</span></Label>
-                                <Input id="homeCity" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert city" value={addForm.city} onChange={(e) => setAddForm((prev) => ({ ...prev, city: e.target.value }))} />
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
+                                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                    City <span className="text-red-600">*</span>
+                                  </span>
+                                  <Input id="homeCity" className={getAddModalInputClass(addForm.city.trim().length > 0)} placeholder="Please insert city" value={addForm.city} onChange={(e) => setAddForm((prev) => ({ ...prev, city: e.target.value }))} />
+                                </div>
                               </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Province <span className="text-red-600">*</span></Label>
-                                <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddEmployeeFormState["province"] }))}>
-                                  <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                    <SelectValue placeholder="Please select province" />
-                                  </SelectTrigger>
-                                  <SelectContent className="text-[11px]">
-                                    {southAfricanProvinces.map((province) => (
-                                      <SelectItem key={province} value={province} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">
-                                        {province}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
+                                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                    Province <span className="text-red-600">*</span>
+                                  </span>
+                                  <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddEmployeeFormState["province"] }))}>
+                                    <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                      <SelectValue placeholder="Please select province" />
+                                    </SelectTrigger>
+                                    <SelectContent className="text-[11px]">
+                                      {southAfricanProvinces.map((province) => (
+                                        <SelectItem key={province} value={province} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">
+                                          {province}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="homeAreaCode" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Area Code <span className="text-red-600">*</span></Label>
-                                <Input id="homeAreaCode" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert area code" value={addForm.areaCode} onChange={(e) => setAddForm((prev) => ({ ...prev, areaCode: e.target.value }))} />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-sm border border-slate-200 bg-white p-3">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <h4 className="text-xs font-semibold text-slate-900">Postal Address (Optional)</h4>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-6 rounded px-2 text-[10px] text-slate-900 hover:bg-transparent hover:text-slate-900 hover:border-blue-600"
-                                onClick={() =>
-                                  setAddForm((prev) => ({
-                                    ...prev,
-                                    postalAddressLine1: prev.physicalAddressLine1,
-                                    postalAddressLine2: prev.physicalAddressLine2,
-                                    postalCity: prev.city,
-                                    postalProvince: prev.province,
-                                    postalAreaCode: prev.areaCode,
-                                  }))
-                                }
-                              >
-                                Same as home address
-                              </Button>
-                            </div>
-                            <div className="space-y-2">
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="postalAddressLine1" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Address Line 1</Label>
-                                <Input id="postalAddressLine1" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert postal address line 1" value={addForm.postalAddressLine1} onChange={(e) => setAddForm((prev) => ({ ...prev, postalAddressLine1: e.target.value }))} />
-                              </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="postalAddressLine2" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Address Line 2</Label>
-                                <Input id="postalAddressLine2" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert postal address line 2" value={addForm.postalAddressLine2} onChange={(e) => setAddForm((prev) => ({ ...prev, postalAddressLine2: e.target.value }))} />
-                              </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="postalCity" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>City</Label>
-                                <Input id="postalCity" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert postal city" value={addForm.postalCity} onChange={(e) => setAddForm((prev) => ({ ...prev, postalCity: e.target.value }))} />
-                              </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Province</Label>
-                                <Select value={addForm.postalProvince} onValueChange={(value) => setAddForm((prev) => ({ ...prev, postalProvince: value as AddEmployeeFormState["postalProvince"] }))}>
-                                  <SelectTrigger className={`${addModalFieldSelectTriggerClass} sm:ml-auto sm:max-w-[320px] bg-white border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
-                                    <SelectValue placeholder="Please select province" />
-                                  </SelectTrigger>
-                                  <SelectContent className="text-[11px]">
-                                    {southAfricanProvinces.map((province) => (
-                                      <SelectItem key={province} value={province} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">
-                                        {province}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                                <Label htmlFor="postalAreaCode" className={`${fieldLabelClass} sm:w-44 sm:shrink-0 sm:text-left`}>Area Code</Label>
-                                <Input id="postalAreaCode" className={`${addModalFieldInputClass} sm:ml-auto sm:max-w-[320px]`} placeholder="Please insert postal area code" value={addForm.postalAreaCode} onChange={(e) => setAddForm((prev) => ({ ...prev, postalAreaCode: e.target.value }))} />
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
+                                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                    Area Code <span className="text-red-600">*</span>
+                                  </span>
+                                  <Input id="homeAreaCode" className={getAddModalInputClass(addForm.areaCode.trim().length > 0)} placeholder="Please insert area code" value={addForm.areaCode} onChange={(e) => setAddForm((prev) => ({ ...prev, areaCode: e.target.value }))} />
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
                       )}
+                      </div>
 
                       <div className="mt-6 grid grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
                         <div className="justify-self-start">
@@ -6618,7 +6617,7 @@ const Employees = () => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-[30px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                              className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                               onClick={() => setAddFormStep((prev) => (prev === 1 ? prev : ((prev - 1) as 1 | 2 | 3)))}
                             >
                               Back
@@ -6629,7 +6628,7 @@ const Employees = () => {
                           <Button
                             type="button"
                             variant="ghost"
-                            className="h-[30px] rounded border-0 px-3 text-xs text-blue-600 shadow-none hover:bg-transparent hover:text-blue-600 hover:underline"
+                            className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline"
                             onClick={handleAddFormClearStep}
                           >
                             Clear
@@ -6639,19 +6638,19 @@ const Employees = () => {
                           {addFormStep < 3 ? (
                             <Button
                               type="button"
-                              className="h-[30px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                              className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                               onClick={handleAddFormNext}
                               disabled={(addFormStep === 1 && !isAddFormStepOneComplete) || (addFormStep === 2 && !isAddFormStepTwoComplete)}
                             >
-                              Continue
+                              Next
                             </Button>
                           ) : (
                             <Button
                               type="submit"
-                              className="h-[30px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                              className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                               disabled={isLoading || !isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete}
                             >
-                              {isLoading ? "Saving..." : "Submit"}
+                              {isLoading ? "Saving..." : "Add"}
                             </Button>
                           )}
                         </div>
@@ -7038,6 +7037,13 @@ const Employees = () => {
  };
 
 export default Employees;
+
+
+
+
+
+
+
 
 
 

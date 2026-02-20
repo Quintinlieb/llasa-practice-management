@@ -802,6 +802,7 @@ const Employees = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isNewEmployeeMenuOpen, setIsNewEmployeeMenuOpen] = useState(false);
   const [isFiltersPanelOpen, setIsFiltersPanelOpen] = useState(false);
+  const [expandedFilterSection, setExpandedFilterSection] = useState<"contract" | "gender" | "race" | "nationality" | null>(null);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -1249,11 +1250,11 @@ const Employees = () => {
       : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
   const isFirstPage = currentPage === 1;
   const isLastPage = !hasNextPage;
-  const contractFilterLabel =
-    contractFilter === "all" ? "All" : contractFilter === "permanent" ? "Permanent" : "Temporary";
-  const genderFilterLabel = genderFilter === "all" ? "All" : genderFilter;
-  const raceFilterLabel = raceFilter === "all" ? "All" : raceFilter;
-  const nationalityFilterLabel = nationalityFilter === "all" ? "All" : nationalityFilter;
+  const activeEmployeeFilterCount =
+    Number(contractFilter !== "all") +
+    Number(genderFilter !== "all") +
+    Number(raceFilter !== "all") +
+    Number(nationalityFilter !== "all");
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
@@ -5882,14 +5883,25 @@ const Employees = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2 justify-end">
-                <Popover open={isFiltersPanelOpen} onOpenChange={setIsFiltersPanelOpen}>
+                <Popover
+                  open={isFiltersPanelOpen}
+                  onOpenChange={(open) => {
+                    setIsFiltersPanelOpen(open);
+                    if (!open) setExpandedFilterSection(null);
+                  }}
+                >
                   <PopoverTrigger asChild>
                     <Button
                       type="button"
                       variant="outline"
                       className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-white hover:text-blue-600"
                     >
-                      <span>Filters</span>
+                      <span>Filter</span>
+                      {activeEmployeeFilterCount > 0 && (
+                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] text-white">
+                          {activeEmployeeFilterCount}
+                        </span>
+                      )}
                       <ChevronDown className={`h-4 w-4 transition-transform ${isFiltersPanelOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                     </Button>
                   </PopoverTrigger>
@@ -5897,81 +5909,13 @@ const Employees = () => {
                     side="left"
                     align="start"
                     sideOffset={8}
-                    className="w-[520px] rounded-sm border border-slate-200 bg-white p-3 shadow-lg"
+                    className="w-[260px] rounded-sm border border-slate-200 bg-white p-0 shadow-lg"
                   >
-                    <div className="grid grid-cols-2 gap-2">
-                      <Select
-                        value={contractFilter}
-                        onValueChange={(value) => setContractFilter(value as "all" | "permanent" | "temporary")}
-                      >
-                        <SelectTrigger className="h-8 w-full text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
-                          <span className="truncate">
-                            Contract: <span className="font-semibold">{contractFilterLabel}</span>
-                          </span>
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          <SelectItem value="all" className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">All employees</SelectItem>
-                          <SelectItem value="permanent" className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Permanent</SelectItem>
-                          <SelectItem value="temporary" className="group text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Temporary</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={genderFilter}
-                        onValueChange={(value) => setGenderFilter(value as "all" | EmployeeProfileFormData["gender"])}
-                      >
-                        <SelectTrigger className="h-8 w-full text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
-                          <span className="truncate">
-                            Gender: <span className="font-semibold">{genderFilterLabel}</span>
-                          </span>
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          <SelectItem value="all" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">All genders</SelectItem>
-                          {genderOptions.map((option) => (
-                            <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={raceFilter}
-                        onValueChange={(value) => setRaceFilter(value as "all" | EmployeeProfileFormData["race"])}
-                      >
-                        <SelectTrigger className="h-8 w-full text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
-                          <span className="truncate">
-                            Race: <span className="font-semibold">{raceFilterLabel}</span>
-                          </span>
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          <SelectItem value="all" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">All races</SelectItem>
-                          {raceOptions.map((option) => (
-                            <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={nationalityFilter}
-                        onValueChange={(value) => setNationalityFilter(value as "all" | "RSA" | "Other")}
-                      >
-                        <SelectTrigger className="h-8 w-full text-[11px] rounded bg-white text-slate-700 border border-slate-200 hover:border-blue-400 data-[state=open]:border-slate-300 focus:border-blue-600 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0">
-                          <span className="truncate">
-                            Nationality: <span className="font-semibold">{nationalityFilterLabel}</span>
-                          </span>
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          <SelectItem value="all" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">All nationalities</SelectItem>
-                          <SelectItem value="RSA" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">RSA</SelectItem>
-                          <SelectItem value="Other" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-200 pt-2">
-                      <Button
+                    <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                      <span className="text-[12px] font-semibold text-slate-800">Filter</span>
+                      <button
                         type="button"
-                        variant="ghost"
-                        className="h-7 px-2 text-[11px] text-blue-600 hover:bg-transparent hover:underline"
+                        className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 hover:underline"
                         onClick={() => {
                           setContractFilter("all");
                           setGenderFilter("all");
@@ -5979,16 +5923,118 @@ const Employees = () => {
                           setNationalityFilter("all");
                         }}
                       >
-                        Reset
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-7 rounded px-2 text-[11px] text-slate-700 hover:bg-transparent"
-                        onClick={() => setIsFiltersPanelOpen(false)}
-                      >
-                        Close
-                      </Button>
+                        Clear
+                      </button>
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      <div>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === "contract" ? "bg-slate-100" : ""}`}
+                          onClick={() => setExpandedFilterSection((prev) => (prev === "contract" ? null : "contract"))}
+                        >
+                          <span>Contract Type</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === "contract" ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedFilterSection === "contract" && (
+                          <div className="px-3 pb-2">
+                            {[
+                              { value: "all" as const, label: "All employees" },
+                              { value: "permanent" as const, label: "Permanent" },
+                              { value: "temporary" as const, label: "Temporary" },
+                            ].map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                onClick={() => setContractFilter(option.value)}
+                              >
+                                <span>{option.label}</span>
+                                {contractFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === "gender" ? "bg-slate-100" : ""}`}
+                          onClick={() => setExpandedFilterSection((prev) => (prev === "gender" ? null : "gender"))}
+                        >
+                          <span>Gender</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === "gender" ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedFilterSection === "gender" && (
+                          <div className="px-3 pb-2">
+                            {[{ value: "all" as const, label: "All genders" }, ...genderOptions.map((option) => ({ value: option, label: option }))].map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                onClick={() => setGenderFilter(option.value as "all" | EmployeeProfileFormData["gender"])}
+                              >
+                                <span>{option.label}</span>
+                                {genderFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === "race" ? "bg-slate-100" : ""}`}
+                          onClick={() => setExpandedFilterSection((prev) => (prev === "race" ? null : "race"))}
+                        >
+                          <span>Race</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === "race" ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedFilterSection === "race" && (
+                          <div className="px-3 pb-2">
+                            {[{ value: "all" as const, label: "All races" }, ...raceOptions.map((option) => ({ value: option, label: option }))].map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                onClick={() => setRaceFilter(option.value as "all" | EmployeeProfileFormData["race"])}
+                              >
+                                <span>{option.label}</span>
+                                {raceFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === "nationality" ? "bg-slate-100" : ""}`}
+                          onClick={() => setExpandedFilterSection((prev) => (prev === "nationality" ? null : "nationality"))}
+                        >
+                          <span>Nationality</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === "nationality" ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedFilterSection === "nationality" && (
+                          <div className="px-3 pb-2">
+                            {[
+                              { value: "all" as const, label: "All nationalities" },
+                              { value: "RSA" as const, label: "RSA" },
+                              { value: "Other" as const, label: "Other" },
+                            ].map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                onClick={() => setNationalityFilter(option.value)}
+                              >
+                                <span>{option.label}</span>
+                                {nationalityFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -6309,7 +6355,7 @@ const Employees = () => {
                             hidden
                           />
                           <p className="text-[11px] text-slate-600 min-h-[32px] max-w-[calc(100%-10px)]">
-                            Click in box above to upload the completed .xlsx file.
+                            Click in box above to upload your completed .xlsx file.
                           </p>
                         </div>
                       </div>

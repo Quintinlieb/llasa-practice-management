@@ -107,6 +107,8 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 const warningTable = () => (supabase as any).from("employee_warnings");
 // Supabase types do not include employee_contracts; cast to any for those calls to avoid type errors.
 const contractTable = () => (supabase as any).from("employee_contracts");
+// Supabase types do not include employee_id_documents; cast to any for those calls to avoid type errors.
+const idDocumentTable = () => (supabase as any).from("employee_id_documents");
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -218,6 +220,13 @@ type EmployeeContract = {
   fileName?: string;
   fileUrl?: string;
   isActive: boolean;
+};
+type EmployeeIdDocument = {
+  id: string;
+  employeeId: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
 };
 type DocumentsViewFilter =
   | "all"
@@ -727,6 +736,14 @@ const getContractStoragePathFromUrl = (url?: string) => {
   return url.slice(idx + marker.length);
 };
 
+const getIdDocumentStoragePathFromUrl = (url?: string) => {
+  if (!url) return "";
+  const marker = "/contracts/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return url;
+  return url.slice(idx + marker.length);
+};
+
 const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issueDate: string) => {
   const months = warningValidityMonths[warningType] ?? 6;
   const base = new Date(issueDate);
@@ -838,6 +855,15 @@ const Employees = () => {
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
   const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
+  const [idDocumentByEmployee, setIdDocumentByEmployee] = useState<Record<string, EmployeeIdDocument | null>>({});
+  const [pendingIdDocumentFile, setPendingIdDocumentFile] = useState<File | null>(null);
+  const [pendingIdDocumentName, setPendingIdDocumentName] = useState("");
+  const [isIdDocumentMarkedForRemoval, setIsIdDocumentMarkedForRemoval] = useState(false);
+  const [isIdDocumentUploading, setIsIdDocumentUploading] = useState(false);
+  const [pendingEmploymentContractFile, setPendingEmploymentContractFile] = useState<File | null>(null);
+  const [pendingEmploymentContractName, setPendingEmploymentContractName] = useState("");
+  const [isEmploymentContractMarkedForRemoval, setIsEmploymentContractMarkedForRemoval] = useState(false);
+  const [isEmploymentContractUploading, setIsEmploymentContractUploading] = useState(false);
   const [misconductSearch, setMisconductSearch] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
@@ -890,6 +916,8 @@ const Employees = () => {
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const endDateInputRef = useRef<HTMLInputElement | null>(null);
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
+  const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
+  const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
   const sectionRefs = useRef<Record<ProfileSectionKey, HTMLDivElement | null>>({
     identity: null,
     equity: null,
@@ -1080,13 +1108,15 @@ const Employees = () => {
         "idNumber",
         "nationality",
         "dateOfBirth",
-      ]),
+      ]) || !!pendingIdDocumentFile || isIdDocumentMarkedForRemoval,
       equity: compare(["race", "gender", "disabilityStatus", "citizenshipStatus"]),
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
       statutory: compare(["incomeTaxNumber"]),
       employmentStatus:
         compare(["startDate", "contractType", "endDate", "employeeNumber"]) ||
-        probationPeriod !== originalProbationPeriod,
+        probationPeriod !== originalProbationPeriod ||
+        !!pendingEmploymentContractFile ||
+        isEmploymentContractMarkedForRemoval,
       employmentOrg:
         compare(["jobTitle"]) ||
         department !== originalDepartment ||
@@ -1139,6 +1169,10 @@ const Employees = () => {
     originalUnionMember,
     tradeUnion,
     originalTradeUnion,
+    pendingIdDocumentFile,
+    isIdDocumentMarkedForRemoval,
+    pendingEmploymentContractFile,
+    isEmploymentContractMarkedForRemoval,
   ]);
 
   const profileSchemaBase = useMemo(() => {
@@ -1812,6 +1846,50 @@ const Employees = () => {
     }
   }, [selectedEmployee, fetchContracts]);
 
+  const fetchIdDocument = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await idDocumentTable()
+        .select("id, employee_id, file_name, file_url, uploaded_at")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("uploaded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        toast({
+          title: "Unable to load ID / Passport document",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeIdDocument | null = data
+        ? {
+            id: data.id,
+            employeeId: data.employee_id,
+            fileName: data.file_name || "document.pdf",
+            fileUrl: data.file_url || "",
+            uploadedAt: data.uploaded_at || "",
+          }
+        : null;
+
+      setIdDocumentByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchIdDocument(selectedEmployee.id);
+    }
+  }, [fetchIdDocument, selectedEmployee]);
+
   const handleAddContract = async () => {
     if (!selectedEmployee || !user) {
       toast({
@@ -1994,10 +2072,278 @@ const Employees = () => {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
+  const removeActiveEmploymentContract = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const existingContract = (contractsByEmployee[employeeId] ?? []).find((contract) => contract.isActive) ?? null;
+      if (!existingContract) {
+        setIsEmploymentContractMarkedForRemoval(false);
+        return;
+      }
+
+      const { error: deleteError } = await contractTable()
+        .delete()
+        .eq("id", existingContract.id)
+        .eq("company_id", user.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      const storagePath = getContractStoragePathFromUrl(existingContract.fileUrl);
+      if (storagePath) {
+        await supabase.storage.from("contracts").remove([storagePath]);
+      }
+
+      setContractsByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: (prev[employeeId] ?? []).filter((contract) => contract.id !== existingContract.id),
+      }));
+      setIsEmploymentContractMarkedForRemoval(false);
+    },
+    [contractsByEmployee, user],
+  );
+
+  const uploadPendingEmploymentContract = useCallback(
+    async (employeeId: string) => {
+      if (!pendingEmploymentContractFile || !user) return;
+      setIsEmploymentContractUploading(true);
+      try {
+        const safeName = pendingEmploymentContractFile.name.replace(/\s+/g, "_");
+        const filePath = `${user.id}/${employeeId}-${Date.now()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingEmploymentContractFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: pendingEmploymentContractFile.type || "application/pdf",
+        });
+
+        if (uploadError) throw uploadError;
+
+        const { data: inserted, error: insertError } = await contractTable()
+          .insert({
+            company_id: user.id,
+            employee_id: employeeId,
+            contract_type: profileForm.contractType || "Permanent",
+            issue_date: dateToday(),
+            file_url: filePath,
+            is_active: true,
+          })
+          .select("id")
+          .single();
+
+        if (insertError) throw insertError;
+
+        if (inserted?.id) {
+          const { error: deactivateError } = await contractTable()
+            .update({ is_active: false })
+            .eq("company_id", user.id)
+            .eq("employee_id", employeeId)
+            .neq("id", inserted.id)
+            .eq("is_active", true);
+
+          if (deactivateError) throw deactivateError;
+        }
+
+        await fetchContracts(employeeId);
+        setPendingEmploymentContractFile(null);
+        setPendingEmploymentContractName("");
+        setIsEmploymentContractMarkedForRemoval(false);
+      } finally {
+        setIsEmploymentContractUploading(false);
+      }
+    },
+    [fetchContracts, pendingEmploymentContractFile, profileForm.contractType, user],
+  );
+
+  const handleEmploymentContractFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    setPendingEmploymentContractFile(file);
+    setPendingEmploymentContractName(file.name);
+    setIsEmploymentContractMarkedForRemoval(false);
+    setActiveEditSection("employmentStatus");
+    event.target.value = "";
+  };
+
+  const handleMarkEmploymentContractForRemoval = () => {
+    if (!selectedEmployee) return;
+    const activeContract =
+      (contractsByEmployee[selectedEmployee.id] ?? []).find((contract) => contract.isActive) ?? null;
+    if (!activeContract) return;
+    const confirmed = confirm(
+      `Are you sure you want to delete ${activeContract.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+    setPendingEmploymentContractFile(null);
+    setPendingEmploymentContractName("");
+    setIsEmploymentContractMarkedForRemoval(true);
+    setActiveEditSection("employmentStatus");
+  };
+
+  const handleOpenIdDocument = async (document: EmployeeIdDocument) => {
+    if (!document.fileUrl) return;
+    const storagePath = getIdDocumentStoragePathFromUrl(document.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("contracts")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open ID / Passport document",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const removeIdDocument = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const existingDocument = idDocumentByEmployee[employeeId];
+      if (!existingDocument) {
+        setIsIdDocumentMarkedForRemoval(false);
+        return;
+      }
+
+      const { error: deleteError } = await idDocumentTable()
+        .delete()
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      if (existingDocument.fileUrl) {
+        await supabase.storage.from("contracts").remove([getIdDocumentStoragePathFromUrl(existingDocument.fileUrl)]);
+      }
+
+      setIdDocumentByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: null,
+      }));
+      setIsIdDocumentMarkedForRemoval(false);
+    },
+    [idDocumentByEmployee, user],
+  );
+
+  const uploadPendingIdDocument = useCallback(
+    async (employeeId: string) => {
+      if (!pendingIdDocumentFile || !user) return;
+      setIsIdDocumentUploading(true);
+      try {
+        const existingDocument = idDocumentByEmployee[employeeId] ?? null;
+        const safeName = pendingIdDocumentFile.name.replace(/\s+/g, "_");
+        const filePath = `${user.id}/id-passports/${employeeId}-${Date.now()}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingIdDocumentFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: pendingIdDocumentFile.type || "application/pdf",
+        });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data, error } = await idDocumentTable()
+          .upsert(
+            {
+              company_id: user.id,
+              employee_id: employeeId,
+              file_name: pendingIdDocumentFile.name,
+              file_url: filePath,
+              uploaded_at: new Date().toISOString(),
+            },
+            { onConflict: "employee_id" },
+          )
+          .select("id, employee_id, file_name, file_url, uploaded_at")
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        if (existingDocument?.fileUrl) {
+          await supabase.storage.from("contracts").remove([getIdDocumentStoragePathFromUrl(existingDocument.fileUrl)]);
+        }
+
+        setIdDocumentByEmployee((prev) => ({
+          ...prev,
+          [employeeId]: {
+            id: data.id,
+            employeeId: data.employee_id,
+            fileName: data.file_name || pendingIdDocumentFile.name,
+            fileUrl: data.file_url || filePath,
+            uploadedAt: data.uploaded_at || new Date().toISOString(),
+          },
+        }));
+        setPendingIdDocumentFile(null);
+        setPendingIdDocumentName("");
+      } finally {
+        setIsIdDocumentUploading(false);
+      }
+    },
+    [idDocumentByEmployee, pendingIdDocumentFile, user],
+  );
+
+  const handleIdPassportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    setPendingIdDocumentFile(file);
+    setPendingIdDocumentName(file.name);
+    setIsIdDocumentMarkedForRemoval(false);
+    if (!isEditMode) {
+      enableEditMode();
+    }
+    setActiveEditSection("identity");
+    event.target.value = "";
+  };
+
+  const handleMarkIdDocumentForRemoval = () => {
+    if (!idDocumentForSelectedEmployee) return;
+    const confirmed = confirm(
+      `Are you sure you want to delete ${idDocumentForSelectedEmployee.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+    setPendingIdDocumentFile(null);
+    setPendingIdDocumentName("");
+    setIsIdDocumentMarkedForRemoval(true);
+    if (!isEditMode) {
+      enableEditMode();
+    }
+    setActiveEditSection("identity");
+  };
+
   const contractsForSelectedEmployee = useMemo(
     () => (selectedEmployee ? contractsByEmployee[selectedEmployee.id] ?? [] : []),
     [selectedEmployee, contractsByEmployee],
   );
+  const idDocumentForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? idDocumentByEmployee[selectedEmployee.id] ?? null : null),
+    [idDocumentByEmployee, selectedEmployee],
+  );
+  const hasEffectiveIdDocument = !!idDocumentForSelectedEmployee && !isIdDocumentMarkedForRemoval;
 
   const profileCompletion = useMemo(() => {
     const derivedDob = isSouthAfricanNationality
@@ -2111,6 +2457,12 @@ const Employees = () => {
     }),
     [contractsForSelectedEmployee],
   );
+  const activeContractForSelectedEmployee = useMemo(
+    () => contractsByStatus.active[0] ?? null,
+    [contractsByStatus],
+  );
+  const hasEffectiveEmploymentContract =
+    !!activeContractForSelectedEmployee && !isEmploymentContractMarkedForRemoval;
 
   const misconductOptions = useMemo(() => {
     if (conductOffences.length > 0) return conductOffences;
@@ -2220,26 +2572,26 @@ const Employees = () => {
     focusTarget?.focus();
   }, [activeEditSection]);
 
-  const guardUnsavedSection = useCallback(
-    (event: SyntheticEvent) => {
-      if (activeEditSection && sectionDirty[activeEditSection]) {
-        event.preventDefault();
-        event.stopPropagation();
+  const guardEditSession = useCallback(
+    (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+      if (isEditMode && activeEditSection) {
+        event?.preventDefault();
+        event?.stopPropagation();
         toast({
-          title: "Save required",
-          description: `Save changes to ${sectionTitles[activeEditSection]} first.`,
+          title: "Finish current edit",
+          description: `Save or cancel ${sectionTitles[activeEditSection]} before continuing.`,
         });
         focusActiveSection();
         return false;
       }
       return true;
     },
-    [activeEditSection, focusActiveSection, sectionDirty, sectionTitles, toast],
+    [activeEditSection, focusActiveSection, isEditMode, sectionTitles, toast],
   );
 
   const handleSectionInteract = useCallback(
     (section: ProfileSectionKey, event: SyntheticEvent) => {
-      if (activeEditSection && activeEditSection !== section && !guardUnsavedSection(event)) {
+      if (isEditMode && activeEditSection && activeEditSection !== section && !guardEditSession(event)) {
         return;
       }
       if (activeEditSection !== section) {
@@ -2249,14 +2601,8 @@ const Employees = () => {
         setIsEditMode(true);
       }
     },
-    [activeEditSection, guardUnsavedSection, isEditMode],
+    [activeEditSection, guardEditSession, isEditMode],
   );
-
-  useEffect(() => {
-    if (activeEditSection && !sectionDirty[activeEditSection] && !isProfileSaving) {
-      setActiveEditSection(null);
-    }
-  }, [activeEditSection, isProfileSaving, sectionDirty]);
 
   const renderProfilePanel = () => {
     if (!selectedEmployee) return null;
@@ -2276,7 +2622,10 @@ const Employees = () => {
                 variant="outline"
                 size="sm"
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
-                onClick={() => navigateToEmployee(selectedEmployeeIndex - 1)}
+                onClick={(event) => {
+                  if (!guardEditSession(event)) return;
+                  navigateToEmployee(selectedEmployeeIndex - 1);
+                }}
                 disabled={!hasPreviousEmployee}
               >
                 <ChevronLeft className="h-3 w-3 mr-[-1px]" />
@@ -2288,7 +2637,10 @@ const Employees = () => {
                 variant="outline"
                 size="sm"
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
-                onClick={() => navigateToEmployee(selectedEmployeeIndex + 1)}
+                onClick={(event) => {
+                  if (!guardEditSession(event)) return;
+                  navigateToEmployee(selectedEmployeeIndex + 1);
+                }}
                 disabled={!hasNextEmployee}
               >
                 <span className="h-3 w-2" aria-hidden="true" />
@@ -2485,7 +2837,10 @@ const Employees = () => {
           <div className="mt-0 flex h-full min-h-0 flex-col">
             <Tabs
               value={activeTab}
-              onValueChange={(value) => setActiveTab(value as EmployeeTab)}
+              onValueChange={(value) => {
+                if (!guardEditSession()) return;
+                setActiveTab(value as EmployeeTab);
+              }}
               className="mt-0 flex h-full min-h-0 flex-1 flex-col"
             >
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -2495,7 +2850,7 @@ const Employees = () => {
                   value="personal"
                   className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
-                    guardUnsavedSection(event);
+                    guardEditSession(event);
                   }}
                 >
                   Personal
@@ -2504,7 +2859,7 @@ const Employees = () => {
                   value="employment"
                   className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
-                    guardUnsavedSection(event);
+                    guardEditSession(event);
                   }}
                 >
                   Employment
@@ -2513,7 +2868,7 @@ const Employees = () => {
                   value="address"
                   className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
-                    guardUnsavedSection(event);
+                    guardEditSession(event);
                   }}
                 >
                   Address
@@ -2524,7 +2879,7 @@ const Employees = () => {
                       type="button"
                       variant="ghost"
                       onPointerDown={(event) => {
-                        guardUnsavedSection(event);
+                        guardEditSession(event);
                       }}
                       className={`rounded-t-sm border-b-[3px] px-4 h-8 inline-flex items-center text-left text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
                         activeTab === "discipline"
@@ -2541,6 +2896,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("all");
                       }}
@@ -2551,6 +2907,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("warnings");
                       }}
@@ -2561,6 +2918,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("contracts");
                       }}
@@ -2571,6 +2929,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("idPassport");
                       }}
@@ -2581,6 +2940,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("licence");
                       }}
@@ -2591,6 +2951,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("training");
                       }}
@@ -2601,6 +2962,7 @@ const Employees = () => {
                       className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
                       onSelect={(event) => {
                         event.preventDefault();
+                        if (!guardEditSession(event)) return;
                         setActiveTab("discipline");
                         setDocumentsViewFilter("education");
                       }}
@@ -3562,6 +3924,12 @@ const Employees = () => {
     setWorkEmail(employee.work_email ?? "");
     setWorkCellNumber(employee.work_cell_number ?? "");
     setBranch("");
+    setPendingIdDocumentFile(null);
+    setPendingIdDocumentName("");
+    setIsIdDocumentMarkedForRemoval(false);
+    setPendingEmploymentContractFile(null);
+    setPendingEmploymentContractName("");
+    setIsEmploymentContractMarkedForRemoval(false);
    setActiveTab("personal");
    setIsEditMode(false);
    setActiveEditSection(null);
@@ -3569,6 +3937,7 @@ const Employees = () => {
   };
 
   const closeProfileDialog = () => {
+    if (!guardEditSession()) return;
     setIsProfilePanelOpen(false);
     setSelectedEmployee(null);
     setIsEditMode(false);
@@ -3588,12 +3957,48 @@ const Employees = () => {
     setBranch("");
     setReportingToOpen(false);
     setReportingToQuery("");
+    setPendingIdDocumentFile(null);
+    setPendingIdDocumentName("");
+    setIsIdDocumentMarkedForRemoval(false);
+    setPendingEmploymentContractFile(null);
+    setPendingEmploymentContractName("");
+    setIsEmploymentContractMarkedForRemoval(false);
    };
 
   const handleSectionSave = async (section: ProfileSectionKey) => {
     if (!selectedEmployee) return;
     setIsProfileSaving(true);
     try {
+      const shouldUploadIdDocument = section === "identity" && !!pendingIdDocumentFile;
+      const shouldRemoveIdDocument =
+        section === "identity" && isIdDocumentMarkedForRemoval && !!idDocumentByEmployee[selectedEmployee.id];
+      const shouldUploadEmploymentContract = section === "employmentStatus" && !!pendingEmploymentContractFile;
+      const shouldRemoveEmploymentContract =
+        section === "employmentStatus" &&
+        isEmploymentContractMarkedForRemoval &&
+        !!activeContractForSelectedEmployee;
+      const identityFieldKeys: Array<keyof EmployeeProfileFormData> = [
+        "employeeName",
+        "employeeSurname",
+        "idNumber",
+        "nationality",
+        "dateOfBirth",
+      ];
+      const employmentStatusFieldKeys: Array<keyof EmployeeProfileFormData> = [
+        "startDate",
+        "contractType",
+        "endDate",
+        "employeeNumber",
+      ];
+      const hasIdentityFieldChanges =
+        section === "identity" && !!originalProfile
+          ? identityFieldKeys.some((key) => profileForm[key] !== originalProfile[key])
+          : false;
+      const hasEmploymentStatusFieldChanges =
+        section === "employmentStatus" && !!originalProfile
+          ? employmentStatusFieldKeys.some((key) => profileForm[key] !== originalProfile[key]) ||
+            probationPeriod !== originalProbationPeriod
+          : false;
       const isEmploymentSection =
         section === "employmentStatus" ||
         section === "employmentOrg" ||
@@ -3663,6 +4068,41 @@ const Employees = () => {
           setIsProfileSaving(false);
           return;
         }
+      }
+
+      if (section === "identity" && !hasIdentityFieldChanges && (shouldUploadIdDocument || shouldRemoveIdDocument)) {
+        if (shouldRemoveIdDocument) {
+          await removeIdDocument(selectedEmployee.id);
+        }
+        if (shouldUploadIdDocument) {
+          await uploadPendingIdDocument(selectedEmployee.id);
+        }
+        toast({
+          title: "Employee updated",
+          description: "Employee profile has been saved successfully.",
+        });
+        setIsEditMode(false);
+        setActiveEditSection(null);
+        return;
+      }
+      if (
+        section === "employmentStatus" &&
+        !hasEmploymentStatusFieldChanges &&
+        (shouldUploadEmploymentContract || shouldRemoveEmploymentContract)
+      ) {
+        if (shouldRemoveEmploymentContract) {
+          await removeActiveEmploymentContract(selectedEmployee.id);
+        }
+        if (shouldUploadEmploymentContract) {
+          await uploadPendingEmploymentContract(selectedEmployee.id);
+        }
+        toast({
+          title: "Employee updated",
+          description: "Employee profile has been saved successfully.",
+        });
+        setIsEditMode(false);
+        setActiveEditSection(null);
+        return;
       }
 
       const endDateValue =
@@ -3764,6 +4204,18 @@ const Employees = () => {
       setBasicSalary(updatedEmployee.basic_salary ?? "");
       setWorkEmail(updatedEmployee.work_email ?? "");
       setWorkCellNumber(updatedEmployee.work_cell_number ?? "");
+      if (shouldRemoveIdDocument) {
+        await removeIdDocument(selectedEmployee.id);
+      }
+      if (shouldUploadIdDocument) {
+        await uploadPendingIdDocument(selectedEmployee.id);
+      }
+      if (shouldRemoveEmploymentContract) {
+        await removeActiveEmploymentContract(selectedEmployee.id);
+      }
+      if (shouldUploadEmploymentContract) {
+        await uploadPendingEmploymentContract(selectedEmployee.id);
+      }
       if (isEmploymentSection) {
         setOriginalDepartment(department);
         setOriginalBranch(branch);
@@ -3788,10 +4240,44 @@ const Employees = () => {
     }
   };
 
+  const handleSectionCancel = useCallback(() => {
+    if (!selectedEmployee) return;
+    setProfileForm(createProfileFormFromEmployee(selectedEmployee));
+    setProbationPeriod(selectedEmployee.probation_period ?? "");
+    setUnionMember((selectedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
+    setTradeUnion(selectedEmployee.trade_union ?? "");
+    setDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
+    setReportingTo(selectedEmployee.reporting_to ?? "");
+    setOccupationalLevel(
+      (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+    );
+    setSalaryType((selectedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setBasicSalary(selectedEmployee.basic_salary ?? "");
+    setWorkEmail(selectedEmployee.work_email ?? "");
+    setWorkCellNumber(selectedEmployee.work_cell_number ?? "");
+    setBranch("");
+    const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
+    if (nextStatus === "inactive") {
+      setEmployeeStatus("Inactive");
+    } else if (nextStatus === "active") {
+      setEmployeeStatus("Active");
+    } else {
+      setEmployeeStatus("");
+    }
+    setPendingIdDocumentFile(null);
+    setPendingIdDocumentName("");
+    setIsIdDocumentMarkedForRemoval(false);
+    setPendingEmploymentContractFile(null);
+    setPendingEmploymentContractName("");
+    setIsEmploymentContractMarkedForRemoval(false);
+    setIsEditMode(false);
+    setActiveEditSection(null);
+  }, [selectedEmployee]);
+
   const enableEditMode = useCallback(() => {
-    if (isReadOnlyTab || isEditMode) return;
+    if (isReadOnlyTab || isEditMode || !activeEditSection) return;
     setIsEditMode(true);
-  }, [isReadOnlyTab, isEditMode]);
+  }, [activeEditSection, isReadOnlyTab, isEditMode]);
 
   const openDatePicker = useCallback((input: HTMLInputElement | null) => {
     if (!input) return;
@@ -3821,30 +4307,43 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.identity = el;
           }}
-          onPointerDownCapture={(event) => handleSectionInteract("identity", event)}
-          onFocusCapture={(event) => handleSectionInteract("identity", event)}
           className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Identity Information</h3>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (sectionDirty.identity && !isProfileSaving) {
-                  void handleSectionSave("identity");
-                  return;
-                }
-                handleSectionInteract("identity", event);
-              }}
-              aria-label={sectionDirty.identity ? "Save identity details" : "Edit identity details"}
-            >
-              {sectionDirty.identity ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2">
+              {isEditMode && activeEditSection === "identity" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                  onClick={handleSectionCancel}
+                  disabled={isProfileSaving}
+                >
+                  Cancel
+                </Button>
               )}
-            </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+                onClick={(event) => {
+                  if (isEditMode && activeEditSection === "identity" && !isProfileSaving) {
+                    void handleSectionSave("identity");
+                    return;
+                  }
+                  handleSectionInteract("identity", event);
+                }}
+                aria-label={
+                  isEditMode && activeEditSection === "identity" ? "Save identity details" : "Edit identity details"
+                }
+              >
+                {isEditMode && activeEditSection === "identity" ? (
+                  <Save className="h-3.5 w-3.5" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
@@ -4021,6 +4520,59 @@ const Employees = () => {
                 }
               />
             </div>
+            <div className="flex items-center gap-3" style={{ marginTop: "13px" }}>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload ID/Passport</Label>
+              <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
+                {isEditMode && !hasEffectiveIdDocument && (
+                  <>
+                    <input
+                      ref={idPassportFileInputRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      className="hidden"
+                      onChange={handleIdPassportFileChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                      onClick={() => idPassportFileInputRef.current?.click()}
+                      disabled={isIdDocumentUploading}
+                    >
+                      <Upload className="mr-1 h-3 w-3" />
+                      {isIdDocumentUploading ? "Uploading..." : "Upload"}
+                    </Button>
+                  </>
+                )}
+                {pendingIdDocumentName ? (
+                  <span className="max-w-[180px] truncate text-[11px] font-semibold text-amber-700" title={pendingIdDocumentName}>
+                    {pendingIdDocumentName}
+                  </span>
+                ) : hasEffectiveIdDocument && idDocumentForSelectedEmployee ? (
+                  <button
+                    type="button"
+                    className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                    onClick={() => void handleOpenIdDocument(idDocumentForSelectedEmployee)}
+                    title={idDocumentForSelectedEmployee.fileName}
+                  >
+                    {idDocumentForSelectedEmployee.fileName}
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-semibold text-slate-500">--</span>
+                )}
+                {isEditMode && hasEffectiveIdDocument && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                    onClick={handleMarkIdDocumentForRemoval}
+                    disabled={isIdDocumentUploading}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -4028,30 +4580,45 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.equity = el;
           }}
-          onPointerDownCapture={(event) => handleSectionInteract("equity", event)}
-          onFocusCapture={(event) => handleSectionInteract("equity", event)}
           className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Employment Equity Information</h3>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (sectionDirty.equity && !isProfileSaving) {
-                  void handleSectionSave("equity");
-                  return;
-                }
-                handleSectionInteract("equity", event);
-              }}
-              aria-label={sectionDirty.equity ? "Save employment equity details" : "Edit employment equity details"}
-            >
-              {sectionDirty.equity ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2">
+              {isEditMode && activeEditSection === "equity" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                  onClick={handleSectionCancel}
+                  disabled={isProfileSaving}
+                >
+                  Cancel
+                </Button>
               )}
-            </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+                onClick={(event) => {
+                  if (isEditMode && activeEditSection === "equity" && !isProfileSaving) {
+                    void handleSectionSave("equity");
+                    return;
+                  }
+                  handleSectionInteract("equity", event);
+                }}
+                aria-label={
+                  isEditMode && activeEditSection === "equity"
+                    ? "Save employment equity details"
+                    : "Edit employment equity details"
+                }
+              >
+                {isEditMode && activeEditSection === "equity" ? (
+                  <Save className="h-3.5 w-3.5" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
@@ -4250,30 +4817,43 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.contact = el;
           }}
-          onPointerDownCapture={(event) => handleSectionInteract("contact", event)}
-          onFocusCapture={(event) => handleSectionInteract("contact", event)}
           className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Contact Information</h3>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (sectionDirty.contact && !isProfileSaving) {
-                  void handleSectionSave("contact");
-                  return;
-                }
-                handleSectionInteract("contact", event);
-              }}
-              aria-label={sectionDirty.contact ? "Save contact details" : "Edit contact details"}
-            >
-              {sectionDirty.contact ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2">
+              {isEditMode && activeEditSection === "contact" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                  onClick={handleSectionCancel}
+                  disabled={isProfileSaving}
+                >
+                  Cancel
+                </Button>
               )}
-            </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+                onClick={(event) => {
+                  if (isEditMode && activeEditSection === "contact" && !isProfileSaving) {
+                    void handleSectionSave("contact");
+                    return;
+                  }
+                  handleSectionInteract("contact", event);
+                }}
+                aria-label={
+                  isEditMode && activeEditSection === "contact" ? "Save contact details" : "Edit contact details"
+                }
+              >
+                {isEditMode && activeEditSection === "contact" ? (
+                  <Save className="h-3.5 w-3.5" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
@@ -4351,30 +4931,45 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.statutory = el;
           }}
-          onPointerDownCapture={(event) => handleSectionInteract("statutory", event)}
-          onFocusCapture={(event) => handleSectionInteract("statutory", event)}
           className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Statutory Information</h3>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (sectionDirty.statutory && !isProfileSaving) {
-                  void handleSectionSave("statutory");
-                  return;
-                }
-                handleSectionInteract("statutory", event);
-              }}
-              aria-label={sectionDirty.statutory ? "Save statutory details" : "Edit statutory details"}
-            >
-              {sectionDirty.statutory ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
+            <div className="flex items-center gap-2">
+              {isEditMode && activeEditSection === "statutory" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                  onClick={handleSectionCancel}
+                  disabled={isProfileSaving}
+                >
+                  Cancel
+                </Button>
               )}
-            </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+                onClick={(event) => {
+                  if (isEditMode && activeEditSection === "statutory" && !isProfileSaving) {
+                    void handleSectionSave("statutory");
+                    return;
+                  }
+                  handleSectionInteract("statutory", event);
+                }}
+                aria-label={
+                  isEditMode && activeEditSection === "statutory"
+                    ? "Save statutory details"
+                    : "Edit statutory details"
+                }
+              >
+                {isEditMode && activeEditSection === "statutory" ? (
+                  <Save className="h-3.5 w-3.5" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
@@ -4406,26 +5001,43 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.homeAddress = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("homeAddress", event)}
-        onFocusCapture={(event) => handleSectionInteract("homeAddress", event)}
         className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">Home Address</h3>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.homeAddress && !isProfileSaving) {
-                void handleSectionSave("homeAddress");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "homeAddress" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "homeAddress" && !isProfileSaving) {
+                  void handleSectionSave("homeAddress");
+                  return;
+                }
+                handleSectionInteract("homeAddress", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "homeAddress" ? "Save home address" : "Edit home address"
               }
-              handleSectionInteract("homeAddress", event);
-            }}
-            aria-label={sectionDirty.homeAddress ? "Save home address" : "Edit home address"}
-          >
-            {sectionDirty.homeAddress ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "homeAddress" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-2 space-y-2">
           <div className="flex items-center gap-3">
@@ -4530,8 +5142,6 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.postalAddress = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("postalAddress", event)}
-        onFocusCapture={(event) => handleSectionInteract("postalAddress", event)}
         className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
@@ -4557,20 +5167,39 @@ const Employees = () => {
               Copy from physical
             </Button>
           </div>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.postalAddress && !isProfileSaving) {
-                void handleSectionSave("postalAddress");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "postalAddress" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "postalAddress" && !isProfileSaving) {
+                  void handleSectionSave("postalAddress");
+                  return;
+                }
+                handleSectionInteract("postalAddress", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "postalAddress" ? "Save postal address" : "Edit postal address"
               }
-              handleSectionInteract("postalAddress", event);
-            }}
-            aria-label={sectionDirty.postalAddress ? "Save postal address" : "Edit postal address"}
-          >
-            {sectionDirty.postalAddress ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "postalAddress" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-2 space-y-2">
           <div className="flex items-center gap-3">
@@ -4679,28 +5308,47 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentStatus = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("employmentStatus", event)}
-        onFocusCapture={(event) => handleSectionInteract("employmentStatus", event)}
         className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
           </div>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.employmentStatus && !isProfileSaving) {
-                void handleSectionSave("employmentStatus");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "employmentStatus" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "employmentStatus" && !isProfileSaving) {
+                  void handleSectionSave("employmentStatus");
+                  return;
+                }
+                handleSectionInteract("employmentStatus", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "employmentStatus"
+                  ? "Save employment details"
+                  : "Edit employment details"
               }
-              handleSectionInteract("employmentStatus", event);
-            }}
-            aria-label={sectionDirty.employmentStatus ? "Save employment details" : "Edit employment details"}
-          >
-            {sectionDirty.employmentStatus ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "employmentStatus" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
@@ -4924,6 +5572,62 @@ const Employees = () => {
               disabled
             />
           </div>
+          <div className="flex items-center gap-3" style={{ transform: "translateY(5px)" }}>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload Contract</Label>
+            <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
+              {isEditMode && !hasEffectiveEmploymentContract && (
+                <>
+                  <input
+                    ref={employmentContractFileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handleEmploymentContractFileChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                    onClick={() => employmentContractFileInputRef.current?.click()}
+                    disabled={isEmploymentContractUploading}
+                  >
+                    <Upload className="mr-1 h-3 w-3" />
+                    {isEmploymentContractUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                </>
+              )}
+              {pendingEmploymentContractName ? (
+                <span
+                  className="max-w-[180px] truncate text-[11px] font-semibold text-amber-700"
+                  title={pendingEmploymentContractName}
+                >
+                  {pendingEmploymentContractName}
+                </span>
+              ) : hasEffectiveEmploymentContract && activeContractForSelectedEmployee ? (
+                <button
+                  type="button"
+                  className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                  onClick={() => void handleOpenContract(activeContractForSelectedEmployee)}
+                  title={activeContractForSelectedEmployee.fileName}
+                >
+                  {activeContractForSelectedEmployee.fileName}
+                </button>
+              ) : (
+                <span className="text-[11px] font-semibold text-slate-500">--</span>
+              )}
+              {isEditMode && hasEffectiveEmploymentContract && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                  onClick={handleMarkEmploymentContractForRemoval}
+                  disabled={isEmploymentContractUploading}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -4931,26 +5635,45 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentOrg = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("employmentOrg", event)}
-        onFocusCapture={(event) => handleSectionInteract("employmentOrg", event)}
         className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.employmentOrg && !isProfileSaving) {
-                void handleSectionSave("employmentOrg");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "employmentOrg" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "employmentOrg" && !isProfileSaving) {
+                  void handleSectionSave("employmentOrg");
+                  return;
+                }
+                handleSectionInteract("employmentOrg", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "employmentOrg"
+                  ? "Save organisational details"
+                  : "Edit organisational details"
               }
-              handleSectionInteract("employmentOrg", event);
-            }}
-            aria-label={sectionDirty.employmentOrg ? "Save organisational details" : "Edit organisational details"}
-          >
-            {sectionDirty.employmentOrg ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "employmentOrg" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
@@ -5161,26 +5884,45 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentRemuneration = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("employmentRemuneration", event)}
-        onFocusCapture={(event) => handleSectionInteract("employmentRemuneration", event)}
         className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.employmentRemuneration && !isProfileSaving) {
-                void handleSectionSave("employmentRemuneration");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "employmentRemuneration" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "employmentRemuneration" && !isProfileSaving) {
+                  void handleSectionSave("employmentRemuneration");
+                  return;
+                }
+                handleSectionInteract("employmentRemuneration", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "employmentRemuneration"
+                  ? "Save remuneration details"
+                  : "Edit remuneration details"
               }
-              handleSectionInteract("employmentRemuneration", event);
-            }}
-            aria-label={sectionDirty.employmentRemuneration ? "Save remuneration details" : "Edit remuneration details"}
-          >
-            {sectionDirty.employmentRemuneration ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "employmentRemuneration" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
@@ -5235,26 +5977,45 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentWorkContact = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("employmentWorkContact", event)}
-        onFocusCapture={(event) => handleSectionInteract("employmentWorkContact", event)}
         className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.employmentWorkContact && !isProfileSaving) {
-                void handleSectionSave("employmentWorkContact");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "employmentWorkContact" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "employmentWorkContact" && !isProfileSaving) {
+                  void handleSectionSave("employmentWorkContact");
+                  return;
+                }
+                handleSectionInteract("employmentWorkContact", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "employmentWorkContact"
+                  ? "Save work contact details"
+                  : "Edit work contact details"
               }
-              handleSectionInteract("employmentWorkContact", event);
-            }}
-            aria-label={sectionDirty.employmentWorkContact ? "Save work contact details" : "Edit work contact details"}
-          >
-            {sectionDirty.employmentWorkContact ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "employmentWorkContact" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
@@ -5288,26 +6049,43 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentUnion = el;
         }}
-        onPointerDownCapture={(event) => handleSectionInteract("employmentUnion", event)}
-        onFocusCapture={(event) => handleSectionInteract("employmentUnion", event)}
         className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-            onClick={(event) => {
-              if (sectionDirty.employmentUnion && !isProfileSaving) {
-                void handleSectionSave("employmentUnion");
-                return;
+          <div className="flex items-center gap-2">
+            {isEditMode && activeEditSection === "employmentUnion" && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                onClick={handleSectionCancel}
+                disabled={isProfileSaving}
+              >
+                Cancel
+              </Button>
+            )}
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+              onClick={(event) => {
+                if (isEditMode && activeEditSection === "employmentUnion" && !isProfileSaving) {
+                  void handleSectionSave("employmentUnion");
+                  return;
+                }
+                handleSectionInteract("employmentUnion", event);
+              }}
+              aria-label={
+                isEditMode && activeEditSection === "employmentUnion" ? "Save union details" : "Edit union details"
               }
-              handleSectionInteract("employmentUnion", event);
-            }}
-            aria-label={sectionDirty.employmentUnion ? "Save union details" : "Edit union details"}
-          >
-            {sectionDirty.employmentUnion ? <Save className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-          </button>
+            >
+              {isEditMode && activeEditSection === "employmentUnion" ? (
+                <Save className="h-3.5 w-3.5" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">

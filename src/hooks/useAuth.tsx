@@ -78,14 +78,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const resetPassword = async (email: string) => {
     const configuredAppUrl = import.meta.env.VITE_APP_URL as string | undefined;
-    const appBaseUrl = (configuredAppUrl && configuredAppUrl.trim().length > 0
-      ? configuredAppUrl
-      : window.location.origin
+    const appBaseUrl = (
+      configuredAppUrl && configuredAppUrl.trim().length > 0 ? configuredAppUrl : window.location.origin
     ).replace(/\/+$/, "");
     const redirectUrl = `${appBaseUrl}/reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+
+    let { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,
     });
+
+    // Fallback: if redirect URL is not allow-listed in Supabase yet, send without redirectTo
+    // so reset emails can still be delivered.
+    if (error) {
+      const message = String((error as any)?.message ?? error).toLowerCase();
+      const isRedirectError =
+        message.includes("redirect") || message.includes("url") || message.includes("invalid");
+      if (isRedirectError) {
+        const fallback = await supabase.auth.resetPasswordForEmail(email);
+        error = fallback.error;
+      }
+    }
+
     return { error };
   };
 

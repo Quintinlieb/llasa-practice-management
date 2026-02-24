@@ -109,6 +109,10 @@ const warningTable = () => (supabase as any).from("employee_warnings");
 const contractTable = () => (supabase as any).from("employee_contracts");
 // Supabase types do not include employee_id_documents; cast to any for those calls to avoid type errors.
 const idDocumentTable = () => (supabase as any).from("employee_id_documents");
+// Supabase types do not include employee_licences; cast to any for those calls to avoid type errors.
+const licenceTable = () => (supabase as any).from("employee_licences");
+// Supabase types do not include employee_education; cast to any for those calls to avoid type errors.
+const educationTable = () => (supabase as any).from("employee_education");
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -191,7 +195,7 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   emergency_contact_number?: string | null;
 };
 type EmployeeUpdate = Partial<Employee>;
-type EmployeeTab = "personal" | "employment" | "address" | "discipline" | "contracts";
+type EmployeeTab = "personal" | "employment" | "address" | "licences" | "education" | "discipline" | "contracts";
 type ProfileSectionKey =
   | "identity"
   | "equity"
@@ -228,14 +232,32 @@ type EmployeeIdDocument = {
   fileUrl: string;
   uploadedAt: string;
 };
-type DocumentsViewFilter =
-  | "all"
-  | "warnings"
-  | "contracts"
-  | "idPassport"
-  | "licence"
-  | "training"
-  | "education";
+type LicenceCategory = "driving" | "workRelated" | "firearmSecurity" | "marineAviation";
+type EmployeeLicence = {
+  id: string;
+  employeeId: string;
+  category: LicenceCategory;
+  licenceType: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+};
+type LicencesViewFilter =
+  | "driving"
+  | "workRelated"
+  | "firearmSecurity"
+  | "marineAviation";
+type EducationCategory = "academic" | "trade" | "training";
+type EmployeeEducation = {
+  id: string;
+  employeeId: string;
+  category: EducationCategory;
+  qualificationType: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+};
+type EducationViewFilter = "academic" | "trade" | "training";
 type OffenceSection = {
   title?: string;
   offences?: Array<{ name?: string; category?: string; first?: string }>;
@@ -706,6 +728,91 @@ const terminationReasons = [
   "Illness/Medically boarded",
   "Absconded",
 ] as const;
+const licenceCategoryLabels: Record<LicenceCategory, string> = {
+  driving: "Driving Licence(s)",
+  workRelated: "Work-related Licence(s)",
+  firearmSecurity: "Firearm & Security",
+  marineAviation: "Marine & Aviation",
+};
+const licenceTypesByCategory: Record<LicenceCategory, readonly string[]> = {
+  driving: [
+    "Motorcycle Licence (Code A1)",
+    "Motorcycle Licence (Code A)",
+    "Light Motor Vehicle Licence (Code B)",
+    "Light Motor Vehicle with Trailer (Code EB)",
+    "Medium Heavy Vehicle Licence (Code C1)",
+    "Heavy Motor Vehicle Licence (Code C)",
+    "Heavy Motor Vehicle with Trailer (Code EC1)",
+    "Extra Heavy / Articulated Vehicle Licence (Code EC)",
+    "Professional Driving Permit (PrDP)",
+    "Learner's Licence",
+  ],
+  workRelated: [
+    "Forklift Operator Licence",
+    "Overhead Crane Operator Licence",
+    "Mobile Crane Operator Licence",
+    "Electrical Wireman's Licence",
+  ],
+  firearmSecurity: [
+    "Firearm Licence (Section 13 - Self-Defence)",
+    "Firearm Licence (Section 15 - Occasional Hunting / Sport Shooting)",
+    "Firearm Licence (Section 16 - Dedicated Hunting / Sport Shooting)",
+    "Competency Certificate (Firearms Control Act)",
+    "Security Officer Registration (PSIRA)",
+  ],
+  marineAviation: [
+    "Skipper's Licence",
+    "Commercial Skipper Licence",
+    "Pilot Licence",
+    "Drone Pilot Licence",
+  ],
+};
+const educationCategoryLabels: Record<EducationCategory, string> = {
+  academic: "Academic Qualifications",
+  trade: "Trade Qualifications",
+  training: "Training Certificates",
+};
+const educationTypesByCategory: Record<EducationCategory, readonly string[]> = {
+  academic: [
+    "National Senior Certificate (Matric)",
+    "Natioal Certificate",
+    "Advanced Certificate",
+    "Diploma",
+    "Advanced Diploma",
+    "Bachelor's Degree",
+    "Honours Degree",
+    "Postgraduate Diploma",
+    "Master's Degree",
+    "Doctorate",
+  ],
+  trade: [
+    "Trade Certificate",
+    "Trade Test Certificate",
+    "Artisan Qualification",
+    "Electrical Trade Certificate",
+    "Plumbing Trade Certificate",
+    "Welding Trade Certificate",
+    "Boiler Making Trade Certificate",
+    "Millwright Trade Certificate",
+    "Mechanical Trade Certificate",
+    "Civil Trade Certificate",
+  ],
+  training: [
+    "First Aid Certificate",
+    "Fire Fighting Training Certificate",
+    "Health & Safety Representative Certificate",
+    "SHEQ Training Certificate",
+    "Working at Heights Training",
+    "Incident Investigation Training",
+    "Hazard Identification & Risk Assessment (HIRA) Training",
+    "Construction Safety Training",
+    "Forklift Training Certificate",
+    "Reach Truck Training Certificate",
+    "Crane Operator Training Certificate",
+    "Mobile Equipment Training Certificate",
+    "Dangerous Goods Handling Training",
+  ],
+};
 const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
   First: 6,
   Second: 6,
@@ -851,7 +958,10 @@ const Employees = () => {
     fileName: "",
   });
   const [contractStatusFilter, setContractStatusFilter] = useState<"active" | "inactive">("active");
-  const [documentsViewFilter, setDocumentsViewFilter] = useState<DocumentsViewFilter>("all");
+  const [licencesViewFilter, setLicencesViewFilter] = useState<LicencesViewFilter>("driving");
+  const [educationViewFilter, setEducationViewFilter] = useState<EducationViewFilter>("academic");
+  const [isLicencesTabMenuOpen, setIsLicencesTabMenuOpen] = useState(false);
+  const [isEducationTabMenuOpen, setIsEducationTabMenuOpen] = useState(false);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
   const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
@@ -864,6 +974,19 @@ const Employees = () => {
   const [pendingEmploymentContractName, setPendingEmploymentContractName] = useState("");
   const [isEmploymentContractMarkedForRemoval, setIsEmploymentContractMarkedForRemoval] = useState(false);
   const [isEmploymentContractUploading, setIsEmploymentContractUploading] = useState(false);
+  const [licencesByEmployee, setLicencesByEmployee] = useState<Record<string, EmployeeLicence[]>>({});
+  const [licenceTypeSelection, setLicenceTypeSelection] = useState<Record<LicenceCategory, string>>({
+    driving: "",
+    workRelated: "",
+    firearmSecurity: "",
+    marineAviation: "",
+  });
+  const [educationsByEmployee, setEducationsByEmployee] = useState<Record<string, EmployeeEducation[]>>({});
+  const [educationTypeSelection, setEducationTypeSelection] = useState<Record<EducationCategory, string>>({
+    academic: "",
+    trade: "",
+    training: "",
+  });
   const [misconductSearch, setMisconductSearch] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
@@ -918,6 +1041,17 @@ const Employees = () => {
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
+  const licenceFileInputRefs = useRef<Record<LicenceCategory, HTMLInputElement | null>>({
+    driving: null,
+    workRelated: null,
+    firearmSecurity: null,
+    marineAviation: null,
+  });
+  const educationFileInputRefs = useRef<Record<EducationCategory, HTMLInputElement | null>>({
+    academic: null,
+    trade: null,
+    training: null,
+  });
   const sectionRefs = useRef<Record<ProfileSectionKey, HTMLDivElement | null>>({
     identity: null,
     equity: null,
@@ -960,6 +1094,17 @@ const Employees = () => {
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const fieldInputClass = baseFieldInputClass;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs`;
+  // UI contract: all dropdown triggers/items on Employees page must use these shared classes.
+  const employeeDropdownTriggerClass = `${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white !ring-0 !ring-offset-0 !outline-none focus:!ring-0 focus:!ring-offset-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!outline-none`;
+  const employeeDropdownCommandItemClass =
+    "text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
+  const employeeDropdownSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const employeeDropdownMenuItemClass =
+    "cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
+  const employeeDropdownMenuItemWithGapClass = `gap-2 ${employeeDropdownMenuItemClass}`;
+  const addModalDropdownToneClass =
+    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300`;
   const addModalFieldSelectTriggerClass =
     `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
@@ -967,7 +1112,8 @@ const Employees = () => {
     `${addModalFieldInputClass} ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddModalSelectTriggerClass = (isComplete: boolean) =>
     `${addModalFieldSelectTriggerClass} ${isComplete ? "!border-emerald-500" : ""}`;
-  const isReadOnlyTab = activeTab === "discipline" || activeTab === "contracts";
+  const isReadOnlyTab =
+    activeTab === "discipline" || activeTab === "contracts" || activeTab === "licences" || activeTab === "education";
   const isSouthAfricanNationality = (profileForm.nationality || "").trim().toLowerCase() === "south african";
 
   const originalProfile = useMemo(
@@ -2206,6 +2352,358 @@ const Employees = () => {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
+  const fetchLicences = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await licenceTable()
+        .select("id, employee_id, category, licence_type, file_name, file_url, uploaded_at")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("uploaded_at", { ascending: false });
+
+      if (error) {
+        toast({
+          title: "Unable to load licences",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeLicence[] =
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          employeeId: row.employee_id,
+          category: row.category as LicenceCategory,
+          licenceType: row.licence_type || "",
+          fileName: row.file_name || "document.pdf",
+          fileUrl: row.file_url || "",
+          uploadedAt: row.uploaded_at || "",
+        })) ?? [];
+
+      setLicencesByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchLicences(selectedEmployee.id);
+    }
+  }, [fetchLicences, selectedEmployee]);
+
+  const handleOpenLicence = async (licence: EmployeeLicence) => {
+    if (!licence.fileUrl) return;
+    const storagePath = getContractStoragePathFromUrl(licence.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("contracts")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open licence",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRemoveLicence = async (licence: EmployeeLicence) => {
+    if (!selectedEmployee || !user) return;
+    const confirmed = confirm(
+      `Are you sure you want to delete ${licence.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+
+    const existing = licencesByEmployee[selectedEmployee.id] ?? [];
+    setLicencesByEmployee((prev) => ({
+      ...prev,
+      [selectedEmployee.id]: existing.filter((item) => item.id !== licence.id),
+    }));
+
+    const { error: deleteError } = await licenceTable()
+      .delete()
+      .eq("id", licence.id)
+      .eq("company_id", user.id);
+
+    if (deleteError) {
+      setLicencesByEmployee((prev) => ({
+        ...prev,
+        [selectedEmployee.id]: existing,
+      }));
+      toast({
+        title: "Unable to delete licence",
+        description: getSafeErrorMessage(deleteError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const storagePath = getContractStoragePathFromUrl(licence.fileUrl);
+    if (storagePath) {
+      await supabase.storage.from("contracts").remove([storagePath]);
+    }
+
+    toast({
+      title: "Licence removed",
+      description: "The licence document has been removed.",
+    });
+  };
+
+  const handleLicenceFileChange = async (category: LicenceCategory, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedEmployee || !user) return;
+    const selectedType = licenceTypeSelection[category];
+    if (!selectedType) {
+      toast({
+        title: "Licence type required",
+        description: "Select a licence type before uploading a document.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const existingSameType = (licencesByEmployee[selectedEmployee.id] ?? []).find(
+        (item) => item.category === category && item.licenceType === selectedType,
+      );
+      if (existingSameType) {
+        toast({
+          title: "Licence already uploaded",
+          description: `Only one ${selectedType} document is allowed. Remove the existing one first.`,
+          variant: "destructive",
+        });
+        event.target.value = "";
+        return;
+      }
+
+      const safeName = file.name.replace(/\s+/g, "_");
+      const filePath = `${user.id}/licences/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || "application/pdf",
+      });
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await licenceTable().insert({
+        company_id: user.id,
+        employee_id: selectedEmployee.id,
+        category,
+        licence_type: selectedType,
+        file_name: file.name,
+        file_url: filePath,
+        uploaded_at: new Date().toISOString(),
+      });
+      if (insertError) throw insertError;
+
+      await fetchLicences(selectedEmployee.id);
+      setLicenceTypeSelection((prev) => ({ ...prev, [category]: "" }));
+      toast({
+        title: "Licence uploaded",
+        description: "The licence document has been uploaded successfully.",
+      });
+    } catch (error: unknown) {
+      toast({
+        title: "Upload failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const fetchEducations = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await educationTable()
+        .select("id, employee_id, category, qualification_type, file_name, file_url, uploaded_at")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("uploaded_at", { ascending: false });
+
+      if (error) {
+        toast({
+          title: "Unable to load education documents",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeEducation[] =
+        (data ?? []).map((row: any) => ({
+          id: row.id,
+          employeeId: row.employee_id,
+          category: row.category as EducationCategory,
+          qualificationType: row.qualification_type || "",
+          fileName: row.file_name || "document.pdf",
+          fileUrl: row.file_url || "",
+          uploadedAt: row.uploaded_at || "",
+        })) ?? [];
+
+      setEducationsByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchEducations(selectedEmployee.id);
+    }
+  }, [fetchEducations, selectedEmployee]);
+
+  const handleOpenEducation = async (education: EmployeeEducation) => {
+    if (!education.fileUrl) return;
+    const storagePath = getContractStoragePathFromUrl(education.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("contracts")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open education document",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRemoveEducation = async (education: EmployeeEducation) => {
+    if (!selectedEmployee || !user) return;
+    const confirmed = confirm(
+      `Are you sure you want to delete ${education.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+
+    const existing = educationsByEmployee[selectedEmployee.id] ?? [];
+    setEducationsByEmployee((prev) => ({
+      ...prev,
+      [selectedEmployee.id]: existing.filter((item) => item.id !== education.id),
+    }));
+
+    const { error: deleteError } = await educationTable()
+      .delete()
+      .eq("id", education.id)
+      .eq("company_id", user.id);
+
+    if (deleteError) {
+      setEducationsByEmployee((prev) => ({
+        ...prev,
+        [selectedEmployee.id]: existing,
+      }));
+      toast({
+        title: "Unable to delete education document",
+        description: getSafeErrorMessage(deleteError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const storagePath = getContractStoragePathFromUrl(education.fileUrl);
+    if (storagePath) {
+      await supabase.storage.from("contracts").remove([storagePath]);
+    }
+
+    toast({
+      title: "Education document removed",
+      description: "The education document has been removed.",
+    });
+  };
+
+  const handleEducationFileChange = async (category: EducationCategory, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedEmployee || !user) return;
+    const selectedType = educationTypeSelection[category];
+    if (!selectedType) {
+      toast({
+        title: "Education type required",
+        description: "Select an education type before uploading a document.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const existingSameType = (educationsByEmployee[selectedEmployee.id] ?? []).find(
+        (item) => item.category === category && item.qualificationType === selectedType,
+      );
+      if (existingSameType) {
+        toast({
+          title: "Education already uploaded",
+          description: `Only one ${selectedType} document is allowed. Remove the existing one first.`,
+          variant: "destructive",
+        });
+        event.target.value = "";
+        return;
+      }
+
+      const safeName = file.name.replace(/\s+/g, "_");
+      const filePath = `${user.id}/education/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || "application/pdf",
+      });
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await educationTable().insert({
+        company_id: user.id,
+        employee_id: selectedEmployee.id,
+        category,
+        qualification_type: selectedType,
+        file_name: file.name,
+        file_url: filePath,
+        uploaded_at: new Date().toISOString(),
+      });
+      if (insertError) throw insertError;
+
+      await fetchEducations(selectedEmployee.id);
+      setEducationTypeSelection((prev) => ({ ...prev, [category]: "" }));
+      toast({
+        title: "Education uploaded",
+        description: "The education document has been uploaded successfully.",
+      });
+    } catch (error: unknown) {
+      toast({
+        title: "Upload failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const removeIdDocument = useCallback(
     async (employeeId: string) => {
       if (!user) return;
@@ -2463,6 +2961,14 @@ const Employees = () => {
   );
   const hasEffectiveEmploymentContract =
     !!activeContractForSelectedEmployee && !isEmploymentContractMarkedForRemoval;
+  const licencesForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? licencesByEmployee[selectedEmployee.id] ?? [] : []),
+    [licencesByEmployee, selectedEmployee],
+  );
+  const educationsForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? educationsByEmployee[selectedEmployee.id] ?? [] : []),
+    [educationsByEmployee, selectedEmployee],
+  );
 
   const misconductOptions = useMemo(() => {
     if (conductOffences.length > 0) return conductOffences;
@@ -2873,7 +3379,16 @@ const Employees = () => {
                 >
                   Address
                 </TabsTrigger>
-                <DropdownMenu>
+                <TabsTrigger
+                  value="discipline"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  onPointerDown={(event) => {
+                    guardEditSession(event);
+                  }}
+                >
+                  Warnings
+                </TabsTrigger>
+                <DropdownMenu open={isLicencesTabMenuOpen} onOpenChange={setIsLicencesTabMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button
                       type="button"
@@ -2881,93 +3396,116 @@ const Employees = () => {
                       onPointerDown={(event) => {
                         guardEditSession(event);
                       }}
-                      className={`rounded-t-sm border-b-[3px] px-4 h-8 inline-flex items-center text-left text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
-                        activeTab === "discipline"
+                      className={`rounded-t-sm border-b-[3px] px-3 h-8 inline-flex items-center justify-center text-center text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
+                        activeTab === "licences"
                           ? "bg-blue-600 border-transparent text-white hover:bg-blue-600 hover:text-white"
-                          : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
+                          : isLicencesTabMenuOpen
+                            ? "border-transparent bg-transparent text-blue-600 underline underline-offset-2 decoration-blue-600 hover:bg-transparent hover:text-blue-600"
+                            : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
                       }`}
                     >
-                      <span>Documents</span>
-                      <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                      <span>Licences</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="text-[11px]">
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("all");
+                        setActiveTab("licences");
+                        setLicencesViewFilter("driving");
+                        setIsLicencesTabMenuOpen(false);
                       }}
                     >
-                      All documents
+                      Driving Licence(s)
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("warnings");
+                        setActiveTab("licences");
+                        setLicencesViewFilter("workRelated");
+                        setIsLicencesTabMenuOpen(false);
                       }}
                     >
-                      Warnings
+                      Work-related Licence(s)
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("contracts");
+                        setActiveTab("licences");
+                        setLicencesViewFilter("firearmSecurity");
+                        setIsLicencesTabMenuOpen(false);
                       }}
                     >
-                      Contracts
+                      Firearm & Security
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("idPassport");
+                        setActiveTab("licences");
+                        setLicencesViewFilter("marineAviation");
+                        setIsLicencesTabMenuOpen(false);
                       }}
                     >
-                      ID/Passport
+                      Marine & Aviation
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu open={isEducationTabMenuOpen} onOpenChange={setIsEducationTabMenuOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onPointerDown={(event) => {
+                        guardEditSession(event);
+                      }}
+                      className={`rounded-t-sm border-b-[3px] px-3 h-8 inline-flex items-center justify-center text-center text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
+                        activeTab === "education"
+                          ? "bg-blue-600 border-transparent text-white hover:bg-blue-600 hover:text-white"
+                          : isEducationTabMenuOpen
+                            ? "border-transparent bg-transparent text-blue-600 underline underline-offset-2 decoration-blue-600 hover:bg-transparent hover:text-blue-600"
+                            : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
+                      }`}
+                    >
+                      <span>Education</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="text-[11px]">
+                    <DropdownMenuItem
+                      className={employeeDropdownMenuItemClass}
+                      onSelect={(event) => {
+                        if (!guardEditSession(event)) return;
+                        setActiveTab("education");
+                        setEducationViewFilter("academic");
+                        setIsEducationTabMenuOpen(false);
+                      }}
+                    >
+                      Academic Qualifications
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("licence");
+                        setActiveTab("education");
+                        setEducationViewFilter("trade");
+                        setIsEducationTabMenuOpen(false);
                       }}
                     >
-                      Licence
+                      Trade Qualifications
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemClass}
                       onSelect={(event) => {
-                        event.preventDefault();
                         if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("training");
+                        setActiveTab("education");
+                        setEducationViewFilter("training");
+                        setIsEducationTabMenuOpen(false);
                       }}
                     >
-                      Training
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("discipline");
-                        setDocumentsViewFilter("education");
-                      }}
-                    >
-                      Education
+                      Training Certificates
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2989,48 +3527,21 @@ const Employees = () => {
                     {renderAddressTab()}
                   </div>
                 </TabsContent>
+                <TabsContent value="licences" className="mt-0 pb-0 flex-1 min-h-0">
+                  <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
+                    {renderLicencesTab()}
+                  </div>
+                </TabsContent>
+                <TabsContent value="education" className="mt-0 pb-0 flex-1 min-h-0">
+                  <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
+                    {renderEducationTab()}
+                  </div>
+                </TabsContent>
                 <TabsContent value="discipline" className="mt-0 pb-0 flex-1 min-h-0">
                   <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto p-0 pr-2">
-                    {(documentsViewFilter === "all" || documentsViewFilter === "warnings") && (
-                      <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
-                        {renderDisciplineTab()}
-                      </div>
-                    )}
-                    {(documentsViewFilter === "all" || documentsViewFilter === "contracts") && (
-                      <div
-                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
-                      >
-                        {renderContractTab()}
-                      </div>
-                    )}
-                    {(documentsViewFilter === "all" || documentsViewFilter === "idPassport") && (
-                      <div
-                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
-                      >
-                        {renderSimpleDocumentCard("ID/Passport", "No ID/Passport documents yet.", () => {})}
-                      </div>
-                    )}
-                    {(documentsViewFilter === "all" || documentsViewFilter === "licence") && (
-                      <div
-                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
-                      >
-                        {renderSimpleDocumentCard("Licence", "No licence documents yet.", () => {})}
-                      </div>
-                    )}
-                    {(documentsViewFilter === "all" || documentsViewFilter === "training") && (
-                      <div
-                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
-                      >
-                        {renderSimpleDocumentCard("Training", "No training documents yet.", () => {})}
-                      </div>
-                    )}
-                    {(documentsViewFilter === "all" || documentsViewFilter === "education") && (
-                      <div
-                        className={`${documentsViewFilter === "all" ? "mt-3 " : ""}rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]`}
-                      >
-                        {renderSimpleDocumentCard("Education", "No education documents yet.", () => {})}
-                      </div>
-                    )}
+                    <div className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+                      {renderDisciplineTab()}
+                    </div>
                   </div>
                 </TabsContent>
               </div>
@@ -3930,6 +4441,17 @@ const Employees = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setLicenceTypeSelection({
+      driving: "",
+      workRelated: "",
+      firearmSecurity: "",
+      marineAviation: "",
+    });
+    setEducationTypeSelection({
+      academic: "",
+      trade: "",
+      training: "",
+    });
    setActiveTab("personal");
    setIsEditMode(false);
    setActiveEditSection(null);
@@ -3963,6 +4485,17 @@ const Employees = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setLicenceTypeSelection({
+      driving: "",
+      workRelated: "",
+      firearmSecurity: "",
+      marineAviation: "",
+    });
+    setEducationTypeSelection({
+      academic: "",
+      trade: "",
+      training: "",
+    });
    };
 
   const handleSectionSave = async (section: ProfileSectionKey) => {
@@ -4270,6 +4803,17 @@ const Employees = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setLicenceTypeSelection({
+      driving: "",
+      workRelated: "",
+      firearmSecurity: "",
+      marineAviation: "",
+    });
+    setEducationTypeSelection({
+      academic: "",
+      trade: "",
+      training: "",
+    });
     setIsEditMode(false);
     setActiveEditSection(null);
   }, [selectedEmployee]);
@@ -4419,7 +4963,7 @@ const Employees = () => {
                     type="button"
                     variant="outline"
                     role="combobox"
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                    className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
                         enableEditMode();
@@ -4448,7 +4992,7 @@ const Employees = () => {
                             <CommandItem
                               key={option}
                               value={option}
-                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              className={employeeDropdownCommandItemClass}
                               onSelect={(value) => {
                                 setProfileForm((prev) => ({
                                   ...prev,
@@ -4469,7 +5013,7 @@ const Employees = () => {
                           ) && (
                             <CommandItem
                               value={nationalityQuery.trim()}
-                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              className={employeeDropdownCommandItemClass}
                               onSelect={(value) => {
                                 setProfileForm((prev) => ({
                                   ...prev,
@@ -4637,7 +5181,7 @@ const Employees = () => {
                     type="button"
                     variant="outline"
                     role="combobox"
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                    className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
                         enableEditMode();
@@ -4656,7 +5200,7 @@ const Employees = () => {
                           <CommandItem
                             key={option}
                             value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setProfileForm((prev) => ({
                                 ...prev,
@@ -4693,7 +5237,7 @@ const Employees = () => {
                     type="button"
                     variant="outline"
                     role="combobox"
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                    className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
                         enableEditMode();
@@ -4712,7 +5256,7 @@ const Employees = () => {
                           <CommandItem
                             key={option}
                             value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setProfileForm((prev) => ({
                                 ...prev,
@@ -4768,7 +5312,7 @@ const Employees = () => {
                     type="button"
                     variant="outline"
                     role="combobox"
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                    className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
                         enableEditMode();
@@ -4789,7 +5333,7 @@ const Employees = () => {
                           <CommandItem
                             key={option}
                             value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setProfileForm((prev) => ({
                                 ...prev,
@@ -5103,7 +5647,7 @@ const Employees = () => {
               }
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >
@@ -5265,7 +5809,7 @@ const Employees = () => {
               }
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >
@@ -5301,6 +5845,209 @@ const Employees = () => {
       </div>
     </div>
   );
+
+  const renderLicencesTab = () => {
+    const renderCategoryCard = (category: LicenceCategory) => {
+      const rows = licencesForSelectedEmployee.filter((item) => item.category === category);
+      return (
+        <div key={category} className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">{licenceCategoryLabels[category]}</h3>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-7 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                >
+                  Upload
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[320px] p-1">
+                {licenceTypesByCategory[category].map((type) => (
+                  <DropdownMenuItem
+                    key={type}
+                    className={employeeDropdownMenuItemClass}
+                    onSelect={() => {
+                      setLicenceTypeSelection((prev) => ({
+                        ...prev,
+                        [category]: type,
+                      }));
+                      window.setTimeout(() => {
+                        licenceFileInputRefs.current[category]?.click();
+                      }, 0);
+                    }}
+                  >
+                    {type}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <input
+            ref={(el) => {
+              licenceFileInputRefs.current[category] = el;
+            }}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={(event) => void handleLicenceFileChange(category, event)}
+          />
+
+          {rows.length === 0 ? (
+            <p className="text-[11px] font-medium text-slate-500">No uploaded licences yet.</p>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {rows.map((row) => (
+                <div key={row.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+                  <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>{row.licenceType}</Label>
+                  <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
+                    <button
+                      type="button"
+                      className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                      title={row.fileName}
+                      onClick={() => void handleOpenLicence(row)}
+                    >
+                      {row.fileName}
+                    </button>
+                    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                      <Tooltip disableHoverableContent>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                            onClick={() => void handleRemoveLicence(row)}
+                            aria-label={`Remove ${row.fileName}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="rounded">
+                          Remove
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-3">
+        {licencesViewFilter === "driving" && renderCategoryCard("driving")}
+        {licencesViewFilter === "workRelated" && renderCategoryCard("workRelated")}
+        {licencesViewFilter === "firearmSecurity" && renderCategoryCard("firearmSecurity")}
+        {licencesViewFilter === "marineAviation" && renderCategoryCard("marineAviation")}
+      </div>
+    );
+  };
+
+  const renderEducationTab = () => {
+    const renderCategoryCard = (category: EducationCategory) => {
+      const rows = educationsForSelectedEmployee.filter((item) => item.category === category);
+      return (
+        <div key={category} className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">{educationCategoryLabels[category]}</h3>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-7 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                >
+                  Upload
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[320px] p-1">
+                {educationTypesByCategory[category].map((type) => (
+                  <DropdownMenuItem
+                    key={type}
+                    className={employeeDropdownMenuItemClass}
+                    onSelect={() => {
+                      setEducationTypeSelection((prev) => ({
+                        ...prev,
+                        [category]: type,
+                      }));
+                      window.setTimeout(() => {
+                        educationFileInputRefs.current[category]?.click();
+                      }, 0);
+                    }}
+                  >
+                    {type}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <input
+            ref={(el) => {
+              educationFileInputRefs.current[category] = el;
+            }}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={(event) => handleEducationFileChange(category, event)}
+          />
+
+          {rows.length === 0 ? (
+            <p className="text-[11px] font-medium text-slate-500">No uploaded education documents yet.</p>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {rows.map((row) => (
+                <div key={row.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+                  <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>{row.qualificationType}</Label>
+                  <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
+                    <button
+                      type="button"
+                      className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                      title={row.fileName}
+                      onClick={() => handleOpenEducation(row)}
+                    >
+                      {row.fileName}
+                    </button>
+                    <TooltipProvider delayDuration={0} skipDelayDuration={0}>
+                      <Tooltip disableHoverableContent>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                            onClick={() => handleRemoveEducation(row)}
+                            aria-label={`Remove ${row.fileName}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="rounded">
+                          Remove
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-3">
+        {educationViewFilter === "academic" && renderCategoryCard("academic")}
+        {educationViewFilter === "trade" && renderCategoryCard("trade")}
+        {educationViewFilter === "training" && renderCategoryCard("training")}
+      </div>
+    );
+  };
 
   const renderEmploymentTab = () => (
     <div className="space-y-3">
@@ -5368,7 +6115,7 @@ const Employees = () => {
               disabled={employeeStatus !== "Inactive" || !isEditMode}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 disabled={employeeStatus !== "Inactive" || !isEditMode}
               >
                 <SelectValue placeholder="Active" />
@@ -5378,7 +6125,7 @@ const Employees = () => {
                   <SelectItem
                     key={option}
                     value={option}
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                     onSelect={() => {
                       if (option === "Active") {
                         void updateEmployeeStatus("active");
@@ -5423,7 +6170,7 @@ const Employees = () => {
                   type="button"
                   variant="outline"
                   role="combobox"
-                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                  className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
                       enableEditMode();
@@ -5443,7 +6190,7 @@ const Employees = () => {
                       <CommandItem
                         key={option}
                         value={option}
-                        className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                        className={employeeDropdownCommandItemClass}
                         onSelect={(value) => {
                           setProfileForm((prev) => ({
                             ...prev,
@@ -5534,7 +6281,7 @@ const Employees = () => {
               disabled={!isEditMode}
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select period" />
@@ -5542,7 +6289,7 @@ const Employees = () => {
               <SelectContent className="text-[11px]">
                 <SelectItem
                   value="No probation"
-                  className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                  className={employeeDropdownSelectItemClass}
                 >
                   No probation
                 </SelectItem>
@@ -5552,7 +6299,7 @@ const Employees = () => {
                     <SelectItem
                       key={months}
                       value={`${months} ${months === 1 ? "month" : "months"}`}
-                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                      className={employeeDropdownSelectItemClass}
                     >
                       {months} {months === 1 ? "month" : "months"}
                     </SelectItem>
@@ -5712,7 +6459,7 @@ const Employees = () => {
                   type="button"
                   variant="outline"
                   role="combobox"
-                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                  className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
                       enableEditMode();
@@ -5742,7 +6489,7 @@ const Employees = () => {
                           <CommandItem
                             key={option}
                             value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setDepartment(value as (typeof departmentOptions)[number]);
                               setDepartmentOpen(false);
@@ -5760,7 +6507,7 @@ const Employees = () => {
                         ) && (
                           <CommandItem
                             value={departmentQuery.trim()}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setDepartment(value as (typeof departmentOptions)[number]);
                               setDepartmentOpen(false);
@@ -5797,7 +6544,7 @@ const Employees = () => {
                   type="button"
                   variant="outline"
                   role="combobox"
-                  className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                  className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
                       enableEditMode();
@@ -5827,7 +6574,7 @@ const Employees = () => {
                           <CommandItem
                             key={option}
                             value={option}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                            className={employeeDropdownCommandItemClass}
                             onSelect={(value) => {
                               setReportingTo(value);
                               setReportingToOpen(false);
@@ -5859,7 +6606,7 @@ const Employees = () => {
               }}
             >
               <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select occupational level" />
@@ -5869,7 +6616,7 @@ const Employees = () => {
                   <SelectItem
                     key={option}
                     value={option}
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     {option}
                   </SelectItem>
@@ -5939,7 +6686,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Please select a cycle" />
@@ -5949,7 +6696,7 @@ const Employees = () => {
                   <SelectItem
                     key={option}
                     value={option}
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     {option}
                   </SelectItem>
@@ -6110,7 +6857,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                className={employeeDropdownTriggerClass}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Select" />
@@ -6120,7 +6867,7 @@ const Employees = () => {
                   <SelectItem
                     key={option}
                     value={option}
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     {option}
                   </SelectItem>
@@ -6149,7 +6896,7 @@ const Employees = () => {
                     variant="outline"
                     role="combobox"
                     ref={tradeUnionTriggerRef}
-                    className={`${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}
+                    className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
                         enableEditMode();
@@ -6178,7 +6925,7 @@ const Employees = () => {
                             <CommandItem
                               key={option}
                               value={option}
-                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              className={employeeDropdownCommandItemClass}
                               onSelect={(value) => {
                                 setTradeUnion(value);
                                 setTradeUnionOpen(false);
@@ -6196,7 +6943,7 @@ const Employees = () => {
                           ) && (
                             <CommandItem
                               value={tradeUnionQuery.trim()}
-                              className="text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                              className={employeeDropdownCommandItemClass}
                               onSelect={(value) => {
                                 setTradeUnion(value);
                                 setTradeUnionOpen(false);
@@ -6262,13 +7009,13 @@ const Employees = () => {
               <SelectContent className="text-[11px]">
                   <SelectItem
                     value="valid"
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     Valid
                   </SelectItem>
                   <SelectItem
                     value="expired"
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     Expired
                   </SelectItem>
@@ -6371,7 +7118,7 @@ const Employees = () => {
                                 onCloseAutoFocus={(event) => event.preventDefault()}
                               >
                                 <DropdownMenuItem
-                                  className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                                  className={employeeDropdownMenuItemWithGapClass}
                                   onSelect={(event) => {
                                     event.preventDefault();
                                     handleEditWarning(warning);
@@ -6382,7 +7129,7 @@ const Employees = () => {
                                 </DropdownMenuItem>
                                 {warning.fileUrl && (
                                   <DropdownMenuItem
-                                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                                    className={employeeDropdownMenuItemWithGapClass}
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenWarning(warning);
@@ -6449,13 +7196,13 @@ const Employees = () => {
                 <SelectContent className="text-[11px]">
                   <SelectItem
                     value="active"
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     Active
                   </SelectItem>
                   <SelectItem
                     value="inactive"
-                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    className={employeeDropdownSelectItemClass}
                   >
                     Inactive
                   </SelectItem>
@@ -6537,7 +7284,7 @@ const Employees = () => {
                               >
                                 {contract.fileUrl && (
                                   <DropdownMenuItem
-                                    className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                                    className={employeeDropdownMenuItemWithGapClass}
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenContract(contract);
@@ -6833,7 +7580,7 @@ const Employees = () => {
                         setIsNewEmployeeMenuOpen(false);
                         setIsAddDialogOpen(true);
                       }}
-                      className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemWithGapClass}
                     >
                       <UserPlus className="h-3.5 w-3.5" />
                       Single
@@ -6844,7 +7591,7 @@ const Employees = () => {
                         setIsNewEmployeeMenuOpen(false);
                         handleBulkDialogChange(true);
                       }}
-                      className="gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600"
+                      className={employeeDropdownMenuItemWithGapClass}
                     >
                       <Users className="h-3.5 w-3.5" />
                       Multiple
@@ -7233,12 +7980,12 @@ const Employees = () => {
                                 ID / Passport <span className="text-red-600">*</span>
                               </span>
                               <Select value={addForm.idType || undefined} onValueChange={(value) => setAddForm((prev) => ({ ...prev, idType: value as AddEmployeeIdType, idNumber: "" }))}>
-                                <SelectTrigger className={`${getAddModalSelectTriggerClass(isAddFormIdTypeSelected)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(isAddFormIdTypeSelected)} ${addModalDropdownToneClass}`}>
                                   <SelectValue placeholder="Please select option" />
                                 </SelectTrigger>
                                 <SelectContent className="text-[11px]">
-                                  <SelectItem value="id" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">ID Number</SelectItem>
-                                  <SelectItem value="passport" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">Passport Number</SelectItem>
+                                  <SelectItem value="id" className={employeeDropdownSelectItemClass}>ID Number</SelectItem>
+                                  <SelectItem value="passport" className={employeeDropdownSelectItemClass}>Passport Number</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
@@ -7255,12 +8002,12 @@ const Employees = () => {
                                 Gender
                               </span>
                               <Select value={addForm.gender} onValueChange={(value) => setAddForm((prev) => ({ ...prev, gender: value as AddEmployeeFormState["gender"] }))}>
-                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.gender.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.gender.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                   <SelectValue placeholder="Select gender" />
                                 </SelectTrigger>
                                 <SelectContent className="text-[11px]">
                                   {genderOptions.map((option) => (
-                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>{option}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -7271,12 +8018,12 @@ const Employees = () => {
                                 Race
                               </span>
                               <Select value={addForm.race} onValueChange={(value) => setAddForm((prev) => ({ ...prev, race: value as AddEmployeeFormState["race"] }))}>
-                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.race.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.race.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                   <SelectValue placeholder="Select race" />
                                 </SelectTrigger>
                                 <SelectContent className="text-[11px]">
                                   {raceOptions.map((option) => (
-                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>{option}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -7313,12 +8060,12 @@ const Employees = () => {
                                 Contract Type <span className="text-red-600">*</span>
                               </span>
                               <Select value={addForm.contractType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, contractType: value as AddEmployeeFormState["contractType"], endDate: value === "Temporary" ? prev.endDate : "" }))}>
-                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.contractType.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.contractType.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                   <SelectValue placeholder="Select contract type" />
                                 </SelectTrigger>
                                 <SelectContent className="text-[11px]">
                                   {contractTypes.map((option) => (
-                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>{option}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -7345,12 +8092,12 @@ const Employees = () => {
                                 Salary Cycle
                               </span>
                               <Select value={addForm.salaryType} onValueChange={(value) => setAddForm((prev) => ({ ...prev, salaryType: value as AddEmployeeFormState["salaryType"] }))}>
-                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.salaryType.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.salaryType.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                   <SelectValue placeholder="Select salary cycle" />
                                 </SelectTrigger>
                                 <SelectContent className="text-[11px]">
                                   {salaryTypeOptions.map((option) => (
-                                    <SelectItem key={option} value={option} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">{option}</SelectItem>
+                                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>{option}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -7409,12 +8156,12 @@ const Employees = () => {
                                     Province <span className="text-red-600">*</span>
                                   </span>
                                   <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddEmployeeFormState["province"] }))}>
-                                    <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white`}>
+                                    <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                       <SelectValue placeholder="Please select province" />
                                     </SelectTrigger>
                                     <SelectContent className="text-[11px]">
                                       {southAfricanProvinces.map((province) => (
-                                        <SelectItem key={province} value={province} className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600">
+                                        <SelectItem key={province} value={province} className={employeeDropdownSelectItemClass}>
                                           {province}
                                         </SelectItem>
                                       ))}
@@ -7861,6 +8608,9 @@ const Employees = () => {
  };
 
 export default Employees;
+
+
+
 
 
 

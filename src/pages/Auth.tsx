@@ -37,6 +37,7 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
   const [accountType, setAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
   const [selectedAccountType, setSelectedAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -69,6 +70,14 @@ const Auth = () => {
     img.onload = () => setHeroLoaded(true);
     img.onerror = () => setHeroLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (resetCooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setResetCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resetCooldownSeconds]);
 
   useEffect(() => {
     writeAuthFormDraft({
@@ -215,17 +224,35 @@ const Auth = () => {
       });
       return;
     }
+    if (resetCooldownSeconds > 0) {
+      toast({
+        title: "Please wait",
+        description: `Try again in ${resetCooldownSeconds}s.`,
+      });
+      return;
+    }
 
     setIsSendingReset(true);
     try {
       const { error } = await resetPassword(email);
       if (error) {
+        const message = getSafeErrorMessage(error).toLowerCase();
+        if (message.includes("rate limit")) {
+          setResetCooldownSeconds(60);
+          toast({
+            title: "Too many reset attempts",
+            description: "Please wait a minute and try again.",
+            variant: "destructive",
+          });
+          return;
+        }
         toast({
           title: "Error",
           description: getSafeErrorMessage(error),
           variant: "destructive",
         });
       } else {
+        setResetCooldownSeconds(60);
         toast({
           title: "Reset link sent",
           description: "Check your inbox for password reset instructions.",
@@ -410,9 +437,13 @@ const Auth = () => {
                       onClick={handleResetPassword}
                       tabIndex={-1}
                       className="text-[11px] font-normal text-muted-foreground underline hover:text-blue-600 disabled:opacity-60"
-                      disabled={isSendingReset}
+                      disabled={isSendingReset || resetCooldownSeconds > 0}
                     >
-                      {isSendingReset ? "Sending..." : "Forgot your password?"}
+                      {isSendingReset
+                        ? "Sending..."
+                        : resetCooldownSeconds > 0
+                          ? `Try again in ${resetCooldownSeconds}s`
+                          : "Forgot your password?"}
                     </button>
                   </div>
                 )}

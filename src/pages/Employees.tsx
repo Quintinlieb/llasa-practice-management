@@ -232,7 +232,7 @@ type EmployeeIdDocument = {
   fileUrl: string;
   uploadedAt: string;
 };
-type LicenceCategory = "driving" | "workRelated" | "firearmSecurity" | "marineAviation";
+type LicenceCategory = "driving" | "firearmSecurity" | "marineAviation";
 type EmployeeLicence = {
   id: string;
   employeeId: string;
@@ -244,7 +244,6 @@ type EmployeeLicence = {
 };
 type LicencesViewFilter =
   | "driving"
-  | "workRelated"
   | "firearmSecurity"
   | "marineAviation";
 type EducationCategory = "academic" | "trade" | "training";
@@ -730,7 +729,6 @@ const terminationReasons = [
 ] as const;
 const licenceCategoryLabels: Record<LicenceCategory, string> = {
   driving: "Driving Licence(s)",
-  workRelated: "Work-related Licence(s)",
   firearmSecurity: "Firearm & Security",
   marineAviation: "Marine & Aviation",
 };
@@ -745,13 +743,8 @@ const licenceTypesByCategory: Record<LicenceCategory, readonly string[]> = {
     "Heavy Motor Vehicle with Trailer (Code EC1)",
     "Extra Heavy / Articulated Vehicle Licence (Code EC)",
     "Professional Driving Permit (PrDP)",
-    "Learner's Licence",
-  ],
-  workRelated: [
     "Forklift Operator Licence",
-    "Overhead Crane Operator Licence",
-    "Mobile Crane Operator Licence",
-    "Electrical Wireman's Licence",
+    "Learner's Licence",
   ],
   firearmSecurity: [
     "Firearm Licence (Section 13 - Self-Defence)",
@@ -918,6 +911,7 @@ const Employees = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<"active" | "inactive">("active");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
   const [genderFilter, setGenderFilter] = useState<"all" | EmployeeProfileFormData["gender"]>("all");
   const [raceFilter, setRaceFilter] = useState<"all" | EmployeeProfileFormData["race"]>("all");
@@ -926,7 +920,9 @@ const Employees = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isNewEmployeeMenuOpen, setIsNewEmployeeMenuOpen] = useState(false);
   const [isFiltersPanelOpen, setIsFiltersPanelOpen] = useState(false);
-  const [expandedFilterSection, setExpandedFilterSection] = useState<"contract" | "gender" | "race" | "nationality" | null>(null);
+  const [expandedFilterSection, setExpandedFilterSection] = useState<
+    "status" | "contract" | "gender" | "race" | "nationality" | null
+  >(null);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -977,7 +973,6 @@ const Employees = () => {
   const [licencesByEmployee, setLicencesByEmployee] = useState<Record<string, EmployeeLicence[]>>({});
   const [licenceTypeSelection, setLicenceTypeSelection] = useState<Record<LicenceCategory, string>>({
     driving: "",
-    workRelated: "",
     firearmSecurity: "",
     marineAviation: "",
   });
@@ -1043,7 +1038,6 @@ const Employees = () => {
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
   const licenceFileInputRefs = useRef<Record<LicenceCategory, HTMLInputElement | null>>({
     driving: null,
-    workRelated: null,
     firearmSecurity: null,
     marineAviation: null,
   });
@@ -1431,10 +1425,22 @@ const Employees = () => {
   const isFirstPage = currentPage === 1;
   const isLastPage = !hasNextPage;
   const activeEmployeeFilterCount =
+    Number(employeeStatusFilter !== "active") +
     Number(contractFilter !== "all") +
     Number(genderFilter !== "all") +
     Number(raceFilter !== "all") +
     Number(nationalityFilter !== "all");
+  const closeEmployeeFiltersPanel = () => {
+    setIsFiltersPanelOpen(false);
+    setExpandedFilterSection(null);
+  };
+  const hasEmployeeTableFiltersApplied =
+    searchQuery.trim().length > 0 ||
+    employeeStatusFilter !== "active" ||
+    contractFilter !== "all" ||
+    genderFilter !== "all" ||
+    raceFilter !== "all" ||
+    nationalityFilter !== "all";
 
   const handleDocumentCategorySelect = (path: string) => {
     const targetEmployee = documentDialogEmployee || selectedEmployee;
@@ -3314,23 +3320,40 @@ const Employees = () => {
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center bg-red-600 text-white border-[0.5px] border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border data-[state=open]:border-red-700 data-[state=open]:bg-red-600 data-[state=open]:text-white focus:border focus:border-red-700 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0"
+                          className={`group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] focus:border !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ${
+                            employeeStatus === "Inactive"
+                              ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 data-[state=open]:border-emerald-700 data-[state=open]:bg-emerald-600"
+                              : "bg-red-600 text-white border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border-red-700 data-[state=open]:bg-red-600"
+                          }`}
                         >
-                          <span className="truncate font-semibold group-hover:underline">Terminate</span>
+                          <span className="truncate font-semibold group-hover:underline">
+                            {employeeStatus === "Inactive" ? "Rehire" : "Terminate"}
+                          </span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="center" className="w-40 text-[11px] text-center">
-                        {terminationReasons.map((reason) => (
+                        {employeeStatus === "Inactive" ? (
                           <DropdownMenuItem
-                            key={reason}
                             onClick={() => {
-                              void updateEmployeeStatus("inactive");
+                              void updateEmployeeStatus("active");
                             }}
-                            className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                            className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-emerald-50/70 focus:text-emerald-600 data-[highlighted]:bg-emerald-50/70 data-[highlighted]:text-emerald-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                           >
-                            {reason}
+                            Rehire
                           </DropdownMenuItem>
-                        ))}
+                        ) : (
+                          terminationReasons.map((reason) => (
+                            <DropdownMenuItem
+                              key={reason}
+                              onClick={() => {
+                                void updateEmployeeStatus("inactive");
+                              }}
+                              className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                            >
+                              {reason}
+                            </DropdownMenuItem>
+                          ))
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -3418,17 +3441,6 @@ const Employees = () => {
                       }}
                     >
                       Driving Licence(s)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("licences");
-                        setLicencesViewFilter("workRelated");
-                        setIsLicencesTabMenuOpen(false);
-                      }}
-                    >
-                      Work-related Licence(s)
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className={employeeDropdownMenuItemClass}
@@ -3571,6 +3583,9 @@ const Employees = () => {
     if (contractFilter !== "all") {
       query = query.ilike("contract_type", contractFilter);
     }
+    if (employeeStatusFilter === "inactive") {
+      query = query.eq("status", "inactive");
+    }
 
     if (queryText.length > 0) {
       const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
@@ -3612,7 +3627,7 @@ const Employees = () => {
     setEmployees(sorted);
     setFilteredEmployees(sorted);
     void fetchActiveContractsForEmployees(sorted.map((employee) => employee.id));
-  }, [toast, user, currentPage, fetchActiveContractsForEmployees, searchQuery, contractFilter]);
+  }, [toast, user, currentPage, fetchActiveContractsForEmployees, searchQuery, employeeStatusFilter, contractFilter]);
 
   const fetchAllEmployees = useCallback(async () => {
     if (!user) return;
@@ -3732,7 +3747,7 @@ const Employees = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, contractFilter, genderFilter, raceFilter, nationalityFilter]);
+  }, [searchQuery, employeeStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
     const query = searchQuery.toLowerCase();
@@ -3749,6 +3764,9 @@ const Employees = () => {
         contractFilter === "all" ||
         (contractFilter === "permanent" && contractType === "permanent") ||
         (contractFilter === "temporary" && contractType === "temporary");
+      const statusValue = ((emp.status ?? "").toString().trim().toLowerCase() || "active");
+      const matchesStatus =
+        employeeStatusFilter === "inactive" ? statusValue === "inactive" : statusValue !== "inactive";
 
       const genderValue = (emp.gender ?? "").toLowerCase();
       const raceValue = (emp.race ?? "").toLowerCase();
@@ -3759,7 +3777,7 @@ const Employees = () => {
       const matchesNationality =
         nationalityFilter === "all" || nationalityGroup === nationalityFilter.toLowerCase();
 
-      return matchesSearch && matchesContract && matchesGender && matchesRace && matchesNationality;
+      return matchesSearch && matchesStatus && matchesContract && matchesGender && matchesRace && matchesNationality;
     });
 
     const sorted = filtered.sort((a, b) => {
@@ -3769,7 +3787,7 @@ const Employees = () => {
     });
 
     setFilteredEmployees(sorted);
-  }, [employees, searchQuery, contractFilter, genderFilter, raceFilter, nationalityFilter]);
+  }, [employees, searchQuery, employeeStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
     // Keep selections in sync with the currently filtered list to avoid deleting hidden rows.
@@ -4443,7 +4461,6 @@ const Employees = () => {
     setIsEmploymentContractMarkedForRemoval(false);
     setLicenceTypeSelection({
       driving: "",
-      workRelated: "",
       firearmSecurity: "",
       marineAviation: "",
     });
@@ -4487,7 +4504,6 @@ const Employees = () => {
     setIsEmploymentContractMarkedForRemoval(false);
     setLicenceTypeSelection({
       driving: "",
-      workRelated: "",
       firearmSecurity: "",
       marineAviation: "",
     });
@@ -4805,7 +4821,6 @@ const Employees = () => {
     setIsEmploymentContractMarkedForRemoval(false);
     setLicenceTypeSelection({
       driving: "",
-      workRelated: "",
       firearmSecurity: "",
       marineAviation: "",
     });
@@ -5941,7 +5956,6 @@ const Employees = () => {
     return (
       <div className="space-y-3">
         {licencesViewFilter === "driving" && renderCategoryCard("driving")}
-        {licencesViewFilter === "workRelated" && renderCategoryCard("workRelated")}
         {licencesViewFilter === "firearmSecurity" && renderCategoryCard("firearmSecurity")}
         {licencesViewFilter === "marineAviation" && renderCategoryCard("marineAviation")}
       </div>
@@ -7422,11 +7436,6 @@ const Employees = () => {
                       className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-white hover:text-blue-600"
                     >
                       <span>Filter</span>
-                      {activeEmployeeFilterCount > 0 && (
-                        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] text-white">
-                          {activeEmployeeFilterCount}
-                        </span>
-                      )}
                       <ChevronDown className={`h-4 w-4 transition-transform ${isFiltersPanelOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                     </Button>
                   </PopoverTrigger>
@@ -7442,16 +7451,49 @@ const Employees = () => {
                         type="button"
                         className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 hover:underline"
                         onClick={() => {
+                          setEmployeeStatusFilter("active");
                           setContractFilter("all");
                           setGenderFilter("all");
                           setRaceFilter("all");
                           setNationalityFilter("all");
+                          closeEmployeeFiltersPanel();
                         }}
                       >
                         Clear
                       </button>
                     </div>
                     <div className="divide-y divide-slate-200">
+                      <div>
+                        <button
+                          type="button"
+                          className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === "status" ? "bg-slate-100" : ""}`}
+                          onClick={() => setExpandedFilterSection((prev) => (prev === "status" ? null : "status"))}
+                        >
+                          <span>Status</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === "status" ? "rotate-180" : ""}`} />
+                        </button>
+                        {expandedFilterSection === "status" && (
+                          <div className="px-3 pb-2">
+                            {[
+                              { value: "active" as const, label: "Active" },
+                              { value: "inactive" as const, label: "Inactive" },
+                            ].map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                onClick={() => {
+                                  setEmployeeStatusFilter(option.value);
+                                  closeEmployeeFiltersPanel();
+                                }}
+                              >
+                                <span>{option.label}</span>
+                                {employeeStatusFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div>
                         <button
                           type="button"
@@ -7472,7 +7514,10 @@ const Employees = () => {
                                 key={option.value}
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
-                                onClick={() => setContractFilter(option.value)}
+                                onClick={() => {
+                                  setContractFilter(option.value);
+                                  closeEmployeeFiltersPanel();
+                                }}
                               >
                                 <span>{option.label}</span>
                                 {contractFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
@@ -7497,7 +7542,10 @@ const Employees = () => {
                                 key={option.value}
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
-                                onClick={() => setGenderFilter(option.value as "all" | EmployeeProfileFormData["gender"])}
+                                onClick={() => {
+                                  setGenderFilter(option.value as "all" | EmployeeProfileFormData["gender"]);
+                                  closeEmployeeFiltersPanel();
+                                }}
                               >
                                 <span>{option.label}</span>
                                 {genderFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
@@ -7522,7 +7570,10 @@ const Employees = () => {
                                 key={option.value}
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
-                                onClick={() => setRaceFilter(option.value as "all" | EmployeeProfileFormData["race"])}
+                                onClick={() => {
+                                  setRaceFilter(option.value as "all" | EmployeeProfileFormData["race"]);
+                                  closeEmployeeFiltersPanel();
+                                }}
                               >
                                 <span>{option.label}</span>
                                 {raceFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
@@ -7551,7 +7602,10 @@ const Employees = () => {
                                 key={option.value}
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
-                                onClick={() => setNationalityFilter(option.value)}
+                                onClick={() => {
+                                  setNationalityFilter(option.value);
+                                  closeEmployeeFiltersPanel();
+                                }}
                               >
                                 <span>{option.label}</span>
                                 {nationalityFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
@@ -7611,13 +7665,31 @@ const Employees = () => {
                   style={{ animationDuration: "2s" }}
                 />
               </div>
-            ) : employees.length === 0 ? (
+            ) : employees.length === 0 && !hasEmployeeTableFiltersApplied ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
                 <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
                   <Plus className="h-4 w-4" />
                   Add Your First Employee
                 </Button>
+              </div>
+            ) : employees.length === 0 || filteredEmployees.length === 0 ? (
+              <div className="text-center py-12">
+                {employeeStatusFilter === "inactive" ? (
+                  <p className="text-muted-foreground">
+                    You don't have any inactive employees. Switch back to your{" "}
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeStatusFilter("active")}
+                      className="font-semibold text-blue-600 hover:underline"
+                    >
+                      Active
+                    </button>{" "}
+                    employees.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">No employees match the selected filters.</p>
+                )}
               </div>
             ) : (
               <div className="space-y-2">

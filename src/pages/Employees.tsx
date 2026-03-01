@@ -113,6 +113,12 @@ const idDocumentTable = () => (supabase as any).from("employee_id_documents");
 const licenceTable = () => (supabase as any).from("employee_licences");
 // Supabase types do not include employee_education; cast to any for those calls to avoid type errors.
 const educationTable = () => (supabase as any).from("employee_education");
+// Supabase types do not include employee_termination_documents; cast to any for those calls to avoid type errors.
+const terminationDocumentTable = () => (supabase as any).from("employee_termination_documents");
+const employeeSelectColumnsBase =
+  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
+const employeeSelectColumnsWithTermination =
+  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -153,6 +159,9 @@ type Employee = Tables<"employees"> & {
   email?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_number?: string | null;
+  termination_reason?: string | null;
+  previous_job_title?: string | null;
+  terminated_at?: string | null;
 };
 type EmployeeInsert = TablesInsert<"employees"> & {
   employee_number?: string | null;
@@ -193,6 +202,9 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   email?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_number?: string | null;
+  termination_reason?: string | null;
+  previous_job_title?: string | null;
+  terminated_at?: string | null;
 };
 type EmployeeUpdate = Partial<Employee>;
 type EmployeeTab = "personal" | "employment" | "address" | "licences" | "education" | "discipline" | "contracts";
@@ -226,6 +238,13 @@ type EmployeeContract = {
   isActive: boolean;
 };
 type EmployeeIdDocument = {
+  id: string;
+  employeeId: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+};
+type EmployeeTerminationDocument = {
   id: string;
   employeeId: string;
   fileName: string;
@@ -439,6 +458,41 @@ const createBlankAddForm = (): AddEmployeeFormState => ({
   postalAreaCode: "",
 });
 
+const createAddFormFromEmployee = (employee: Employee): AddEmployeeFormState => {
+  const idNumber = (employee.id_number ?? "").trim();
+  const normalizedNationality = (employee.nationality ?? "").trim().toLowerCase();
+  const isSouthAfrican = normalizedNationality === "south african";
+  const idType: AddEmployeeIdType = isSouthAfrican && /^\d{13}$/.test(idNumber) ? "id" : "passport";
+
+  return {
+    employeeName: (employee.employee_name ?? "").trim(),
+    employeeSurname: (employee.employee_surname ?? "").trim(),
+    idType: idNumber ? idType : "",
+    idNumber,
+    employeeNumber: cleanEmployeeNumberInput(employee.employee_number),
+    gender: coerceEnumValue(employee.gender, genderOptions),
+    race: coerceEnumValue(employee.race, raceOptions),
+    cellNumber: (employee.cell_number ?? "").trim(),
+    email: (employee.email ?? "").trim(),
+    jobTitle: (employee.job_title ?? "").trim(),
+    contractType: coerceEnumValue(employee.contract_type, contractTypes),
+    startDate: (employee.start_date ?? "").trim(),
+    endDate: (employee.end_date ?? "").trim(),
+    salaryType: coerceEnumValue(employee.salary_type, salaryTypeOptions),
+    basicSalary: (employee.basic_salary ?? "").trim(),
+    physicalAddressLine1: (employee.physical_address_line1 ?? "").trim(),
+    physicalAddressLine2: (employee.physical_address_line2 ?? "").trim(),
+    city: (employee.city ?? "").trim(),
+    province: coerceEnumValue(employee.province, southAfricanProvinces),
+    areaCode: (employee.area_code ?? "").trim(),
+    postalAddressLine1: (employee.postal_address_line1 ?? "").trim(),
+    postalAddressLine2: (employee.postal_address_line2 ?? "").trim(),
+    postalCity: (employee.postal_city ?? "").trim(),
+    postalProvince: coerceEnumValue(employee.postal_province, southAfricanProvinces),
+    postalAreaCode: (employee.postal_area_code ?? "").trim(),
+  };
+};
+
 const formatInputDate = (date: Date | null) => {
   if (!date) return "";
   const year = date.getFullYear();
@@ -507,7 +561,19 @@ const formatDisplayDate = (value?: string | null) => {
 
 const formatThousandsWithCommas = (value: string) => {
   if (!value) return "";
-  return value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const [integerPart, decimalPart] = value.split(".");
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (decimalPart !== undefined) {
+    return `${formattedInteger}.${decimalPart}`;
+  }
+  return formattedInteger;
+};
+
+const sanitizeSalaryInput = (value: string) => {
+  const cleaned = value.replace(/[^\d.]/g, "");
+  const [integerPart, ...decimalParts] = cleaned.split(".");
+  const decimal = decimalParts.join("").slice(0, 2);
+  return decimalParts.length > 0 ? `${integerPart}.${decimal}` : integerPart;
 };
 
 const getAgeFromIdNumber = (idNumber?: string | null) => {
@@ -936,6 +1002,8 @@ const Employees = () => {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [addForm, setAddForm] = useState<AddEmployeeFormState>(createBlankAddForm());
   const [addFormStep, setAddFormStep] = useState<1 | 2 | 3>(1);
+  const [rehireEmployeeId, setRehireEmployeeId] = useState<string | null>(null);
+  const [isAddFormSubmitRequested, setIsAddFormSubmitRequested] = useState(false);
   const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
   const [isWarningDialogOpen, setIsWarningDialogOpen] = useState(false);
   const [warningForm, setWarningForm] = useState<WarningFormState>({
@@ -966,6 +1034,10 @@ const Employees = () => {
   const [pendingIdDocumentName, setPendingIdDocumentName] = useState("");
   const [isIdDocumentMarkedForRemoval, setIsIdDocumentMarkedForRemoval] = useState(false);
   const [isIdDocumentUploading, setIsIdDocumentUploading] = useState(false);
+  const [terminationDocumentByEmployee, setTerminationDocumentByEmployee] = useState<Record<string, EmployeeTerminationDocument | null>>({});
+  const [pendingTerminationDocumentFile, setPendingTerminationDocumentFile] = useState<File | null>(null);
+  const [pendingTerminationDocumentName, setPendingTerminationDocumentName] = useState("");
+  const [isTerminationDocumentUploading, setIsTerminationDocumentUploading] = useState(false);
   const [pendingEmploymentContractFile, setPendingEmploymentContractFile] = useState<File | null>(null);
   const [pendingEmploymentContractName, setPendingEmploymentContractName] = useState("");
   const [isEmploymentContractMarkedForRemoval, setIsEmploymentContractMarkedForRemoval] = useState(false);
@@ -1036,6 +1108,7 @@ const Employees = () => {
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
+  const terminationDocumentFileInputRef = useRef<HTMLInputElement | null>(null);
   const licenceFileInputRefs = useRef<Record<LicenceCategory, HTMLInputElement | null>>({
     driving: null,
     firearmSecurity: null,
@@ -1182,9 +1255,19 @@ const Employees = () => {
   const updateEmployeeStatus = useCallback(
     async (nextStatus: "active" | "inactive") => {
       if (!selectedEmployee || !user) return;
+      const statusPatch: EmployeeUpdate =
+        nextStatus === "active"
+          ? {
+              status: nextStatus,
+              termination_reason: null,
+              previous_job_title: null,
+              terminated_at: null,
+            }
+          : { status: nextStatus };
+
       const { error } = await supabase
         .from("employees")
-        .update({ status: nextStatus } as unknown as TablesInsert<"employees">)
+        .update(statusPatch as unknown as TablesInsert<"employees">)
         .eq("id", selectedEmployee.id);
       if (error) {
         toast({
@@ -1197,15 +1280,15 @@ const Employees = () => {
 
       const displayStatus = nextStatus === "inactive" ? "Inactive" : "Active";
       setEmployeeStatus(displayStatus);
-      setSelectedEmployee((prev) => (prev ? { ...prev, status: nextStatus } : prev));
+      setSelectedEmployee((prev) => (prev ? { ...prev, ...statusPatch } : prev));
       setEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
       );
       setFilteredEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
       );
       setAllEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, status: nextStatus } : emp)),
+        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
       );
 
       toast({
@@ -1214,6 +1297,107 @@ const Employees = () => {
       });
     },
     [selectedEmployee, user, toast],
+  );
+
+  const handleTerminateWithReason = useCallback(
+    async (reason: string) => {
+      if (!selectedEmployee || !user) return;
+      const previousJobTitle = (profileForm.jobTitle || selectedEmployee.job_title || "").trim() || null;
+
+      const employmentClearPatch: EmployeeUpdate = {
+        status: "inactive",
+        termination_reason: reason,
+        previous_job_title: previousJobTitle,
+        terminated_at: null,
+        employee_number: null,
+        start_date: null,
+        end_date: null,
+        contract_type: null,
+        probation_period: null,
+        department: null,
+        reporting_to: null,
+        occupational_level: null,
+        salary_type: null,
+        basic_salary: null,
+        work_email: null,
+        work_cell_number: null,
+        union_member: null,
+        trade_union: null,
+        job_title: null,
+      };
+
+      try {
+        const { data: contractRows, error: contractsLoadError } = await contractTable()
+          .select("id, file_url")
+          .eq("company_id", user.id)
+          .eq("employee_id", selectedEmployee.id);
+
+        if (contractsLoadError) throw contractsLoadError;
+
+        const { error: employeeUpdateError } = await supabase
+          .from("employees")
+          .update(employmentClearPatch as unknown as TablesInsert<"employees">)
+          .eq("id", selectedEmployee.id);
+
+        if (employeeUpdateError) throw employeeUpdateError;
+
+        if ((contractRows ?? []).length > 0) {
+          const { error: deleteContractsError } = await contractTable()
+            .delete()
+            .eq("company_id", user.id)
+            .eq("employee_id", selectedEmployee.id);
+
+          if (deleteContractsError) throw deleteContractsError;
+
+          const storagePaths = ((contractRows ?? []) as Array<{ file_url?: string | null }>)
+            .map((row) => getContractStoragePathFromUrl(row.file_url))
+            .filter((path): path is string => !!path);
+
+          if (storagePaths.length > 0) {
+            await supabase.storage.from("contracts").remove(storagePaths);
+          }
+        }
+
+        const nextSelected = { ...selectedEmployee, ...employmentClearPatch } as Employee;
+        setEmployeeStatus("Inactive");
+        setSelectedEmployee(nextSelected);
+        setProfileForm(createProfileFormFromEmployee(nextSelected));
+        setProbationPeriod("");
+        setUnionMember("");
+        setTradeUnion("");
+        setPendingEmploymentContractFile(null);
+        setPendingEmploymentContractName("");
+        setIsEmploymentContractMarkedForRemoval(false);
+        setContractsByEmployee((prev) => ({ ...prev, [selectedEmployee.id]: [] }));
+        setActiveContractsByEmployee((prev) => ({ ...prev, [selectedEmployee.id]: false }));
+        setEmployees((prev) =>
+          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        );
+        setFilteredEmployees((prev) =>
+          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        );
+        setAllEmployees((prev) =>
+          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        );
+
+        toast({
+          title: "Employee terminated",
+          description: "Status set to Inactive and employment details were archived.",
+        });
+        toast({
+          title: "Next step",
+          description: "Open Employment tab to set Termination Date and upload the Termination Letter.",
+          className: "border-blue-500",
+        });
+      } catch (error: unknown) {
+        toast({
+          title: "Unable to terminate employee",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+      }
+    },
+    [profileForm.jobTitle, selectedEmployee, toast, user],
   );
 
   const isProfileDirty = useMemo(() => {
@@ -2042,6 +2226,50 @@ const Employees = () => {
     }
   }, [fetchIdDocument, selectedEmployee]);
 
+  const fetchTerminationDocument = useCallback(
+    async (employeeId: string) => {
+      if (!user) return;
+      const { data, error } = await terminationDocumentTable()
+        .select("id, employee_id, file_name, file_url, uploaded_at")
+        .eq("company_id", user.id)
+        .eq("employee_id", employeeId)
+        .order("uploaded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        toast({
+          title: "Unable to load termination document",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const mapped: EmployeeTerminationDocument | null = data
+        ? {
+            id: data.id,
+            employeeId: data.employee_id,
+            fileName: data.file_name || "document.pdf",
+            fileUrl: data.file_url || "",
+            uploadedAt: data.uploaded_at || "",
+          }
+        : null;
+
+      setTerminationDocumentByEmployee((prev) => ({
+        ...prev,
+        [employeeId]: mapped,
+      }));
+    },
+    [toast, user],
+  );
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      fetchTerminationDocument(selectedEmployee.id);
+    }
+  }, [fetchTerminationDocument, selectedEmployee]);
+
   const handleAddContract = async () => {
     if (!selectedEmployee || !user) {
       toast({
@@ -2339,6 +2567,170 @@ const Employees = () => {
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(true);
     setActiveEditSection("employmentStatus");
+  };
+
+  const handleTerminationDocumentFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    setPendingTerminationDocumentFile(file);
+    setPendingTerminationDocumentName(file.name);
+    event.target.value = "";
+    if (selectedEmployee) {
+      void uploadTerminationDocument(selectedEmployee.id, file);
+    }
+  };
+
+  const uploadTerminationDocument = useCallback(
+    async (employeeId: string, file?: File) => {
+      if (!user) return;
+      const uploadFile = file ?? pendingTerminationDocumentFile;
+      if (!uploadFile) return;
+
+      setIsTerminationDocumentUploading(true);
+      try {
+        const existing = terminationDocumentByEmployee[employeeId] ?? null;
+        if (existing) {
+          const { error: deleteExistingError } = await terminationDocumentTable()
+            .delete()
+            .eq("id", existing.id)
+            .eq("company_id", user.id);
+          if (deleteExistingError) throw deleteExistingError;
+
+          const existingStoragePath = getContractStoragePathFromUrl(existing.fileUrl);
+          if (existingStoragePath) {
+            await supabase.storage.from("contracts").remove([existingStoragePath]);
+          }
+        }
+
+        const safeName = uploadFile.name.replace(/\s+/g, "_");
+        const filePath = `${user.id}/termination-documents/${employeeId}-${Date.now()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, uploadFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: uploadFile.type || "application/pdf",
+        });
+
+        if (uploadError) throw uploadError;
+
+        const { error: insertError } = await terminationDocumentTable().insert({
+          company_id: user.id,
+          employee_id: employeeId,
+          file_name: uploadFile.name,
+          file_url: filePath,
+        });
+        if (insertError) throw insertError;
+
+        await fetchTerminationDocument(employeeId);
+        setPendingTerminationDocumentFile(null);
+        setPendingTerminationDocumentName("");
+        toast({
+          title: "Termination document uploaded",
+          description: "The document has been saved.",
+        });
+      } catch (error: unknown) {
+        toast({
+          title: "Unable to upload termination document",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+      } finally {
+        setIsTerminationDocumentUploading(false);
+      }
+    },
+    [fetchTerminationDocument, pendingTerminationDocumentFile, terminationDocumentByEmployee, toast, user],
+  );
+
+  const handleOpenTerminationDocument = async (document: EmployeeTerminationDocument) => {
+    if (!document.fileUrl) return;
+    const storagePath = getContractStoragePathFromUrl(document.fileUrl);
+    const { data, error } = await supabase.storage
+      .from("contracts")
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast({
+        title: "Unable to open termination document",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRemoveTerminationDocument = async () => {
+    if (!selectedEmployee || !user) return;
+    const existing = terminationDocumentByEmployee[selectedEmployee.id] ?? null;
+    if (!existing) return;
+    const confirmed = confirm(
+      `Are you sure you want to delete ${existing.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+
+    const { error: deleteError } = await terminationDocumentTable()
+      .delete()
+      .eq("id", existing.id)
+      .eq("company_id", user.id);
+
+    if (deleteError) {
+      toast({
+        title: "Unable to delete termination document",
+        description: getSafeErrorMessage(deleteError),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const storagePath = getContractStoragePathFromUrl(existing.fileUrl);
+    if (storagePath) {
+      await supabase.storage.from("contracts").remove([storagePath]);
+    }
+
+    setTerminationDocumentByEmployee((prev) => ({
+      ...prev,
+      [selectedEmployee.id]: null,
+    }));
+    toast({
+      title: "Termination document deleted",
+      description: "The document has been removed.",
+    });
+  };
+
+  const handleTerminationDateChange = async (nextDate: string) => {
+    if (!selectedEmployee || !user) return;
+    const { error } = await supabase
+      .from("employees")
+      .update({ terminated_at: nextDate || null } as unknown as TablesInsert<"employees">)
+      .eq("id", selectedEmployee.id)
+      .eq("company_id", user.id);
+
+    if (error) {
+      toast({
+        title: "Unable to save termination date",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSelectedEmployee((prev) => (prev ? { ...prev, terminated_at: nextDate || null } : prev));
+    setEmployees((prev) =>
+      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    );
+    setFilteredEmployees((prev) =>
+      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    );
+    setAllEmployees((prev) =>
+      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    );
   };
 
   const handleOpenIdDocument = async (document: EmployeeIdDocument) => {
@@ -2843,6 +3235,10 @@ const Employees = () => {
     () => (selectedEmployee ? contractsByEmployee[selectedEmployee.id] ?? [] : []),
     [selectedEmployee, contractsByEmployee],
   );
+  const terminationDocumentForSelectedEmployee = useMemo(
+    () => (selectedEmployee ? terminationDocumentByEmployee[selectedEmployee.id] ?? null : null),
+    [selectedEmployee, terminationDocumentByEmployee],
+  );
   const idDocumentForSelectedEmployee = useMemo(
     () => (selectedEmployee ? idDocumentByEmployee[selectedEmployee.id] ?? null : null),
     [idDocumentByEmployee, selectedEmployee],
@@ -3234,10 +3630,14 @@ const Employees = () => {
                   <h3 className="text-lg font-semibold text-slate-900">
                     {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
                   </h3>
-                  <span className="text-[10px] text-slate-400">{profileForm.employeeNumber || ""}</span>
+                  {employeeStatus !== "Inactive" && (
+                    <span className="text-[10px] text-slate-400">{profileForm.employeeNumber || ""}</span>
+                  )}
                 </div>
                 <span className="inline-flex rounded-full bg-blue-100/70 px-2 py-0.5 text-[10px] font-normal text-blue-700">
-                  {profileForm.jobTitle?.trim() || "Job title not set"}
+                  {employeeStatus === "Inactive"
+                    ? (selectedEmployee?.termination_reason ?? "").toString().trim() || "Termination reason not set"
+                    : profileForm.jobTitle?.trim() || "Job title not set"}
                 </span>
               </div>
 
@@ -3314,48 +3714,47 @@ const Employees = () => {
                     </div>
                   </div>
                   <div className="pt-3 flex justify-center">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className={`group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] focus:border !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 ${
-                            employeeStatus === "Inactive"
-                              ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 data-[state=open]:border-emerald-700 data-[state=open]:bg-emerald-600"
-                              : "bg-red-600 text-white border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border-red-700 data-[state=open]:bg-red-600"
-                          }`}
-                        >
-                          <span className="truncate font-semibold group-hover:underline">
-                            {employeeStatus === "Inactive" ? "Rehire" : "Terminate"}
-                          </span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="center" className="w-40 text-[11px] text-center">
-                        {employeeStatus === "Inactive" ? (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              void updateEmployeeStatus("active");
-                            }}
-                            className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-emerald-50/70 focus:text-emerald-600 data-[highlighted]:bg-emerald-50/70 data-[highlighted]:text-emerald-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                    {employeeStatus === "Inactive" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
+                        onClick={() => {
+                          if (selectedEmployee) {
+                            handleStartRehire(selectedEmployee);
+                          }
+                        }}
+                      >
+                        <span className="truncate font-semibold group-hover:underline">Rehire</span>
+                      </Button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] focus:border !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 bg-red-600 text-white border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border-red-700 data-[state=open]:bg-red-600"
                           >
-                            Rehire
-                          </DropdownMenuItem>
-                        ) : (
-                          terminationReasons.map((reason) => (
+                            <span className="truncate font-semibold group-hover:underline">Terminate</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="center" className="w-40 text-[11px] text-center">
+                          {terminationReasons.map((reason) => (
                             <DropdownMenuItem
                               key={reason}
                               onClick={() => {
-                                void updateEmployeeStatus("inactive");
+                                void handleTerminateWithReason(reason);
                               }}
                               className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                             >
                               {reason}
                             </DropdownMenuItem>
-                          ))
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3573,31 +3972,43 @@ const Employees = () => {
     const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
     const to = from + DEFAULT_PAGE_SIZE;
     const queryText = searchQuery.trim();
-    let query = (supabase as any)
-      .from("employees")
-      .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
-      )
-      .eq("company_id", user.id);
+    const runEmployeesQuery = async (selectColumns: string) => {
+      let query = (supabase as any)
+        .from("employees")
+        .select(selectColumns)
+        .eq("company_id", user.id);
 
-    if (contractFilter !== "all") {
-      query = query.ilike("contract_type", contractFilter);
-    }
-    if (employeeStatusFilter === "inactive") {
-      query = query.eq("status", "inactive");
-    }
+      if (contractFilter !== "all") {
+        query = query.ilike("contract_type", contractFilter);
+      }
+      if (employeeStatusFilter === "inactive") {
+        query = query.eq("status", "inactive");
+      }
 
-    if (queryText.length > 0) {
-      const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
-      query = query.or(
-        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%`,
-      );
-    }
+      if (queryText.length > 0) {
+        const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
+        query = query.or(
+          `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%`,
+        );
+      }
 
-    const { data, error } = await query
-      .order("employee_name", { ascending: true, nullsFirst: false })
-      .order("employee_surname", { ascending: true, nullsFirst: false })
-      .range(from, to);
+      return await query
+        .order("employee_name", { ascending: true, nullsFirst: false })
+        .order("employee_surname", { ascending: true, nullsFirst: false })
+        .range(from, to);
+    };
+
+    let { data, error } = await runEmployeesQuery(employeeSelectColumnsWithTermination);
+    if (error) {
+      const message = (error as { message?: string } | null)?.message ?? "";
+      const isTerminationColumnMissing =
+        message.includes("termination_reason") ||
+        message.includes("previous_job_title") ||
+        message.includes("terminated_at");
+      if (isTerminationColumnMissing) {
+        ({ data, error } = await runEmployeesQuery(employeeSelectColumnsBase));
+      }
+    }
 
     if (error) {
       toast({
@@ -3632,14 +4043,25 @@ const Employees = () => {
   const fetchAllEmployees = useCallback(async () => {
     if (!user) return;
     setIsAllEmployeesLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("employees")
-      .select(
-        "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at",
-      )
-      .eq("company_id", user.id)
-      .order("employee_name", { ascending: true, nullsFirst: false })
-      .order("employee_surname", { ascending: true, nullsFirst: false });
+    const runAllEmployeesQuery = async (selectColumns: string) =>
+      await (supabase as any)
+        .from("employees")
+        .select(selectColumns)
+        .eq("company_id", user.id)
+        .order("employee_name", { ascending: true, nullsFirst: false })
+        .order("employee_surname", { ascending: true, nullsFirst: false });
+
+    let { data, error } = await runAllEmployeesQuery(employeeSelectColumnsWithTermination);
+    if (error) {
+      const message = (error as { message?: string } | null)?.message ?? "";
+      const isTerminationColumnMissing =
+        message.includes("termination_reason") ||
+        message.includes("previous_job_title") ||
+        message.includes("terminated_at");
+      if (isTerminationColumnMissing) {
+        ({ data, error } = await runAllEmployeesQuery(employeeSelectColumnsBase));
+      }
+    }
 
     if (error) {
       setIsAllEmployeesLoading(false);
@@ -3838,9 +4260,12 @@ const Employees = () => {
      e.preventDefault();
      if (!user) return;
      if (addFormStep < 3) {
+       setIsAddFormSubmitRequested(false);
        handleAddFormNext();
        return;
      }
+     if (!isAddFormSubmitRequested) return;
+     setIsAddFormSubmitRequested(false);
      if (!isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete) return;
      setIsLoading(true);
     try {
@@ -3884,7 +4309,11 @@ const Employees = () => {
       });
       const normalizedNumber = normalizeEmployeeNumber(validatedBasic.employeeNumber);
       const duplicate = normalizedNumber
-        ? employees.find((emp) => normalizeEmployeeNumber(emp.employee_number) === normalizedNumber)
+        ? employees.find(
+            (emp) =>
+              normalizeEmployeeNumber(emp.employee_number) === normalizedNumber &&
+              (!rehireEmployeeId || emp.id !== rehireEmployeeId),
+          )
         : undefined;
       if (duplicate) {
         toast({
@@ -3926,19 +4355,78 @@ const Employees = () => {
         postal_province: validatedProfile.postalProvince || null,
         postal_area_code: validatedProfile.postalAreaCode || null,
       };
-      const { error } = await supabase
-        .from("employees")
-        .insert(addPayload as TablesInsert<"employees">);
-       if (error) throw error;
+      if (rehireEmployeeId) {
+        const rehirePayload: EmployeeUpdate = {
+          ...addPayload,
+          status: "active",
+          termination_reason: null,
+          previous_job_title: null,
+          terminated_at: null,
+        };
+        const { error } = await supabase
+          .from("employees")
+          .update(rehirePayload as unknown as TablesInsert<"employees">)
+          .eq("id", rehireEmployeeId)
+          .eq("company_id", user.id);
+        if (error) throw error;
 
-      toast({
-        title: "Success",
-        description: "Employee added successfully!",
-      });
+        const { data: existingTerminationDocs } = await terminationDocumentTable()
+          .select("id, file_url")
+          .eq("company_id", user.id)
+          .eq("employee_id", rehireEmployeeId);
+        if ((existingTerminationDocs ?? []).length > 0) {
+          await terminationDocumentTable()
+            .delete()
+            .eq("company_id", user.id)
+            .eq("employee_id", rehireEmployeeId);
+          const storagePaths = (existingTerminationDocs as Array<{ file_url?: string | null }>)
+            .map((row) => getContractStoragePathFromUrl(row.file_url))
+            .filter((path): path is string => !!path);
+          if (storagePaths.length > 0) {
+            await supabase.storage.from("contracts").remove(storagePaths);
+          }
+          setTerminationDocumentByEmployee((prev) => ({
+            ...prev,
+            [rehireEmployeeId]: null,
+          }));
+        }
+
+        toast({
+          title: "Success",
+          description: "Employee rehired successfully!",
+        });
+      } else {
+        const { error } = await supabase
+          .from("employees")
+          .insert(addPayload as TablesInsert<"employees">);
+        if (error) throw error;
+
+        toast({
+          title: "Success",
+          description: "Employee added successfully!",
+        });
+      }
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
+      setRehireEmployeeId(null);
+      setIsAddFormSubmitRequested(false);
       setIsAddDialogOpen(false);
       await fetchEmployees();
+      if (selectedEmployee && rehireEmployeeId && selectedEmployee.id === rehireEmployeeId) {
+        setSelectedEmployee((prev) =>
+          prev
+            ? ({
+                ...prev,
+                ...addPayload,
+                status: "active",
+                termination_reason: null,
+                previous_job_title: null,
+                terminated_at: null,
+              } as Employee)
+            : prev,
+        );
+        setEmployeeStatus("Active");
+      }
     } catch (error: unknown) {
       toast({
         title: "Error",
@@ -4138,6 +4626,16 @@ const Employees = () => {
     await fetchEmployees();
   };
 
+  const handleStartRehire = (employee: Employee) => {
+    setIsEditMode(false);
+    setActiveEditSection(null);
+    setRehireEmployeeId(employee.id);
+    setAddForm(createAddFormFromEmployee(employee));
+    setAddFormStep(1);
+    setIsAddFormSubmitRequested(false);
+    setIsAddDialogOpen(true);
+  };
+
   const handleBulkDialogChange = (open: boolean) => {
     setIsBulkDialogOpen(open);
     if (!open && fileInputRef.current) {
@@ -4151,6 +4649,8 @@ const Employees = () => {
       setIsNewEmployeeMenuOpen(false);
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
+      setRehireEmployeeId(null);
+      setIsAddFormSubmitRequested(false);
       requestAnimationFrame(() => {
         (document.activeElement as HTMLElement | null)?.blur?.();
         newEmployeeMenuTriggerRef.current?.blur();
@@ -4167,16 +4667,19 @@ const Employees = () => {
   const goToAddFormStep = (step: 1 | 2 | 3) => {
     if (canAccessAddFormStep(step)) {
       setAddFormStep(step);
+      setIsAddFormSubmitRequested(false);
     }
   };
 
   const handleAddFormNext = () => {
     if (addFormStep === 1 && isAddFormStepOneComplete) {
       setAddFormStep(2);
+      setIsAddFormSubmitRequested(false);
       return;
     }
     if (addFormStep === 2 && isAddFormStepTwoComplete) {
       setAddFormStep(3);
+      setIsAddFormSubmitRequested(false);
     }
   };
 
@@ -4857,6 +5360,12 @@ const Employees = () => {
     [enableEditMode, isEditMode],
   );
 
+  const getSectionLockClass = useCallback(
+    (section: ProfileSectionKey) =>
+      isEditMode && activeEditSection && activeEditSection !== section ? "pointer-events-none" : "",
+    [activeEditSection, isEditMode],
+  );
+
   const renderPersonalTab = () => {
     const isDobReadOnly = !isEditMode || isSouthAfricanNationality;
 
@@ -4866,7 +5375,7 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.identity = el;
           }}
-          className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("identity")}`}
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Identity Information</h3>
@@ -5139,7 +5648,7 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.equity = el;
           }}
-          className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("equity")}`}
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Employment Equity Information</h3>
@@ -5376,7 +5885,7 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.contact = el;
           }}
-          className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("contact")}`}
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Contact Information</h3>
@@ -5490,7 +5999,7 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.statutory = el;
           }}
-          className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("statutory")}`}
         >
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Statutory Information</h3>
@@ -5560,7 +6069,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.homeAddress = el;
         }}
-        className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("homeAddress")}`}
       >
         <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">Home Address</h3>
@@ -5701,7 +6210,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.postalAddress = el;
         }}
-        className="rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-t-slate-300 border-r-slate-300 border-b-slate-300 border-l-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("postalAddress")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -5859,7 +6368,7 @@ const Employees = () => {
         </div>
       </div>
     </div>
-  );
+    );
 
   const renderLicencesTab = () => {
     const renderCategoryCard = (category: LicenceCategory) => {
@@ -6063,13 +6572,124 @@ const Employees = () => {
     );
   };
 
-  const renderEmploymentTab = () => (
-    <div className="space-y-3">
+  const renderEmploymentTab = () => {
+    if (employeeStatus === "Inactive") {
+      const terminationReason =
+        (selectedEmployee?.termination_reason ?? "").toString().trim() || "--";
+      const terminationDateRaw = (selectedEmployee?.terminated_at ?? "").toString().trim();
+      const previousJobTitle =
+        (selectedEmployee?.previous_job_title ?? "").toString().trim() || "--";
+      const terminationDocumentInputId = `termination-document-upload-${selectedEmployee?.id ?? "none"}`;
+
+      return (
+        <div className="space-y-3">
+          <div
+            ref={(el) => {
+              sectionRefs.current.employmentStatus = el;
+            }}
+            className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentStatus")}`}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-sm font-semibold text-slate-900">Employment History</h4>
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Termination Reason</Label>
+                <Input
+                  className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                  value={terminationReason}
+                  readOnly
+                  disabled
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Termination Date</Label>
+                <Input
+                  className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                  type="date"
+                  value={terminationDateRaw}
+                  onChange={(e) => void handleTerminationDateChange(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Termination Letter</Label>
+                <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
+                  <input
+                    id={terminationDocumentInputId}
+                    ref={terminationDocumentFileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={handleTerminationDocumentFileChange}
+                  />
+                  {!terminationDocumentForSelectedEmployee && (
+                    <Button
+                      type="button"
+                      asChild
+                      variant="outline"
+                      className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                      disabled={isTerminationDocumentUploading}
+                    >
+                      <label htmlFor={terminationDocumentInputId}>
+                        <Upload className="mr-1 h-3 w-3" />
+                        {isTerminationDocumentUploading ? "Uploading..." : "Upload"}
+                      </label>
+                    </Button>
+                  )}
+                  {pendingTerminationDocumentName ? (
+                    <span
+                      className="max-w-[180px] truncate text-[11px] font-semibold text-amber-700"
+                      title={pendingTerminationDocumentName}
+                    >
+                      {pendingTerminationDocumentName}
+                    </span>
+                  ) : terminationDocumentForSelectedEmployee ? (
+                    <button
+                      type="button"
+                      className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                      onClick={() => void handleOpenTerminationDocument(terminationDocumentForSelectedEmployee)}
+                      title={terminationDocumentForSelectedEmployee.fileName}
+                    >
+                      {terminationDocumentForSelectedEmployee.fileName}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-slate-500">--</span>
+                  )}
+                  {terminationDocumentForSelectedEmployee && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                      onClick={handleRemoveTerminationDocument}
+                      disabled={isTerminationDocumentUploading}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Previous Job Title</Label>
+                <Input
+                  className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                  value={previousJobTitle}
+                  readOnly
+                  disabled
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
       <div
         ref={(el) => {
           sectionRefs.current.employmentStatus = el;
         }}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentStatus")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -6126,11 +6746,11 @@ const Employees = () => {
                   enableEditMode();
                 }
               }}
-              disabled={employeeStatus !== "Inactive" || !isEditMode}
+              disabled={!isEditMode}
             >
             <SelectTrigger
                 className={employeeDropdownTriggerClass}
-                disabled={employeeStatus !== "Inactive" || !isEditMode}
+                disabled={!isEditMode}
               >
                 <SelectValue placeholder="Active" />
               </SelectTrigger>
@@ -6396,7 +7016,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentOrg = el;
         }}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentOrg")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
@@ -6645,7 +7265,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentRemuneration = el;
         }}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentRemuneration")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
@@ -6738,7 +7358,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentWorkContact = el;
         }}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentWorkContact")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
@@ -6810,7 +7430,7 @@ const Employees = () => {
         ref={(el) => {
           sectionRefs.current.employmentUnion = el;
         }}
-        className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]"
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentUnion")}`}
       >
         <div className="mb-3 flex items-center justify-between">
           <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
@@ -6980,6 +7600,7 @@ const Employees = () => {
       </div>
     </div>
   );
+  };
 
   const renderDisciplineTab = () => {
     const showingValid = warningFilter === "valid";
@@ -7632,6 +8253,9 @@ const Employees = () => {
                       onSelect={(event) => {
                         event.preventDefault();
                         setIsNewEmployeeMenuOpen(false);
+                        setRehireEmployeeId(null);
+                        setAddForm(createBlankAddForm());
+                        setAddFormStep(1);
                         setIsAddDialogOpen(true);
                       }}
                       className={employeeDropdownMenuItemWithGapClass}
@@ -7668,7 +8292,15 @@ const Employees = () => {
             ) : employees.length === 0 && !hasEmployeeTableFiltersApplied ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No employees added yet</p>
-                <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
+                <Button
+                  onClick={() => {
+                    setRehireEmployeeId(null);
+                    setAddForm(createBlankAddForm());
+                    setAddFormStep(1);
+                    setIsAddDialogOpen(true);
+                  }}
+                  className="gap-2"
+                >
                   <Plus className="h-4 w-4" />
                   Add Your First Employee
                 </Button>
@@ -7968,7 +8600,9 @@ const Employees = () => {
                     <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
                       <div className="flex items-center gap-2 pl-2">
                         <User className="h-4 w-4 text-white" />
-                        <DialogTitle className="text-sm font-semibold text-white">New Employee</DialogTitle>
+                        <DialogTitle className="text-sm font-semibold text-white">
+                          {rehireEmployeeId ? "Rehire Employee" : "New Employee"}
+                        </DialogTitle>
                       </div>
                       <DialogClose asChild>
                         <button type="button" className="text-white hover:text-white/80">
@@ -8183,12 +8817,12 @@ const Employees = () => {
                                 id="basicSalary"
                                 className={getAddModalInputClass(addForm.basicSalary.trim().length > 0)}
                                 placeholder="Please insert basic salary"
-                                inputMode="numeric"
+                                inputMode="decimal"
                                 value={formatThousandsWithCommas(addForm.basicSalary)}
                                 onChange={(e) =>
                                   setAddForm((prev) => ({
                                     ...prev,
-                                    basicSalary: e.target.value.replace(/\D/g, ""),
+                                    basicSalary: sanitizeSalaryInput(e.target.value),
                                   }))
                                 }
                               />
@@ -8291,9 +8925,10 @@ const Employees = () => {
                             <Button
                               type="submit"
                               className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                              onClick={() => setIsAddFormSubmitRequested(true)}
                               disabled={isLoading || !isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete}
                             >
-                              {isLoading ? "Saving..." : "Add"}
+                              {isLoading ? "Saving..." : rehireEmployeeId ? "Rehire" : "Add"}
                             </Button>
                           )}
                         </div>

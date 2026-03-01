@@ -583,7 +583,7 @@ const getAgeFromIdNumber = (idNumber?: string | null) => {
   const yearPart = Number(digits.slice(0, 2));
   const monthPart = Number(digits.slice(2, 4));
   const dayPart = Number(digits.slice(4, 6));
-  if (!yearPart || monthPart < 1 || monthPart > 12 || dayPart < 1 || dayPart > 31) return "--";
+  if (Number.isNaN(yearPart) || monthPart < 1 || monthPart > 12 || dayPart < 1 || dayPart > 31) return "--";
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -3210,7 +3210,8 @@ const Employees = () => {
     setPendingIdDocumentName(file.name);
     setIsIdDocumentMarkedForRemoval(false);
     if (!isEditMode) {
-      enableEditMode();
+      event.target.value = "";
+      return;
     }
     setActiveEditSection("identity");
     event.target.value = "";
@@ -3226,7 +3227,7 @@ const Employees = () => {
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(true);
     if (!isEditMode) {
-      enableEditMode();
+      return;
     }
     setActiveEditSection("identity");
   };
@@ -5337,9 +5338,8 @@ const Employees = () => {
   }, [selectedEmployee]);
 
   const enableEditMode = useCallback(() => {
-    if (isReadOnlyTab || isEditMode || !activeEditSection) return;
-    setIsEditMode(true);
-  }, [activeEditSection, isReadOnlyTab, isEditMode]);
+    return;
+  }, []);
 
   const openDatePicker = useCallback((input: HTMLInputElement | null) => {
     if (!input) return;
@@ -5353,11 +5353,11 @@ const Employees = () => {
   const handleSelectPointerDown = useCallback(
     (event: PointerEvent<HTMLElement>) => {
       if (!isEditMode) {
-        enableEditMode();
         event.preventDefault();
+        return;
       }
     },
-    [enableEditMode, isEditMode],
+    [isEditMode],
   );
 
   const getSectionLockClass = useCallback(
@@ -5474,8 +5474,8 @@ const Employees = () => {
                 open={nationalityOpen}
                 onOpenChange={(open) => {
                   if (open && !isEditMode) {
-                    enableEditMode();
-                  }
+                  return;
+                }
                   setNationalityOpen(open);
                   if (open) {
                     setNationalityQuery("");
@@ -5490,7 +5490,8 @@ const Employees = () => {
                     className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
-                        enableEditMode();
+                        event.preventDefault();
+                        return;
                       }
                     }}
                   >
@@ -5574,8 +5575,6 @@ const Employees = () => {
                 onClick={() => {
                   if (isDobReadOnly) return;
                   if (!isEditMode) {
-                    enableEditMode();
-                    requestAnimationFrame(() => openDatePicker(dateOfBirthInputRef.current));
                     return;
                   }
                   openDatePicker(dateOfBirthInputRef.current);
@@ -5695,8 +5694,8 @@ const Employees = () => {
                 open={raceOpen}
                 onOpenChange={(open) => {
                   if (open && !isEditMode) {
-                    enableEditMode();
-                  }
+                  return;
+                }
                   setRaceOpen(open);
                 }}
               >
@@ -5708,7 +5707,8 @@ const Employees = () => {
                     className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
-                        enableEditMode();
+                        event.preventDefault();
+                        return;
                       }
                     }}
                   >
@@ -5751,8 +5751,8 @@ const Employees = () => {
                 open={genderOpen}
                 onOpenChange={(open) => {
                   if (open && !isEditMode) {
-                    enableEditMode();
-                  }
+                  return;
+                }
                   setGenderOpen(open);
                 }}
               >
@@ -5764,7 +5764,8 @@ const Employees = () => {
                     className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
-                        enableEditMode();
+                        event.preventDefault();
+                        return;
                       }
                     }}
                   >
@@ -5826,8 +5827,8 @@ const Employees = () => {
                 open={citizenshipOpen}
                 onOpenChange={(open) => {
                   if (open && !isEditMode) {
-                    enableEditMode();
-                  }
+                  return;
+                }
                   setCitizenshipOpen(open);
                 }}
               >
@@ -5839,7 +5840,8 @@ const Employees = () => {
                     className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
-                        enableEditMode();
+                        event.preventDefault();
+                        return;
                       }
                     }}
                   >
@@ -6743,7 +6745,7 @@ const Employees = () => {
               }}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
               }}
               disabled={!isEditMode}
@@ -6791,7 +6793,7 @@ const Employees = () => {
               open={contractTypeOpen}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
                 setContractTypeOpen(open);
                 if (open) {
@@ -6807,8 +6809,9 @@ const Employees = () => {
                   className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
-                      enableEditMode();
-                    }
+                        event.preventDefault();
+                        return;
+                      }
                   }}
                   disabled={!isEditMode}
                 >
@@ -6859,8 +6862,6 @@ const Employees = () => {
               ref={startDateInputRef}
               onClick={() => {
                 if (!isEditMode) {
-                  enableEditMode();
-                  requestAnimationFrame(() => openDatePicker(startDateInputRef.current));
                   return;
                 }
                 openDatePicker(startDateInputRef.current);
@@ -6887,8 +6888,6 @@ const Employees = () => {
                 ref={endDateInputRef}
                 onClick={() => {
                   if (!isEditMode) {
-                    enableEditMode();
-                    requestAnimationFrame(() => openDatePicker(endDateInputRef.current));
                     return;
                   }
                   openDatePicker(endDateInputRef.current);
@@ -6909,7 +6908,7 @@ const Employees = () => {
               onValueChange={(value) => setProbationPeriod(value)}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
               }}
               disabled={!isEditMode}
@@ -7080,7 +7079,7 @@ const Employees = () => {
               open={departmentOpen}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
                 setDepartmentOpen(open);
                 if (open) {
@@ -7096,8 +7095,9 @@ const Employees = () => {
                   className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
-                      enableEditMode();
-                    }
+                        event.preventDefault();
+                        return;
+                      }
                   }}
                   disabled={!isEditMode}
                 >
@@ -7165,7 +7165,7 @@ const Employees = () => {
               open={reportingToOpen}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
                 setReportingToOpen(open);
                 if (open) {
@@ -7181,8 +7181,9 @@ const Employees = () => {
                   className={employeeDropdownTriggerClass}
                   onPointerDown={(event) => {
                     if (!isEditMode) {
-                      enableEditMode();
-                    }
+                        event.preventDefault();
+                        return;
+                      }
                   }}
                   disabled={!isEditMode}
                 >
@@ -7235,7 +7236,7 @@ const Employees = () => {
               }
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
               }}
             >
@@ -7315,7 +7316,7 @@ const Employees = () => {
               }
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
               }}
             >
@@ -7486,7 +7487,7 @@ const Employees = () => {
               }}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
-                  enableEditMode();
+                  return;
                 }
               }}
             >
@@ -7516,8 +7517,8 @@ const Employees = () => {
                 open={tradeUnionOpen}
                 onOpenChange={(open) => {
                   if (open && !isEditMode) {
-                    enableEditMode();
-                  }
+                  return;
+                }
                   setTradeUnionOpen(open);
                   if (open) {
                     setTradeUnionQuery("");
@@ -7533,7 +7534,8 @@ const Employees = () => {
                     className={employeeDropdownTriggerClass}
                     onPointerDown={(event) => {
                       if (!isEditMode) {
-                        enableEditMode();
+                        event.preventDefault();
+                        return;
                       }
                     }}
                   >
@@ -9315,6 +9317,9 @@ const Employees = () => {
  };
 
 export default Employees;
+
+
+
 
 
 

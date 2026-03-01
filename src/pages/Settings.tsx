@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
 import { companySetupBaseSchema, companySetupSchema, southAfricanProvinces } from "@/lib/validation";
@@ -52,6 +53,12 @@ const Settings = () => {
     company_contact: "",
     company_email: "",
   });
+  const [branchSettings, setBranchSettings] = useState({
+    branches_enabled: false,
+    branches: [] as string[],
+  });
+  const [branchNameInput, setBranchNameInput] = useState("");
+  const [branchSaving, setBranchSaving] = useState(false);
 
   const [passwordData, setPasswordData] = useState({
     newPassword: "",
@@ -72,7 +79,7 @@ const Settings = () => {
     const { data, error } = await (supabase as any)
       .from("profiles")
       .select(
-        "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email",
+        "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email, branches_enabled, branches",
       )
       .eq("id", user.id)
       .maybeSingle();
@@ -111,8 +118,85 @@ const Settings = () => {
         company_contact: data.company_contact,
         company_email: data.company_email,
       });
+      const branchValues = Array.isArray(data.branches)
+        ? data.branches
+            .map((value: unknown) => String(value ?? "").trim())
+            .filter(Boolean)
+        : [];
+      setBranchSettings({
+        branches_enabled: Boolean(data.branches_enabled),
+        branches: branchValues,
+      });
     }
     setLoading(false);
+  };
+
+  const handleAddBranch = () => {
+    const normalized = branchNameInput.trim().replace(/\s+/g, " ");
+    if (!normalized) return;
+    const duplicateExists = branchSettings.branches.some(
+      (value) => value.toLowerCase() === normalized.toLowerCase(),
+    );
+    if (duplicateExists) {
+      toast({
+        title: "Branch already exists",
+        description: "Please add a unique branch name.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBranchSettings((prev) => ({
+      ...prev,
+      branches: [...prev.branches, normalized],
+    }));
+    setBranchNameInput("");
+  };
+
+  const handleRemoveBranch = (branchToRemove: string) => {
+    setBranchSettings((prev) => ({
+      ...prev,
+      branches: prev.branches.filter((value) => value !== branchToRemove),
+    }));
+  };
+
+  const handleBranchSettingsUpdate = async () => {
+    if (!user) return;
+    setBranchSaving(true);
+
+    const cleanedBranches = Array.from(
+      new Set(
+        branchSettings.branches
+          .map((value) => value.trim().replace(/\s+/g, " "))
+          .filter(Boolean),
+      ),
+    );
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        branches_enabled: branchSettings.branches_enabled,
+        branches: cleanedBranches,
+      } as any)
+      .eq("id", user.id);
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } else {
+      setBranchSettings((prev) => ({
+        ...prev,
+        branches: cleanedBranches,
+      }));
+      toast({
+        title: "Success",
+        description: "Branch settings updated successfully",
+      });
+    }
+
+    setBranchSaving(false);
   };
 
   const handleUserDetailsUpdate = async () => {
@@ -563,6 +647,89 @@ const Settings = () => {
                       }
                     />
                   </div>
+                </div>
+                <div className="rounded-md border border-slate-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-semibold text-slate-900">Branches</h3>
+                      <p className="text-xs text-slate-500">
+                        Activate branches and configure the list available for your company.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="branches_enabled" className="text-sm">
+                        Activate Branches
+                      </Label>
+                      <Switch
+                        id="branches_enabled"
+                        checked={branchSettings.branches_enabled}
+                        onCheckedChange={(checked) =>
+                          setBranchSettings((prev) => ({
+                            ...prev,
+                            branches_enabled: checked,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Enter branch name"
+                      value={branchNameInput}
+                      onChange={(e) => setBranchNameInput(e.target.value)}
+                      disabled={!branchSettings.branches_enabled}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleAddBranch();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddBranch}
+                      disabled={!branchSettings.branches_enabled || !branchNameInput.trim()}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {branchSettings.branches.length === 0 ? (
+                      <p className="text-xs text-slate-500">No branches added yet.</p>
+                    ) : (
+                      branchSettings.branches.map((branchName) => (
+                        <div
+                          key={branchName}
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs text-slate-700"
+                        >
+                          <span>{branchName}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBranch(branchName)}
+                            className="text-slate-500 hover:text-rose-600"
+                            aria-label={`Remove ${branchName}`}
+                            disabled={!branchSettings.branches_enabled}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleBranchSettingsUpdate}
+                    disabled={branchSaving}
+                  >
+                    {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save Branch Settings
+                  </Button>
                 </div>
                 <Button onClick={handleCompanyDetailsUpdate} disabled={saving}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

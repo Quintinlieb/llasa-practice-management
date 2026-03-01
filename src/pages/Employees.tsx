@@ -116,9 +116,9 @@ const educationTable = () => (supabase as any).from("employee_education");
 // Supabase types do not include employee_termination_documents; cast to any for those calls to avoid type errors.
 const terminationDocumentTable = () => (supabase as any).from("employee_termination_documents");
 const employeeSelectColumnsBase =
-  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
 const employeeSelectColumnsWithTermination =
-  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -129,6 +129,7 @@ type Employee = Tables<"employees"> & {
   union_member?: string | null;
   trade_union?: string | null;
   department?: string | null;
+  branch?: string | null;
   reporting_to?: string | null;
   occupational_level?: string | null;
   salary_type?: string | null;
@@ -173,6 +174,7 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   union_member?: string | null;
   trade_union?: string | null;
   department?: string | null;
+  branch?: string | null;
   reporting_to?: string | null;
   occupational_level?: string | null;
   salary_type?: string | null;
@@ -1063,6 +1065,8 @@ const Employees = () => {
   const [probationPeriod, setProbationPeriod] = useState("");
   const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
   const [branch, setBranch] = useState("");
+  const [companyBranchesEnabled, setCompanyBranchesEnabled] = useState(false);
+  const [companyBranches, setCompanyBranches] = useState<string[]>([]);
   const [reportingTo, setReportingTo] = useState("");
   const [occupationalLevel, setOccupationalLevel] = useState<(typeof occupationalLevelOptions)[number] | "">("");
   const [salaryType, setSalaryType] = useState<(typeof salaryTypeOptions)[number] | "">("");
@@ -1213,11 +1217,54 @@ const Employees = () => {
   const [originalBasicSalary, setOriginalBasicSalary] = useState("");
   const [originalWorkEmail, setOriginalWorkEmail] = useState("");
   const [originalWorkCellNumber, setOriginalWorkCellNumber] = useState("");
+  const branchOptions = useMemo(() => {
+    const normalized = companyBranches
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(normalized));
+    const currentBranch = branch.trim();
+    if (currentBranch && !unique.some((value) => value.toLowerCase() === currentBranch.toLowerCase())) {
+      unique.unshift(currentBranch);
+    }
+    return unique;
+  }, [branch, companyBranches]);
+
+  const fetchCompanyBranches = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await (supabase as any)
+      .from("profiles")
+      .select("branches_enabled, branches")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      const message = (error as { message?: string } | null)?.message ?? "";
+      const isBranchColumnMissing = message.includes("branches_enabled") || message.includes("branches");
+      if (!isBranchColumnMissing) {
+        toast({
+          title: "Error",
+          description: "Could not load branch settings.",
+          variant: "destructive",
+        });
+      }
+      setCompanyBranchesEnabled(false);
+      setCompanyBranches([]);
+      return;
+    }
+
+    const loadedBranches = Array.isArray(data?.branches)
+      ? data.branches
+          .map((value: unknown) => String(value ?? "").trim())
+          .filter(Boolean)
+      : [];
+    setCompanyBranchesEnabled(Boolean(data?.branches_enabled));
+    setCompanyBranches(Array.from(new Set(loadedBranches)));
+  }, [toast, user]);
 
   useEffect(() => {
     if (!selectedEmployee) return;
     setOriginalDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
-    setOriginalBranch(branch);
+    setOriginalBranch(selectedEmployee.branch ?? "");
     setOriginalReportingTo(selectedEmployee.reporting_to ?? "");
     setOriginalOccupationalLevel(
       (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
@@ -1238,6 +1285,11 @@ const Employees = () => {
       }));
     }
   }, [isSouthAfricanNationality, profileForm.dateOfBirth, profileForm.idNumber]);
+
+  useEffect(() => {
+    if (!user) return;
+    void fetchCompanyBranches();
+  }, [user, fetchCompanyBranches]);
 
   useEffect(() => {
     const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
@@ -1315,6 +1367,7 @@ const Employees = () => {
         contract_type: null,
         probation_period: null,
         department: null,
+        branch: null,
         reporting_to: null,
         occupational_level: null,
         salary_type: null,
@@ -3271,6 +3324,7 @@ const Employees = () => {
       { label: "Employee Number", value: profileForm.employeeNumber },
       { label: "Probation Period", value: probationPeriod },
       { label: "Department", value: department },
+      { label: "Branch", value: branch },
       { label: "Reporting To", value: reportingTo },
       { label: "Occupational Level", value: occupationalLevel },
       { label: "Salary Cycle", value: salaryType },
@@ -3317,9 +3371,13 @@ const Employees = () => {
       missingFields.push("Postal address");
     }
     const hasContract = contractsForSelectedEmployee.length > 0;
+    const hasIdPassportDocument = hasEffectiveIdDocument;
+    if (!hasIdPassportDocument) {
+      missingFields.push("ID/Passport document");
+    }
     const addressTotalCount = 8;
-    const total = fields.length + addressTotalCount + 1;
-    const completed = filled + addressFilledCount + (hasContract ? 1 : 0);
+    const total = fields.length + addressTotalCount + 2;
+    const completed = filled + addressFilledCount + (hasContract ? 1 : 0) + (hasIdPassportDocument ? 1 : 0);
     const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     let colorClass = "text-emerald-600";
@@ -3344,11 +3402,13 @@ const Employees = () => {
     isSouthAfricanNationality,
     probationPeriod,
     department,
+    branch,
     reportingTo,
     occupationalLevel,
     salaryType,
     basicSalary,
     unionMember,
+    hasEffectiveIdDocument,
   ]);
 
   const contractsByStatus = useMemo(
@@ -3426,6 +3486,7 @@ const Employees = () => {
       setUnionMember((nextEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
       setTradeUnion(nextEmployee.trade_union ?? "");
       setDepartment((nextEmployee.department as (typeof departmentOptions)[number]) ?? "");
+      setBranch(nextEmployee.branch ?? "");
       setReportingTo(nextEmployee.reporting_to ?? "");
       setOccupationalLevel(
         (nextEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
@@ -3434,7 +3495,6 @@ const Employees = () => {
       setBasicSalary(nextEmployee.basic_salary ?? "");
       setWorkEmail(nextEmployee.work_email ?? "");
       setWorkCellNumber(nextEmployee.work_cell_number ?? "");
-      setBranch("");
       setActiveTab("personal");
       setIsEditMode(false);
     },
@@ -3591,38 +3651,40 @@ const Employees = () => {
                 </div>
               </div>
 
-              <div className="pl-5 pr-2 pt-2">
-                <div className="flex justify-end">
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <p className={`text-[10px] font-semibold ${profileCompletion.colorClass} hover:underline`}>
-                          {profileCompletion.label}
-                        </p>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-[240px] text-[11px]">
-                        {profileCompletion.missingFields.length === 0 && !profileCompletion.missingContract ? (
-                          <p>All required fields are completed.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {(profileCompletion.missingFields.length > 0 || profileCompletion.missingContract) && (
-                              <div className="space-y-1">
-                                <p className="font-semibold text-blue-600">Incomplete fields:</p>
-                                <ul className="list-disc pl-4 text-slate-700">
-                                  {profileCompletion.missingFields.map((field) => (
-                                    <li key={field}>{field}</li>
-                                  ))}
-                                  {profileCompletion.missingContract && <li>Employment contract</li>}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+              {employeeStatus !== "Inactive" && (
+                <div className="pl-5 pr-2 pt-2">
+                  <div className="flex justify-end">
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className={`text-[10px] font-semibold ${profileCompletion.colorClass} hover:underline`}>
+                            {profileCompletion.label}
+                          </p>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[240px] text-[11px]">
+                          {profileCompletion.missingFields.length === 0 && !profileCompletion.missingContract ? (
+                            <p>All required fields are completed.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {(profileCompletion.missingFields.length > 0 || profileCompletion.missingContract) && (
+                                <div className="space-y-1">
+                                  <p className="font-semibold text-blue-600">Incomplete fields:</p>
+                                  <ul className="list-disc pl-4 text-slate-700">
+                                    {profileCompletion.missingFields.map((field) => (
+                                      <li key={field}>{field}</li>
+                                    ))}
+                                    {profileCompletion.missingContract && <li>Employment contract</li>}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="px-5 pb-4 pt-6">
 
@@ -3989,7 +4051,7 @@ const Employees = () => {
       if (queryText.length > 0) {
         const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
         query = query.or(
-          `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%`,
+          `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
         );
       }
 
@@ -4179,8 +4241,13 @@ const Employees = () => {
       const idNumber = (emp.id_number ?? "").toLowerCase();
       const employeeNumber = (emp.employee_number ?? "").toLowerCase();
       const jobTitle = (emp.job_title ?? "").toLowerCase();
+      const branchValue = (emp.branch ?? "").toLowerCase();
       const matchesSearch =
-        fullName.includes(query) || idNumber.includes(query) || employeeNumber.includes(query) || jobTitle.includes(query);
+        fullName.includes(query) ||
+        idNumber.includes(query) ||
+        employeeNumber.includes(query) ||
+        jobTitle.includes(query) ||
+        branchValue.includes(query);
 
       const contractType = (emp.contract_type ?? "").toLowerCase();
       const matchesContract =
@@ -4948,6 +5015,7 @@ const Employees = () => {
     setUnionMember((employee.union_member as (typeof unionMemberOptions)[number]) ?? "");
     setTradeUnion(employee.trade_union ?? "");
     setDepartment((employee.department as (typeof departmentOptions)[number]) ?? "");
+    setBranch(employee.branch ?? "");
     setReportingTo(employee.reporting_to ?? "");
     setOccupationalLevel(
       (employee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
@@ -4956,7 +5024,6 @@ const Employees = () => {
     setBasicSalary(employee.basic_salary ?? "");
     setWorkEmail(employee.work_email ?? "");
     setWorkCellNumber(employee.work_cell_number ?? "");
-    setBranch("");
     setPendingIdDocumentFile(null);
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(false);
@@ -5203,6 +5270,7 @@ const Employees = () => {
                     union_member: unionMember || null,
                     trade_union: unionMember === "Yes" ? tradeUnion || null : null,
                     department: department || null,
+                    branch: branch || null,
                     reporting_to: reportingTo || null,
                     occupational_level: occupationalLevel || null,
                     salary_type: salaryType || null,
@@ -5249,6 +5317,7 @@ const Employees = () => {
       setUnionMember((updatedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
       setTradeUnion(updatedEmployee.trade_union ?? "");
       setDepartment((updatedEmployee.department as (typeof departmentOptions)[number]) ?? "");
+      setBranch(updatedEmployee.branch ?? "");
       setReportingTo(updatedEmployee.reporting_to ?? "");
       setOccupationalLevel(
         (updatedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
@@ -5300,6 +5369,7 @@ const Employees = () => {
     setUnionMember((selectedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
     setTradeUnion(selectedEmployee.trade_union ?? "");
     setDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
+    setBranch(selectedEmployee.branch ?? "");
     setReportingTo(selectedEmployee.reporting_to ?? "");
     setOccupationalLevel(
       (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
@@ -5308,7 +5378,6 @@ const Employees = () => {
     setBasicSalary(selectedEmployee.basic_salary ?? "");
     setWorkEmail(selectedEmployee.work_email ?? "");
     setWorkCellNumber(selectedEmployee.work_cell_number ?? "");
-    setBranch("");
     const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
     if (nextStatus === "inactive") {
       setEmployeeStatus("Inactive");
@@ -7159,6 +7228,42 @@ const Employees = () => {
               </PopoverContent>
             </Popover>
           </div>
+          {companyBranchesEnabled && (
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branch</Label>
+              <Select
+                value={branch || "__none"}
+                onValueChange={(value) => setBranch(value === "__none" ? "" : value)}
+                onOpenChange={(open) => {
+                  if (open && !isEditMode) {
+                    return;
+                  }
+                }}
+                disabled={!isEditMode || branchOptions.length === 0}
+              >
+                <SelectTrigger
+                  className={employeeDropdownTriggerClass}
+                  disabled={!isEditMode || branchOptions.length === 0}
+                >
+                  <SelectValue placeholder={branchOptions.length === 0 ? "No branches configured" : "Select branch"} />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  <SelectItem value="__none" className={employeeDropdownSelectItemClass}>
+                    None
+                  </SelectItem>
+                  {branchOptions.map((option) => (
+                    <SelectItem
+                      key={option}
+                      value={option}
+                      className={employeeDropdownSelectItemClass}
+                    >
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Reporting To</Label>
             <Popover
@@ -8034,14 +8139,26 @@ const Employees = () => {
           <CardHeader className="pl-4 pr-4 pt-5 pb-3 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative w-full sm:w-[400px]">
+                <div className="group relative w-full sm:w-[400px]">
                 <Input
                   placeholder="Search employees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-8 rounded-sm border border-slate-200 bg-white pr-9 !text-[11px] font-semibold shadow-sm placeholder:!text-[11px] focus-visible:!border focus-visible:!border-blue-600 focus-visible:ring-0 dark:bg-background"
+                  className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-semibold shadow-sm transition-colors placeholder:!text-[11px] focus-visible:!border focus-visible:!border-blue-600 focus-visible:ring-0 group-hover:border-blue-600 dark:bg-background ${
+                    searchQuery.trim().length > 0 ? "pr-20" : "pr-9"
+                  }`}
                 />
-                <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                {searchQuery.trim().length > 0 ? (
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-blue-600 hover:underline"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                )}
                 </div>
               </div>
               <div className="flex items-center gap-2 justify-end">

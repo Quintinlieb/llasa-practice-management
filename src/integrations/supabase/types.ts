@@ -130,6 +130,8 @@ export type Database = {
       profiles: {
         Row: {
           account_type: string
+          branches: string[]
+          branches_enabled: boolean
           company_contact: string
           company_email: string
           company_name: string
@@ -155,6 +157,8 @@ export type Database = {
         }
         Insert: {
           account_type: string
+          branches?: string[]
+          branches_enabled?: boolean
           company_contact: string
           company_email: string
           company_name: string
@@ -180,6 +184,8 @@ export type Database = {
         }
         Update: {
           account_type?: string
+          branches?: string[]
+          branches_enabled?: boolean
           company_contact?: string
           company_email?: string
           company_name?: string

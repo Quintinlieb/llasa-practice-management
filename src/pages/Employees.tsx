@@ -117,9 +117,9 @@ const terminationDocumentTable = () => (supabase as any).from("employee_terminat
 const employeeTableSelectColumns =
   "id, employee_name, employee_surname, id_number, status, start_date, contract_type, job_title, cell_number, nationality, gender, race";
 const employeeSelectColumnsBase =
-  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
 const employeeSelectColumnsWithTermination =
-  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -146,7 +146,6 @@ type Employee = Tables<"employees"> & {
   disability_status?: boolean | null;
   citizenship_status?: string | null;
   income_tax_number?: string | null;
-  uif_number?: string | null;
   physical_address_line1?: string | null;
   physical_address_line2?: string | null;
   city?: string | null;
@@ -190,7 +189,6 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   disability_status?: boolean | null;
   citizenship_status?: string | null;
   income_tax_number?: string | null;
-  uif_number?: string | null;
   physical_address_line1?: string | null;
   physical_address_line2?: string | null;
   city?: string | null;
@@ -547,7 +545,6 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
     emergencyContactName: employee?.emergency_contact_name ?? "",
     emergencyContactNumber: employee?.emergency_contact_number ?? "",
     incomeTaxNumber: employee?.income_tax_number ?? "",
-    uifNumber: employee?.uif_number ?? "",
   };
 };
 
@@ -577,6 +574,17 @@ const sanitizeSalaryInput = (value: string) => {
   const [integerPart, ...decimalParts] = cleaned.split(".");
   const decimal = decimalParts.join("").slice(0, 2);
   return decimalParts.length > 0 ? `${integerPart}.${decimal}` : integerPart;
+};
+
+const removeWhitespace = (value: string) => value.replace(/\s+/g, "");
+
+const normalizeSalaryForStorage = (value: string) => {
+  const sanitized = sanitizeSalaryInput(value);
+  if (!sanitized) return "";
+  const [rawIntegerPart = "", rawDecimalPart = ""] = sanitized.split(".");
+  const integerPart = rawIntegerPart.length > 0 ? rawIntegerPart : "0";
+  const decimalPart = rawDecimalPart.padEnd(2, "0").slice(0, 2);
+  return `${integerPart}.${decimalPart}`;
 };
 
 const getAgeFromIdNumber = (idNumber?: string | null) => {
@@ -3346,7 +3354,7 @@ const Employees = () => {
       { label: "Employee Number", value: profileForm.employeeNumber },
       { label: "Probation Period", value: probationPeriod },
       { label: "Department", value: department },
-      { label: "Branch", value: branch },
+      ...(companyBranchesEnabled ? [{ label: "Branch", value: branch }] : []),
       { label: "Reporting To", value: reportingTo },
       { label: "Occupational Level", value: occupationalLevel },
       { label: "Salary Cycle", value: salaryType },
@@ -3425,6 +3433,7 @@ const Employees = () => {
     probationPeriod,
     department,
     branch,
+    companyBranchesEnabled,
     reportingTo,
     occupationalLevel,
     salaryType,
@@ -4438,7 +4447,6 @@ const Employees = () => {
         emergencyContactName: "",
         emergencyContactNumber: "",
         incomeTaxNumber: "",
-        uifNumber: "",
       });
       const normalizedNumber = normalizeEmployeeNumber(validatedBasic.employeeNumber);
       const duplicate = normalizedNumber
@@ -5353,7 +5361,7 @@ const Employees = () => {
                     reporting_to: reportingTo || null,
                     occupational_level: occupationalLevel || null,
                     salary_type: salaryType || null,
-                    basic_salary: basicSalary || null,
+                    basic_salary: normalizeSalaryForStorage(basicSalary) || null,
                     work_email: workEmail || null,
                     work_cell_number: workCellNumber || null,
                   }
@@ -5611,7 +5619,7 @@ const Employees = () => {
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    idNumber: e.target.value,
+                    idNumber: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -6086,7 +6094,7 @@ const Employees = () => {
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    cellNumber: e.target.value,
+                    cellNumber: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -6138,7 +6146,7 @@ const Employees = () => {
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    emergencyContactNumber: e.target.value,
+                    emergencyContactNumber: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -6202,7 +6210,7 @@ const Employees = () => {
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    incomeTaxNumber: e.target.value,
+                    incomeTaxNumber: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -6327,9 +6335,13 @@ const Employees = () => {
               >
                 <SelectValue placeholder="Please select" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="text-[11px]">
                 {southAfricanProvinces.map((province) => (
-                  <SelectItem key={province} value={province}>
+                  <SelectItem
+                    key={province}
+                    value={province}
+                    className={employeeDropdownSelectItemClass}
+                  >
                     {province}
                   </SelectItem>
                 ))}
@@ -6489,9 +6501,13 @@ const Employees = () => {
               >
                 <SelectValue placeholder="Please select" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="text-[11px]">
                 {southAfricanProvinces.map((province) => (
-                  <SelectItem key={province} value={province}>
+                  <SelectItem
+                    key={province}
+                    value={province}
+                    className={employeeDropdownSelectItemClass}
+                  >
                     {province}
                   </SelectItem>
                 ))}
@@ -7529,11 +7545,12 @@ const Employees = () => {
               className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
               placeholder="e.g. 25000"
               inputMode="decimal"
-              value={basicSalary}
+              value={formatThousandsWithCommas(sanitizeSalaryInput(basicSalary))}
               readOnly={!isEditMode}
               onFocus={enableEditMode}
               onMouseDown={enableEditMode}
-              onChange={(e) => setBasicSalary(e.target.value)}
+              onChange={(e) => setBasicSalary(sanitizeSalaryInput(e.target.value))}
+              onBlur={() => setBasicSalary((prev) => normalizeSalaryForStorage(prev))}
             />
           </div>
         </div>
@@ -7605,7 +7622,7 @@ const Employees = () => {
               readOnly={!isEditMode}
               onFocus={enableEditMode}
               onMouseDown={enableEditMode}
-              onChange={(e) => setWorkCellNumber(e.target.value)}
+              onChange={(e) => setWorkCellNumber(removeWhitespace(e.target.value))}
             />
           </div>
         </div>
@@ -8931,7 +8948,7 @@ const Employees = () => {
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                 {addForm.idType === "id" ? "ID Number" : addForm.idType === "passport" ? "Passport Number" : "ID / Passport Number"} <span className="text-red-600">*</span>
                               </span>
-                              <Input id="idNumber" className={getAddModalInputClass(isAddFormIdNumberComplete)} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: prev.idType === "id" ? e.target.value.replace(/\D/g, "").slice(0, 13) : e.target.value }))} placeholder={addForm.idType === "id" ? "Please insert ID number" : addForm.idType === "passport" ? "Please insert passport number" : "Please select option first"} />
+                              <Input id="idNumber" className={getAddModalInputClass(isAddFormIdNumberComplete)} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: prev.idType === "id" ? removeWhitespace(e.target.value).replace(/\D/g, "").slice(0, 13) : removeWhitespace(e.target.value) }))} placeholder={addForm.idType === "id" ? "Please insert ID number" : addForm.idType === "passport" ? "Please insert passport number" : "Please select option first"} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
@@ -8970,7 +8987,7 @@ const Employees = () => {
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                 Cell Number
                               </span>
-                              <Input id="cellNumber" className={getAddModalInputClass(addForm.cellNumber.trim().length > 0)} placeholder="Please insert cell number" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: e.target.value }))} />
+                              <Input id="cellNumber" className={getAddModalInputClass(addForm.cellNumber.trim().length > 0)} placeholder="Please insert cell number" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: removeWhitespace(e.target.value) }))} />
                             </div>
                           </div>
                         </div>

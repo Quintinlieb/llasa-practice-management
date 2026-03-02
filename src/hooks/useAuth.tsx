@@ -48,7 +48,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string,
     accountType: "trial" | "domestic" | "business",
   ) => {
-    const redirectUrl = `${window.location.origin}/account-setup`;
+    const configuredAppUrl = import.meta.env.VITE_APP_URL as string | undefined;
+    const appBaseUrl = (
+      configuredAppUrl && configuredAppUrl.trim().length > 0 ? configuredAppUrl : window.location.origin
+    ).replace(/\/+$/, "");
+    const redirectUrl = `${appBaseUrl}/auth?login=1`;
     
     const { data, error } = await supabase.auth.signUp({
       email,

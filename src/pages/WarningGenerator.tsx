@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, X, Info, ArrowLeft, ArrowRight, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
+import { Download, X, Info, ArrowRight, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -184,7 +184,6 @@ const WarningGenerator = ({
   const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
   const [employees, setEmployees] = useState<WarningEmployee[]>([]);
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRow[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
   const [misconductSearch, setMisconductSearch] = useState("");
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
   const misconductPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -243,22 +242,22 @@ const WarningGenerator = ({
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const snippetPaddingTopMm = 2;
-  const snippetVisibleHeightMm = 297 / 2;
-  const snippetContainerWidthMm = 150;
-  const snippetScale = useMemo(
-    () =>
-      Math.min(
-        (snippetContainerWidthMm - 4) / 210,
-        (160 - snippetPaddingTopMm) / snippetVisibleHeightMm,
-      ),
-    [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
-  );
+  const baseModalFieldClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+  const warningModalDropdownToneClass =
+    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+  const warningModalSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const getWarningModalInputClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+  const getWarningModalSelectTriggerClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+  const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
 
   useEffect(() => {
     if (!embedded) return;
-    onStepChange?.(steps[activeStep] ?? null);
-  }, [activeStep, embedded, onStepChange, steps]);
+    onStepChange?.(showFinalActions ? "Preview / Download" : (steps[activeStep] ?? null));
+  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
 
 
   useEffect(() => {
@@ -995,35 +994,6 @@ const WarningGenerator = ({
     await performSubmit();
   };
 
-  const handlePreview = () => {
-    if (formData.misconductTypes.length === 0) {
-      toast({
-        title: "Validation Error",
-        description: "Please select at least one misconduct type",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (
-      !formData.employerContact ||
-      !formData.employerEmail ||
-      !formData.description ||
-      !formData.employeeName ||
-      !formData.employeeSurname ||
-      !formData.employeeIdNumber ||
-      !formData.warningType ||
-      !formData.issuedBy
-    ) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    setShowPreview(true);
-  };
-
   const handleDownload = () => {
     if (formData.misconductTypes.length === 0) {
       toast({
@@ -1496,7 +1466,7 @@ const WarningGenerator = ({
                 <div className="translate-y-[-10px]">
                   <Card
                     className={cn(
-                      "flex-1 rounded-sm shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                      "flex-1 rounded-sm shadow-none bg-transparent border-0",
                       !embedded && "flex min-h-0 flex-col",
                     )}
                   >
@@ -1585,47 +1555,47 @@ const WarningGenerator = ({
 
                       <div className="space-y-4">
                 {activeStep === 0 && (
-                  <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                  <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                      <Label htmlFor="companyName">Company name</Label>
+                      <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
                       <Input
                         id="companyName"
                         value={profile?.company_name || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getWarningModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="registrationNumber">Registration number</Label>
+                      <Label htmlFor="registrationNumber" className={modalFieldLabelClass}>Registration number</Label>
                       <Input
                         id="registrationNumber"
                         value={profile?.registration_number || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getWarningModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="physicalAddress">Registered address</Label>
+                      <Label htmlFor="physicalAddress" className={modalFieldLabelClass}>Registered address</Label>
                       <Input
                         id="physicalAddress"
                         value={profile?.physical_address || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getWarningModalInputClass(Boolean(profile?.physical_address))}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="tradingName">Trading name</Label>
+                      <Label htmlFor="tradingName" className={modalFieldLabelClass}>Trading name</Label>
                       <Input
                         id="tradingName"
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
                         placeholder="If different from registered name"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.tradingName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact">Employer contact *</Label>
+                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>Employer contact *</Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1634,17 +1604,17 @@ const WarningGenerator = ({
                           setFormData({ ...formData, employerContact: digitsOnly });
                         }}
                         placeholder="10-digit contact number"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.employerContact.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail">Employer email *</Label>
+                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>Employer email *</Label>
                       <Input
                         id="employerEmail"
                         type="email"
                         value={formData.employerEmail}
                         onChange={(e) => setFormData({ ...formData, employerEmail: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.employerEmail.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1652,18 +1622,18 @@ const WarningGenerator = ({
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="space-y-2">
-                    <Label htmlFor="employee">
+                    <Label htmlFor="employee" className={modalFieldLabelClass}>
                       Select Employee (optional)
                     </Label>
                     <Select key={employeeSelectResetCount} onValueChange={handleEmployeeSelect}>
-                      <SelectTrigger className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 data-[placeholder]:text-muted-foreground data-[placeholder]:hover:text-blue-700">
+                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.employeeId.trim().length > 0)} ${warningModalDropdownToneClass}`}>
                         <SelectValue placeholder="Select from saved employees or fill manually" />
                       </SelectTrigger>
                       <SelectContent className="w-[var(--radix-select-trigger-width)]">
                         {employees.map((employee) => (
-                          <SelectItem key={employee.id} value={employee.id}>
+                          <SelectItem key={employee.id} value={employee.id} className={warningModalSelectItemClass}>
                             {employee.employee_name} {employee.employee_surname}
                           </SelectItem>
                         ))}
@@ -1672,7 +1642,7 @@ const WarningGenerator = ({
                   </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="employeeName">
+                      <Label htmlFor="employeeName" className={modalFieldLabelClass}>
                         Employee Name *
                       </Label>
                       <Input
@@ -1680,11 +1650,11 @@ const WarningGenerator = ({
                         value={formData.employeeName}
                         onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
                         required
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.employeeName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeSurname">
+                      <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>
                         Employee Surname *
                       </Label>
                       <Input
@@ -1692,11 +1662,11 @@ const WarningGenerator = ({
                         value={formData.employeeSurname}
                         onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
                         required
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.employeeSurname.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="employeeIdNumber">
+                      <Label htmlFor="employeeIdNumber" className={modalFieldLabelClass}>
                         ID Number *
                       </Label>
                       <Input
@@ -1704,7 +1674,7 @@ const WarningGenerator = ({
                         value={formData.employeeIdNumber}
                         onChange={(e) => setFormData({ ...formData, employeeIdNumber: e.target.value })}
                         required
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.employeeIdNumber.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1712,7 +1682,7 @@ const WarningGenerator = ({
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-white p-3 shadow-sm">
+                <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="flex items-center justify-start">
                     {activeWarnings.length > 0 && (
                       <TooltipProvider delayDuration={0} skipDelayDuration={0}>
@@ -1776,12 +1746,12 @@ const WarningGenerator = ({
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label>Misconduct Type(s) *</Label>
+                    <Label className={modalFieldLabelClass}>Misconduct Type(s) *</Label>
                     <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
-                          className="w-full justify-start text-left text-sm font-normal border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-900"
+                          className={`${getWarningModalSelectTriggerClass(formData.misconductTypes.length > 0)} ${warningModalDropdownToneClass} w-full justify-start text-left font-normal`}
                           type="button"
                         >
                           {formData.misconductTypes.length === 0
@@ -1877,7 +1847,7 @@ const WarningGenerator = ({
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="description">
+                    <Label htmlFor="description" className={modalFieldLabelClass}>
                       Description of Misconduct *
                     </Label>
                     <Textarea
@@ -1887,12 +1857,12 @@ const WarningGenerator = ({
                       placeholder="Provide specific details about the misconduct incident(s) including dates"
                       rows={5}
                       required
-                      className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                      className={`${getWarningModalInputClass(formData.description.trim().length > 0)} !min-h-[120px] !py-2`}
                     />
                   </div>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="warningType">
+                      <Label htmlFor="warningType" className={modalFieldLabelClass}>
                         Type of Warning *
                       </Label>
                       <Select
@@ -1903,19 +1873,19 @@ const WarningGenerator = ({
                         onOpenChange={handleWarningSelectOpenChange}
                         required
                       >
-                      <SelectTrigger className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(Boolean(formData.warningType))} ${warningModalDropdownToneClass}`}>
                         <SelectValue placeholder="Select warning type" />
                       </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="first">First Written Warning</SelectItem>
-                          <SelectItem value="second">Second Written Warning</SelectItem>
-                          <SelectItem value="serious">Serious Written Warning</SelectItem>
-                          <SelectItem value="final">Final Written Warning</SelectItem>
+                          <SelectItem value="first" className={warningModalSelectItemClass}>First Written Warning</SelectItem>
+                          <SelectItem value="second" className={warningModalSelectItemClass}>Second Written Warning</SelectItem>
+                          <SelectItem value="serious" className={warningModalSelectItemClass}>Serious Written Warning</SelectItem>
+                          <SelectItem value="final" className={warningModalSelectItemClass}>Final Written Warning</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="validityMonths">
+                      <Label htmlFor="validityMonths" className={modalFieldLabelClass}>
                         Validity Period (months) *
                       </Label>
                       <Input
@@ -1925,11 +1895,11 @@ const WarningGenerator = ({
                         onChange={(e) => setFormData({ ...formData, validityMonths: e.target.value })}
                         required
                         readOnly
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.validityMonths.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="issuedBy">
+                      <Label htmlFor="issuedBy" className={modalFieldLabelClass}>
                         Issued By *
                       </Label>
                       <Input
@@ -1937,11 +1907,11 @@ const WarningGenerator = ({
                         value={formData.issuedBy}
                         onChange={(e) => setFormData({ ...formData, issuedBy: e.target.value })}
                         required
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.issuedBy.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="dateIssued">
+                      <Label htmlFor="dateIssued" className={modalFieldLabelClass}>
                         Date of Issue *
                       </Label>
                       <Input
@@ -1950,14 +1920,8 @@ const WarningGenerator = ({
                         value={formData.dateIssued}
                         onChange={(e) => setFormData({ ...formData, dateIssued: e.target.value })}
                         required
-                        className="text-sm md:text-sm placeholder:text-sm focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getWarningModalInputClass(formData.dateIssued.trim().length > 0)}
                       />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-3 pt-2 text-xs text-slate-600">
-                    <div className="flex items-center gap-2">
-                      <Info className="h-3.5 w-3.5 text-blue-600" />
-                      <span>Misconduct types must be from the same category; dismissible offences will prompt confirmation.</span>
                     </div>
                   </div>
                 </div>
@@ -1966,19 +1930,16 @@ const WarningGenerator = ({
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                   {activeStep === steps.length - 1 ? (
                     <div className="flex w-full items-center gap-3 flex-wrap justify-between">
-                      {!embedded && (
-                        <div className="flex-none">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleBack}
-                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                          >
-                            <ArrowLeft className="h-4 w-4" />
-                            Back
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex-none">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        >
+                          Back
+                        </Button>
+                      </div>
                       <div className="flex-1 flex justify-center">
                         <Button
                           type="button"
@@ -1991,55 +1952,45 @@ const WarningGenerator = ({
                           Reset form
                         </Button>
                       </div>
-                      {!embedded && (
-                        <div className="flex-none relative">
-                          <Button
-                            type="button"
-                            onClick={handleFinish}
-                            disabled={!isWarningStepComplete || isLoading}
-                            className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                              isWarningStepComplete && !isLoading
-                                ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                                : "bg-primary hover:bg-primary/90 border border-primary/60"
-                            }`}
-                          >
-                            Finish
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex-none relative">
+                        <Button
+                          type="button"
+                          onClick={handleFinish}
+                          disabled={!isWarningStepComplete || isLoading}
+                          className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                        >
+                          Next
+                        </Button>
+                      </div>
                     </div>
                   ) : (
-                    !embedded && (
-                      <div className="flex w-full items-center justify-between gap-2 flex-wrap">
-                        <div className="flex-none">
-                          {activeStep > 0 && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={handleBack}
-                              className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                            >
-                              <ArrowLeft className="h-4 w-4" />
-                              Back
-                            </Button>
-                          )}
-                        </div>
-                        <div className="flex-1" />
-                        <div className="flex-none">
-                          {activeStep < steps.length - 1 && (
-                            <Button
-                              type="button"
-                              onClick={handleNext}
-                              disabled={!canGoNext}
-                              className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
-                            >
-                              Next
-                              <ArrowRight className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
+                    <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                      <div className="flex-none">
+                        {activeStep > 0 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleBack}
+                            className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          >
+                            Back
+                          </Button>
+                        )}
                       </div>
-                    )
+                      <div className="flex-1" />
+                      <div className="flex-none">
+                        {activeStep < steps.length - 1 && (
+                          <Button
+                            type="button"
+                            onClick={handleNext}
+                            disabled={!canGoNext}
+                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                          >
+                            Next
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
                     </div>
@@ -2051,7 +2002,7 @@ const WarningGenerator = ({
                 <div className="translate-y-[-10px]">
                   <Card
                     className={cn(
-                      "flex-1 rounded-sm shadow-xl bg-white/95 shadow-blue-100/60 border-0",
+                      "flex-1 rounded-sm shadow-none bg-transparent border-0",
                       !embedded && "flex min-h-0 flex-col",
                     )}
                   >
@@ -2062,65 +2013,30 @@ const WarningGenerator = ({
                       !embedded && "flex-1 min-h-0 overflow-y-auto",
                     )}
                   >
-                    <div className="flex flex-col items-center gap-4">
-                      <div
-                        className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
-                        style={{
-                          width: `${snippetContainerWidthMm}mm`,
-                          height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
-                        }}
-                      >
-                        <div className="relative h-full w-full overflow-hidden">
-                          <div
-                            className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
-                            style={{
-                              width: "210mm",
-                              height: `${snippetVisibleHeightMm}mm`,
-                              overflow: "hidden",
-                              marginTop: `${snippetPaddingTopMm}mm`,
-                              transform: `translateX(-50%) scale(${snippetScale})`,
-                              transformOrigin: "top center",
-                            }}
-                          >
-                            <div style={{ height: "297mm", overflow: "hidden" }}>{renderPreviewPage()}</div>
-                          </div>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="flex items-center justify-center gap-3">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={handlePreview}
-                                disabled={isLoading}
-                                aria-label="Preview"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <FileText />
-                                  <span className="text-sm font-semibold">Preview</span>
-                                </div>
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={handleDownload}
-                                disabled={isLoading}
-                                aria-label="Download PDF"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Download />
-                                  <span className="text-sm font-semibold">Download</span>
-                                </div>
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
+                    <div className="flex flex-col gap-4">
+                      <div className="h-[62vh] overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-4">
+                        {renderPreviewPage()}
                       </div>
                       <div className="flex w-full items-center gap-2">
+                        <div className="flex-none">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={handleBack}
+                            className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          >
+                            Back
+                          </Button>
+                        </div>
                         <div className="flex-1" />
-                        <div className="flex-none opacity-0 pointer-events-none">
-                          <Button variant="outline" className="gap-2 border-transparent">
-                            Placeholder
+                        <div className="flex-none">
+                          <Button
+                            type="button"
+                            onClick={handleDownload}
+                            disabled={isLoading}
+                            className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                          >
+                            Download
                           </Button>
                         </div>
                       </div>
@@ -2131,22 +2047,6 @@ const WarningGenerator = ({
               )}
             </div>
           </div>
-
-        {/* Preview Dialog */}
-        <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl h-[90vh] p-0">
-          <DialogHeader className="px-6 pt-4 pb-2 space-y-1">
-            <DialogTitle className="text-blue-700 text-left text-base font-semibold">PREVIEW</DialogTitle>
-            <DialogDescription className="text-xs text-slate-600 text-left">
-              {`Review the disciplinary warning notice for ${formData.employeeName || "the employee"} ${formData.employeeSurname || ""}`.trim()}{" "}
-              before downloading.
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="h-full px-6 pb-6">
-            {renderPreviewPage()}
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={warningOverride.open} onOpenChange={(open) => !open && confirmOverrideWarning(false)}>
         <DialogContent className="sm:max-w-md">

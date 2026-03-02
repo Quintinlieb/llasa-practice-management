@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState, type ComponentType, type S
 import DashboardLayout from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
 import { useLocation } from "react-router-dom";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   ScaleIcon,
   DocumentTextIcon,
@@ -9,7 +10,7 @@ import {
   BellAlertIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { ArrowLeft, ArrowRight, Gavel } from "lucide-react";
+import { ArrowLeft, ArrowRight, Gavel, Menu } from "lucide-react";
 
 type DocumentKey =
   | "codeOfConduct"
@@ -38,6 +39,7 @@ type StoredProfile = {
 
 type DocumentComponentProps = {
   embedded?: boolean;
+  externalNavigation?: boolean;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -116,6 +118,7 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
+  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | null>(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -185,6 +188,7 @@ const Documents = () => {
   }, [selectedDocument]);
 
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
+  const ModalComponent = modalDocument ? documentComponents[modalDocument] : null;
   const activeCategoryTitle =
     selectedDocument
       ? documentCategories.find((category) =>
@@ -197,6 +201,34 @@ const Documents = () => {
           .flatMap((category) => category.items)
           .find((item) => item.id === selectedDocument)?.label ?? ""
       : "";
+  const modalTitle = modalDocument === "warnings" ? "Warnings" : modalDocument === "addendum" ? "Addendum" : "";
+  const modalSteps =
+    modalDocument === "warnings" || modalDocument === "addendum"
+      ? (["Employer Details", "Employee Details", modalDocument === "warnings" ? "Warning Details" : "Addendum Details", "Preview / Download"] as const)
+      : ([] as const);
+  const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
+  const addendumStepNotes = [
+    [
+      "Complete the employer details for this addendum.",
+      "You can add a trading name and update the employer email and contact number before continuing.",
+    ],
+    [
+      "Select an existing employee, enter the details manually, or first add an employee on the Employees page and then return here.",
+    ],
+    [
+      "Choose one of the three addendum types.",
+      "A general addendum applies to any employment contract where the employer and employee agree to amend terms in that contract.",
+    ],
+    [
+      "Review and finalize the editable preview before downloading.",
+      "The general addendum is a starting point, so add the specific amendments the parties agreed to for the existing contract.",
+      "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
+    ],
+  ] as const;
+  const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
+  const shouldRenderInlineDocument = Boolean(
+    SelectedComponent && selectedDocument !== "warnings" && selectedDocument !== "addendum",
+  );
   const greetingName = profile?.user_name ?? "";
   const breadcrumbParts: string[] = [];
   if (activeCategoryTitle) breadcrumbParts.push(activeCategoryTitle);
@@ -249,7 +281,16 @@ const Documents = () => {
                                   <button
                                     key={item.label}
                                     type="button"
-                                    onClick={() => setSelectedDocument(item.id!)}
+                                    onClick={() => {
+                                      if (item.id === "warnings" || item.id === "addendum") {
+                                        setSelectedDocument(item.id);
+                                        setStepMeta(null);
+                                        setBreadcrumbStep(null);
+                                        setModalDocument(item.id);
+                                        return;
+                                      }
+                                      setSelectedDocument(item.id!);
+                                    }}
                                     className={cn(
                                       "w-full rounded-none border-b-2 border-transparent px-3 py-2 text-left text-xs transition-all duration-150",
                                       "text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-0",
@@ -278,7 +319,11 @@ const Documents = () => {
               </div>
             </div>
 
-            {SelectedComponent && stepMeta?.steps?.length && selectedDocument !== "codeOfConduct" ? (
+            {SelectedComponent &&
+            stepMeta?.steps?.length &&
+            selectedDocument !== "codeOfConduct" &&
+            selectedDocument !== "warnings" &&
+            selectedDocument !== "addendum" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
                   <div className="flex items-start">
@@ -398,7 +443,7 @@ const Documents = () => {
               data-documents-scroll
               className="relative flex-1 overflow-y-auto overflow-x-hidden pr-2"
             >
-              {SelectedComponent ? (
+              {shouldRenderInlineDocument ? (
                 <Suspense
                   fallback={
                     <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
@@ -452,6 +497,202 @@ const Documents = () => {
           </div>
         </div>
       </div>
+      <Dialog
+        open={Boolean(modalDocument)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setModalDocument(null);
+          if (!open) {
+            setStepMeta(null);
+            setBreadcrumbStep(null);
+          }
+        }}
+      >
+      <DialogContent
+        className={cn(
+          "p-0 [&>button]:right-5 [&>button]:top-4",
+          modalDocument === "addendum"
+            ? "h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] shadow-2xl overflow-y-auto overflow-x-hidden"
+            : "h-[90vh] max-w-[1320px] overflow-hidden border border-slate-200",
+        )}
+      >
+          <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
+          {modalDocument === "addendum" ? (
+            <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
+              <header className="flex items-center justify-between px-6 pt-4 pb-3">
+                <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
+                  <Menu className="h-3.5 w-3.5 -ml-1" />
+                  <span className="font-semibold text-slate-700">Documents / Contracts / Addendum</span>
+                </div>
+              </header>
+              <div className="min-h-0 flex-1 px-6 pb-4">
+                <div className="flex h-full min-h-0 items-stretch gap-4">
+                  <aside className="h-full w-[280px] rounded-sm border border-slate-300 bg-white p-4">
+                    <div className="space-y-3">
+                      {modalSteps.map((step, index) => {
+                        const isActive = index === modalActiveStep;
+                        const isComplete = index < modalActiveStep;
+                        return (
+                          <div
+                            key={step}
+                            className={cn(
+                              "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
+                              isActive
+                                ? "border-blue-300 bg-blue-50"
+                                : isComplete
+                                  ? "border-emerald-300 bg-emerald-50"
+                                  : "border-slate-300 bg-white",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
+                                isActive
+                                  ? "border-blue-600 bg-blue-600 text-white"
+                                  : isComplete
+                                    ? "border-emerald-600 bg-emerald-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-500",
+                              )}
+                            >
+                              {index + 1}
+                            </span>
+                            <span
+                              className={cn(
+                                "text-xs font-semibold leading-5",
+                                isActive ? "text-blue-700" : isComplete ? "text-emerald-700" : "text-slate-600",
+                              )}
+                            >
+                              {step}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-4 rounded-sm bg-white px-3 py-3">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-700">Notes:</h3>
+                      <div className="mt-2 space-y-2">
+                        {addendumActiveNotes.map((note) => (
+                          <p key={note} className="text-[11px] leading-5 text-slate-600">
+                            {note}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </aside>
+                  <div className="min-w-0 flex-1">
+                    <section className="rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4">
+                      <Suspense
+                        fallback={
+                          <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
+                            Loading document generator...
+                          </div>
+                        }
+                      >
+                        <div className="space-y-2">
+                          {ModalComponent ? (
+                            <ModalComponent
+                              embedded
+                              externalNavigation
+                              onStepChange={setBreadcrumbStep}
+                              onStepMetaChange={setStepMeta}
+                            />
+                          ) : null}
+                        </div>
+                      </Suspense>
+                    </section>
+                    <div className="mt-3 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => stepMeta?.onBack?.()}
+                        disabled={!stepMeta?.canGoBack}
+                        className="h-[28px] w-[84px] rounded border border-blue-600 px-3 text-xs font-semibold text-blue-600 hover:bg-transparent hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => stepMeta?.onNext?.()}
+                        disabled={!stepMeta?.canGoNext}
+                        className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {stepMeta?.isFinished ? "Download" : "Next"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full min-h-0 bg-slate-50">
+              <aside className="w-[280px] border-r border-slate-200 bg-white p-5">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Discipline</p>
+                  <h2 className="text-base font-semibold text-slate-900">{modalTitle}</h2>
+                </div>
+                <div className="mt-6 space-y-3">
+                  {modalSteps.map((step, index) => {
+                    const isActive = index === modalActiveStep;
+                    const isComplete = index < modalActiveStep;
+                    return (
+                      <div
+                        key={step}
+                        className={cn(
+                          "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
+                          isActive
+                            ? "border-blue-300 bg-blue-50"
+                            : isComplete
+                              ? "border-emerald-300 bg-emerald-50"
+                              : "border-slate-200 bg-white",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
+                            isActive
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : isComplete
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : "border-slate-300 bg-white text-slate-500",
+                          )}
+                        >
+                          {index + 1}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-xs font-semibold leading-5",
+                            isActive ? "text-blue-700" : isComplete ? "text-emerald-700" : "text-slate-600",
+                          )}
+                        >
+                          {step}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </aside>
+              <section className="min-w-0 flex-1 overflow-y-auto bg-white px-5 py-4">
+                <Suspense
+                  fallback={
+                    <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
+                      Loading document generator...
+                    </div>
+                  }
+                >
+                  <div className="space-y-2">
+                    {ModalComponent ? (
+                      <ModalComponent
+                        embedded
+                        onStepChange={setBreadcrumbStep}
+                        onStepMetaChange={setStepMeta}
+                      />
+                    ) : null}
+                  </div>
+                </Suspense>
+              </section>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

@@ -9,9 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -197,7 +196,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
 
   return (
     <div
-      className="bg-white text-black p-8 mx-auto border border-slate-200 shadow-sm flex flex-col"
+      className="bg-white text-black p-8 mx-auto shadow-sm flex flex-col"
       style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
     >
       <h1 className="text-xl font-bold text-center text-gray-900 mb-8 uppercase tracking-wide">{documentTitle}</h1>
@@ -236,10 +235,12 @@ const FirstPagePreview = ({ data, compact = false, children, profile }: FirstPag
 
 const AddendumGenerator = ({
   embedded = false,
+  externalNavigation = false,
   onStepChange,
   onStepMetaChange,
 }: {
   embedded?: boolean;
+  externalNavigation?: boolean;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -249,6 +250,7 @@ const AddendumGenerator = ({
     canGoBack?: boolean;
     onNext?: () => void;
     onBack?: () => void;
+    isFinished?: boolean;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -258,7 +260,6 @@ const AddendumGenerator = ({
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
-  const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
@@ -282,6 +283,17 @@ const AddendumGenerator = ({
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const previewScrollTop = useRef(0);
+  const baseModalFieldClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+  const addendumModalDropdownToneClass =
+    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+  const addendumModalSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const getAddendumModalInputClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+  const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+  const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
   const snippetContainerWidthMm = 150;
@@ -296,8 +308,8 @@ const AddendumGenerator = ({
 
   useEffect(() => {
     if (!embedded) return;
-    onStepChange?.(steps[activeStep] ?? null);
-  }, [activeStep, embedded, onStepChange, steps]);
+    onStepChange?.(showFinalActions ? "Preview / Download" : (steps[activeStep] ?? null));
+  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
 
 
   const [formData, setFormData] = useState<ContractFormState>({
@@ -487,7 +499,6 @@ const AddendumGenerator = ({
     });
     setSelectedEmployeeId("");
     setValidatedPreview(null);
-    setShowPreview(false);
     setShowFinalActions(false);
     setActiveStep(0);
     setClauseEdits({});
@@ -597,6 +608,11 @@ const AddendumGenerator = ({
   };
 
   const handleBack = () => {
+    if (showFinalActions) {
+      setShowFinalActions(false);
+      setActiveStep(steps.length - 1);
+      return;
+    }
     if (activeStep > 0) {
       setActiveStep((prev) => prev - 1);
     }
@@ -608,10 +624,11 @@ const AddendumGenerator = ({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext: canAdvance,
-      canGoBack: activeStep > 0,
-      onNext: handleNextOrFinish,
+      canGoNext: showFinalActions ? !isGenerating : canAdvance,
+      canGoBack: showFinalActions || activeStep > 0,
+      onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
+      isFinished: showFinalActions,
     });
   }, [
     activeStep,
@@ -622,7 +639,10 @@ const AddendumGenerator = ({
     canAdvance,
     handleNextOrFinish,
     handleBack,
+    handleDownload,
+    isGenerating,
     isFormComplete,
+    showFinalActions,
   ]);
 
   const resetEmployeeStepFields = () => {
@@ -665,7 +685,7 @@ const AddendumGenerator = ({
     if (scrollEl && scrollEl.scrollTop !== previewScrollTop.current) {
       scrollEl.scrollTop = previewScrollTop.current;
     }
-  }, [addingAfter, editingClause, showPreview, getPreviewScrollElement]);
+  }, [addingAfter, editingClause, getPreviewScrollElement]);
 
   const openEffectiveDatePicker = () => {
     const picker = effectiveDatePickerRef.current;
@@ -1183,15 +1203,7 @@ const AddendumGenerator = ({
             `This Addendum records the renewal of the employment relationship and constitutes a new fixed-term contract of employment for the period commencing on ${recordEffectiveDisplay || "________________________"} and ending on ${newEndDateDisplay || "________________________"}.`,
             "Save as expressly amended by this Addendum, all terms and conditions of the previous employment contract shall apply to the renewed fixed-term period of employment.",
           ]
-        : fillClausePlaceholders(
-            [
-              "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
-              "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
-            ],
-            contractRefDisplay,
-            recordEffectiveDisplay,
-            newEndDateDisplay,
-          );
+        : "This Addendum must be read together with the employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.";
 
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
@@ -1333,23 +1345,7 @@ const AddendumGenerator = ({
     }
   };
 
-  const handlePreview = () => {
-    try {
-      const validated = validateData();
-      setValidatedPreview(validated);
-      setShowPreview(true);
-      setShowFinalActions(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Please check the required fields.";
-      toast({
-        title: "Validation error",
-        description: message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDownload = () => {
+  function handleDownload() {
     try {
       setIsGenerating(true);
       const validated = validateData();
@@ -1364,9 +1360,9 @@ const AddendumGenerator = ({
     } finally {
       setIsGenerating(false);
     }
-  };
+  }
 
-  const handleFinish = () => {
+  function handleFinish() {
     try {
       const validated = validateData();
       setValidatedPreview(validated);
@@ -1379,15 +1375,7 @@ const AddendumGenerator = ({
         variant: "destructive",
       });
     }
-  };
-
-  const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
-  const previewSubtitle =
-    validatedPreview?.addendumType === "extension"
-      ? `Review and edit the extension to the temporary employment contract for ${employeeFullName || "the employee"}.`
-      : employeeFullName
-        ? `Review and edit the addendum to the employment contract for ${employeeFullName}.`
-        : "Review and edit the addendum to the employment contract.";
+  }
 
   if (loading) {
     return (
@@ -1396,6 +1384,7 @@ const AddendumGenerator = ({
       </div>
     );
   }
+  const useExternalShell = embedded && externalNavigation;
 
   const content = (
     <>
@@ -1447,11 +1436,12 @@ const AddendumGenerator = ({
         className={cn(
           "space-y-6",
           embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+          useExternalShell && "pt-0 pr-0 pb-0",
         )}
         style={{ scrollbarGutter: "stable" }}
       >
         {!showFinalActions ? (
-          <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0")}>
             {!embedded && (
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-center gap-8 w-full">
@@ -1529,54 +1519,55 @@ const AddendumGenerator = ({
             )}
             <CardContent
               className={cn(
-                "pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                "pt-1 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
                 !embedded && "flex-1 min-h-0 overflow-y-auto",
+                useExternalShell && "p-0",
               )}
             >
-            <div className="space-y-4">
+              <div className="space-y-4">
               {activeStep === 0 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="companyName">Company name</Label>
+                      <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
                       <Input
                         id="companyName"
                         value={profile?.company_name || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getAddendumModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="registrationNumber">Registration number</Label>
+                      <Label htmlFor="registrationNumber" className={modalFieldLabelClass}>Registration number</Label>
                       <Input
                         id="registrationNumber"
                         value={profile?.registration_number || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getAddendumModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="physicalAddress">Registered address</Label>
+                      <Label htmlFor="physicalAddress" className={modalFieldLabelClass}>Registered address</Label>
                       <Input
                         id="physicalAddress"
                         value={profile?.physical_address || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getAddendumModalInputClass(Boolean(profile?.physical_address))}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="tradingName">Trading name</Label>
+                      <Label htmlFor="tradingName" className={modalFieldLabelClass}>Trading name</Label>
                       <Input
                         id="tradingName"
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
                         placeholder="If different from registered name"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getAddendumModalInputClass(formData.tradingName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact">Employer contact *</Label>
+                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>Employer contact *</Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1585,17 +1576,17 @@ const AddendumGenerator = ({
                           setFormData({ ...formData, employerContact: digitsOnly });
                         }}
                         placeholder="10-digit contact number"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getAddendumModalInputClass(formData.employerContact.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail">Employer email *</Label>
+                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>Employer email *</Label>
                       <Input
                         id="employerEmail"
                         type="email"
                         value={formData.employerEmail}
                         onChange={(e) => setFormData({ ...formData, employerEmail: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getAddendumModalInputClass(formData.employerEmail.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1603,44 +1594,44 @@ const AddendumGenerator = ({
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3">
                     <div className="space-y-2.5">
                       <div className="space-y-1.5">
-                        <Label htmlFor="employee">Select Employee (optional)</Label>
+                        <Label htmlFor="employee" className={modalFieldLabelClass}>Select Employee (optional)</Label>
                       <Select value={selectedEmployeeId} onValueChange={handleEmployeeSelect}>
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-gray-900">
+                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${addendumModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
                         <SelectContent className="w-[var(--radix-select-trigger-width)]">
                           {employees.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id}>
+                            <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
                               {employee.employee_name} {employee.employee_surname}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      </div>
+                    </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeName">Employee Name *</Label>
+                        <Label htmlFor="employeeName" className={modalFieldLabelClass}>Employee Name *</Label>
                         <Input
                           id="employeeName"
                           value={formData.employeeName}
                           onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                          className={getAddendumModalInputClass(formData.employeeName.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeSurname">Employee Surname *</Label>
+                        <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>Employee Surname *</Label>
                         <Input
                           id="employeeSurname"
                           value={formData.employeeSurname}
                           onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                          className={getAddendumModalInputClass(formData.employeeSurname.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label>ID/Passport *</Label>
+                        <Label className={modalFieldLabelClass}>ID/Passport *</Label>
                         <Select
                           value={formData.idType}
                           onValueChange={(value) => {
@@ -1650,17 +1641,17 @@ const AddendumGenerator = ({
                             }));
                           }}
                         >
-                          <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                          <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.idType))} ${addendumModalDropdownToneClass}`}>
                             <SelectValue placeholder="Choose document type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="id">ID Number</SelectItem>
-                            <SelectItem value="passport">Passport Number</SelectItem>
+                            <SelectItem value="id" className={addendumModalSelectItemClass}>ID Number</SelectItem>
+                            <SelectItem value="passport" className={addendumModalSelectItemClass}>Passport Number</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="idOrPassport">
+                        <Label htmlFor="idOrPassport" className={modalFieldLabelClass}>
                           {formData.idType === "id" ? "ID Number *" : "Passport Number *"}
                         </Label>
                         <Input
@@ -1683,7 +1674,11 @@ const AddendumGenerator = ({
                               }));
                             }
                           }}
-                          className={`focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 ${
+                          className={`${getAddendumModalInputClass(
+                            formData.idType === "id"
+                              ? formData.employeeIdNumber.trim().length > 0
+                              : formData.passportNumber.trim().length > 0,
+                          )} ${
                             isIdDateInvalid ? "border-red-500 ring-red-500" : ""
                           }`}
                           placeholder={
@@ -1697,10 +1692,10 @@ const AddendumGenerator = ({
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-white p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="addendumType">Addendum Type *</Label>
+                      <Label htmlFor="addendumType" className={modalFieldLabelClass}>Addendum Type *</Label>
                       <Select
                         value={formData.addendumType}
                         onValueChange={(value) => {
@@ -1715,7 +1710,7 @@ const AddendumGenerator = ({
                           }));
                         }}
                       >
-                        <SelectTrigger className="addendum-select focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700">
+                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.addendumType))} ${addendumModalDropdownToneClass}`}>
                           <SelectValue
                             placeholder="Select addendum type"
                             className="data-[placeholder]:text-slate-400"
@@ -1724,7 +1719,7 @@ const AddendumGenerator = ({
                         </SelectTrigger>
                         <SelectContent>
                           {addendumTypeOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
                               {option.label}
                             </SelectItem>
                           ))}
@@ -1732,7 +1727,7 @@ const AddendumGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate">Effective Date *</Label>
+                      <Label htmlFor="effectiveDate" className={modalFieldLabelClass}>Effective Date *</Label>
                       <div className="flex items-start gap-2">
                         <Input
                           id="effectiveDate"
@@ -1748,7 +1743,7 @@ const AddendumGenerator = ({
                               openEffectiveDatePicker();
                             }
                           }}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                         />
                         <input
                           ref={effectiveDatePickerRef}
@@ -1764,7 +1759,7 @@ const AddendumGenerator = ({
                     {formData.addendumType === "extension" || formData.addendumType === "renewal" ? (
                       <>
                         <div className="space-y-1.5">
-                          <Label htmlFor="contractEndDate">What was the previous contract end date? *</Label>
+                          <Label htmlFor="contractEndDate" className={modalFieldLabelClass}>What was the previous contract end date? *</Label>
                           <div className="flex items-start gap-2">
                             <Input
                               id="contractEndDate"
@@ -1780,7 +1775,7 @@ const AddendumGenerator = ({
                                   openContractEndDatePicker();
                                 }
                               }}
-                              className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                              className={`${getAddendumModalInputClass(formData.contractEndDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                             />
                             <input
                               ref={contractEndDatePickerRef}
@@ -1798,7 +1793,7 @@ const AddendumGenerator = ({
                           </div>
                         </div>
                         <div className="space-y-1.5">
-                          <Label htmlFor="newEndDate">New End Date *</Label>
+                          <Label htmlFor="newEndDate" className={modalFieldLabelClass}>New End Date *</Label>
                           <div className="flex items-start gap-2">
                             <Input
                               id="newEndDate"
@@ -1814,7 +1809,7 @@ const AddendumGenerator = ({
                                   openNewEndDatePicker();
                                 }
                               }}
-                              className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                              className={`${getAddendumModalInputClass(formData.newEndDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                             />
                             <input
                               ref={newEndDatePickerRef}
@@ -1835,7 +1830,7 @@ const AddendumGenerator = ({
                     ) : null}
                     {formData.addendumType === "general" ? (
                       <div className="space-y-1.5 md:col-span-2">
-                        <Label htmlFor="contractReference">Reference the date of issuing or signing of the contract this addendum applies to *</Label>
+                        <Label htmlFor="contractReference" className={modalFieldLabelClass}>Select the date of the employment contract (signature or isuing date) *</Label>
                         <div className="flex items-start gap-2">
                           <Input
                             id="contractReference"
@@ -1852,7 +1847,7 @@ const AddendumGenerator = ({
                               }
                             }}
                             aria-required="true"
-                            className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900 flex-1 cursor-pointer placeholder:text-gray-900"
+                            className={`${getAddendumModalInputClass(formData.contractReference.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                           />
                           <input
                             ref={contractReferencePickerRef}
@@ -1875,21 +1870,20 @@ const AddendumGenerator = ({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                {!(embedded && externalNavigation) ? (
+                  <>
                 {activeStep === steps.length - 1 ? (
                   <div className="flex w-full items-center gap-3 flex-wrap justify-between">
-                    {!embedded && (
-                      <div className="flex-none">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleBack}
-                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex-none">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBack}
+                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                      >
+                        Back
+                      </Button>
+                    </div>
                     <div className="flex-1 flex justify-center">
                       <TooltipProvider delayDuration={0}>
                         <Tooltip>
@@ -1910,40 +1904,31 @@ const AddendumGenerator = ({
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    {!embedded && (
-                      <div className="flex-none relative">
-                        <Button
-                          type="button"
-                          onClick={handleFinish}
-                          disabled={!isFormComplete || isGenerating}
-                          className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                            isFormComplete && !isGenerating
-                              ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                              : "bg-primary hover:bg-primary/90 border border-primary/60"
-                          }`}
-                        >
-                          Finish
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex-none relative">
+                      <Button
+                        type="button"
+                        onClick={handleFinish}
+                        disabled={!isFormComplete || isGenerating}
+                        className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex w-full items-center justify-between gap-2 flex-wrap">
-                    {!embedded && (
-                      <div className="flex-none">
-                        {activeStep > 0 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleBack}
-                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                          >
-                            <ArrowLeft className="h-4 w-4" />
-                            Back
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex-none">
+                      {activeStep > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        >
+                          Back
+                        </Button>
+                      )}
+                    </div>
                     <div className="flex-1 flex justify-center">
                       {activeStep === 1 ? (
                         <Button
@@ -1958,127 +1943,31 @@ const AddendumGenerator = ({
                         </Button>
                       ) : null}
                     </div>
-                    {!embedded && (
-                      <div className="flex-none">
-                        {activeStep < steps.length - 1 && (
-                          <Button
-                            type="button"
-                            onClick={handleNext}
-                            disabled={!canGoNext}
-                            className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
-                          >
-                            Next
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex-none">
+                      {activeStep < steps.length - 1 && (
+                        <Button
+                          type="button"
+                          onClick={handleNext}
+                          disabled={!canGoNext}
+                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                        >
+                          Next
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
+                  </>
+                ) : null}
               </div>
             </div>
           </CardContent>
           </Card>
           ) : (
-            <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 contents")}>
               <CardHeader className="pt-4 pb-0" />
-              <CardContent className="space-y-6 pt-2">
-                <div className="flex flex-col items-center gap-3">
-                  <div
-                    className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
-                    style={{
-                      width: `${snippetContainerWidthMm}mm`,
-                      height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
-                    }}
-                    >
-                      {validatedPreview ? (
-                        <div className="relative h-full w-full overflow-hidden">
-                          <div
-                            className="absolute left-1/2 top-0 transform-gpu blur-[2px]"
-                            style={{
-                              width: "210mm",
-                              height: `${snippetVisibleHeightMm}mm`,
-                              overflow: "hidden",
-                              marginTop: `${snippetPaddingTopMm}mm`,
-                              transform: `translateX(-50%) scale(${snippetScale})`,
-                              transformOrigin: "top center",
-                            }}
-                          >
-                            <div style={{ height: "297mm", overflow: "hidden" }}>
-                              <FirstPagePreview data={validatedPreview} compact profile={profile} />
-                            </div>
-                          </div>
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="flex items-center justify-center gap-3">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={handlePreview}
-                                disabled={isGenerating}
-                                aria-label="Preview"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <FileText />
-                                  <span className="text-sm font-semibold">Preview</span>
-                                </div>
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={handleDownload}
-                                disabled={isGenerating}
-                                aria-label="Download PDF"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <Download />
-                                  <span className="text-sm font-semibold">Download</span>
-                                </div>
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-6 text-sm text-slate-600">Complete the form and click Finish to see the first-page preview.</div>
-                      )}
-                    </div>
-
-                <div className="flex w-full items-center gap-2">
-                  <div className="flex-none">
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowFinalActions(false)}
-                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                    >
-                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                      Back to form
-                    </Button>
-                  </div>
-                  <div className="flex-1" />
-                  <div className="flex-none opacity-0 pointer-events-none">
-                    <Button variant="outline" className="gap-2 border-transparent">
-                      Placeholder
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl h-[90vh] p-0">
-          <DialogHeader className="px-6 pt-6 pr-10">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <DialogTitle className="text-blue-600">Preview - Addendum</DialogTitle>
-                <DialogDescription>{previewSubtitle}</DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <ScrollArea className="h-full px-6 pb-6" ref={previewScrollRef}>
+              <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
+                  <ScrollArea className="h-[62vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
               const displayValue = (value?: string | number | null) =>
                 value && value.toString().trim() ? value.toString() : "________________________";
@@ -2153,15 +2042,7 @@ const AddendumGenerator = ({
                 `This Addendum records the renewal of the employment relationship and constitutes a new fixed-term contract of employment for the period commencing on ${effectiveDisplay || "________________________"} and ending on ${newEndDateDisplay || "________________________"}.`,
                 "Save as expressly amended by this Addendum, all terms and conditions of the previous employment contract shall apply to the renewed fixed-term period of employment.",
               ]
-            : fillClausePlaceholders(
-                [
-                  "This Addendum must be read together with the temporary employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
-                  "Effective from [effective date], the temporary employment contract, referred to above, is extended until [new end date].",
-                ],
-                contractRefDisplay,
-                effectiveDisplay,
-                newEndDateDisplay,
-              ),
+            : "This Addendum must be read together with the employment contract referred to above, and unless amended, all terms and conditions thereof shall remain unchanged and of full force and effect.",
       },
       ...(isExtension
         ? [
@@ -2307,7 +2188,7 @@ const AddendumGenerator = ({
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
                                   {isFormOpen ? (
-                                    <div className="w-full rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-4">
+                                    <div className="w-full rounded-md bg-slate-50/60 p-4">
                                       <div className="grid gap-3">
                                         <div className="grid gap-1 text-left">
                                           <Label className="text-xs">Amendment type</Label>
@@ -2357,7 +2238,7 @@ const AddendumGenerator = ({
                                           <div className="flex items-center gap-2">
                                             <Button
                                               size="sm"
-                                              className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                              className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                                               onClick={saveNewClause}
                                               disabled={
                                                 !newClauseAmendmentType ||
@@ -2367,7 +2248,12 @@ const AddendumGenerator = ({
                                             >
                                               Add clause
                                             </Button>
-                                            <Button size="sm" variant="ghost" className="h-8 px-3" onClick={cancelAddClause}>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                                              onClick={cancelAddClause}
+                                            >
                                               Cancel
                                             </Button>
                                           </div>
@@ -2413,7 +2299,7 @@ const AddendumGenerator = ({
                               const isEdited = Boolean(clauseEdits[clause.id]);
                               const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
                               return [
-                                <div key={clause.id} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                <div key={clause.id} className="space-y-2 rounded-md p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                       <h3 className="font-semibold text-black">{clause.title}</h3>
@@ -2445,7 +2331,7 @@ const AddendumGenerator = ({
                                         <>
                                           <Button
                                             size="sm"
-                                            className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
+                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                                             onClick={() => saveClauseEdit(clause.id)}
                                           >
                                             Save
@@ -2453,7 +2339,7 @@ const AddendumGenerator = ({
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="h-8 px-3"
+                                            className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                                             onClick={() => {
                                               setEditingClause(null);
                                               setClauseDraft("");
@@ -2464,8 +2350,8 @@ const AddendumGenerator = ({
                                           {isEdited ? (
                                             <Button
                                               size="sm"
-                                              variant="ghost"
-                                              className="h-8 px-3 text-slate-600 hover:text-slate-800"
+                                              variant="outline"
+                                              className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                                               onClick={() => resetClauseEdit(clause.id)}
                                             >
                                               Reset
@@ -2477,7 +2363,7 @@ const AddendumGenerator = ({
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="h-8 px-3"
+                                            className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
                                             onClick={() => startEditingClause(clause)}
                                           >
                                             Edit
@@ -2485,8 +2371,8 @@ const AddendumGenerator = ({
                                           {isCustomClause ? (
                                             <Button
                                               size="sm"
-                                              variant="ghost"
-                                              className="h-8 px-3 text-red-600 hover:text-red-700"
+                                              variant="outline"
+                                              className="h-[28px] rounded border-red-500 px-3 text-xs text-red-600 hover:bg-transparent hover:text-red-700"
                                               onClick={() => deleteCustomClause(clause.id)}
                                             >
                                               Delete
@@ -2579,8 +2465,24 @@ const AddendumGenerator = ({
               </div>
             )}
           </ScrollArea>
-        </DialogContent>
-      </Dialog>
+                {!useExternalShell ? (
+                  <div className="flex w-full items-center justify-end gap-2">
+                    <div className="flex-none">
+                      <Button
+                        type="button"
+                        onClick={handleDownload}
+                        disabled={isGenerating}
+                        className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                      >
+                        Download
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </>
   );
 
@@ -2588,6 +2490,7 @@ const AddendumGenerator = ({
 };
 
 export default AddendumGenerator;
+
 
 
 

@@ -1668,7 +1668,21 @@ const Employees = () => {
     totalEmployeeCount === 0
       ? 0
       : Math.min((currentPage - 1) * DEFAULT_PAGE_SIZE + filteredEmployees.length, totalEmployeeCount);
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const paginationItems = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1) as Array<number | "...">;
+    }
+
+    if (currentPage <= 3) {
+      return [1, 2, 3, 4, "...", totalPages];
+    }
+
+    if (currentPage >= totalPages - 2) {
+      return [1, "...", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+
+    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+  }, [currentPage, totalPages]);
   const activeEmployeeFilterCount =
     Number(employeeStatusFilter !== "active") +
     Number(contractFilter !== "all") +
@@ -8224,7 +8238,7 @@ const Employees = () => {
                 )}
                 </div>
                 <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
-                  Employees {tableRangeStart}-{tableRangeEnd} of {totalEmployeeCount}
+                  <span className="text-slate-900">{tableRangeStart}-{tableRangeEnd}</span> of {totalEmployeeCount} employees
                 </p>
               </div>
               <div className="flex items-center gap-2 justify-end">
@@ -8674,21 +8688,27 @@ const Employees = () => {
                       Previous
                     </Button>
                     <div className="flex max-w-[420px] items-center gap-1 overflow-x-auto px-1 py-0.5">
-                      {pageNumbers.map((page) => (
-                        <Button
-                          key={page}
-                          type="button"
-                          variant="outline"
-                          onClick={() => setCurrentPage(page)}
-                          className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
-                            currentPage === page
-                              ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                              : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                          }`}
-                        >
-                          {page}
-                        </Button>
-                      ))}
+                      {paginationItems.map((item, index) =>
+                        item === "..." ? (
+                          <span key={`ellipsis-${index}`} className="px-1 text-[11px] font-semibold text-slate-500">
+                            ...
+                          </span>
+                        ) : (
+                          <Button
+                            key={item}
+                            type="button"
+                            variant="outline"
+                            onClick={() => setCurrentPage(item)}
+                            className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
+                              currentPage === item
+                                ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                                : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                            }`}
+                          >
+                            {item}
+                          </Button>
+                        ),
+                      )}
                     </div>
                     <Button
                       variant="outline"

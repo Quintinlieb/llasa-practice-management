@@ -786,6 +786,55 @@ export const employeeImportSchema = z.object({
     .refine((val) => !val || nationalityOptions.includes(val as (typeof nationalityOptions)[number]), {
       message: `Nationality must be one of: ${nationalityOptions.join(", ")}`,
     }),
+  cellNumber: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  email: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  incomeTaxNumber: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  addressLine1: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  addressLine2: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  city: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
+  province: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => {
+      const trimmed = typeof val === "string" ? val.trim() : "";
+      if (!trimmed) return "";
+      const match = southAfricanProvinces.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+      return match ?? trimmed;
+    })
+    .refine(
+      (val) => !val || southAfricanProvinces.includes(val as (typeof southAfricanProvinces)[number]),
+      { message: `Province must be one of: ${southAfricanProvinces.join(", ")}` },
+    ),
+  areaCode: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
   jobTitle: z
     .string()
     .optional()

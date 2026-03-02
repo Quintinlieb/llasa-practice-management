@@ -4919,8 +4919,17 @@ const Employees = () => {
             employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
             gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
+            race: normalizeEnumValue(getColumnValue(row, "Race", "race"), raceOptions),
             contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
             nationality: normalizeEnumValue(getColumnValue(row, "Nationality", "nationality"), nationalityOptions),
+            cellNumber: getColumnValue(row, "Cell Number", "cell_number"),
+            email: getColumnValue(row, "Email", "email"),
+            incomeTaxNumber: getColumnValue(row, "Income Tax Number", "income_tax_number"),
+            addressLine1: getColumnValue(row, "Address Line 1", "physical_address_line1"),
+            addressLine2: getColumnValue(row, "Address Line 2", "physical_address_line2"),
+            city: getColumnValue(row, "City", "city"),
+            province: normalizeEnumValue(getColumnValue(row, "Province", "province"), southAfricanProvinces),
+            areaCode: getColumnValue(row, "Area Code", "area_code"),
             jobTitle: getColumnValue(row, "Job Title", "job_title"),
           };
 
@@ -4933,7 +4942,16 @@ const Employees = () => {
             employee_number: validated.employeeNumber || null,
             contract_type: validated.contractType || null,
             gender: validated.gender || null,
+            race: validated.race || null,
             nationality: validated.nationality || null,
+            cell_number: validated.cellNumber || null,
+            email: validated.email || null,
+            income_tax_number: validated.incomeTaxNumber || null,
+            physical_address_line1: validated.addressLine1 || null,
+            physical_address_line2: validated.addressLine2 || null,
+            city: validated.city || null,
+            province: validated.province || null,
+            area_code: validated.areaCode || null,
             job_title: validated.jobTitle || null,
           });
         } catch (err: unknown) {
@@ -4986,10 +5004,20 @@ const Employees = () => {
       { header: "Surname", key: "employeeSurname", width: 18 },
       { header: "ID Number", key: "idNumber", width: 18 },
       { header: "Gender", key: "gender", width: 12 },
+      { header: "Race", key: "race", width: 14 },
       { header: "Nationality", key: "nationality", width: 18 },
+      { header: "Cell Number", key: "cellNumber", width: 16 },
+      { header: "Email", key: "email", width: 26 },
+      { header: "Income Tax Number", key: "incomeTaxNumber", width: 20 },
       { header: "Contract Type", key: "contractType", width: 16 },
       { header: "Job Title", key: "jobTitle", width: 20 },
+      { header: "Address Line 1", key: "addressLine1", width: 24 },
+      { header: "Address Line 2", key: "addressLine2", width: 24 },
+      { header: "City", key: "city", width: 18 },
+      { header: "Province", key: "province", width: 20 },
+      { header: "Area Code", key: "areaCode", width: 12 },
     ];
+    worksheet.getRow(1).font = { bold: true };
 
     worksheet.addRow({
       employeeNumber: "A0001",
@@ -4997,9 +5025,18 @@ const Employees = () => {
       employeeSurname: "Doe",
       idNumber: "9001015009087",
       gender: "Male",
+      race: "African",
       nationality: "South African",
+      cellNumber: "0821234567",
+      email: "john.doe@example.com",
+      incomeTaxNumber: "1234567890",
       contractType: "Permanent",
       jobTitle: "Store Manager",
+      addressLine1: "123 Main Street",
+      addressLine2: "",
+      city: "Johannesburg",
+      province: "Gauteng",
+      areaCode: "2000",
     });
 
     worksheet.addRow({
@@ -5008,22 +5045,37 @@ const Employees = () => {
       employeeSurname: "Smith",
       idNumber: "8505125800082",
       gender: "Female",
+      race: "White",
       nationality: "Namibian",
+      cellNumber: "0839876543",
+      email: "jane.smith@example.com",
+      incomeTaxNumber: "0987654321",
       contractType: "Temporary",
-      jobTitle: "",
+      jobTitle: "Admin Clerk",
+      addressLine1: "45 Market Road",
+      addressLine2: "Unit 7",
+      city: "Cape Town",
+      province: "Western Cape",
+      areaCode: "8001",
     });
 
     worksheet.getColumn(4).numFmt = "0";
 
     const listSheet = workbook.addWorksheet("Lists");
     listSheet.getColumn(1).values = ["", ...genderOptions];
-    listSheet.getColumn(2).values = ["", ...nationalityOptions];
+    listSheet.getColumn(2).values = ["", ...raceOptions];
+    listSheet.getColumn(3).values = ["", ...nationalityOptions];
+    listSheet.getColumn(4).values = ["", ...southAfricanProvinces];
+    listSheet.getColumn(5).values = ["", ...contractTypes];
     listSheet.state = "veryHidden";
 
     const validationStartRow = 2;
     const validationEndRow = 500;
     const genderFormula = `Lists!$A$2:$A$${genderOptions.length + 1}`;
-    const nationalityFormula = `Lists!$B$2:$B$${nationalityOptions.length + 1}`;
+    const raceFormula = `Lists!$B$2:$B$${raceOptions.length + 1}`;
+    const nationalityFormula = `Lists!$C$2:$C$${nationalityOptions.length + 1}`;
+    const provinceFormula = `Lists!$D$2:$D$${southAfricanProvinces.length + 1}`;
+    const contractTypeFormula = `Lists!$E$2:$E$${contractTypes.length + 1}`;
 
     for (let row = validationStartRow; row <= validationEndRow; row++) {
       worksheet.getCell(row, 5).dataValidation = {
@@ -5034,7 +5086,22 @@ const Employees = () => {
       worksheet.getCell(row, 6).dataValidation = {
         type: "list",
         allowBlank: true,
+        formulae: [raceFormula],
+      };
+      worksheet.getCell(row, 7).dataValidation = {
+        type: "list",
+        allowBlank: true,
         formulae: [nationalityFormula],
+      };
+      worksheet.getCell(row, 16).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [provinceFormula],
+      };
+      worksheet.getCell(row, 11).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [contractTypeFormula],
       };
     }
 
@@ -6360,7 +6427,7 @@ const Employees = () => {
               onChange={(e) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  areaCode: e.target.value,
+                  areaCode: removeWhitespace(e.target.value),
                 }))
               }
             />
@@ -6526,7 +6593,7 @@ const Employees = () => {
               onChange={(e) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  postalAreaCode: e.target.value,
+                  postalAreaCode: removeWhitespace(e.target.value),
                 }))
               }
             />

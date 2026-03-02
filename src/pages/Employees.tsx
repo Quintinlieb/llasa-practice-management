@@ -66,7 +66,6 @@ import {
   UserPlus,
   Users,
   UsersRound,
-  ArrowRight,
   Menu,
   ChevronDown,
   Check,
@@ -115,6 +114,8 @@ const licenceTable = () => (supabase as any).from("employee_licences");
 const educationTable = () => (supabase as any).from("employee_education");
 // Supabase types do not include employee_termination_documents; cast to any for those calls to avoid type errors.
 const terminationDocumentTable = () => (supabase as any).from("employee_termination_documents");
+const employeeTableSelectColumns =
+  "id, employee_name, employee_surname, id_number, status, start_date, contract_type, job_title, cell_number, nationality, gender, race";
 const employeeSelectColumnsBase =
   "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, created_at";
 const employeeSelectColumnsWithTermination =
@@ -977,7 +978,7 @@ const Employees = () => {
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
+  const [totalEmployeeCount, setTotalEmployeeCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState<"active" | "inactive">("active");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
@@ -1659,8 +1660,15 @@ const Employees = () => {
     tableOffsetTop > 0
       ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
       : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
+  const totalPages = Math.max(1, Math.ceil(totalEmployeeCount / DEFAULT_PAGE_SIZE));
   const isFirstPage = currentPage === 1;
-  const isLastPage = !hasNextPage;
+  const isLastPage = currentPage >= totalPages;
+  const tableRangeStart = totalEmployeeCount === 0 ? 0 : (currentPage - 1) * DEFAULT_PAGE_SIZE + 1;
+  const tableRangeEnd =
+    totalEmployeeCount === 0
+      ? 0
+      : Math.min((currentPage - 1) * DEFAULT_PAGE_SIZE + filteredEmployees.length, totalEmployeeCount);
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
   const activeEmployeeFilterCount =
     Number(employeeStatusFilter !== "active") +
     Number(contractFilter !== "all") +
@@ -3477,28 +3485,40 @@ const Employees = () => {
     selectedEmployeeIndex >= 0 && selectedEmployeeIndex < navigationEmployees.length - 1;
 
   const navigateToEmployee = useCallback(
-    (index: number) => {
+    async (index: number) => {
       const nextEmployee = navigationEmployees[index];
       if (!nextEmployee) return;
-      setSelectedEmployee(nextEmployee);
-      setProfileForm(createProfileFormFromEmployee(nextEmployee));
-      setProbationPeriod(nextEmployee.probation_period ?? "");
-      setUnionMember((nextEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
-      setTradeUnion(nextEmployee.trade_union ?? "");
-      setDepartment((nextEmployee.department as (typeof departmentOptions)[number]) ?? "");
-      setBranch(nextEmployee.branch ?? "");
-      setReportingTo(nextEmployee.reporting_to ?? "");
+      let employeeForProfile = nextEmployee;
+      if (user) {
+        const { data } = await (supabase as any)
+          .from("employees")
+          .select(employeeSelectColumnsWithTermination)
+          .eq("company_id", user.id)
+          .eq("id", nextEmployee.id)
+          .maybeSingle();
+        if (data) {
+          employeeForProfile = data as Employee;
+        }
+      }
+      setSelectedEmployee(employeeForProfile);
+      setProfileForm(createProfileFormFromEmployee(employeeForProfile));
+      setProbationPeriod(employeeForProfile.probation_period ?? "");
+      setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
+      setTradeUnion(employeeForProfile.trade_union ?? "");
+      setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
+      setBranch(employeeForProfile.branch ?? "");
+      setReportingTo(employeeForProfile.reporting_to ?? "");
       setOccupationalLevel(
-        (nextEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+        (employeeForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
       );
-      setSalaryType((nextEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-      setBasicSalary(nextEmployee.basic_salary ?? "");
-      setWorkEmail(nextEmployee.work_email ?? "");
-      setWorkCellNumber(nextEmployee.work_cell_number ?? "");
+      setSalaryType((employeeForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+      setBasicSalary(employeeForProfile.basic_salary ?? "");
+      setWorkEmail(employeeForProfile.work_email ?? "");
+      setWorkCellNumber(employeeForProfile.work_cell_number ?? "");
       setActiveTab("personal");
       setIsEditMode(false);
     },
-    [navigationEmployees],
+    [navigationEmployees, user],
   );
 
   const toggleWarningMisconduct = (type: string) => {
@@ -3593,7 +3613,7 @@ const Employees = () => {
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
                 onClick={(event) => {
                   if (!guardEditSession(event)) return;
-                  navigateToEmployee(selectedEmployeeIndex - 1);
+                  void navigateToEmployee(selectedEmployeeIndex - 1);
                 }}
                 disabled={!hasPreviousEmployee}
               >
@@ -3608,7 +3628,7 @@ const Employees = () => {
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
                 onClick={(event) => {
                   if (!guardEditSession(event)) return;
-                  navigateToEmployee(selectedEmployeeIndex + 1);
+                  void navigateToEmployee(selectedEmployeeIndex + 1);
                 }}
                 disabled={!hasNextEmployee}
               >
@@ -4033,45 +4053,44 @@ const Employees = () => {
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
     const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
-    const to = from + DEFAULT_PAGE_SIZE;
+    const to = from + DEFAULT_PAGE_SIZE - 1;
     const queryText = searchQuery.trim();
-    const runEmployeesQuery = async (selectColumns: string) => {
-      let query = (supabase as any)
-        .from("employees")
-        .select(selectColumns)
-        .eq("company_id", user.id);
+    let query = (supabase as any)
+      .from("employees")
+      .select(employeeTableSelectColumns)
+      .eq("company_id", user.id);
 
-      if (contractFilter !== "all") {
-        query = query.ilike("contract_type", contractFilter);
-      }
-      if (employeeStatusFilter === "inactive") {
-        query = query.eq("status", "inactive");
-      }
-
-      if (queryText.length > 0) {
-        const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
-        query = query.or(
-          `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
-        );
-      }
-
-      return await query
-        .order("employee_name", { ascending: true, nullsFirst: false })
-        .order("employee_surname", { ascending: true, nullsFirst: false })
-        .range(from, to);
-    };
-
-    let { data, error } = await runEmployeesQuery(employeeSelectColumnsWithTermination);
-    if (error) {
-      const message = (error as { message?: string } | null)?.message ?? "";
-      const isTerminationColumnMissing =
-        message.includes("termination_reason") ||
-        message.includes("previous_job_title") ||
-        message.includes("terminated_at");
-      if (isTerminationColumnMissing) {
-        ({ data, error } = await runEmployeesQuery(employeeSelectColumnsBase));
-      }
+    if (contractFilter !== "all") {
+      query = query.ilike("contract_type", contractFilter);
     }
+    if (employeeStatusFilter === "inactive") {
+      query = query.eq("status", "inactive");
+    } else {
+      query = query.or("status.is.null,status.eq.active");
+    }
+    if (genderFilter !== "all") {
+      query = query.ilike("gender", genderFilter);
+    }
+    if (raceFilter !== "all") {
+      query = query.ilike("race", raceFilter);
+    }
+    if (nationalityFilter === "RSA") {
+      query = query.ilike("nationality", "south african");
+    } else if (nationalityFilter === "Other") {
+      query = query.or("nationality.is.null,nationality.not.ilike.south african");
+    }
+
+    if (queryText.length > 0) {
+      const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
+      query = query.or(
+        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
+      );
+    }
+
+    const { data, error } = await query
+      .order("employee_name", { ascending: true, nullsFirst: false })
+      .order("employee_surname", { ascending: true, nullsFirst: false })
+      .range(from, to);
 
     if (error) {
       toast({
@@ -4082,10 +4101,7 @@ const Employees = () => {
       return;
     }
 
-    const rows = Array.isArray(data) ? data : [];
-    const hasExtraRow = rows.length > DEFAULT_PAGE_SIZE;
-    const pageRows = hasExtraRow ? rows.slice(0, DEFAULT_PAGE_SIZE) : rows;
-    setHasNextPage(hasExtraRow);
+    const pageRows = Array.isArray(data) ? data : [];
 
     if (pageRows.length === 0 && currentPage > 1) {
       setCurrentPage((prev) => Math.max(1, prev - 1));
@@ -4100,8 +4116,79 @@ const Employees = () => {
 
     setEmployees(sorted);
     setFilteredEmployees(sorted);
-    void fetchActiveContractsForEmployees(sorted.map((employee) => employee.id));
-  }, [toast, user, currentPage, fetchActiveContractsForEmployees, searchQuery, employeeStatusFilter, contractFilter]);
+  }, [
+    toast,
+    user,
+    currentPage,
+    searchQuery,
+    employeeStatusFilter,
+    contractFilter,
+    genderFilter,
+    raceFilter,
+    nationalityFilter,
+  ]);
+
+  const fetchEmployeesCount = useCallback(async () => {
+    if (!user) return;
+    const queryText = searchQuery.trim();
+    let query = (supabase as any)
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", user.id);
+
+    if (contractFilter !== "all") {
+      query = query.ilike("contract_type", contractFilter);
+    }
+    if (employeeStatusFilter === "inactive") {
+      query = query.eq("status", "inactive");
+    } else {
+      query = query.or("status.is.null,status.eq.active");
+    }
+    if (genderFilter !== "all") {
+      query = query.ilike("gender", genderFilter);
+    }
+    if (raceFilter !== "all") {
+      query = query.ilike("race", raceFilter);
+    }
+    if (nationalityFilter === "RSA") {
+      query = query.ilike("nationality", "south african");
+    } else if (nationalityFilter === "Other") {
+      query = query.or("nationality.is.null,nationality.not.ilike.south african");
+    }
+
+    if (queryText.length > 0) {
+      const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
+      query = query.or(
+        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
+      );
+    }
+
+    const { count, error } = await query;
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const nextCount = count ?? 0;
+    setTotalEmployeeCount(nextCount);
+    setCurrentPage((prev) => {
+      const maxPage = Math.max(1, Math.ceil(nextCount / DEFAULT_PAGE_SIZE));
+      return prev > maxPage ? maxPage : prev;
+    });
+  }, [
+    toast,
+    user,
+    searchQuery,
+    employeeStatusFilter,
+    contractFilter,
+    genderFilter,
+    raceFilter,
+    nationalityFilter,
+  ]);
 
   const fetchAllEmployees = useCallback(async () => {
     if (!user) return;
@@ -4196,6 +4283,11 @@ const Employees = () => {
   }, [user, fetchEmployees]);
 
   useEffect(() => {
+    if (!user) return;
+    void fetchEmployeesCount();
+  }, [user, fetchEmployeesCount]);
+
+  useEffect(() => {
     if (!user || !isProfilePanelOpen || hasLoadedAllEmployees) return;
     let cancelled = false;
     const loadAllEmployees = async () => {
@@ -4223,7 +4315,7 @@ const Employees = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-    setHasNextPage(false);
+    setTotalEmployeeCount(0);
     setHasLoadedAllEmployees(false);
     setHasLoadedConductOffences(false);
     setAllEmployees([]);
@@ -4235,49 +4327,8 @@ const Employees = () => {
   }, [searchQuery, employeeStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
-    const query = searchQuery.toLowerCase();
-    const filtered = employees.filter((emp) => {
-      const fullName = `${emp.employee_name ?? ""} ${emp.employee_surname ?? ""}`.trim().toLowerCase();
-      const idNumber = (emp.id_number ?? "").toLowerCase();
-      const employeeNumber = (emp.employee_number ?? "").toLowerCase();
-      const jobTitle = (emp.job_title ?? "").toLowerCase();
-      const branchValue = (emp.branch ?? "").toLowerCase();
-      const matchesSearch =
-        fullName.includes(query) ||
-        idNumber.includes(query) ||
-        employeeNumber.includes(query) ||
-        jobTitle.includes(query) ||
-        branchValue.includes(query);
-
-      const contractType = (emp.contract_type ?? "").toLowerCase();
-      const matchesContract =
-        contractFilter === "all" ||
-        (contractFilter === "permanent" && contractType === "permanent") ||
-        (contractFilter === "temporary" && contractType === "temporary");
-      const statusValue = ((emp.status ?? "").toString().trim().toLowerCase() || "active");
-      const matchesStatus =
-        employeeStatusFilter === "inactive" ? statusValue === "inactive" : statusValue !== "inactive";
-
-      const genderValue = (emp.gender ?? "").toLowerCase();
-      const raceValue = (emp.race ?? "").toLowerCase();
-      const nationalityValue = (emp.nationality ?? "").trim().toLowerCase();
-      const nationalityGroup = nationalityValue === "south african" ? "rsa" : "other";
-      const matchesGender = genderFilter === "all" || genderValue === genderFilter.toLowerCase();
-      const matchesRace = raceFilter === "all" || raceValue === raceFilter.toLowerCase();
-      const matchesNationality =
-        nationalityFilter === "all" || nationalityGroup === nationalityFilter.toLowerCase();
-
-      return matchesSearch && matchesStatus && matchesContract && matchesGender && matchesRace && matchesNationality;
-    });
-
-    const sorted = filtered.sort((a, b) => {
-      const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
-      const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-
-    setFilteredEmployees(sorted);
-  }, [employees, searchQuery, employeeStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
+    setFilteredEmployees(employees);
+  }, [employees]);
 
   useEffect(() => {
     // Keep selections in sync with the currently filtered list to avoid deleting hidden rows.
@@ -5008,22 +5059,34 @@ const Employees = () => {
      setSelectedEmployees(next);
    };
 
-  const openProfileDialog = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setProfileForm(createProfileFormFromEmployee(employee));
-    setProbationPeriod(employee.probation_period ?? "");
-    setUnionMember((employee.union_member as (typeof unionMemberOptions)[number]) ?? "");
-    setTradeUnion(employee.trade_union ?? "");
-    setDepartment((employee.department as (typeof departmentOptions)[number]) ?? "");
-    setBranch(employee.branch ?? "");
-    setReportingTo(employee.reporting_to ?? "");
+  const openProfileDialog = async (employee: Employee) => {
+    let employeeForProfile = employee;
+    if (user) {
+      const { data } = await (supabase as any)
+        .from("employees")
+        .select(employeeSelectColumnsWithTermination)
+        .eq("company_id", user.id)
+        .eq("id", employee.id)
+        .maybeSingle();
+      if (data) {
+        employeeForProfile = data as Employee;
+      }
+    }
+    setSelectedEmployee(employeeForProfile);
+    setProfileForm(createProfileFormFromEmployee(employeeForProfile));
+    setProbationPeriod(employeeForProfile.probation_period ?? "");
+    setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
+    setTradeUnion(employeeForProfile.trade_union ?? "");
+    setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
+    setBranch(employeeForProfile.branch ?? "");
+    setReportingTo(employeeForProfile.reporting_to ?? "");
     setOccupationalLevel(
-      (employee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      (employeeForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
-    setSalaryType((employee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-    setBasicSalary(employee.basic_salary ?? "");
-    setWorkEmail(employee.work_email ?? "");
-    setWorkCellNumber(employee.work_cell_number ?? "");
+    setSalaryType((employeeForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setBasicSalary(employeeForProfile.basic_salary ?? "");
+    setWorkEmail(employeeForProfile.work_email ?? "");
+    setWorkCellNumber(employeeForProfile.work_cell_number ?? "");
     setPendingIdDocumentFile(null);
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(false);
@@ -8160,6 +8223,9 @@ const Employees = () => {
                   <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                 )}
                 </div>
+                <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
+                  Employees {tableRangeStart}-{tableRangeEnd} of {totalEmployeeCount}
+                </p>
               </div>
               <div className="flex items-center gap-2 justify-end">
                 <Popover
@@ -8221,7 +8287,7 @@ const Employees = () => {
                               <button
                                 key={option.value}
                                 type="button"
-                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setEmployeeStatusFilter(option.value);
                                   closeEmployeeFiltersPanel();
@@ -8253,7 +8319,7 @@ const Employees = () => {
                               <button
                                 key={option.value}
                                 type="button"
-                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setContractFilter(option.value);
                                   closeEmployeeFiltersPanel();
@@ -8281,7 +8347,7 @@ const Employees = () => {
                               <button
                                 key={option.value}
                                 type="button"
-                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setGenderFilter(option.value as "all" | EmployeeProfileFormData["gender"]);
                                   closeEmployeeFiltersPanel();
@@ -8309,7 +8375,7 @@ const Employees = () => {
                               <button
                                 key={option.value}
                                 type="button"
-                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setRaceFilter(option.value as "all" | EmployeeProfileFormData["race"]);
                                   closeEmployeeFiltersPanel();
@@ -8341,7 +8407,7 @@ const Employees = () => {
                               <button
                                 key={option.value}
                                 type="button"
-                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:text-blue-600"
+                                className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setNationalityFilter(option.value);
                                   closeEmployeeFiltersPanel();
@@ -8472,7 +8538,7 @@ const Employees = () => {
                         <div className="font-medium leading-tight">
                           <button
                             type="button"
-                            onClick={() => openProfileDialog(employee)}
+                            onClick={() => void openProfileDialog(employee)}
                             className="text-left hover:text-primary transition-colors"
                           >
                             {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
@@ -8542,7 +8608,7 @@ const Employees = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => openProfileDialog(employee)}
+                                    onClick={() => void openProfileDialog(employee)}
                                     className="h-6 w-6 p-0 hover:text-primary hover:bg-muted/50 bg-transparent"
                                   >
                                     <Search className="h-3 w-3" strokeWidth={1.5} />
@@ -8597,51 +8663,42 @@ const Employees = () => {
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-center">
-                  <div className="flex items-center gap-1">
+                <div className="relative top-[5px] flex items-center justify-center gap-8">
                     <Button
-                      variant="ghost"
-                      size="icon"
+                      variant="outline"
                       onClick={goToPreviousPage}
                       disabled={isFirstPage}
                       aria-label="Previous page"
-                      className="h-8 w-8 hover:bg-transparent hover:text-blue-600"
+                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
                     >
-                      <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+                      Previous
                     </Button>
-                    <span className="text-[10px] font-medium text-slate-500">
-                      {hasNextPage || currentPage > 1 ? (
-                        <>
-                          Pages{" "}
-                          {currentPage > 1 && (
-                            <span className="text-slate-500 font-semibold">
-                              {currentPage - 1}
-                              {currentPage !== 1 || hasNextPage ? ", " : ""}
-                            </span>
-                          )}
-                          <span className="text-blue-600 font-semibold text-[12px] underline">{currentPage}</span>
-                          {hasNextPage && (
-                            <>
-                              {", "}
-                              <span className="text-slate-500 font-semibold">{currentPage + 1}</span>
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        <>Page {currentPage}</>
-                      )}
-                    </span>
+                    <div className="flex max-w-[420px] items-center gap-1 overflow-x-auto px-1 py-0.5">
+                      {pageNumbers.map((page) => (
+                        <Button
+                          key={page}
+                          type="button"
+                          variant="outline"
+                          onClick={() => setCurrentPage(page)}
+                          className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
+                            currentPage === page
+                              ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                              : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                          }`}
+                        >
+                          {page}
+                        </Button>
+                      ))}
+                    </div>
                     <Button
-                      variant="ghost"
-                      size="icon"
+                      variant="outline"
                       onClick={goToNextPage}
                       disabled={isLastPage}
                       aria-label="Next page"
-                      className="h-8 w-8 hover:bg-transparent hover:text-blue-600"
+                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
                     >
-                      <ArrowRight className="h-3.5 w-3.5" />
+                      Next
                     </Button>
-                  </div>
                 </div>
               </div>
             )}

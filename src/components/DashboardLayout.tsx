@@ -222,8 +222,8 @@ export default function DashboardLayout({
                 ) : (
                   companyName && (
                     <h1 className="text-sm font-semibold -ml-1">
-                      {companyName}
-                      {companyType ? ` ${companyType}` : ""}
+                      <span className="text-slate-900">{companyName}</span>
+                      {companyType ? <span className="text-slate-500">{` ${companyType}`}</span> : null}
                     </h1>
                   )
                 )}

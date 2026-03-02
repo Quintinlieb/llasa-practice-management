@@ -4681,7 +4681,9 @@ const Employees = () => {
 
    const handleBulkDelete = async () => {
      if (selectedEmployees.size === 0 || !user) return;
-   const confirmed = confirm(`Are you sure you want to delete ${selectedEmployees.size} employee(s)?`);
+   const confirmed = confirm(
+     "The selected employee(s) will be permanently removed from all databases/storage. Are you sure you want to delete selected employee(s)?",
+   );
    if (!confirmed) return;
 
     const deletedEmployees = employees.filter((emp) => selectedEmployees.has(emp.id));
@@ -8242,6 +8244,15 @@ const Employees = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2 justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleBulkDelete()}
+                  disabled={selectedEmployees.size === 0}
+                  className="h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-rose-600"
+                >
+                  Delete{selectedEmployees.size > 0 ? ` (${selectedEmployees.size})` : ""}
+                </Button>
                 <Popover
                   open={isFiltersPanelOpen}
                   onOpenChange={(open) => {
@@ -8529,7 +8540,22 @@ const Employees = () => {
                   className="relative overflow-hidden rounded-sm border border-slate-200"
                   style={{ maxHeight: tableMaxHeight }}
                 >
-                  <div className="grid grid-cols-[2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-4 pr-3 py-3 text-xs font-semibold text-white">
+                  <div className="grid grid-cols-[0.4fr_2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                    <div className="flex items-center justify-center">
+                      <Checkbox
+                        indicator="x"
+                        checked={
+                          filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length
+                            ? true
+                            : selectedEmployees.size > 0
+                              ? "indeterminate"
+                              : false
+                        }
+                        onCheckedChange={() => toggleSelectAll()}
+                        aria-label="Select all employees"
+                        className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                      />
+                    </div>
                     <div className="flex items-center leading-tight">Employee</div>
                     <div className="flex items-center gap-2 leading-tight">ID Number</div>
                     <div className="flex items-center leading-tight">Contract Type</div>
@@ -8547,8 +8573,17 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 pl-4 pr-3 py-1 text-xs hover:bg-blue-50/70"
+                        className="grid grid-cols-[0.4fr_2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 pl-1 pr-3 py-1 text-xs hover:bg-blue-50/70"
                       >
+                        <div className="flex items-center justify-center">
+                          <Checkbox
+                            indicator="x"
+                            checked={selectedEmployees.has(employee.id)}
+                            onCheckedChange={() => toggleSelectEmployee(employee.id)}
+                            aria-label={`Select ${(employee.employee_name ?? "").trim()} ${(employee.employee_surname ?? "").trim()}`.trim()}
+                            className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                          />
+                        </div>
                         <div className="font-medium leading-tight">
                           <button
                             type="button"

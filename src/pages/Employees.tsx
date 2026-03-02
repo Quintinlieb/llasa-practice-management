@@ -8813,19 +8813,24 @@ const Employees = () => {
                             ...
                           </span>
                         ) : (
-                          <Button
-                            key={item}
-                            type="button"
-                            variant="outline"
-                            onClick={() => setCurrentPage(item)}
-                            className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
-                              currentPage === item
-                                ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                                : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                            }`}
-                          >
-                            {item}
-                          </Button>
+                          (() => {
+                            const pageNumber = Number(item);
+                            return (
+                              <Button
+                                key={pageNumber}
+                                type="button"
+                                variant="outline"
+                                onClick={() => setCurrentPage(pageNumber)}
+                                className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
+                                  currentPage === pageNumber
+                                    ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                                    : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                                }`}
+                              >
+                                {pageNumber}
+                              </Button>
+                            );
+                          })()
                         ),
                       )}
                     </div>

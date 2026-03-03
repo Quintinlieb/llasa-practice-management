@@ -1630,7 +1630,8 @@ const PermanentContractGenerator = ({
         className={cn(
           "space-y-6",
           embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
-          useExternalShell && "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0",
+          useExternalShell &&
+            (showFinalActions ? "space-y-0 pt-0 pr-0 pb-0" : "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0"),
         )}
         style={{ scrollbarGutter: "stable" }}
       >

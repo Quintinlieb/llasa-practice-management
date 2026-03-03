@@ -250,6 +250,8 @@ const AddendumGenerator = ({
     canGoBack?: boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onClear?: () => void;
+    addendumType?: AddendumType | "";
     isFinished?: boolean;
   }) => void;
 }) => {
@@ -264,8 +266,10 @@ const AddendumGenerator = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
+  const [customClauseTitleEdits, setCustomClauseTitleEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
   const [clauseDraft, setClauseDraft] = useState("");
+  const [customClauseTitleDraft, setCustomClauseTitleDraft] = useState("");
   const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
   const [newClauseTitle, setNewClauseTitle] = useState("");
@@ -284,15 +288,15 @@ const AddendumGenerator = ({
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const previewScrollTop = useRef(0);
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const addendumModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const addendumModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getAddendumModalInputClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
@@ -308,7 +312,7 @@ const AddendumGenerator = ({
 
   useEffect(() => {
     if (!embedded) return;
-    onStepChange?.(showFinalActions ? "Preview / Download" : (steps[activeStep] ?? null));
+    onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
   }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
 
 
@@ -502,9 +506,11 @@ const AddendumGenerator = ({
     setShowFinalActions(false);
     setActiveStep(0);
     setClauseEdits({});
+    setCustomClauseTitleEdits({});
     setCustomClauses([]);
     setEditingClause(null);
     setClauseDraft("");
+    setCustomClauseTitleDraft("");
     setAddingAfter(null);
     setNewClauseTitle("");
     setNewClauseBody("");
@@ -628,6 +634,8 @@ const AddendumGenerator = ({
       canGoBack: showFinalActions || activeStep > 0,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
+      onClear: clearCurrentStepFields,
+      addendumType: formData.addendumType,
       isFinished: showFinalActions,
     });
   }, [
@@ -643,6 +651,7 @@ const AddendumGenerator = ({
     isGenerating,
     isFormComplete,
     showFinalActions,
+    formData.addendumType,
   ]);
 
   const resetEmployeeStepFields = () => {
@@ -657,6 +666,42 @@ const AddendumGenerator = ({
       age: "",
     }));
     setSelectedEmployeeId("");
+  };
+
+  const resetEmployerStepFields = () => {
+    setFormData((prev) => ({
+      ...prev,
+      tradingName: "",
+      employerContact: profile?.company_contact || "",
+      employerEmail: profile?.company_email || "",
+    }));
+  };
+
+  const resetAddendumStepFields = () => {
+    setFormData((prev) => ({
+      ...prev,
+      addendumType: "general",
+      effectiveDate: "",
+      contractEndDate: "",
+      newEndDate: "",
+      contractReference: "",
+    }));
+  };
+
+  const clearCurrentStepFields = () => {
+    if (activeStep === 0) {
+      resetEmployerStepFields();
+      return;
+    }
+    if (activeStep === 1) {
+      resetEmployeeStepFields();
+      return;
+    }
+    if (activeStep === 2) {
+      resetAddendumStepFields();
+      return;
+    }
+    resetForm();
   };
 
   const getPreviewScrollElement = useCallback(
@@ -788,8 +833,12 @@ const AddendumGenerator = ({
   const applyClauseEdits = (clauses: ClauseDefinition[]): ClauseDefinition[] =>
     clauses.map((clause) => {
       const edited = clauseEdits[clause.id];
-      if (!edited) return clause;
-      return { ...clause, body: normalizeBodyText(edited) };
+      const editedTitle = customClauseTitleEdits[clause.id];
+      const nextTitle = editedTitle ?? clause.title;
+      if (!edited) {
+        return nextTitle === clause.title ? clause : { ...clause, title: nextTitle };
+      }
+      return { ...clause, title: nextTitle, body: normalizeBodyText(edited) };
     });
 
   const mergeClauses = useCallback(
@@ -1266,7 +1315,7 @@ const AddendumGenerator = ({
         clause.amendmentType === "add"
           ? "The following term(s) will be added to the employment contract:"
           : clause.amendmentType === "amend"
-            ? "The terms of this clause is hereby amended as follows:"
+            ? "The terms of the clause is hereby amended as follows:"
             : null;
       addClauseHeading(clause.title);
       if (preface) {
@@ -1891,16 +1940,16 @@ const AddendumGenerator = ({
                             <Button
                               type="button"
                               variant="ghost"
-                              onClick={resetForm}
+                              onClick={clearCurrentStepFields}
                               disabled={isGenerating}
-                              aria-label="Reset form"
+                              aria-label="Reset fields"
                               className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                             >
                               <Undo2 className="h-4 w-4" />
-                              Reset form
+                              Reset
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent side="top">Clear all fields and start over</TooltipContent>
+                          <TooltipContent side="top">Reset fields for this step</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>
@@ -1930,16 +1979,17 @@ const AddendumGenerator = ({
                       )}
                     </div>
                     <div className="flex-1 flex justify-center">
-                      {activeStep === 1 ? (
+                      {activeStep > 0 ? (
                         <Button
                           type="button"
                           variant="ghost"
-                          onClick={resetEmployeeStepFields}
+                          onClick={clearCurrentStepFields}
                           disabled={isGenerating}
+                          aria-label="Reset fields"
                           className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                         >
                           <Undo2 className="h-4 w-4" />
-                          Reset fields
+                          Reset
                         </Button>
                       ) : null}
                     </div>
@@ -1967,7 +2017,7 @@ const AddendumGenerator = ({
             <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 contents")}>
               <CardHeader className="pt-4 pb-0" />
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
-                  <ScrollArea className="h-[62vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
+                  <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
               const displayValue = (value?: string | number | null) =>
                 value && value.toString().trim() ? value.toString() : "________________________";
@@ -2086,12 +2136,27 @@ const AddendumGenerator = ({
 
               const startEditingClause = (clause: ClauseDefinition) => {
                 rememberPreviewScroll();
+                const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
                 setEditingClause(clause.id);
                 setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
+                setCustomClauseTitleDraft(isCustomClause ? (customClauseTitleEdits[clause.id] ?? clause.title) : "");
               };
 
               const saveClauseEdit = (id: string) => {
                 const trimmed = clauseDraft.trim();
+                const baseCustomClause = customClauses.find((clause) => clause.id === id);
+                if (baseCustomClause) {
+                  const titleTrimmed = customClauseTitleDraft.trim();
+                  setCustomClauseTitleEdits((prev) => {
+                    const next = { ...prev };
+                    if (!titleTrimmed || titleTrimmed === baseCustomClause.title) {
+                      delete next[id];
+                    } else {
+                      next[id] = titleTrimmed;
+                    }
+                    return next;
+                  });
+                }
                 setClauseEdits((prev) => {
                   const next = { ...prev };
                   if (trimmed) {
@@ -2103,6 +2168,7 @@ const AddendumGenerator = ({
                 });
                 setEditingClause(null);
                 setClauseDraft("");
+                setCustomClauseTitleDraft("");
               };
 
               const resetClauseEdit = (id: string) => {
@@ -2111,8 +2177,14 @@ const AddendumGenerator = ({
                   delete next[id];
                   return next;
                 });
+                setCustomClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 setEditingClause(null);
                 setClauseDraft("");
+                setCustomClauseTitleDraft("");
               };
 
               const openAddClauseForm = (afterId: string | null) => {
@@ -2170,9 +2242,15 @@ const AddendumGenerator = ({
                   delete next[id];
                   return next;
                 });
+                setCustomClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 if (editingClause === id) {
                   setEditingClause(null);
                   setClauseDraft("");
+                  setCustomClauseTitleDraft("");
                 }
               };
 
@@ -2196,14 +2274,16 @@ const AddendumGenerator = ({
                                             value={newClauseAmendmentType}
                                             onValueChange={(value) => setNewClauseAmendmentType(value as AmendmentType)}
                                           >
-                                            <SelectTrigger className="h-8 text-xs border-blue-200 hover:border-blue-400 focus-visible:ring-blue-500">
+                                            <SelectTrigger
+                                              className={`${getAddendumModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${addendumModalDropdownToneClass}`}
+                                            >
                                               <SelectValue placeholder="Please Select amendment type" />
                                             </SelectTrigger>
-                                            <SelectContent className="text-xs">
-                                              <SelectItem className="text-xs" value="add">
+                                            <SelectContent className="w-[var(--radix-select-trigger-width)] text-xs">
+                                              <SelectItem className={addendumModalSelectItemClass} value="add">
                                                 Add new term(s)
                                               </SelectItem>
-                                              <SelectItem className="text-xs" value="amend">
+                                              <SelectItem className={addendumModalSelectItemClass} value="amend">
                                                 Amend existing term(s)
                                               </SelectItem>
                                             </SelectContent>
@@ -2217,13 +2297,13 @@ const AddendumGenerator = ({
                                               placeholder="Clause title"
                                               onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
                                               onClick={rememberPreviewScroll}
-                                              className="text-xs"
+                                              className={getAddendumModalInputClass(newClauseTitle.trim().length > 0)}
                                             />
                                             <Textarea
                                               value={newClauseBody}
                                               onChange={(e) => setNewClauseBody(e.target.value)}
                                               rows={4}
-                                              className="text-xs text-slate-600"
+                                              className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
                                               placeholder="Clause body. Separate paragraphs with a blank line."
                                               spellCheck={true}
                                               lang="en"
@@ -2293,7 +2373,7 @@ const AddendumGenerator = ({
         clause.amendmentType === "add"
           ? "The following term(s) will be added to the employment contract:"
           : clause.amendmentType === "amend"
-            ? "The terms of this clause is hereby amended as follows:"
+            ? "The terms of the clause is hereby amended as follows:"
             : null;
                               const isEditing = editingClause === clause.id;
                               const isEdited = Boolean(clauseEdits[clause.id]);
@@ -2343,6 +2423,7 @@ const AddendumGenerator = ({
                                             onClick={() => {
                                               setEditingClause(null);
                                               setClauseDraft("");
+                                              setCustomClauseTitleDraft("");
                                             }}
                                           >
                                             Cancel
@@ -2385,6 +2466,16 @@ const AddendumGenerator = ({
 
                                   {isEditing ? (
                                     <div className="space-y-2">
+                                      {isCustomClause ? (
+                                        <Input
+                                          value={customClauseTitleDraft}
+                                          onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
+                                          placeholder="Clause title"
+                                          className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
+                                          onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
+                                          onClick={rememberPreviewScroll}
+                                        />
+                                      ) : null}
                                       <p className="flex items-center gap-1 text-[11px] text-orange-600">
                                         <Info className="h-3.5 w-3.5" aria-hidden="true" />
                                         Separate paragraphs with a blank line. Paragraph numbering updates automatically.
@@ -2393,7 +2484,7 @@ const AddendumGenerator = ({
                                         value={clauseDraft}
                                         onChange={(e) => setClauseDraft(e.target.value)}
                                         rows={6}
-                                        className="text-xs text-slate-600"
+                                        className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
                                         spellCheck={true}
                                         lang="en"
                                         autoCorrect="on"

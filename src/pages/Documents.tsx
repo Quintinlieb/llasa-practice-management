@@ -10,7 +10,7 @@ import {
   BellAlertIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { ArrowLeft, ArrowRight, Gavel, Menu } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Gavel, Menu, Undo2 } from "lucide-react";
 
 type DocumentKey =
   | "codeOfConduct"
@@ -49,6 +49,8 @@ type DocumentComponentProps = {
     canGoBack?: boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onClear?: () => void;
+    addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
   }) => void;
 };
@@ -127,6 +129,8 @@ const Documents = () => {
     canGoBack?: boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onClear?: () => void;
+    addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
   } | null>(null);
 
@@ -204,25 +208,37 @@ const Documents = () => {
   const modalTitle = modalDocument === "warnings" ? "Warnings" : modalDocument === "addendum" ? "Addendum" : "";
   const modalSteps =
     modalDocument === "warnings" || modalDocument === "addendum"
-      ? (["Employer Details", "Employee Details", modalDocument === "warnings" ? "Warning Details" : "Addendum Details", "Preview / Download"] as const)
+      ? ([
+          "Employer Details",
+          "Employee Details",
+          modalDocument === "warnings" ? "Warning Details" : "Addendum Details",
+          modalDocument === "warnings" ? "Preview / Download" : "Preview / Edit",
+        ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
+  const activeModalStepLabel = modalSteps[modalActiveStep] ?? modalSteps[0] ?? "";
   const addendumStepNotes = [
     [
-      "Complete the employer details for this addendum.",
-      "You can add a trading name and update the employer email and contact number before continuing.",
+      "The company name, registration number, and address can be changed in Company Settings.",
+      "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      "Select an existing employee, enter the details manually, or first add an employee on the Employees page and then return here.",
+      "You may either select from existing employees or enter employee details manually.",
+      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
     ],
     [
-      "Choose one of the three addendum types.",
-      "A general addendum applies to any employment contract where the employer and employee agree to amend terms in that contract.",
+      "Choose one of the three addendum types and insert the applicable dates.",
+      "A General Addendum is ordinarily used to amend specific terms of an existing employment contract, such as remuneration, working hours, position, or benefits.",
+      "An extension is used where a current temporary contract is still active and the Parties agree to extend the existing end date.",
+      "A renewal applies where a temporary contract has already expired and the Parties agree to enter into a new temporary period of employment.",
     ],
     [
       "Review and finalize the editable preview before downloading.",
       "The general addendum is a starting point, so add the specific amendments the parties agreed to for the existing contract.",
       "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
+      "Example:",
+      "Salarry / Remuneration (Clause title)",
+      "Clause 5 of the employment contract is hereby amended, with effect from 3 March 2026, and the salary is R25,000 per month. (Clause body)",
     ],
   ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
@@ -554,7 +570,7 @@ const Documents = () => {
                                     : "border-slate-300 bg-white text-slate-500",
                               )}
                             >
-                              {index + 1}
+                              {isComplete ? <Check className="h-3 w-3" aria-hidden="true" /> : index + 1}
                             </span>
                             <span
                               className={cn(
@@ -569,10 +585,16 @@ const Documents = () => {
                       })}
                     </div>
                     <div className="mt-4 rounded-sm bg-white px-3 py-3">
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-700">Notes:</h3>
+                      <h3 className="mb-[11px] text-[11px] font-semibold uppercase tracking-wide text-blue-700">Notes:</h3>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-600 underline decoration-slate-500 underline-offset-2">
+                        {activeModalStepLabel}
+                      </p>
                       <div className="mt-2 space-y-2">
-                        {addendumActiveNotes.map((note) => (
-                          <p key={note} className="text-[11px] leading-5 text-slate-600">
+                        {addendumActiveNotes.map((note, index) => (
+                          <p
+                            key={index}
+                            className={cn("text-[11px] leading-5 text-slate-600", note === "Example:" && "font-semibold")}
+                          >
                             {note}
                           </p>
                         ))}
@@ -600,23 +622,39 @@ const Documents = () => {
                         </div>
                       </Suspense>
                     </section>
-                    <div className="mt-3 flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => stepMeta?.onBack?.()}
-                        disabled={!stepMeta?.canGoBack}
-                        className="h-[28px] w-[84px] rounded border border-blue-600 px-3 text-xs font-semibold text-blue-600 hover:bg-transparent hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
-                      >
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => stepMeta?.onNext?.()}
-                        disabled={!stepMeta?.canGoNext}
-                        className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        {stepMeta?.isFinished ? "Download" : "Next"}
-                      </button>
+                    <div className="mt-3 grid grid-cols-3 items-center">
+                      <div className="justify-self-start">
+                        <button
+                          type="button"
+                          onClick={() => stepMeta?.onBack?.()}
+                          disabled={!stepMeta?.canGoBack}
+                          className="h-[28px] w-[84px] rounded border border-blue-600 px-3 text-xs font-semibold text-blue-600 hover:bg-transparent hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                        >
+                          Back
+                        </button>
+                      </div>
+                      <div className="justify-self-center">
+                        {stepMeta?.onClear && (stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished ? (
+                          <button
+                            type="button"
+                            onClick={() => stepMeta.onClear?.()}
+                            className="inline-flex h-[28px] items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:underline"
+                          >
+                            <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                            Reset
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="justify-self-end">
+                        <button
+                          type="button"
+                          onClick={() => stepMeta?.onNext?.()}
+                          disabled={!stepMeta?.canGoNext}
+                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                          {stepMeta?.isFinished ? "Download" : "Next"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

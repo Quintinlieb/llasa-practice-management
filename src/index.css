@@ -135,6 +135,12 @@ All colors MUST be HSL.
   border-color: #cbd5e1;
 }
 
+.no-modal-shadow,
+.no-modal-shadow * {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
 
 /* Align the addendum select placeholder color with input placeholders */
 .addendum-select [data-placeholder] {

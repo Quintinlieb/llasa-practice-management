@@ -356,6 +356,16 @@ const AddendumGenerator = ({
     additionalNotes: "",
   });
 
+  const sortedEmployees = useMemo(
+    () =>
+      [...employees].sort((a, b) => {
+        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
+        if (nameOrder !== 0) return nameOrder;
+        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
+      }),
+    [employees],
+  );
+
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");
@@ -1485,12 +1495,12 @@ const AddendumGenerator = ({
         className={cn(
           "space-y-6",
           embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
-          useExternalShell && "pt-0 pr-0 pb-0",
+          useExternalShell && "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0",
         )}
         style={{ scrollbarGutter: "stable" }}
       >
         {!showFinalActions ? (
-          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0")}>
+          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 h-full min-h-0")}>
             {!embedded && (
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-center gap-8 w-full">
@@ -1571,10 +1581,10 @@ const AddendumGenerator = ({
                 "pt-1 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
                 !embedded && "flex-1 min-h-0 overflow-y-auto",
-                useExternalShell && "p-0",
+                useExternalShell && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
               )}
             >
-              <div className="space-y-4">
+              <div className={cn("space-y-4", useExternalShell && "min-h-0 flex-1 overflow-y-auto pr-1")}>
               {activeStep === 0 && (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
@@ -1652,7 +1662,7 @@ const AddendumGenerator = ({
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
                         <SelectContent className="w-[var(--radix-select-trigger-width)]">
-                          {employees.map((employee) => (
+                          {sortedEmployees.map((employee) => (
                             <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
                               {employee.employee_name} {employee.employee_surname}
                             </SelectItem>

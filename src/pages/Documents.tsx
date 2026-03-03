@@ -120,7 +120,7 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
-  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | null>(null);
+  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | "permanentContract" | null>(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -205,13 +205,24 @@ const Documents = () => {
           .flatMap((category) => category.items)
           .find((item) => item.id === selectedDocument)?.label ?? ""
       : "";
-  const modalTitle = modalDocument === "warnings" ? "Warnings" : modalDocument === "addendum" ? "Addendum" : "";
+  const modalTitle =
+    modalDocument === "warnings"
+      ? "Warnings"
+      : modalDocument === "addendum"
+        ? "Addendum"
+        : modalDocument === "permanentContract"
+          ? "Permanent Contract"
+          : "";
   const modalSteps =
-    modalDocument === "warnings" || modalDocument === "addendum"
+    modalDocument === "warnings" || modalDocument === "addendum" || modalDocument === "permanentContract"
       ? ([
           "Employer Details",
           "Employee Details",
-          modalDocument === "warnings" ? "Warning Details" : "Addendum Details",
+          modalDocument === "warnings"
+            ? "Warning Details"
+            : modalDocument === "addendum"
+              ? "Addendum Details"
+              : "Employment Details",
           modalDocument === "warnings" ? "Preview / Download" : "Preview / Edit",
         ] as const)
       : ([] as const);
@@ -241,9 +252,32 @@ const Documents = () => {
       "Clause 5 of the employment contract is hereby amended, with effect from 3 March 2026, and the salary is R25,000 per month. (Clause body)",
     ],
   ] as const;
+  const permanentStepNotes = [
+    [
+      "The company name, registration number, and address can be changed in Company Settings.",
+      "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
+    ],
+    [
+      "You may either select from existing employees or enter employee details manually.",
+      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
+    ],
+    [
+      "Capture the employment details exactly as agreed between the Employer and Employee.",
+      "Complete all required fields before moving to the preview and edit step.",
+    ],
+    [
+      "Review and finalize the editable preview before downloading.",
+      "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
+  const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
+  const modalActiveNotes = modalDocument === "permanentContract" ? permanentActiveNotes : addendumActiveNotes;
   const shouldRenderInlineDocument = Boolean(
-    SelectedComponent && selectedDocument !== "warnings" && selectedDocument !== "addendum",
+    SelectedComponent &&
+      selectedDocument !== "warnings" &&
+      selectedDocument !== "addendum" &&
+      selectedDocument !== "permanentContract",
   );
   const greetingName = profile?.user_name ?? "";
   const breadcrumbParts: string[] = [];
@@ -298,7 +332,7 @@ const Documents = () => {
                                     key={item.label}
                                     type="button"
                                     onClick={() => {
-                                      if (item.id === "warnings" || item.id === "addendum") {
+                                      if (item.id === "warnings" || item.id === "addendum" || item.id === "permanentContract") {
                                         setSelectedDocument(item.id);
                                         setStepMeta(null);
                                         setBreadcrumbStep(null);
@@ -528,17 +562,20 @@ const Documents = () => {
         className={cn(
           "p-0 [&>button]:right-5 [&>button]:top-4",
           modalDocument === "addendum"
-            ? "h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] shadow-2xl overflow-y-auto overflow-x-hidden"
+            || modalDocument === "permanentContract"
+            ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
             : "h-[90vh] max-w-[1320px] overflow-hidden border border-slate-200",
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "addendum" ? (
+          {modalDocument === "addendum" || modalDocument === "permanentContract" ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
               <header className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
                   <Menu className="h-3.5 w-3.5 -ml-1" />
-                  <span className="font-semibold text-slate-700">Documents / Contracts / Addendum</span>
+                  <span className="font-semibold text-slate-700">
+                    {`Documents / Contracts / ${modalDocument === "addendum" ? "Addendum" : "Permanent Contract"}`}
+                  </span>
                 </div>
               </header>
               <div className="min-h-0 flex-1 px-6 pb-4">
@@ -590,7 +627,7 @@ const Documents = () => {
                         {activeModalStepLabel}
                       </p>
                       <div className="mt-2 space-y-2">
-                        {addendumActiveNotes.map((note, index) => (
+                        {modalActiveNotes.map((note, index) => (
                           <p
                             key={index}
                             className={cn("text-[11px] leading-5 text-slate-600", note === "Example:" && "font-semibold")}
@@ -601,8 +638,8 @@ const Documents = () => {
                       </div>
                     </div>
                   </aside>
-                  <div className="min-w-0 flex-1">
-                    <section className="rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4">
+                  <div className="min-w-0 flex-1 min-h-0 flex flex-col">
+                    <section className="relative flex-1 min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4">
                       <Suspense
                         fallback={
                           <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
@@ -610,7 +647,7 @@ const Documents = () => {
                           </div>
                         }
                       >
-                        <div className="space-y-2">
+                        <div className="h-full min-h-0">
                           {ModalComponent ? (
                             <ModalComponent
                               embedded

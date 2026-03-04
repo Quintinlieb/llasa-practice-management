@@ -300,9 +300,8 @@ const Documents = () => {
       "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      'Add single or multiple employee(s) by selecting the "Add employee" button and follow the easy prompts.',
-      'If you already added and saved the employees on the employees page, then choose one or multiple employees from the "select employee" dropdown.',
-      "Ensure each employee has name, surname, ID/Passport, cell number, and residential address.",
+      'Add a single or multiple employees by selecting the "Add employee" button and follow the easy prompts.',
+      "Ensure each added employee has name, surname, ID/Passport, cell number and address.",
     ],
     [
       "Capture temporary employment details and confirm how the contract ends (specific date or on completion of project/scope).",

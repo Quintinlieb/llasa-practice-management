@@ -3182,8 +3182,8 @@ const PermanentContractGenerator = ({
                                           {isCustomClause ? (
                                             <Button
                                               size="sm"
-                                              variant="ghost"
-                                              className="h-[28px] px-3 text-xs rounded text-red-600 hover:text-red-700"
+                                              variant="outline"
+                                              className="h-[28px] px-3 text-xs rounded !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
                                               onClick={() => deleteCustomClause(clause.id)}
                                             >
                                               Delete
@@ -3256,7 +3256,7 @@ const PermanentContractGenerator = ({
                                             <Button
                                               size="sm"
                                               variant="ghost"
-                                              className="h-[28px] px-3 text-xs rounded text-slate-600 hover:text-slate-800"
+                                              className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-blue-600 hover:underline underline-offset-2"
                                               onClick={() => resetClauseEdit(activeEditingClause.id)}
                                             >
                                               Reset

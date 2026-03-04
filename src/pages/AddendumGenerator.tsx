@@ -2490,7 +2490,7 @@ const AddendumGenerator = ({
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              className="h-[28px] rounded border-red-500 px-3 text-xs text-red-600 hover:bg-transparent hover:text-red-700"
+                                              className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
                                               onClick={() => deleteCustomClause(clause.id)}
                                             >
                                               Delete
@@ -2564,8 +2564,8 @@ const AddendumGenerator = ({
                                     ) ? (
                                       <Button
                                         size="sm"
-                                        variant="outline"
-                                        className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                                        variant="ghost"
+                                        className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-blue-600 hover:underline underline-offset-2"
                                         onClick={() => resetClauseEdit(activeEditingClause.id)}
                                       >
                                         Reset

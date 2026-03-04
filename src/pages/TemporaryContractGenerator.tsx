@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Upload, Trash2, Users, UsersRound, UserPlus, ChevronDown } from "lucide-react";
+import { Download, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Upload, Trash2, Users, UsersRound, UserPlus, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -196,12 +195,13 @@ const TemporaryContractGenerator = ({
   >;
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<ValidatedTempData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
+  const [clauseTitleEdits, setClauseTitleEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
+  const [clauseTitleDraft, setClauseTitleDraft] = useState("");
   const [clauseDraft, setClauseDraft] = useState("");
   const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
@@ -212,9 +212,6 @@ const TemporaryContractGenerator = ({
   const [activeStep, setActiveStep] = useState(0);
   const currentYear = new Date().getFullYear();
   const [issueYear, setIssueYear] = useState<string>(String(currentYear));
-  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
-  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [tempEmployees, setTempEmployees] = useState<TempEmployeeRow[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [isNewEmployeeMenuOpen, setIsNewEmployeeMenuOpen] = useState(false);
@@ -293,7 +290,7 @@ const TemporaryContractGenerator = ({
 
   const [formData, setFormData] = useState<ContractFormState>({
     employeeId: "",
-    startDate: new Date().toISOString().split("T")[0],
+    startDate: "",
     endType: "date",
     endDate: "",
     issueDate: `${currentYear}-01-01`,
@@ -327,27 +324,6 @@ const TemporaryContractGenerator = ({
       navigate("/auth");
     }
   }, [loading, navigate, user]);
-
-  useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
-      setShowEmployeeHint(false);
-      return;
-    }
-    if (hasShownEmployeeHint) return;
-    const timer = setTimeout(() => {
-      setShowEmployeeHint(true);
-      setHasShownEmployeeHint(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
-
-  useEffect(() => {
-    if (!showEmployeeHint) return;
-    const autoDismissTimer = setTimeout(() => {
-      setShowEmployeeHint(false);
-    }, 10000);
-    return () => clearTimeout(autoDismissTimer);
-  }, [showEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -637,7 +613,7 @@ const TemporaryContractGenerator = ({
     const resetYearValue = new Date().getFullYear();
     setFormData({
       employeeId: "",
-      startDate: new Date().toISOString().split("T")[0],
+      startDate: "",
       endType: "date",
       endDate: "",
       issueDate: `${resetYearValue}-01-01`,
@@ -670,14 +646,13 @@ const TemporaryContractGenerator = ({
     setSelectedEmployeeIds([]);
     applyEmployeeToFormData(null);
     setValidatedPreview(null);
-    setShowPreview(false);
     setShowFinalActions(false);
     setActiveStep(0);
     setClauseEdits({});
     setCustomClauses([]);
     setEditingClause(null);
     setClauseDraft("");
-    setAddingAfter(null);
+    setAddingAfter(undefined);
     setNewClauseTitle("");
     setNewClauseBody("");
   };
@@ -735,9 +710,6 @@ const TemporaryContractGenerator = ({
     if (showFinalActions) {
       setShowFinalActions(false);
     }
-    if (index > 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep(index);
   };
 
@@ -759,11 +731,6 @@ const TemporaryContractGenerator = ({
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
-      if (activeStep === 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
-      }
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -1577,21 +1544,6 @@ const TemporaryContractGenerator = ({
     return doc;
   };
 
-  const handlePreview = () => {
-    try {
-      const validated = validateData();
-      setValidatedPreview(validated);
-      setShowPreview(true);
-      setShowFinalActions(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Please check the required fields.";
-      toast({
-        title: "Validation error",
-        description: message,
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleDownload = async () => {
     try {
@@ -1653,10 +1605,6 @@ const TemporaryContractGenerator = ({
     }
   };
 
-  const employeeFullName = [validatedPreview?.employeeName, validatedPreview?.employeeSurname].filter(Boolean).join(" ");
-  const previewSubtitle = employeeFullName
-    ? `Review and download the temporary contract for ${employeeFullName}.`
-    : "Review and download the temporary contract.";
   const useExternalShell = embedded && externalNavigation;
 
   if (loading) {
@@ -1669,50 +1617,6 @@ const TemporaryContractGenerator = ({
 
   const content = (
     <>
-      {showEmployeeHint && typeof document !== "undefined"
-        ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
-                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
-                  aria-hidden="true"
-                ></span>
-                <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-blue-400">
-                    TIP!{" "}
-                    <span className="text-white inline-flex items-center gap-1 ml-2">
-                      Add the employee to your Employee List before generating a contract
-                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                      navigate("/employees");
-                    }}
-                  >
-                    Employees page
-                  </button>
-                  <button
-                    type="button"
-                    className="text-white hover:text-white focus-visible:text-white"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                    }}
-                    aria-label="Dismiss employee guidance message"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
       <div
         className={cn(
           "space-y-6",
@@ -2254,7 +2158,7 @@ const TemporaryContractGenerator = ({
             </div>
             </CardContent>
           </Card>
-        ) : (
+        ) : useExternalShell ? null : (
             <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 contents !backdrop-blur-none")}>
               <CardHeader className="pt-4 pb-0" />
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
@@ -2288,23 +2192,10 @@ const TemporaryContractGenerator = ({
                               <Button
                                 type="button"
                                 variant="ghost"
-                                onClick={handlePreview}
-                                disabled={isGenerating}
-                                aria-label="Preview"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <FileText />
-                                  <span className="text-sm font-semibold">Preview</span>
-                                </div>
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
                                 onClick={handleDownload}
                                 disabled={isGenerating}
                                 aria-label="Download PDF"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                                className="h-11 px-6 min-w-[72px] rounded bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
                               >
                                 <div className="flex items-center gap-2">
                                   <Download />
@@ -2686,22 +2577,16 @@ const TemporaryContractGenerator = ({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showPreview} onOpenChange={setShowPreview}>
-        <DialogContent className="max-w-4xl h-[90vh] p-0">
-          <DialogHeader className="px-6 pt-6 pr-10">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <DialogTitle className="text-blue-600">Preview - Temporary Contract</DialogTitle>
-                <DialogDescription>{previewSubtitle}</DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <ScrollArea className="h-full px-6 pb-6">
+      {showFinalActions && useExternalShell ? (
+        <Card className="rounded-sm mt-0 shadow-none border-0 bg-transparent contents !backdrop-blur-none">
+          <CardHeader className="pt-4 pb-0" />
+          <CardContent className="space-y-6 pt-2 contents">
+          <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6">
             {validatedPreview ? (() => {
               const displayValue = (value?: string | number | null) =>
                 value && value.toString().trim() ? value.toString() : "________________________";
               const salaryDisplay = `${formatCurrency(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}`;
-              const workplace = validatedPreview.workplace || profile?.physical_address || "";
+              const workplace = validatedPreview.workplace;
               const employerName = profile?.company_name || "the Employer";
               const annualLeaveText =
                 "The Employee is entitled to one (1) day of leave for every seventeen (17) days worked. Leave shall be taken at times determined by the Employer, subject to operational requirements.";
@@ -2898,11 +2783,23 @@ const TemporaryContractGenerator = ({
 
               const startEditingClause = (clause: ClauseDefinition) => {
                 setEditingClause(clause.id);
+                setClauseTitleDraft(clauseTitleEdits[clause.id] ?? clause.title);
                 setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
               };
 
               const saveClauseEdit = (id: string) => {
+                const titleTrimmed = clauseTitleDraft.trim();
                 const trimmed = clauseDraft.trim();
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  const original = clauses.find((clause) => clause.id === id)?.title ?? "";
+                  if (titleTrimmed && titleTrimmed !== original) {
+                    next[id] = titleTrimmed;
+                  } else {
+                    delete next[id];
+                  }
+                  return next;
+                });
                 setClauseEdits((prev) => {
                   const next = { ...prev };
                   if (trimmed) {
@@ -2913,16 +2810,23 @@ const TemporaryContractGenerator = ({
                   return next;
                 });
                 setEditingClause(null);
+                setClauseTitleDraft("");
                 setClauseDraft("");
               };
 
               const resetClauseEdit = (id: string) => {
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 setClauseEdits((prev) => {
                   const next = { ...prev };
                   delete next[id];
                   return next;
                 });
                 setEditingClause(null);
+                setClauseTitleDraft("");
                 setClauseDraft("");
               };
 
@@ -2969,10 +2873,24 @@ const TemporaryContractGenerator = ({
                   delete next[id];
                   return next;
                 });
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 if (editingClause === id) {
                   setEditingClause(null);
+                  setClauseTitleDraft("");
                   setClauseDraft("");
                 }
+              };
+              const activeEditingClause = editingClause
+                ? clausesWithEdits.find((clause) => clause.id === editingClause) ?? null
+                : null;
+              const cancelClauseEdit = () => {
+                setEditingClause(null);
+                setClauseTitleDraft("");
+                setClauseDraft("");
               };
 
               return (
@@ -2987,66 +2905,27 @@ const TemporaryContractGenerator = ({
                           {(() => {
                             let clauseNumber = 1;
                             const renderAddClauseControl = (afterId: string | null) => {
-                              const isFormOpen = addingAfter === afterId && addingAfter !== undefined;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
-                                  {isFormOpen ? (
-                                    <div className="w-full rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-4">
-                                      <div className="grid gap-3">
-                                        <Input
-                                          value={newClauseTitle}
-                                          onChange={(e) => setNewClauseTitle(e.target.value)}
-                                          placeholder="Clause title"
-                                          className="text-xs"
-                                        />
-                                        <Textarea
-                                          value={newClauseBody}
-                                          onChange={(e) => setNewClauseBody(e.target.value)}
-                                          rows={4}
-                                          className="text-xs text-slate-600"
-                                          placeholder="Clause body. Separate paragraphs with a blank line."
-                                          spellCheck={true}
-                                          lang="en"
-                                          autoCorrect="on"
-                                        />
-                                        <div className="flex items-center justify-between text-[11px] text-slate-500">
-                                          <span>Paragraph numbering updates automatically.</span>
-                                          <div className="flex items-center gap-2">
-                                            <Button
-                                              size="sm"
-                                              className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
-                                              onClick={saveNewClause}
-                                            >
-                                              Add clause
-                                            </Button>
-                                            <Button size="sm" variant="ghost" className="h-8 px-3" onClick={cancelAddClause}>
-                                              Cancel
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddClauseForm(afterId)}
-                                      className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    >
-                                      <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
-                                        <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
-                                          <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
-                                        </span>
-                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                                          Add
-                                        </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddClauseForm(afterId)}
+                                    className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  >
+                                    <span className="relative z-10 inline-flex h-7 w-14 items-center justify-center bg-white text-[11px] font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                      <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                        <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
                                       </span>
-                                      <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                        <span className="w-16" />
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                        Add
                                       </span>
-                                    </button>
-                                  )}
+                                    </span>
+                                    <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="w-14" />
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                    </span>
+                                  </button>
                                 </div>
                               );
                             };
@@ -3057,10 +2936,10 @@ const TemporaryContractGenerator = ({
                               const isEdited = Boolean(clauseEdits[clause.id]);
                               const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
                               return [
-                                <div key={clause.id} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                <div key={clause.id} className="space-y-2 rounded border border-slate-100/80 p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-2">
-                                      <h3 className="font-semibold text-black">{clause.title}</h3>
+                                      <h3 className="font-semibold text-black">{clauseTitleEdits[clause.id] ?? clause.title}</h3>
                                       {isEdited ? (
                                         <span className="rounded-full bg-[#04b81f]/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-[#04b81f]">
                                           Edited
@@ -3074,42 +2953,13 @@ const TemporaryContractGenerator = ({
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {isEditing ? (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
-                                            onClick={() => saveClauseEdit(clause.id)}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-8 px-3"
-                                            onClick={() => {
-                                              setEditingClause(null);
-                                              setClauseDraft("");
-                                            }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                          {isEdited ? (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-8 px-3 text-slate-600 hover:text-slate-800"
-                                              onClick={() => resetClauseEdit(clause.id)}
-                                            >
-                                              Reset
-                                            </Button>
-                                          ) : null}
-                                        </>
+                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
                                       ) : (
                                         <>
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="h-8 px-3"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
                                             onClick={() => startEditingClause(clause)}
                                           >
                                             Edit
@@ -3117,8 +2967,8 @@ const TemporaryContractGenerator = ({
                                           {isCustomClause ? (
                                             <Button
                                               size="sm"
-                                              variant="ghost"
-                                              className="h-8 px-3 text-red-600 hover:text-red-700"
+                                              variant="outline"
+                                              className="h-[28px] px-3 text-xs rounded !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
                                               onClick={() => deleteCustomClause(clause.id)}
                                             >
                                               Delete
@@ -3128,24 +2978,6 @@ const TemporaryContractGenerator = ({
                                       )}
                                     </div>
                                   </div>
-
-                                  {isEditing ? (
-                                    <div className="space-y-2">
-                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
-                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
-                                      </p>
-                                      <Textarea
-                                        value={clauseDraft}
-                                        onChange={(e) => setClauseDraft(e.target.value)}
-                                        rows={6}
-                                        className="text-xs text-slate-600"
-                                        spellCheck={true}
-                                        lang="en"
-                                        autoCorrect="on"
-                                      />
-                                    </div>
-                                  ) : null}
 
                                   <div className="space-y-1">
                                     {paragraphs.map((text) => {
@@ -3162,10 +2994,142 @@ const TemporaryContractGenerator = ({
                                     })}
                                   </div>
                                 </div>,
-                                renderAddClauseControl(clause.id),
+                                clause.id === "introduction" ? null : renderAddClauseControl(clause.id),
                               ];
                             });
                           })()}
+                          {activeEditingClause
+                            ? (
+                                <div className="fixed inset-0 z-[999]">
+                                  <div className="absolute inset-0 bg-slate-900/35" />
+                                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                                    <div
+                                      className="pointer-events-auto w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                      role="dialog"
+                                      aria-modal="true"
+                                      aria-label={`Edit clause ${activeEditingClause.title}`}
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                    >
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <h3 className="text-sm font-semibold text-black">Edit Clause: {activeEditingClause.title}</h3>
+                                          <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
+                                        </div>
+                                        <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                          Separate paragraphs with a blank line. Paragraphs are numbered automatically.
+                                        </p>
+                                        <Input
+                                          value={clauseTitleDraft}
+                                          onChange={(e) => setClauseTitleDraft(e.target.value)}
+                                          placeholder="Clause title"
+                                          className="text-xs rounded border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                        />
+                                        <Textarea
+                                          value={clauseDraft}
+                                          onChange={(e) => setClauseDraft(e.target.value)}
+                                          rows={10}
+                                          className="text-xs text-slate-600 rounded border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                          spellCheck={true}
+                                          lang="en"
+                                          autoCorrect="on"
+                                        />
+                                        <div className="flex items-center justify-end gap-2">
+                                          {Boolean(
+                                            clauseEdits[activeEditingClause.id] || clauseTitleEdits[activeEditingClause.id],
+                                          ) ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-blue-600 hover:underline underline-offset-2"
+                                              onClick={() => resetClauseEdit(activeEditingClause.id)}
+                                            >
+                                              Reset
+                                            </Button>
+                                          ) : null}
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            onClick={cancelClauseEdit}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                            onClick={() => saveClauseEdit(activeEditingClause.id)}
+                                          >
+                                            Save
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            : null}
+                          {addingAfter !== undefined
+                            ? (
+                                <div className="fixed inset-0 z-[999]">
+                                  <div className="absolute inset-0 bg-slate-900/35" />
+                                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                                    <div
+                                      className="pointer-events-auto w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                      role="dialog"
+                                      aria-modal="true"
+                                      aria-label="Add clause"
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                    >
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <h3 className="text-sm font-semibold text-black">Add Clause</h3>
+                                          <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
+                                        </div>
+                                        <Input
+                                          value={newClauseTitle}
+                                          onChange={(e) => setNewClauseTitle(e.target.value)}
+                                          placeholder="Clause title"
+                                          className="text-xs rounded"
+                                          autoFocus
+                                        />
+                                        <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                          Separate paragraphs with a blank line. Paragraphs are numbered automatically.
+                                        </p>
+                                        <Textarea
+                                          value={newClauseBody}
+                                          onChange={(e) => setNewClauseBody(e.target.value)}
+                                          rows={8}
+                                          className="text-xs text-slate-600 rounded border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                          placeholder="Clause body. Separate paragraphs with a blank line."
+                                          spellCheck={true}
+                                          lang="en"
+                                          autoCorrect="on"
+                                        />
+                                        <div className="flex items-center justify-end gap-2">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            onClick={cancelAddClause}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                            onClick={saveNewClause}
+                                          >
+                                            Add clause
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            : null}
 
                       {validatedPreview.additionalNotes && (
                         <div className="space-y-1">
@@ -3218,8 +3182,9 @@ const TemporaryContractGenerator = ({
               </div>
             )}
           </ScrollArea>
-        </DialogContent>
-      </Dialog>
+          </CardContent>
+        </Card>
+      ) : null}
     </>
   );
 

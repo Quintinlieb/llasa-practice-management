@@ -54,6 +54,7 @@ type DocumentComponentProps = {
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
+    temporaryEmployeeCount?: number;
   }) => void;
 };
 
@@ -122,7 +123,7 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
-  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | "permanentContract" | null>(null);
+  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | "permanentContract" | "temporaryContract" | null>(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -136,6 +137,7 @@ const Documents = () => {
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
+    temporaryEmployeeCount?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -216,9 +218,14 @@ const Documents = () => {
         ? "Addendum"
         : modalDocument === "permanentContract"
           ? "Permanent Contract"
+          : modalDocument === "temporaryContract"
+            ? "Temporary Contract"
           : "";
   const modalSteps =
-    modalDocument === "warnings" || modalDocument === "addendum" || modalDocument === "permanentContract"
+    modalDocument === "warnings" ||
+    modalDocument === "addendum" ||
+    modalDocument === "permanentContract" ||
+    modalDocument === "temporaryContract"
       ? ([
           "Employer Details",
           "Employee Details",
@@ -226,6 +233,8 @@ const Documents = () => {
             ? "Warning Details"
             : modalDocument === "addendum"
               ? "Addendum Details"
+              : modalDocument === "temporaryContract"
+                ? "Employment Details"
               : "Employment Details",
           modalDocument === "warnings" ? "Preview / Download" : "Preview / Edit",
         ] as const)
@@ -285,14 +294,49 @@ const Documents = () => {
       "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
     ],
   ] as const;
+  const temporaryStepNotes = [
+    [
+      "The company name, registration number, and address can be changed in Company Settings.",
+      "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
+    ],
+    [
+      'Add single or multiple employee(s) by selecting the "Add employee" button and follow the easy prompts.',
+      'If you already added and saved the employees on the employees page, then choose one or multiple employees from the "select employee" dropdown.',
+      "Ensure each employee has name, surname, ID/Passport, cell number, and residential address.",
+    ],
+    [
+      "Capture temporary employment details and confirm how the contract ends (specific date or on completion of project/scope).",
+      "Complete all required fields before moving to preview and edit.",
+    ],
+    [
+      "Review and finalize the editable preview before downloading.",
+      "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
-  const modalActiveNotes = modalDocument === "permanentContract" ? permanentActiveNotes : addendumActiveNotes;
+  const temporaryEmployeeCount = stepMeta?.temporaryEmployeeCount ?? 0;
+  const temporaryActiveNotes = (() => {
+    const baseNotes = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
+    if (modalActiveStep === 2 && temporaryEmployeeCount > 1) {
+      baseNotes.push(
+        "The employment information selected and/or inserted in this step 3 will apply to all the employees. For example: Salary Amount will be the salary amount reflected on all the temporary contract of all the added employees at the previous step 2.",
+      );
+    }
+    return baseNotes;
+  })();
+  const modalActiveNotes =
+    modalDocument === "permanentContract"
+      ? permanentActiveNotes
+      : modalDocument === "temporaryContract"
+        ? temporaryActiveNotes
+        : addendumActiveNotes;
   const shouldRenderInlineDocument = Boolean(
     SelectedComponent &&
       selectedDocument !== "warnings" &&
       selectedDocument !== "addendum" &&
-      selectedDocument !== "permanentContract",
+      selectedDocument !== "permanentContract" &&
+      selectedDocument !== "temporaryContract",
   );
   const greetingName = profile?.user_name ?? "";
   const breadcrumbParts: string[] = [];
@@ -347,11 +391,16 @@ const Documents = () => {
                                     key={item.label}
                                     type="button"
                                     onClick={() => {
-                                      if (item.id === "warnings" || item.id === "addendum" || item.id === "permanentContract") {
+                                      if (
+                                        item.id === "warnings" ||
+                                        item.id === "addendum" ||
+                                        item.id === "permanentContract" ||
+                                        item.id === "temporaryContract"
+                                      ) {
                                         setSelectedDocument(item.id);
                                         setStepMeta(null);
                                         setBreadcrumbStep(null);
-                                        setModalDocument(item.id);
+                                        setModalDocument(item.id as "warnings" | "addendum" | "permanentContract" | "temporaryContract");
                                         return;
                                       }
                                       setSelectedDocument(item.id!);
@@ -578,18 +627,25 @@ const Documents = () => {
           "p-0 [&>button]:right-5 [&>button]:top-4",
           modalDocument === "addendum"
             || modalDocument === "permanentContract"
+            || modalDocument === "temporaryContract"
             ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
             : "h-[90vh] max-w-[1320px] overflow-hidden border border-slate-200",
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "addendum" || modalDocument === "permanentContract" ? (
+          {modalDocument === "addendum" || modalDocument === "permanentContract" || modalDocument === "temporaryContract" ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
               <header className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
                   <Menu className="h-3.5 w-3.5 -ml-1" />
                   <span className="font-semibold text-slate-700">
-                    {`Documents / Contracts / ${modalDocument === "addendum" ? "Addendum" : "Permanent Contract"}`}
+                    {`Documents / Contracts / ${
+                      modalDocument === "addendum"
+                        ? "Addendum"
+                        : modalDocument === "temporaryContract"
+                          ? "Temporary Contract"
+                          : "Permanent Contract"
+                    }`}
                   </span>
                 </div>
               </header>

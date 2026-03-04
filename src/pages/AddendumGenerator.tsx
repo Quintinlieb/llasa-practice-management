@@ -277,16 +277,21 @@ const AddendumGenerator = ({
   const [newClauseTitle, setNewClauseTitle] = useState("");
   const [newClauseBody, setNewClauseBody] = useState("");
   const [newClauseAmendmentType, setNewClauseAmendmentType] = useState<AmendmentType | "">("");
+  const [newClauseAmendmentOpen, setNewClauseAmendmentOpen] = useState(false);
   const steps = ["Employer Details", "Employee Details", "Addendum Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
   const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
+  const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const newClauseTitleInputRef = useRef<HTMLInputElement | null>(null);
+  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const previewScrollTop = useRef(0);
@@ -369,11 +374,50 @@ const AddendumGenerator = ({
     [employees],
   );
 
+  const searchedEmployees = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return sortedEmployees;
+    const tokens = query.split(" ").filter(Boolean);
+    return sortedEmployees
+      .map((employee) => {
+        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
+        const fullNameLower = fullName.toLowerCase();
+        const firstNameLower = employee.employee_name.toLowerCase();
+        const surnameLower = employee.employee_surname.toLowerCase();
+        const employeeNumberLower = (employee.employee_number ?? "").toLowerCase();
+        let score = 0;
+
+        if (fullNameLower === query) score += 1000;
+        if (fullNameLower.startsWith(query)) score += 800;
+        if (fullNameLower.includes(query)) score += 500;
+        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
+        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
+        if (query.length >= 2 && employeeNumberLower.includes(query)) score += 120;
+
+        return { employee, score, fullName };
+      })
+      .filter((item) => item.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.fullName.localeCompare(b.fullName, undefined, {
+            sensitivity: "base",
+          }),
+      )
+      .map((item) => item.employee);
+  }, [employeeSearchQuery, sortedEmployees]);
+
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");
     }
   }, [loading, navigate, user]);
+
+  useEffect(() => {
+    if (!employeeSearchOpen) return;
+    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [employeeSearchOpen]);
 
   useEffect(() => {
     if (hasDismissedEmployeeHint || activeStep !== 1) {
@@ -1691,16 +1735,41 @@ const AddendumGenerator = ({
                     <div className="space-y-2.5">
                       <div className="space-y-1.5">
                         <Label htmlFor="employee" className={modalFieldLabelClass}>Select Employee (optional)</Label>
-                      <Select value={selectedEmployeeId} onValueChange={handleEmployeeSelect}>
+                      <Select
+                        value={selectedEmployeeId}
+                        onValueChange={handleEmployeeSelect}
+                        open={employeeSearchOpen}
+                        onOpenChange={(open) => {
+                          setEmployeeSearchOpen(open);
+                          if (open) setEmployeeSearchQuery("");
+                        }}
+                      >
                         <SelectTrigger className={`${getAddendumModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${addendumModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)]">
-                          {sortedEmployees.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
-                              {employee.employee_name} {employee.employee_surname}
-                            </SelectItem>
-                          ))}
+                        <SelectContent
+                          hideScrollButtons
+                          className="w-[var(--radix-select-trigger-width)] p-0"
+                        >
+                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                            <Input
+                              ref={employeeSearchInputRef}
+                              value={employeeSearchQuery}
+                              onChange={(event) => setEmployeeSearchQuery(event.target.value)}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              placeholder="Type full employee name..."
+                              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                            />
+                          </div>
+                          {searchedEmployees.length > 0 ? (
+                            searchedEmployees.map((employee) => (
+                              <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
+                                {employee.employee_name} {employee.employee_surname}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-[11px] text-slate-500">No matching employees found.</div>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -2204,6 +2273,12 @@ const AddendumGenerator = ({
                 setCustomClauseTitleDraft(isCustomClause ? (customClauseTitleEdits[clause.id] ?? clause.title) : "");
               };
 
+              const cancelClauseEdit = () => {
+                setEditingClause(null);
+                setClauseDraft("");
+                setCustomClauseTitleDraft("");
+              };
+
               const saveClauseEdit = (id: string) => {
                 const trimmed = clauseDraft.trim();
                 const baseCustomClause = customClauses.find((clause) => clause.id === id);
@@ -2255,6 +2330,7 @@ const AddendumGenerator = ({
                 setNewClauseTitle("");
                 setNewClauseBody("");
                 setNewClauseAmendmentType("");
+                setNewClauseAmendmentOpen(false);
               };
 
               const cancelAddClause = () => {
@@ -2262,6 +2338,7 @@ const AddendumGenerator = ({
                 setNewClauseTitle("");
                 setNewClauseBody("");
                 setNewClauseAmendmentType("");
+                setNewClauseAmendmentOpen(false);
               };
 
               const saveNewClause = () => {
@@ -2315,6 +2392,12 @@ const AddendumGenerator = ({
                   setCustomClauseTitleDraft("");
                 }
               };
+              const activeEditingClause = editingClause
+                ? clausesWithEdits.find((clause) => clause.id === editingClause) ?? null
+                : null;
+              const isActiveEditingClauseCustom = activeEditingClause
+                ? customClauses.some((custom) => custom.id === activeEditingClause.id)
+                : false;
 
               return (
                 <div className="space-y-8">
@@ -2324,105 +2407,27 @@ const AddendumGenerator = ({
                             let clauseNumber = 1;
                             const renderAddClauseControl = (afterId: string | null) => {
                           if (afterId === "introduction" || afterId === "entire-agreement-and-acknoweldgement") return null;
-                              const isFormOpen = addingAfter === afterId && addingAfter !== undefined;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
-                                  {isFormOpen ? (
-                                    <div className="w-full rounded-md bg-slate-50/60 p-4">
-                                      <div className="grid gap-3">
-                                        <div className="grid gap-1 text-left">
-                                          <Label className="text-xs">Amendment type</Label>
-                                          <Select
-                                            value={newClauseAmendmentType}
-                                            onValueChange={(value) => setNewClauseAmendmentType(value as AmendmentType)}
-                                          >
-                                            <SelectTrigger
-                                              className={`${getAddendumModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${addendumModalDropdownToneClass}`}
-                                            >
-                                              <SelectValue placeholder="Please Select amendment type" />
-                                            </SelectTrigger>
-                                            <SelectContent className="w-[var(--radix-select-trigger-width)] text-xs">
-                                              <SelectItem className={addendumModalSelectItemClass} value="add">
-                                                Add new term(s)
-                                              </SelectItem>
-                                              <SelectItem className={addendumModalSelectItemClass} value="amend">
-                                                Amend existing term(s)
-                                              </SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                        {newClauseAmendmentType ? (
-                                          <>
-                                            <Input
-                                              value={newClauseTitle}
-                                              onChange={(e) => setNewClauseTitle(e.target.value)}
-                                              placeholder="Clause title"
-                                              onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
-                                              onClick={rememberPreviewScroll}
-                                              className={getAddendumModalInputClass(newClauseTitle.trim().length > 0)}
-                                            />
-                                            <Textarea
-                                              value={newClauseBody}
-                                              onChange={(e) => setNewClauseBody(e.target.value)}
-                                              rows={4}
-                                              className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                              placeholder="Clause body. Separate paragraphs with a blank line."
-                                              spellCheck={true}
-                                              lang="en"
-                                              autoCorrect="on"
-                                              onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
-                                              onClick={rememberPreviewScroll}
-                                            />
-                                          </>
-                                        ) : null}
-                                        <div className="flex items-center justify-between text-[11px] text-slate-500">
-                                          <span>Paragraph numbering updates automatically.</span>
-                                          <div className="flex items-center gap-2">
-                                            <Button
-                                              size="sm"
-                                              className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                              onClick={saveNewClause}
-                                              disabled={
-                                                !newClauseAmendmentType ||
-                                                !newClauseTitle.trim() ||
-                                                !newClauseBody.trim()
-                                              }
-                                            >
-                                              Add clause
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                                              onClick={cancelAddClause}
-                                            >
-                                              Cancel
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddClauseForm(afterId)}
-                                      className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    >
-                                      <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
-                                        <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
-                                          <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
-                                        </span>
-                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                                          Add
-                                        </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddClauseForm(afterId)}
+                                    className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  >
+                                    <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                      <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                        <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
                                       </span>
-                                      <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                        <span className="w-16" />
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                        Add
                                       </span>
-                                    </button>
-                                  )}
+                                    </span>
+                                    <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="w-16" />
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                    </span>
+                                  </button>
                                 </div>
                               );
                             };
@@ -2470,37 +2475,7 @@ const AddendumGenerator = ({
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {isEditing ? (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                            onClick={() => saveClauseEdit(clause.id)}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                                            onClick={() => {
-                                              setEditingClause(null);
-                                              setClauseDraft("");
-                                              setCustomClauseTitleDraft("");
-                                            }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                          {isEdited ? (
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                                              onClick={() => resetClauseEdit(clause.id)}
-                                            >
-                                              Reset
-                                            </Button>
-                                          ) : null}
-                                        </>
+                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
                                       ) : (
                                         <>
                                           <Button
@@ -2526,36 +2501,6 @@ const AddendumGenerator = ({
                                     </div>
                                   </div>
 
-                                  {isEditing ? (
-                                    <div className="space-y-2">
-                                      {isCustomClause ? (
-                                        <Input
-                                          value={customClauseTitleDraft}
-                                          onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
-                                          placeholder="Clause title"
-                                          className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
-                                          onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
-                                          onClick={rememberPreviewScroll}
-                                        />
-                                      ) : null}
-                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
-                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
-                                      </p>
-                                      <Textarea
-                                        value={clauseDraft}
-                                        onChange={(e) => setClauseDraft(e.target.value)}
-                                        rows={6}
-                                        className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                        spellCheck={true}
-                                        lang="en"
-                                        autoCorrect="on"
-                                        onFocus={(e) => rememberClauseFieldFocus(e.currentTarget)}
-                                        onClick={rememberPreviewScroll}
-                                      />
-                                    </div>
-                                  ) : null}
-
                                   <div className="space-y-1">
                                     {preface ? (
                                       <p className="text-justify whitespace-pre-line text-black font-semibold">{preface}</p>
@@ -2579,6 +2524,162 @@ const AddendumGenerator = ({
                             }),
                             ];
                           })()}
+                          {activeEditingClause ? (
+                            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
+                              <div
+                                className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                role="dialog"
+                                aria-modal="true"
+                                aria-label={`Edit clause ${activeEditingClause.title}`}
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-sm font-semibold text-black">Edit Clause: {activeEditingClause.title}</h3>
+                                    <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
+                                  </div>
+                                  {isActiveEditingClauseCustom ? (
+                                    <Input
+                                      value={customClauseTitleDraft}
+                                      onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
+                                      placeholder="Clause title"
+                                      className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
+                                    />
+                                  ) : null}
+                                  <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                    <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                    Separate paragraphs with a blank line. Paragraph numbering updates automatically.
+                                  </p>
+                                  <Textarea
+                                    value={clauseDraft}
+                                    onChange={(e) => setClauseDraft(e.target.value)}
+                                    rows={10}
+                                    className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                    spellCheck={true}
+                                    lang="en"
+                                    autoCorrect="on"
+                                  />
+                                  <div className="flex items-center justify-end gap-2">
+                                    {Boolean(
+                                      clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
+                                    ) ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                                        onClick={() => resetClauseEdit(activeEditingClause.id)}
+                                      >
+                                        Reset
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                      onClick={cancelClauseEdit}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                      onClick={() => saveClauseEdit(activeEditingClause.id)}
+                                    >
+                                      Save
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {addingAfter !== undefined ? (
+                            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
+                              <div
+                                className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                role="dialog"
+                                aria-modal="true"
+                                aria-label="Add clause"
+                              >
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <h3 className="text-sm font-semibold text-black">Add Clause</h3>
+                                    <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
+                                  </div>
+                                  <div className="grid gap-1 text-left">
+                                    <Label className="text-xs">Amendment type</Label>
+                                    <Select
+                                      value={newClauseAmendmentType}
+                                      open={newClauseAmendmentOpen}
+                                      onOpenChange={setNewClauseAmendmentOpen}
+                                      onValueChange={(value) => {
+                                        setNewClauseAmendmentType(value as AmendmentType);
+                                        setNewClauseAmendmentOpen(false);
+                                        setTimeout(() => newClauseTitleInputRef.current?.focus(), 0);
+                                      }}
+                                    >
+                                      <SelectTrigger
+                                        className={`${getAddendumModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${addendumModalDropdownToneClass}`}
+                                      >
+                                        <SelectValue placeholder="Please Select amendment type" />
+                                      </SelectTrigger>
+                                      <SelectContent className="z-[1001] w-[var(--radix-select-trigger-width)] text-xs">
+                                        <SelectItem className={addendumModalSelectItemClass} value="add">
+                                          Add new term(s)
+                                        </SelectItem>
+                                        <SelectItem className={addendumModalSelectItemClass} value="amend">
+                                          Amend existing term(s)
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  {newClauseAmendmentType ? (
+                                    <>
+                                      <Input
+                                        ref={newClauseTitleInputRef}
+                                        value={newClauseTitle}
+                                        onChange={(e) => setNewClauseTitle(e.target.value)}
+                                        onMouseDown={() => setNewClauseAmendmentOpen(false)}
+                                        placeholder="Clause title"
+                                        className={getAddendumModalInputClass(newClauseTitle.trim().length > 0)}
+                                      />
+                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
+                                      </p>
+                                      <Textarea
+                                        value={newClauseBody}
+                                        onChange={(e) => setNewClauseBody(e.target.value)}
+                                        onMouseDown={() => setNewClauseAmendmentOpen(false)}
+                                        rows={8}
+                                        className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                        placeholder="Clause body. Separate paragraphs with a blank line."
+                                        spellCheck={true}
+                                        lang="en"
+                                        autoCorrect="on"
+                                      />
+                                    </>
+                                  ) : null}
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                      onClick={cancelAddClause}
+                                    >
+                                      Cancel
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                      onClick={saveNewClause}
+                                      disabled={!newClauseAmendmentType || !newClauseTitle.trim() || !newClauseBody.trim()}
+                                    >
+                                      Add clause
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
 
                       {validatedPreview.additionalNotes && (
                         <div className="space-y-1">

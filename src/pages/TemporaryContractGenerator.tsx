@@ -9,18 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Upload, Trash2 } from "lucide-react";
+import { Download, FileText, ArrowLeft, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Upload, Trash2, Users, UsersRound, UserPlus, ChevronDown } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
-import { temporaryContractSchema, salaryFrequencyOptions } from "@/lib/validation";
+import ExcelJS from "exceljs";
+import { temporaryContractSchema, salaryFrequencyOptions, southAfricanProvinces } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
-import { read, utils, write } from "xlsx";
+import { read, utils } from "xlsx";
 import { cn } from "@/lib/utils";
 
 type SalaryFrequency = (typeof salaryFrequencyOptions)[number];
@@ -66,6 +68,19 @@ type TempEmployeeRow = {
   passportNumber: string;
   employeeCell: string;
   employeeAddress: string;
+};
+
+type AddTempEmployeeForm = {
+  employeeName: string;
+  employeeSurname: string;
+  employeeIdNumber: string;
+  passportNumber: string;
+  employeeCell: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  province: string;
+  areaCode: string;
 };
 
 const makeRowId = () => `emp-${Math.random().toString(16).slice(2, 8)}`;
@@ -149,10 +164,12 @@ const generateCustomClauseId = () =>
 
 const TemporaryContractGenerator = ({
   embedded = false,
+  externalNavigation = false,
   onStepChange,
   onStepMetaChange,
 }: {
   embedded?: boolean;
+  externalNavigation?: boolean;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -160,8 +177,13 @@ const TemporaryContractGenerator = ({
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
+    onClear?: () => void;
+    isFinished?: boolean;
+    temporaryEmployeeCount?: number;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -192,17 +214,25 @@ const TemporaryContractGenerator = ({
   const [issueYear, setIssueYear] = useState<string>(String(currentYear));
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [tempEmployees, setTempEmployees] = useState<TempEmployeeRow[]>([]);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [isNewEmployeeMenuOpen, setIsNewEmployeeMenuOpen] = useState(false);
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showBulkEmployeeDialog, setShowBulkEmployeeDialog] = useState(false);
+  const [addEmployeeFormStep, setAddEmployeeFormStep] = useState<1 | 2>(1);
   const [newEmployeeIdType, setNewEmployeeIdType] = useState<"id" | "passport">("id");
-  const [newEmployeeForm, setNewEmployeeForm] = useState<Omit<TempEmployeeRow, "id">>({
+  const [newEmployeeForm, setNewEmployeeForm] = useState<AddTempEmployeeForm>({
     employeeName: "",
     employeeSurname: "",
     employeeIdNumber: "",
     passportNumber: "",
     employeeCell: "",
-    employeeAddress: "",
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    province: "",
+    areaCode: "",
   });
   const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
   const snippetPaddingTopMm = 2;
@@ -216,11 +246,49 @@ const TemporaryContractGenerator = ({
       ),
     [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
+  const baseModalFieldClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+  const temporaryModalDropdownToneClass =
+    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+  const temporaryModalSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const temporaryDropdownMenuItemClass =
+    "cursor-pointer gap-2 text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
+  const getTemporaryModalInputClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+  const getTemporaryModalSelectTriggerClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+  const formatAddressFromParts = useCallback((address: Pick<AddTempEmployeeForm, "addressLine1" | "addressLine2" | "city" | "province" | "areaCode">) => {
+    return [address.addressLine1, address.addressLine2, address.city, address.province, address.areaCode]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(", ");
+  }, []);
+
+  const isAddEmployeeStepOneComplete = useMemo(() => {
+    const hasName = newEmployeeForm.employeeName.trim().length > 0;
+    const hasSurname = newEmployeeForm.employeeSurname.trim().length > 0;
+    const hasCell = newEmployeeForm.employeeCell.trim().length > 0;
+    const hasIdOrPassport =
+      newEmployeeIdType === "id"
+        ? newEmployeeForm.employeeIdNumber.replace(/\D/g, "").length > 0
+        : newEmployeeForm.passportNumber.trim().length > 0;
+    return hasName && hasSurname && hasCell && hasIdOrPassport;
+  }, [newEmployeeForm, newEmployeeIdType]);
+
+  const isAddEmployeeStepTwoComplete = useMemo(() => {
+    return (
+      newEmployeeForm.addressLine1.trim().length > 0 &&
+      newEmployeeForm.city.trim().length > 0 &&
+      newEmployeeForm.province.trim().length > 0 &&
+      newEmployeeForm.areaCode.trim().length > 0
+    );
+  }, [newEmployeeForm]);
 
   useEffect(() => {
     if (!embedded) return;
-    onStepChange?.(steps[activeStep] ?? null);
-  }, [activeStep, embedded, onStepChange, steps]);
+    onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
+  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
 
 
   const [formData, setFormData] = useState<ContractFormState>({
@@ -265,9 +333,21 @@ const TemporaryContractGenerator = ({
       setShowEmployeeHint(false);
       return;
     }
-    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    if (hasShownEmployeeHint) return;
+    const timer = setTimeout(() => {
+      setShowEmployeeHint(true);
+      setHasShownEmployeeHint(true);
+    }, 1000);
     return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint]);
+  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
+
+  useEffect(() => {
+    if (!showEmployeeHint) return;
+    const autoDismissTimer = setTimeout(() => {
+      setShowEmployeeHint(false);
+    }, 10000);
+    return () => clearTimeout(autoDismissTimer);
+  }, [showEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -293,7 +373,6 @@ const TemporaryContractGenerator = ({
     if (profile) {
       setFormData((prev) => ({
         ...prev,
-        workplace: prev.workplace || profile.physical_address || "",
         employerContact: prev.employerContact || profile.company_contact || "",
         employerEmail: prev.employerEmail || profile.company_email || "",
       }));
@@ -328,8 +407,13 @@ const TemporaryContractGenerator = ({
       employeeIdNumber: "",
       passportNumber: "",
       employeeCell: "",
-      employeeAddress: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      province: "",
+      areaCode: "",
     });
+    setAddEmployeeFormStep(1);
     setNewEmployeeIdType("id");
   };
 
@@ -337,13 +421,13 @@ const TemporaryContractGenerator = ({
     const name = newEmployeeForm.employeeName.trim();
     const surname = newEmployeeForm.employeeSurname.trim();
     const cell = newEmployeeForm.employeeCell.trim();
-    const address = newEmployeeForm.employeeAddress.trim();
+    const address = formatAddressFromParts(newEmployeeForm);
     const idNumber = newEmployeeIdType === "id" ? newEmployeeForm.employeeIdNumber.replace(/\D/g, "") : "";
     const passportNumber = newEmployeeIdType === "passport" ? newEmployeeForm.passportNumber.trim() : "";
     if (!name || !surname || !cell || !address || (!idNumber && !passportNumber)) {
       toast({
         title: "Please complete required fields",
-        description: "Name, surname, ID/Passport, cell number, and address are required.",
+        description: "Name, surname, ID/Passport, cell number, and full residential address are required.",
         variant: "destructive",
       });
       return;
@@ -365,33 +449,62 @@ const TemporaryContractGenerator = ({
   };
 
   const handleBulkUploadClick = () => {
-    bulkUploadInputRef.current?.click();
+    setShowBulkEmployeeDialog(true);
   };
 
-  const handleDownloadTemplate = () => {
-    const header = ["Name", "Surname", "ID Number", "Passport Number", "Cell Number", "Residential Address"];
-    const example = ["Jane", "Doe", "9001011234088", "", "0821234567", "123 Main St, Cape Town, WC, 8001"];
-    const blankRows = Array.from({ length: 10 }, () => ["", "", "", "", "", ""]);
-    const rows = [header, example, ...blankRows];
-    const ws = utils.aoa_to_sheet(rows);
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Template");
 
-    const textCols = [2, 3, 4]; // zero-based column indexes for ID/Passport/Cell
-    for (let r = 1; r < rows.length; r += 1) {
-      textCols.forEach((c) => {
-        const cellRef = utils.encode_cell({ c, r });
-        if (!ws[cellRef]) {
-          ws[cellRef] = { t: "s", v: "" };
-        } else {
-          ws[cellRef].t = "s";
-        }
-        ws[cellRef].z = "@";
+    worksheet.columns = [
+      { header: "Name", key: "employeeName", width: 18 },
+      { header: "Surname", key: "employeeSurname", width: 18 },
+      { header: "ID Number", key: "employeeIdNumber", width: 18 },
+      { header: "Passport Number", key: "passportNumber", width: 18 },
+      { header: "Cell Number", key: "employeeCell", width: 16 },
+      { header: "Address Line 1", key: "addressLine1", width: 24 },
+      { header: "Address Line 2", key: "addressLine2", width: 24 },
+      { header: "City", key: "city", width: 18 },
+      { header: "Province", key: "province", width: 18 },
+      { header: "Area Code", key: "areaCode", width: 12 },
+    ];
+    worksheet.getRow(1).font = { bold: true };
+
+    worksheet.addRow({
+      employeeName: "Jane",
+      employeeSurname: "Doe",
+      employeeIdNumber: "9001011234088",
+      passportNumber: "",
+      employeeCell: "0821234567",
+      addressLine1: "123 Main St",
+      addressLine2: "Unit 4",
+      city: "Cape Town",
+      province: "Western Cape",
+      areaCode: "8001",
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      worksheet.addRow({
+        employeeName: "",
+        employeeSurname: "",
+        employeeIdNumber: "",
+        passportNumber: "",
+        employeeCell: "",
+        addressLine1: "",
+        addressLine2: "",
+        city: "",
+        province: "",
+        areaCode: "",
       });
     }
 
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, ws, "Template");
-    const wbout = write(wb, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    worksheet.getColumn(3).numFmt = "@";
+    worksheet.getColumn(4).numFmt = "@";
+    worksheet.getColumn(5).numFmt = "@";
+    worksheet.getColumn(10).numFmt = "@";
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -424,8 +537,26 @@ const TemporaryContractGenerator = ({
           const employeeIdNumber = getValue(row, ["id", "id number", "idno"]).replace(/\D/g, "");
           const passportNumber = getValue(row, ["passport", "passport number"]);
           const employeeCell = getValue(row, ["cell", "cell number", "phone"]).replace(/\D/g, "").slice(0, 10);
-          const employeeAddress = getValue(row, ["address", "residential address"]);
-          if (!employeeName || !employeeSurname || (!employeeIdNumber && !passportNumber) || !employeeCell || !employeeAddress) {
+          const addressLine1 = getValue(row, ["address line 1", "physical_address_line1"]);
+          const addressLine2 = getValue(row, ["address line 2", "physical_address_line2"]);
+          const city = getValue(row, ["city"]);
+          const province = getValue(row, ["province"]);
+          const areaCode = getValue(row, ["area code", "area_code"]);
+          const employeeAddress = [addressLine1, addressLine2, city, province, areaCode]
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .join(", ");
+          const hasAddressLine = Boolean(addressLine1.trim() || addressLine2.trim());
+          if (
+            !employeeName ||
+            !employeeSurname ||
+            (!employeeIdNumber && !passportNumber) ||
+            !employeeCell ||
+            !hasAddressLine ||
+            !city ||
+            !province ||
+            !areaCode
+          ) {
             return null;
           }
           return {
@@ -442,7 +573,8 @@ const TemporaryContractGenerator = ({
       if (!parsed.length) {
         toast({
           title: "No valid rows found",
-          description: "Ensure the spreadsheet has Name, Surname, ID/Passport, Cell, and Address columns.",
+          description:
+            "Ensure each row has Name, Surname, ID or Passport, Cell, City, Province, Area Code, and at least one address line.",
           variant: "destructive",
         });
         return;
@@ -450,6 +582,7 @@ const TemporaryContractGenerator = ({
       setTempEmployees((prev) => [...prev, ...parsed]);
       setSelectedEmployeeIds([]);
       applyEmployeeToFormData(parsed[0]);
+      setShowBulkEmployeeDialog(false);
       toast({
         title: "Bulk upload added",
         description: `${parsed.length} employee${parsed.length === 1 ? "" : "s"} added.`,
@@ -528,7 +661,7 @@ const TemporaryContractGenerator = ({
       salaryAmount: "",
       salaryFrequency: "month",
       projectScope: "",
-      workplace: profile?.physical_address || "",
+      workplace: "",
       interpreter: "no",
       additionalNotes: "",
     });
@@ -592,19 +725,37 @@ const TemporaryContractGenerator = ({
   }, [activeStep, isEmployerStepComplete, isEmployeeStepComplete]);
 
   const canNavigateToStep = (index: number) => {
+    if (index < 0 || index >= steps.length) return false;
+    if (showFinalActions) return true;
     return index < activeStep;
   };
 
   const handleStepClick = (index: number) => {
-    if (canNavigateToStep(index)) {
-      if (index > 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
+    if (!canNavigateToStep(index)) return;
+    if (showFinalActions) {
+      setShowFinalActions(false);
+    }
+    if (index > 0 && showEmployeeHint) {
+      setShowEmployeeHint(false);
+    }
+    setActiveStep(index);
+  };
+
+  const canSelectStep = useCallback(
+    (index: number) => canNavigateToStep(index),
+    [activeStep, showFinalActions, steps.length],
+  );
+
+  const handleStepSelect = useCallback(
+    (index: number) => {
+      if (!canNavigateToStep(index)) return;
+      if (showFinalActions) {
+        setShowFinalActions(false);
       }
       setActiveStep(index);
-    }
-  };
+    },
+    [activeStep, showFinalActions, steps.length],
+  );
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
@@ -620,6 +771,10 @@ const TemporaryContractGenerator = ({
   const canAdvance = activeStep === steps.length - 1 ? isFormComplete : canGoNext;
 
   const handleNextOrFinish = () => {
+    if (showFinalActions) {
+      void handleDownload();
+      return;
+    }
     if (activeStep === steps.length - 1) {
       if (isFormComplete) {
         handleFinish();
@@ -630,9 +785,49 @@ const TemporaryContractGenerator = ({
   };
 
   const handleBack = () => {
+    if (showFinalActions) {
+      setShowFinalActions(false);
+      setActiveStep(steps.length - 1);
+      return;
+    }
     if (activeStep > 0) {
       setActiveStep((prev) => prev - 1);
     }
+  };
+
+  const clearCurrentStepFields = () => {
+    if (activeStep === 0) {
+      setFormData((prev) => ({
+        ...prev,
+        tradingName: "",
+        employerContact: profile?.company_contact || "",
+        employerEmail: profile?.company_email || "",
+      }));
+      return;
+    }
+    if (activeStep === 1) {
+      setTempEmployees([]);
+      setSelectedEmployeeIds([]);
+      applyEmployeeToFormData(null);
+      return;
+    }
+    if (activeStep === 2) {
+      setFormData((prev) => ({
+        ...prev,
+        startDate: new Date().toISOString().split("T")[0],
+        endType: "date",
+        endDate: "",
+        jobTitle: "",
+        salaryAmount: "",
+        salaryFrequency: "month",
+        projectScope: "",
+        workplace: "",
+        interpreter: "no",
+        additionalNotes: "",
+      }));
+      return;
+    }
+    resetForm();
   };
 
   useEffect(() => {
@@ -641,10 +836,15 @@ const TemporaryContractGenerator = ({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext: canAdvance,
-      canGoBack: activeStep > 0,
+      canGoNext: showFinalActions ? !isGenerating : canAdvance,
+      canGoBack: showFinalActions || activeStep > 0,
+      canSelectStep,
       onNext: handleNextOrFinish,
       onBack: handleBack,
+      onStepSelect: handleStepSelect,
+      onClear: clearCurrentStepFields,
+      isFinished: showFinalActions,
+      temporaryEmployeeCount: tempEmployees.length,
     });
   }, [
     activeStep,
@@ -653,9 +853,15 @@ const TemporaryContractGenerator = ({
     steps,
     stepIcons,
     canAdvance,
+    canSelectStep,
     handleNextOrFinish,
     handleBack,
+    handleStepSelect,
+    showFinalActions,
+    isGenerating,
+    clearCurrentStepFields,
     isFormComplete,
+    tempEmployees.length,
   ]);
 
   const validateData = (): ValidatedTempData => {
@@ -731,7 +937,7 @@ const TemporaryContractGenerator = ({
   const FirstPagePreview = ({ data, compact = false }: { data: ValidatedTempData; compact?: boolean }) => {
     const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
     const salaryDisplay = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
-    const workplace = data.workplace || profile?.physical_address || "";
+              const workplace = data.workplace;
     const idOrPassport = data.employeeIdNumber || data.passportNumber || "";
     const endInfoLabel = data.endType === "completion" ? "Ends on completion of" : "End date";
     const endInfoValue =
@@ -1092,7 +1298,7 @@ const TemporaryContractGenerator = ({
           `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`,
         );
         drawDualRow("Job title", data.jobTitle, "Interpreter", data.interpreter === "yes" ? "Yes" : "No");
-        drawSingleRow("Workplace", data.workplace || profile?.physical_address || "");
+        drawSingleRow("Workplace", data.workplace);
         drawSingleRow("Project/Scope", data.projectScope);
       });
 
@@ -1451,6 +1657,7 @@ const TemporaryContractGenerator = ({
   const previewSubtitle = employeeFullName
     ? `Review and download the temporary contract for ${employeeFullName}.`
     : "Review and download the temporary contract.";
+  const useExternalShell = embedded && externalNavigation;
 
   if (loading) {
     return (
@@ -1464,7 +1671,7 @@ const TemporaryContractGenerator = ({
     <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
                 <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
@@ -1510,11 +1717,13 @@ const TemporaryContractGenerator = ({
         className={cn(
           "space-y-6",
           embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+          useExternalShell &&
+            (showFinalActions ? "space-y-0 pt-0 pr-0 pb-0" : "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0"),
         )}
         style={{ scrollbarGutter: "stable" }}
       >
         {!showFinalActions ? (
-          <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 h-full min-h-0 !backdrop-blur-none")}>
             {!embedded && (
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-center gap-8 w-full">
@@ -1592,14 +1801,15 @@ const TemporaryContractGenerator = ({
             )}
             <CardContent
               className={cn(
-                "pt-3 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                "pt-1 [&_label]:text-[10px] [&_label]:font-semibold [&_label]:text-slate-400 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
                 !embedded && "flex-1 min-h-0 overflow-y-auto",
+                useExternalShell && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
               )}
             >
-            <div className="space-y-4">
+            <div className={cn("space-y-4", useExternalShell && "min-h-0 flex-1 overflow-y-auto pr-1")}>
               {activeStep === 0 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="companyName">Company name</Label>
@@ -1607,7 +1817,7 @@ const TemporaryContractGenerator = ({
                         id="companyName"
                         value={profile?.company_name || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getTemporaryModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1616,7 +1826,7 @@ const TemporaryContractGenerator = ({
                         id="registrationNumber"
                         value={profile?.registration_number || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getTemporaryModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
@@ -1625,7 +1835,7 @@ const TemporaryContractGenerator = ({
                         id="physicalAddress"
                         value={profile?.physical_address || ""}
                         readOnly
-                        className="bg-slate-50 text-blue-700 focus-visible:ring-blue-500"
+                        className={getTemporaryModalInputClass(Boolean(profile?.physical_address))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1635,11 +1845,11 @@ const TemporaryContractGenerator = ({
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
                         placeholder="If different from registered name"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.tradingName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact">Employer contact *</Label>
+                      <Label htmlFor="employerContact">Employer contact <span className="text-red-600">*</span></Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1648,17 +1858,17 @@ const TemporaryContractGenerator = ({
                           setFormData({ ...formData, employerContact: digitsOnly });
                         }}
                         placeholder="10-digit contact number"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.employerContact.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail">Employer email *</Label>
+                      <Label htmlFor="employerEmail">Employer email <span className="text-red-600">*</span></Label>
                       <Input
                         id="employerEmail"
                         type="email"
                         value={formData.employerEmail}
                         onChange={(e) => setFormData({ ...formData, employerEmail: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.employerEmail.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1666,51 +1876,55 @@ const TemporaryContractGenerator = ({
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-slate-50/70 p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setShowAddEmployee(true)}
-                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add employee
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleBulkUploadClick}
-                          className="gap-2 hover:border-blue-600 hover:text-blue-600 hover:bg-white"
-                        >
-                          <Upload className="h-4 w-4" />
-                          Add bulk
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={handleDownloadTemplate}
-                          className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
-                        >
-                          Download template
-                        </button>
-                        <input
-                          ref={bulkUploadInputRef}
-                          type="file"
-                          accept=".xlsx,.xls,.csv"
-                          className="hidden"
-                          onChange={handleBulkUploadFile}
-                        />
+                        <DropdownMenu open={isNewEmployeeMenuOpen} onOpenChange={setIsNewEmployeeMenuOpen}>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-[28px] min-w-[84px] justify-between gap-1 rounded border-blue-600 px-3 text-xs text-blue-600 whitespace-nowrap hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white"
+                            >
+                              <span>Add employee</span>
+                              <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-36 rounded">
+                            <DropdownMenuItem
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                setIsNewEmployeeMenuOpen(false);
+                                setShowAddEmployee(true);
+                              }}
+                              className={temporaryDropdownMenuItemClass}
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              Single
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                setIsNewEmployeeMenuOpen(false);
+                                handleBulkUploadClick();
+                              }}
+                              className={temporaryDropdownMenuItemClass}
+                            >
+                              <Users className="h-3.5 w-3.5" />
+                              Multiple
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       <Button
                         size="sm"
                         variant="destructive"
                         disabled={!selectedEmployeeIds.length}
                         onClick={handleDeleteSelected}
-                        className="gap-2 disabled:opacity-60"
+                        className="h-[28px] min-w-[84px] gap-1 rounded px-3 text-xs whitespace-nowrap disabled:opacity-60"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3 w-3" />
                         Delete
                       </Button>
                     </div>
@@ -1775,9 +1989,9 @@ const TemporaryContractGenerator = ({
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3 rounded-sm border border-blue-400 bg-white p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="space-y-3">
-                    <div className="rounded-lg border border-blue-100 bg-slate-50/80 p-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
                       <p className="text-sm font-semibold text-gray-900 mb-2">How will the contract end?</p>
                       <div className="grid gap-2 md:grid-cols-2">
                         <label className="flex items-start gap-2 rounded-lg border border-transparent bg-white p-3 shadow-sm transition hover:border-blue-200 hover:shadow">
@@ -1824,29 +2038,29 @@ const TemporaryContractGenerator = ({
 
                     <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="startDate">Start Date *</Label>
+                      <Label htmlFor="startDate">Start Date <span className="text-red-600">*</span></Label>
                       <Input
                         id="startDate"
                         type="date"
                           value={formData.startDate}
                           onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                          className={getTemporaryModalInputClass(formData.startDate.trim().length > 0)}
                       />
                     </div>
                     {formData.endType === "date" ? (
                       <div className="space-y-1.5">
-                        <Label htmlFor="endDate">End Date *</Label>
+                        <Label htmlFor="endDate">End Date <span className="text-red-600">*</span></Label>
                         <Input
                           id="endDate"
                           type="date"
                           value={formData.endDate}
                           onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                          className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                          className={getTemporaryModalInputClass(formData.endDate.trim().length > 0)}
                         />
                       </div>
                     ) : null}
                     <div className="space-y-1.5">
-                      <Label htmlFor="salaryAmount">Salary Amount *</Label>
+                      <Label htmlFor="salaryAmount">Salary Amount <span className="text-red-600">*</span></Label>
                       <Input
                         id="salaryAmount"
                         type="number"
@@ -1855,11 +2069,11 @@ const TemporaryContractGenerator = ({
                         value={formData.salaryAmount}
                         onChange={(e) => setFormData({ ...formData, salaryAmount: e.target.value })}
                         placeholder="e.g. 25000"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.salaryAmount.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="salaryFrequency">Salary Frequency *</Label>
+                      <Label htmlFor="salaryFrequency">Salary Frequency <span className="text-red-600">*</span></Label>
                       <Select
                         value={formData.salaryFrequency}
                         onValueChange={(value) =>
@@ -1869,12 +2083,12 @@ const TemporaryContractGenerator = ({
                           })
                         }
                       >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                        <SelectTrigger className={`${getTemporaryModalSelectTriggerClass(Boolean(formData.salaryFrequency))} ${temporaryModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select frequency" />
                         </SelectTrigger>
                         <SelectContent>
                           {salaryFrequencyOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
+                            <SelectItem key={option} value={option} className={temporaryModalSelectItemClass}>
                               {salaryFrequencyLabels[option as SalaryFrequency]}
                             </SelectItem>
                           ))}
@@ -1882,34 +2096,35 @@ const TemporaryContractGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="jobTitle">Job Title *</Label>
+                      <Label htmlFor="jobTitle">Job Title <span className="text-red-600">*</span></Label>
                       <Input
                         id="jobTitle"
                         value={formData.jobTitle}
                         onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        placeholder="Please enter the job title"
+                        className={getTemporaryModalInputClass(formData.jobTitle.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="interpreter">Interpreter required *</Label>
+                      <Label htmlFor="interpreter">Interpreter required <span className="text-red-600">*</span></Label>
                       <Select
                         value={formData.interpreter}
                         onValueChange={(value) =>
                           setFormData({ ...formData, interpreter: value as InterpreterOption })
                         }
                       >
-                        <SelectTrigger className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900">
+                        <SelectTrigger className={`${getTemporaryModalSelectTriggerClass(Boolean(formData.interpreter))} ${temporaryModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select option" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="yes">Yes</SelectItem>
-                          <SelectItem value="no">No</SelectItem>
+                          <SelectItem value="yes" className={temporaryModalSelectItemClass}>Yes</SelectItem>
+                          <SelectItem value="no" className={temporaryModalSelectItemClass}>No</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                       <div className="flex items-center gap-2">
-                        <Label htmlFor="projectScope">Project/Scope *</Label>
+                        <Label htmlFor="projectScope">Project/Scope <span className="text-red-600">*</span></Label>
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1926,17 +2141,17 @@ const TemporaryContractGenerator = ({
                         value={formData.projectScope}
                         onChange={(e) => setFormData({ ...formData, projectScope: e.target.value })}
                         placeholder="Specify the project or scope of work"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.projectScope.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="workplace">Workplace *</Label>
+                      <Label htmlFor="workplace">Workplace <span className="text-red-600">*</span></Label>
                       <Input
                         id="workplace"
                         value={formData.workplace}
                         onChange={(e) => setFormData({ ...formData, workplace: e.target.value })}
                         placeholder="Primary work location"
-                        className="focus-visible:ring-blue-500 hover:border-blue-200 hover:bg-blue-50/50 text-blue-700 focus:text-gray-900"
+                        className={getTemporaryModalInputClass(formData.workplace.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1945,102 +2160,107 @@ const TemporaryContractGenerator = ({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                {activeStep === steps.length - 1 ? (
-                  <div className="flex w-full items-center gap-3 flex-wrap justify-between">
-                    {!embedded && (
-                      <div className="flex-none">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleBack}
-                          className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </Button>
-                      </div>
-                    )}
-                    <div className="flex-1 flex justify-center">
-                      <TooltipProvider delayDuration={0}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={resetForm}
-                              disabled={isGenerating}
-                              aria-label="Reset form"
-                              className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
-                            >
-                              <Undo2 className="h-4 w-4" />
-                              Reset form
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Clear all fields and start over</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    {!embedded && (
-                      <div className="flex-none relative">
-                        <Button
-                          type="button"
-                          onClick={handleFinish}
-                          disabled={!isFormComplete || isGenerating}
-                          className={`gap-2 min-w-[140px] text-white disabled:opacity-50 transition-colors duration-150 ${
-                            isFormComplete && !isGenerating
-                              ? "bg-[#04b81f] hover:bg-[#049218] border border-[#038314]"
-                              : "bg-primary hover:bg-primary/90 border border-primary/60"
-                          }`}
-                        >
-                          Finish
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  !embedded && (
-                    <div className="flex w-full items-center justify-between gap-2 flex-wrap">
-                      <div className="flex-none">
-                        {activeStep > 0 && (
+                {!(embedded && externalNavigation) ? (
+                  <>
+                    {activeStep === steps.length - 1 ? (
+                      <div className="flex w-full items-center gap-3 flex-wrap justify-between">
+                        <div className="flex-none">
                           <Button
                             type="button"
                             variant="outline"
                             onClick={handleBack}
-                            className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
+                            className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                           >
-                            <ArrowLeft className="h-4 w-4" />
                             Back
                           </Button>
-                        )}
-                      </div>
-                      <div className="flex-1" />
-                      <div className="flex-none">
-                        {activeStep < steps.length - 1 && (
+                        </div>
+                        <div className="flex-1 flex justify-center">
+                          <TooltipProvider delayDuration={0}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={clearCurrentStepFields}
+                                  disabled={isGenerating}
+                                  aria-label="Reset fields"
+                                  className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                                >
+                                  <Undo2 className="h-4 w-4" />
+                                  Reset
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Reset fields for this step</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <div className="flex-none relative">
                           <Button
                             type="button"
-                            onClick={handleNext}
-                            disabled={!canGoNext}
-                            className="gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50"
+                            onClick={handleFinish}
+                            disabled={!isFormComplete || isGenerating}
+                            className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                           >
                             Next
-                            <ArrowRight className="h-4 w-4" />
                           </Button>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  )
-                )}
+                    ) : (
+                      <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                        <div className="flex-none">
+                          {activeStep > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleBack}
+                              className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                            >
+                              Back
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex-1 flex justify-center">
+                          {activeStep > 0 ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={clearCurrentStepFields}
+                              disabled={isGenerating}
+                              aria-label="Reset fields"
+                              className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                            >
+                              <Undo2 className="h-4 w-4" />
+                              Reset
+                            </Button>
+                          ) : null}
+                        </div>
+                        <div className="flex-none">
+                          {activeStep < steps.length - 1 && (
+                            <Button
+                              type="button"
+                              onClick={handleNext}
+                              disabled={!canGoNext}
+                              className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                            >
+                              Next
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : null}
               </div>
             </div>
             </CardContent>
           </Card>
         ) : (
-            <Card className="rounded-sm mt-4 shadow-xl border border-blue-100/70 bg-white/95 shadow-blue-100/60">
+            <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 contents !backdrop-blur-none")}>
               <CardHeader className="pt-4 pb-0" />
-              <CardContent className="space-y-6 pt-2">
+              <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                 <div className="flex flex-col items-center gap-3">
                   <div
-                    className="bg-white overflow-hidden rounded mx-auto box-border border border-blue-200"
+                    className="bg-white overflow-hidden rounded-sm mx-auto box-border border border-slate-300"
                     style={{
                       width: `${snippetContainerWidthMm}mm`,
                       height: `${snippetPaddingTopMm + snippetVisibleHeightMm * snippetScale}mm`,
@@ -2099,116 +2319,368 @@ const TemporaryContractGenerator = ({
                       )}
                     </div>
 
-                <div className="flex w-full items-center gap-2">
-                  <div className="flex-none">
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowFinalActions(false)}
-                      className="gap-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white focus-visible:ring-blue-600"
-                    >
-                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                      Back to form
-                    </Button>
+                {!useExternalShell ? (
+                  <div className="flex w-full items-center gap-2">
+                    <div className="flex-none">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowFinalActions(false)}
+                        className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                      >
+                        Back to form
+                      </Button>
+                    </div>
+                    <div className="flex-1" />
+                    <div className="flex-none opacity-0 pointer-events-none">
+                      <Button variant="outline" className="gap-2 border-transparent">
+                        Placeholder
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex-1" />
-                  <div className="flex-none opacity-0 pointer-events-none">
-                    <Button variant="outline" className="gap-2 border-transparent">
-                      Placeholder
-                    </Button>
-                  </div>
-                </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
         )}
       </div>
 
-      <Dialog open={showAddEmployee} onOpenChange={setShowAddEmployee}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-blue-600">Add employee</DialogTitle>
-            <DialogDescription>Capture the minimum details for a temporary contract.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid md:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="newEmployeeName">Name *</Label>
-                <Input
-                  id="newEmployeeName"
-                  value={newEmployeeForm.employeeName}
-                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeName: e.target.value }))}
-                  placeholder="Insert name(s) here..."
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="newEmployeeSurname">Surname *</Label>
-                <Input
-                  id="newEmployeeSurname"
-                  value={newEmployeeForm.employeeSurname}
-                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeSurname: e.target.value }))}
-                  placeholder="Insert surname here..."
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="newIdOrPassport">ID / Passport *</Label>
-                <div className="grid gap-2 md:grid-cols-[150px_1fr]">
-                  <Select value={newEmployeeIdType} onValueChange={(value) => setNewEmployeeIdType(value as "id" | "passport")}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select document type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="id">ID Number</SelectItem>
-                      <SelectItem value="passport">Passport Number</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    id="newIdOrPassport"
-                    value={newEmployeeIdType === "id" ? newEmployeeForm.employeeIdNumber : newEmployeeForm.passportNumber}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (newEmployeeIdType === "id") {
-                        const digitsOnly = value.replace(/\D/g, "").slice(0, 13);
-                        setNewEmployeeForm((prev) => ({ ...prev, employeeIdNumber: digitsOnly, passportNumber: "" }));
-                      } else {
-                        setNewEmployeeForm((prev) => ({ ...prev, passportNumber: value, employeeIdNumber: "" }));
-                      }
-                    }}
-                    placeholder={
-                      newEmployeeIdType === "id" ? "Insert SA ID number here..." : "Insert passport number here..."
-                    }
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="newEmployeeCell">Cell Number *</Label>
-                <Input
-                  id="newEmployeeCell"
-                  value={newEmployeeForm.employeeCell}
-                  onChange={(e) => {
-                    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
-                    setNewEmployeeForm((prev) => ({ ...prev, employeeCell: digitsOnly }));
-                  }}
-                  placeholder="Insert a contact number..."
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label htmlFor="newEmployeeAddress">Residential Address *</Label>
-                <Textarea
-                  id="newEmployeeAddress"
-                  value={newEmployeeForm.employeeAddress}
-                  onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeAddress: e.target.value }))}
-                  rows={3}
-                  placeholder="Street address, city, province, area code..."
-                />
+      <Dialog
+        open={showAddEmployee}
+        onOpenChange={(open) => {
+          setShowAddEmployee(open);
+          if (!open) {
+            resetNewEmployeeForm();
+          }
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <User2 className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">New Employee</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+
+          <form
+            className="space-y-4 px-6 pb-6 pt-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (addEmployeeFormStep === 1) {
+                if (!isAddEmployeeStepOneComplete) return;
+                setAddEmployeeFormStep(2);
+                return;
+              }
+              handleAddEmployeeSave();
+            }}
+          >
+            <div className="mx-auto w-full max-w-[320px] py-4">
+              <div className="relative grid grid-cols-2 items-start">
+                <div className="pointer-events-none absolute left-[calc(25%+22px)] top-[10px] h-[2px] w-[calc(50%-44px)] bg-slate-300" />
+                {addEmployeeFormStep > 1 && (
+                  <div className="pointer-events-none absolute left-[calc(25%+22px)] top-[10px] h-[2px] w-[calc(50%-44px)] bg-blue-600" />
+                )}
+                {[
+                  { step: 1 as const, label: "Basic Details" },
+                  { step: 2 as const, label: "Address" },
+                ].map((item) => {
+                  const isActive = addEmployeeFormStep === item.step;
+                  const isComplete = item.step === 1 && isAddEmployeeStepOneComplete;
+                  const canOpen = item.step === 1 || isAddEmployeeStepOneComplete;
+                  return (
+                    <button
+                      key={item.step}
+                      type="button"
+                      onClick={() => canOpen && setAddEmployeeFormStep(item.step)}
+                      disabled={!canOpen}
+                      className={`z-10 flex flex-col items-center text-center ${canOpen ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
+                    >
+                      <span
+                        className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
+                          isComplete || isActive ? "bg-blue-600 text-white" : "bg-slate-500 text-white"
+                        }`}
+                      >
+                        {isComplete ? <Check className="h-3 w-3" /> : item.step}
+                      </span>
+                      <span className="mt-3 text-[10px] font-semibold text-slate-700">{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <div className="flex justify-center gap-3">
-              <Button variant="outline" onClick={resetNewEmployeeForm} className="min-w-[96px]">
-                Reset
-              </Button>
-              <Button onClick={handleAddEmployeeSave} className="gap-2 min-w-[96px]">
-                Add
-              </Button>
+
+            <div className="space-y-4">
+              {addEmployeeFormStep === 1 ? (
+                <>
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Name <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newEmployeeName"
+                      className={getTemporaryModalInputClass(newEmployeeForm.employeeName.trim().length > 0)}
+                      value={newEmployeeForm.employeeName}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeName: e.target.value }))}
+                      placeholder="Please insert name"
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Surname <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newEmployeeSurname"
+                      className={getTemporaryModalInputClass(newEmployeeForm.employeeSurname.trim().length > 0)}
+                      value={newEmployeeForm.employeeSurname}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, employeeSurname: e.target.value }))}
+                      placeholder="Please insert surname"
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      ID / Passport <span className="text-red-600">*</span>
+                    </span>
+                    <Select value={newEmployeeIdType} onValueChange={(value) => setNewEmployeeIdType(value as "id" | "passport")}>
+                      <SelectTrigger className={`${getTemporaryModalSelectTriggerClass(true)} ${temporaryModalDropdownToneClass}`}>
+                        <SelectValue placeholder="Please select option" />
+                      </SelectTrigger>
+                      <SelectContent className="text-[11px]">
+                        <SelectItem value="id" className={temporaryModalSelectItemClass}>ID Number</SelectItem>
+                        <SelectItem value="passport" className={temporaryModalSelectItemClass}>Passport Number</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      {newEmployeeIdType === "id" ? "ID Number" : "Passport Number"} <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newIdOrPassport"
+                      className={getTemporaryModalInputClass(
+                        (newEmployeeIdType === "id"
+                          ? newEmployeeForm.employeeIdNumber
+                          : newEmployeeForm.passportNumber
+                        ).trim().length > 0
+                      )}
+                      value={newEmployeeIdType === "id" ? newEmployeeForm.employeeIdNumber : newEmployeeForm.passportNumber}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (newEmployeeIdType === "id") {
+                          const digitsOnly = value.replace(/\D/g, "").slice(0, 13);
+                          setNewEmployeeForm((prev) => ({ ...prev, employeeIdNumber: digitsOnly, passportNumber: "" }));
+                        } else {
+                          setNewEmployeeForm((prev) => ({ ...prev, passportNumber: value, employeeIdNumber: "" }));
+                        }
+                      }}
+                      placeholder={newEmployeeIdType === "id" ? "Please insert ID number" : "Please insert passport number"}
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Cell Number <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newEmployeeCell"
+                      className={getTemporaryModalInputClass(newEmployeeForm.employeeCell.trim().length > 0)}
+                      value={newEmployeeForm.employeeCell}
+                      onChange={(e) => {
+                        const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                        setNewEmployeeForm((prev) => ({ ...prev, employeeCell: digitsOnly }));
+                      }}
+                      placeholder="Please insert cell number"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Address Line 1 <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newAddressLine1"
+                      className={getTemporaryModalInputClass(newEmployeeForm.addressLine1.trim().length > 0)}
+                      value={newEmployeeForm.addressLine1}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, addressLine1: e.target.value }))}
+                      placeholder="Please insert address line 1"
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Address Line 2
+                    </span>
+                    <Input
+                      id="newAddressLine2"
+                      className={getTemporaryModalInputClass(newEmployeeForm.addressLine2.trim().length > 0)}
+                      value={newEmployeeForm.addressLine2}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, addressLine2: e.target.value }))}
+                      placeholder="Please insert address line 2"
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      City <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newAddressCity"
+                      className={getTemporaryModalInputClass(newEmployeeForm.city.trim().length > 0)}
+                      value={newEmployeeForm.city}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, city: e.target.value }))}
+                      placeholder="Please insert city"
+                    />
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Province <span className="text-red-600">*</span>
+                    </span>
+                    <Select
+                      value={newEmployeeForm.province}
+                      onValueChange={(value) => setNewEmployeeForm((prev) => ({ ...prev, province: value }))}
+                    >
+                      <SelectTrigger className={`${getTemporaryModalSelectTriggerClass(newEmployeeForm.province.trim().length > 0)} ${temporaryModalDropdownToneClass}`}>
+                        <SelectValue placeholder="Please select province" />
+                      </SelectTrigger>
+                      <SelectContent className="text-[11px]">
+                        {southAfricanProvinces.map((province) => (
+                          <SelectItem key={province} value={province} className={temporaryModalSelectItemClass}>
+                            {province}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Area Code <span className="text-red-600">*</span>
+                    </span>
+                    <Input
+                      id="newAddressAreaCode"
+                      className={getTemporaryModalInputClass(newEmployeeForm.areaCode.trim().length > 0)}
+                      value={newEmployeeForm.areaCode}
+                      onChange={(e) => setNewEmployeeForm((prev) => ({ ...prev, areaCode: e.target.value }))}
+                      placeholder="Please insert area code"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="mt-6 grid grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                {addEmployeeFormStep > 1 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                    onClick={() => setAddEmployeeFormStep(1)}
+                  >
+                    Back
+                  </Button>
+                )}
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline"
+                  onClick={resetNewEmployeeForm}
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                {addEmployeeFormStep < 2 ? (
+                  <Button
+                    type="submit"
+                    className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                    disabled={!isAddEmployeeStepOneComplete}
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                    disabled={!isAddEmployeeStepTwoComplete}
+                  >
+                    Add
+                  </Button>
+                )}
+              </div>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkEmployeeDialog} onOpenChange={setShowBulkEmployeeDialog}>
+        <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <UsersRound className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="px-6 pt-0 pb-2"></div>
+          <div className="px-6 pb-6">
+            <div className="grid gap-6 sm:grid-cols-2 pt-4">
+              <div className="space-y-4 ml-6">
+                <h4 className="text-sm font-semibold">Step1</h4>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="group flex h-14 w-24 flex-col items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600"
+                >
+                  <Download className="h-5 w-5 transition-transform duration-150 group-hover:-translate-y-1.5" />
+                  <span className="max-h-0 overflow-hidden text-[10px] text-blue-600 opacity-0 transition-all duration-150 group-hover:max-h-4 group-hover:opacity-100">
+                    Download
+                  </span>
+                </button>
+                <p className="text-[11px] text-slate-600 min-h-[32px] max-w-[calc(100%-20px)]">
+                  Click in box above to download the .xlsx file for bulk upload.
+                </p>
+              </div>
+              <div className="space-y-4 ml-6">
+                <h4 className="text-sm font-semibold">Step 2</h4>
+                <button
+                  type="button"
+                  onClick={() => bulkUploadInputRef.current?.click()}
+                  className="group flex h-14 w-24 flex-col items-center justify-center rounded-sm border border-blue-600 text-blue-600 transition-none hover:border-2 hover:border-blue-600"
+                >
+                  <Upload className="h-5 w-5 transition-transform duration-150 group-hover:-translate-y-1.5" />
+                  <span className="max-h-0 overflow-hidden text-[10px] text-blue-600 opacity-0 transition-all duration-150 group-hover:max-h-4 group-hover:opacity-100">
+                    Upload
+                  </span>
+                </button>
+                <input
+                  ref={bulkUploadInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleBulkUploadFile}
+                  className="hidden"
+                  id="temp-bulk-upload"
+                  hidden
+                />
+                <p className="text-[11px] text-slate-600 min-h-[32px] max-w-[calc(100%-10px)]">
+                  Click in box above to upload your completed .xlsx file.
+                </p>
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -2755,5 +3227,3 @@ const TemporaryContractGenerator = ({
 };
 
 export default TemporaryContractGenerator;
-
-

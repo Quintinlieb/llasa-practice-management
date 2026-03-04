@@ -3272,7 +3272,7 @@ const PermanentContractGenerator = ({
                                           </Button>
                                           <Button
                                             size="sm"
-                                            className="h-[28px] px-3 text-xs rounded bg-[#04b81f] hover:bg-[#049218]"
+                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                                             onClick={() => saveClauseEdit(activeEditingClause)}
                                           >
                                             Save
@@ -3334,7 +3334,7 @@ const PermanentContractGenerator = ({
                                           </Button>
                                           <Button
                                             size="sm"
-                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                                             onClick={saveNewClause}
                                           >
                                             Add clause

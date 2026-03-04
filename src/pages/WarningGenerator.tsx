@@ -171,8 +171,10 @@ const WarningGenerator = ({
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
     isFinished?: boolean;
   }) => void;
 }) => {
@@ -242,6 +244,7 @@ const WarningGenerator = ({
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const baseModalFieldClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const warningModalDropdownToneClass =
@@ -281,9 +284,21 @@ const WarningGenerator = ({
       setShowEmployeeHint(false);
       return;
     }
-    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    if (hasShownEmployeeHint) return;
+    const timer = setTimeout(() => {
+      setShowEmployeeHint(true);
+      setHasShownEmployeeHint(true);
+    }, 1000);
     return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint]);
+  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
+
+  useEffect(() => {
+    if (!showEmployeeHint) return;
+    const autoDismissTimer = setTimeout(() => {
+      setShowEmployeeHint(false);
+    }, 10000);
+    return () => clearTimeout(autoDismissTimer);
+  }, [showEmployeeHint]);
 
   useEffect(() => {
     if (isEmployeePrefillState(location.state)) {
@@ -1135,6 +1150,39 @@ const WarningGenerator = ({
     return false;
   }, [activeStep, isEmployeeStepComplete, isEmployerStepComplete, isWarningStepComplete, showFinalActions]);
 
+  const canNavigateToStep = (index: number) => {
+    if (index < 0 || index >= steps.length) return false;
+    if (showFinalActions) return true;
+    return index < activeStep;
+  };
+
+  const handleStepClick = (index: number) => {
+    if (!canNavigateToStep(index)) return;
+    if (showFinalActions) {
+      setShowFinalActions(false);
+    }
+    if (index > 0 && showEmployeeHint) {
+      setShowEmployeeHint(false);
+    }
+    setActiveStep(index);
+  };
+
+  const canSelectStep = useCallback(
+    (index: number) => canNavigateToStep(index),
+    [activeStep, showFinalActions, steps.length],
+  );
+
+  const handleStepSelect = useCallback(
+    (index: number) => {
+      if (!canNavigateToStep(index)) return;
+      if (showFinalActions) {
+        setShowFinalActions(false);
+      }
+      setActiveStep(index);
+    },
+    [activeStep, showFinalActions, steps.length],
+  );
+
   const handleNext = () => {
     if (activeStep >= steps.length - 1) return;
     if (!canGoNext) return;
@@ -1173,8 +1221,10 @@ const WarningGenerator = ({
       icons: stepIcons,
       canGoNext: canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
+      canSelectStep,
       onNext: handleNextOrFinish,
       onBack: handleBack,
+      onStepSelect: handleStepSelect,
       isFinished: showFinalActions,
     });
   }, [
@@ -1184,8 +1234,10 @@ const WarningGenerator = ({
     steps,
     stepIcons,
     canAdvance,
+    canSelectStep,
     handleNextOrFinish,
     handleBack,
+    handleStepSelect,
     isWarningStepComplete,
     showFinalActions,
   ]);
@@ -1393,7 +1445,7 @@ const WarningGenerator = ({
       <style>{pulseShadowStyles}</style>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
                 <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
@@ -1483,15 +1535,8 @@ const WarningGenerator = ({
                             : isActive
                               ? "border-blue-300 text-blue-700 bg-blue-100"
                               : "border-slate-200 text-slate-500 bg-white";
-                          const canClick = showFinalActions || index < activeStep;
-                          const handleClick = () => {
-                            if (showFinalActions) {
-                              setShowFinalActions(false);
-                              setActiveStep(index);
-                            } else if (index < activeStep) {
-                              setActiveStep(index);
-                            }
-                          };
+                          const canClick = canNavigateToStep(index);
+                          const handleClick = () => handleStepClick(index);
 
                           return (
                             <div key={label} className="flex items-center gap-4">
@@ -1595,7 +1640,9 @@ const WarningGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>Employer contact *</Label>
+                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>
+                        Employer contact <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1608,7 +1655,9 @@ const WarningGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>Employer email *</Label>
+                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>
+                        Employer email <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerEmail"
                         type="email"
@@ -1643,7 +1692,7 @@ const WarningGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="employeeName" className={modalFieldLabelClass}>
-                        Employee Name *
+                        Employee Name <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="employeeName"
@@ -1655,7 +1704,7 @@ const WarningGenerator = ({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>
-                        Employee Surname *
+                        Employee Surname <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="employeeSurname"
@@ -1667,7 +1716,7 @@ const WarningGenerator = ({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="employeeIdNumber" className={modalFieldLabelClass}>
-                        ID Number *
+                        ID Number <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="employeeIdNumber"
@@ -1746,7 +1795,9 @@ const WarningGenerator = ({
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label className={modalFieldLabelClass}>Misconduct Type(s) *</Label>
+                    <Label className={modalFieldLabelClass}>
+                      Misconduct Type(s) <span className="text-red-500">*</span>
+                    </Label>
                     <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
                       <PopoverTrigger asChild>
                         <Button
@@ -1848,7 +1899,7 @@ const WarningGenerator = ({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="description" className={modalFieldLabelClass}>
-                      Description of Misconduct *
+                      Description of Misconduct <span className="text-red-500">*</span>
                     </Label>
                     <Textarea
                       id="description"
@@ -1863,7 +1914,7 @@ const WarningGenerator = ({
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="warningType" className={modalFieldLabelClass}>
-                        Type of Warning *
+                        Type of Warning <span className="text-red-500">*</span>
                       </Label>
                       <Select
                         key={warningSelectKey}
@@ -1886,7 +1937,7 @@ const WarningGenerator = ({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="validityMonths" className={modalFieldLabelClass}>
-                        Validity Period (months) *
+                        Validity Period (months) <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="validityMonths"
@@ -1900,7 +1951,7 @@ const WarningGenerator = ({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="issuedBy" className={modalFieldLabelClass}>
-                        Issued By *
+                        Issued By <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="issuedBy"
@@ -1912,7 +1963,7 @@ const WarningGenerator = ({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="dateIssued" className={modalFieldLabelClass}>
-                        Date of Issue *
+                        Date of Issue <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="dateIssued"

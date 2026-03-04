@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -183,6 +183,26 @@ const departmentOptions = [
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
 
+const formatSalaryAmountDisplay = (value: string) => {
+  const normalized = value.replace(/,/g, "").trim();
+  if (!normalized) return "";
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount)) return "";
+  return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const formatSalaryAmountTypingDisplay = (value: string) => {
+  const normalized = value.replace(/,/g, "");
+  if (!normalized) return "";
+  const hasTrailingDot = normalized.endsWith(".");
+  const [wholePart = "", decimalPart] = normalized.split(".");
+  const safeWhole = wholePart.replace(/\D/g, "");
+  const wholeWithCommas = safeWhole ? Number(safeWhole).toLocaleString("en-US") : "0";
+  if (hasTrailingDot) return `${wholeWithCommas}.`;
+  if (decimalPart !== undefined) return `${wholeWithCommas}.${decimalPart}`;
+  return wholeWithCommas;
+};
+
 const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -214,6 +234,19 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
+const normalizeSelectValue = <T extends string>(value: string | null | undefined, options: readonly T[]): T | "" => {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return "";
+  const matched = options.find((option) => option.toLowerCase() === trimmed.toLowerCase());
+  return matched ?? "";
+};
+
+const joinAddressParts = (parts: Array<string | null | undefined>) =>
+  parts
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
 const PermanentContractGenerator = ({
   embedded = false,
   externalNavigation = false,
@@ -229,8 +262,10 @@ const PermanentContractGenerator = ({
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
     onClear?: () => void;
     isFinished?: boolean;
   }) => void;
@@ -254,10 +289,23 @@ const PermanentContractGenerator = ({
     race: string | null;
     cell_number: string | null;
     email: string | null;
+    work_cell_number: string | null;
+    work_email: string | null;
     job_title: string | null;
     department: string | null;
+    reporting_to: string | null;
     start_date: string | null;
     employee_number: string | null;
+    physical_address_line1: string | null;
+    physical_address_line2: string | null;
+    city: string | null;
+    province: string | null;
+    area_code: string | null;
+    postal_address_line1: string | null;
+    postal_address_line2: string | null;
+    postal_city: string | null;
+    postal_province: string | null;
+    postal_area_code: string | null;
   };
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
@@ -266,7 +314,9 @@ const PermanentContractGenerator = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<PermanentContractFormData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
+  const [clauseTitleEdits, setClauseTitleEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
+  const [clauseTitleDraft, setClauseTitleDraft] = useState("");
   const [clauseDraft, setClauseDraft] = useState("");
   const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
@@ -277,12 +327,21 @@ const PermanentContractGenerator = ({
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
+  const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [departmentSearchOpen, setDepartmentSearchOpen] = useState(false);
+  const [departmentSearchQuery, setDepartmentSearchQuery] = useState("");
+  const departmentSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSalaryAmountFocused, setIsSalaryAmountFocused] = useState(false);
   const baseModalFieldClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 !hover:border-blue-400 !focus:border-blue-600 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const permanentModalDropdownToneClass =
     "bg-white border-slate-300 !hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const permanentModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const permanentModalSelectContentClass = "!rounded";
   const getPermanentModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !hover:border-blue-400 !focus-visible:border-blue-600 ${isComplete ? "!border-emerald-500 !hover:border-blue-400 !focus-visible:border-blue-600" : ""}`;
   const getPermanentModalSelectTriggerClass = (isComplete: boolean) =>
@@ -349,6 +408,60 @@ const PermanentContractGenerator = ({
     [employees],
   );
 
+  const searchedEmployees = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return sortedEmployees;
+    const tokens = query.split(" ").filter(Boolean);
+    return sortedEmployees
+      .map((employee) => {
+        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
+        const fullNameLower = fullName.toLowerCase();
+        const firstNameLower = employee.employee_name.toLowerCase();
+        const surnameLower = employee.employee_surname.toLowerCase();
+        const employeeNumberLower = (employee.employee_number ?? "").toLowerCase();
+        let score = 0;
+
+        if (fullNameLower === query) score += 1000;
+        if (fullNameLower.startsWith(query)) score += 800;
+        if (fullNameLower.includes(query)) score += 500;
+        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
+        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
+        if (query.length >= 2 && employeeNumberLower.includes(query)) score += 120;
+
+        return { employee, score, fullName };
+      })
+      .filter((item) => item.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.fullName.localeCompare(b.fullName, undefined, {
+            sensitivity: "base",
+          }),
+      )
+      .map((item) => item.employee);
+  }, [employeeSearchQuery, sortedEmployees]);
+
+  const searchedDepartments = useMemo(() => {
+    const query = departmentSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return departmentOptions;
+    const tokens = query.split(" ").filter(Boolean);
+    return departmentOptions
+      .map((option) => {
+        const optionLower = option.toLowerCase();
+        let score = 0;
+
+        if (optionLower === query) score += 1000;
+        if (optionLower.startsWith(query)) score += 800;
+        if (optionLower.includes(query)) score += 500;
+        if (tokens.length > 0 && tokens.every((token) => optionLower.includes(token))) score += 300;
+
+        return { option, score };
+      })
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.option.localeCompare(b.option, undefined, { sensitivity: "base" }))
+      .map((item) => item.option);
+  }, [departmentSearchQuery]);
+
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");
@@ -356,13 +469,37 @@ const PermanentContractGenerator = ({
   }, [loading, navigate, user]);
 
   useEffect(() => {
+    if (!employeeSearchOpen) return;
+    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [employeeSearchOpen]);
+
+  useEffect(() => {
+    if (!departmentSearchOpen) return;
+    const timer = setTimeout(() => departmentSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [departmentSearchOpen]);
+
+  useEffect(() => {
     if (hasDismissedEmployeeHint || activeStep !== 1) {
       setShowEmployeeHint(false);
       return;
     }
-    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    if (hasShownEmployeeHint) return;
+    const timer = setTimeout(() => {
+      setShowEmployeeHint(true);
+      setHasShownEmployeeHint(true);
+    }, 1000);
     return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint]);
+  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
+
+  useEffect(() => {
+    if (!showEmployeeHint) return;
+    const autoDismissTimer = setTimeout(() => {
+      setShowEmployeeHint(false);
+    }, 10000);
+    return () => clearTimeout(autoDismissTimer);
+  }, [showEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -383,7 +520,7 @@ const PermanentContractGenerator = ({
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, department, start_date, employee_number",
+        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, work_cell_number, work_email, job_title, department, reporting_to, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code",
       )
       .eq("company_id", user.id);
     if (error) {
@@ -431,14 +568,42 @@ const PermanentContractGenerator = ({
     const passportNumber = employeeNationality === "South African" ? "" : employee.id_number ?? "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PermanentContractFormData["race"] }).race || "";
-    const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
-    const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
+    const genderValue = normalizeSelectValue(
+      (employee as Partial<Tables<"employees">> & { gender?: string }).gender,
+      genderOptions,
+    );
+    const raceValue = normalizeSelectValue(
+      (employee as Partial<Tables<"employees">> & { race?: string }).race,
+      raceOptions,
+    );
+    const cellNumberRaw =
+      (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ??
+      (employee as Partial<Tables<"employees">> & { work_cell_number?: string }).work_cell_number ??
+      "";
+    const cellNumber = cellNumberRaw.replace(/\D/g, "").slice(0, 10);
+    const emailAddress =
+      (employee as Partial<Tables<"employees">> & { email?: string }).email?.trim() ??
+      (employee as Partial<Tables<"employees">> & { work_email?: string }).work_email?.trim() ??
+      "";
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
     const department = (employee as Partial<Tables<"employees">> & { department?: string }).department ?? "";
+    const reportsTo = (employee as Partial<Tables<"employees">> & { reporting_to?: string }).reporting_to ?? "";
     const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
     const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
+    const employeeAddress = joinAddressParts([
+      (employee as Partial<Tables<"employees">> & { physical_address_line1?: string }).physical_address_line1,
+      (employee as Partial<Tables<"employees">> & { physical_address_line2?: string }).physical_address_line2,
+      (employee as Partial<Tables<"employees">> & { city?: string }).city,
+      (employee as Partial<Tables<"employees">> & { province?: string }).province,
+      (employee as Partial<Tables<"employees">> & { area_code?: string }).area_code,
+    ]);
+    const postalAddress = joinAddressParts([
+      (employee as Partial<Tables<"employees">> & { postal_address_line1?: string }).postal_address_line1,
+      (employee as Partial<Tables<"employees">> & { postal_address_line2?: string }).postal_address_line2,
+      (employee as Partial<Tables<"employees">> & { postal_city?: string }).postal_city,
+      (employee as Partial<Tables<"employees">> & { postal_province?: string }).postal_province,
+      (employee as Partial<Tables<"employees">> & { postal_area_code?: string }).postal_area_code,
+    ]);
     const idNumber = employeeNationality === "South African" ? employee.id_number ?? "" : "";
     const ageFromId = employeeNationality === "South African" ? deriveAgeFromId(idNumber) : "";
 
@@ -450,17 +615,71 @@ const PermanentContractGenerator = ({
       employeeIdNumber: idNumber,
       passportNumber,
       nationality: employeeNationality,
-      alternativeContact: emergencyContact || prev.alternativeContact,
-      gender: genderValue || prev.gender,
-      race: raceValue || prev.race,
-      employeeCell: cellNumber || prev.employeeCell,
-      employeeEmail: emailAddress || prev.employeeEmail,
-      jobTitle: jobTitle || prev.jobTitle,
-      department: department || prev.department,
+      alternativeContact: emergencyContact,
+      gender: genderValue,
+      race: raceValue,
+      employeeCell: cellNumber,
+      employeeEmail: emailAddress,
+      employeeAddress,
+      employeePostalAddress: postalAddress || employeeAddress,
+      jobTitle,
+      department,
+      reportsTo,
       startDate: startDate || prev.startDate,
-      employeeNumber: employeeNumber || prev.employeeNumber,
+      employeeNumber,
       age: ageFromId,
     }));
+  };
+
+  const handleSalaryAmountChange = (value: string) => {
+    const sanitized = value.replace(/,/g, "").replace(/[^\d.]/g, "");
+    const firstDotIndex = sanitized.indexOf(".");
+    const normalized =
+      firstDotIndex >= 0
+        ? `${sanitized.slice(0, firstDotIndex + 1)}${sanitized.slice(firstDotIndex + 1).replace(/\./g, "")}`
+        : sanitized;
+    const [wholePart, decimalPart] = normalized.split(".");
+    const limitedWhole = wholePart.slice(0, 12);
+    const limitedDecimal = decimalPart !== undefined ? decimalPart.slice(0, 2) : undefined;
+    const nextValue =
+      limitedDecimal !== undefined ? `${limitedWhole}.${limitedDecimal}` : limitedWhole;
+    setFormData((prev) => ({ ...prev, salaryAmount: nextValue }));
+  };
+
+  const handleSalaryAmountBlur = () => {
+    setIsSalaryAmountFocused(false);
+    const raw = formData.salaryAmount.replace(/,/g, "").trim();
+    if (!raw) return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount)) return;
+    setFormData((prev) => ({ ...prev, salaryAmount: amount.toFixed(2) }));
+  };
+
+  const handleSalaryAmountKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowedControlKeys = [
+      "Backspace",
+      "Delete",
+      "Tab",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "Enter",
+    ];
+    if (allowedControlKeys.includes(event.key)) return;
+    if (event.ctrlKey || event.metaKey) return;
+    if (/^\d$/.test(event.key)) return;
+    if (event.key === ".") {
+      const input = event.currentTarget;
+      const value = input.value;
+      const hasDot = value.includes(".");
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      const selectedText = value.slice(start, end);
+      const replacesExistingDot = selectedText.includes(".");
+      if (!hasDot || replacesExistingDot) return;
+    }
+    event.preventDefault();
   };
 
   const resetForm = () => {
@@ -501,8 +720,10 @@ const PermanentContractGenerator = ({
     setShowFinalActions(false);
     setActiveStep(0);
     setClauseEdits({});
+    setClauseTitleEdits({});
     setCustomClauses([]);
     setEditingClause(null);
+    setClauseTitleDraft("");
     setClauseDraft("");
     setAddingAfter(null);
     setNewClauseTitle("");
@@ -620,7 +841,6 @@ const PermanentContractGenerator = ({
         formData.startDate &&
           formData.issueDate &&
           formData.jobTitle &&
-          formData.reportsTo &&
           formData.salaryAmount &&
           formData.salaryFrequency &&
           formData.annualLeaveDays &&
@@ -633,7 +853,6 @@ const PermanentContractGenerator = ({
       formData.startDate,
       formData.issueDate,
       formData.jobTitle,
-      formData.reportsTo,
       formData.salaryAmount,
       formData.annualLeaveDays,
       formData.salaryFrequency,
@@ -669,19 +888,37 @@ const PermanentContractGenerator = ({
   }, [activeStep, isEmployerStepComplete, isEmployeeStepComplete]);
 
   const canNavigateToStep = (index: number) => {
+    if (index < 0 || index >= steps.length) return false;
+    if (showFinalActions) return true;
     return index < activeStep;
   };
 
   const handleStepClick = (index: number) => {
-    if (canNavigateToStep(index)) {
-      if (index > 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
+    if (!canNavigateToStep(index)) return;
+    if (showFinalActions) {
+      setShowFinalActions(false);
+    }
+    if (index > 0 && showEmployeeHint) {
+      setShowEmployeeHint(false);
+    }
+    setActiveStep(index);
+  };
+
+  const canSelectStep = useCallback(
+    (index: number) => canNavigateToStep(index),
+    [activeStep, showFinalActions, steps.length],
+  );
+
+  const handleStepSelect = useCallback(
+    (index: number) => {
+      if (!canNavigateToStep(index)) return;
+      if (showFinalActions) {
+        setShowFinalActions(false);
       }
       setActiveStep(index);
-    }
-  };
+    },
+    [activeStep, showFinalActions, steps.length],
+  );
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
@@ -725,8 +962,10 @@ const PermanentContractGenerator = ({
       icons: stepIcons,
       canGoNext: showFinalActions ? !isGenerating : canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
+      canSelectStep,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
+      onStepSelect: handleStepSelect,
       onClear: clearCurrentStepFields,
       isFinished: showFinalActions,
     });
@@ -737,9 +976,11 @@ const PermanentContractGenerator = ({
     steps,
     stepIcons,
     canAdvance,
+    canSelectStep,
     handleNextOrFinish,
     handleBack,
     handleDownload,
+    handleStepSelect,
     showFinalActions,
     isGenerating,
     clearCurrentStepFields,
@@ -762,9 +1003,14 @@ const PermanentContractGenerator = ({
 
   const applyClauseEdits = (clauses: ClauseDefinition[]): ClauseDefinition[] =>
     clauses.map((clause) => {
-      const edited = clauseEdits[clause.id];
-      if (!edited) return clause;
-      return { ...clause, body: normalizeBodyText(edited) };
+      const editedBody = clauseEdits[clause.id];
+      const editedTitle = clauseTitleEdits[clause.id];
+      if (!editedBody && !editedTitle) return clause;
+      return {
+        ...clause,
+        title: editedTitle || clause.title,
+        body: editedBody ? normalizeBodyText(editedBody) : clause.body,
+      };
     });
 
   const mergeClauses = useCallback(
@@ -1584,7 +1830,7 @@ const PermanentContractGenerator = ({
     <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
                 <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
@@ -1650,15 +1896,8 @@ const PermanentContractGenerator = ({
                       : isActive
                         ? "border-blue-300 text-blue-700 bg-blue-100"
                         : "border-slate-200 text-slate-500 bg-white";
-                    const canClick = showFinalActions || index < activeStep;
-                    const handleClick = () => {
-                      if (showFinalActions) {
-                        setShowFinalActions(false);
-                        setActiveStep(index);
-                      } else if (canNavigateToStep(index)) {
-                        handleStepClick(index);
-                      }
-                    };
+                    const canClick = canNavigateToStep(index);
+                    const handleClick = () => handleStepClick(index);
 
                     return (
                       <div key={step} className="flex items-center gap-4">
@@ -1762,7 +2001,9 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact">Employer contact *</Label>
+                      <Label htmlFor="employerContact">
+                        Employer contact <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1775,7 +2016,9 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail">Employer email *</Label>
+                      <Label htmlFor="employerEmail">
+                        Employer email <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerEmail"
                         type="email"
@@ -1793,22 +2036,49 @@ const PermanentContractGenerator = ({
                   <div className="space-y-2.5">
                     <div className="space-y-1.5">
                       <Label htmlFor="employee">Select Employee (optional)</Label>
-                      <Select onValueChange={handleEmployeeSelect}>
+                      <Select
+                        value={formData.employeeId || undefined}
+                        onValueChange={handleEmployeeSelect}
+                        open={employeeSearchOpen}
+                        onOpenChange={(open) => {
+                          setEmployeeSearchOpen(open);
+                          if (open) setEmployeeSearchQuery("");
+                        }}
+                      >
                         <SelectTrigger className={`${getPermanentModalSelectTriggerClass(formData.employeeId.trim().length > 0)} ${permanentModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
-                        <SelectContent className="w-[var(--radix-select-trigger-width)]">
-                          {sortedEmployees.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id} className={permanentModalSelectItemClass}>
-                              {employee.employee_name} {employee.employee_surname}
-                            </SelectItem>
-                          ))}
+                        <SelectContent
+                          hideScrollButtons
+                          className={`${permanentModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
+                        >
+                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                            <Input
+                              ref={employeeSearchInputRef}
+                              value={employeeSearchQuery}
+                              onChange={(event) => setEmployeeSearchQuery(event.target.value)}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              placeholder="Type full employee name..."
+                              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                            />
+                          </div>
+                          {searchedEmployees.length > 0 ? (
+                            searchedEmployees.map((employee) => (
+                              <SelectItem key={employee.id} value={employee.id} className={permanentModalSelectItemClass}>
+                                {employee.employee_name} {employee.employee_surname}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-[11px] text-slate-500">No matching employees found.</div>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeName">Employee Name *</Label>
+                        <Label htmlFor="employeeName">
+                          Employee Name <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeName"
                           value={formData.employeeName}
@@ -1817,7 +2087,9 @@ const PermanentContractGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeSurname">Employee Surname *</Label>
+                        <Label htmlFor="employeeSurname">
+                          Employee Surname <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeSurname"
                           value={formData.employeeSurname}
@@ -1826,7 +2098,9 @@ const PermanentContractGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="nationality">Nationality *</Label>
+                        <Label htmlFor="nationality">
+                          Nationality <span className="text-red-500">*</span>
+                        </Label>
                         <Select
                           value={formData.nationality}
                           onValueChange={(value) =>
@@ -1836,7 +2110,7 @@ const PermanentContractGenerator = ({
                           <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.nationality))} ${permanentModalDropdownToneClass}`}>
                             <SelectValue placeholder="Select nationality" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-64">
+                          <SelectContent className={`${permanentModalSelectContentClass} max-h-64`}>
                             {nationalityOptions.map((option) => (
                               <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                                 {option}
@@ -1847,7 +2121,8 @@ const PermanentContractGenerator = ({
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="idOrPassport">
-                          {formData.nationality === "South African" ? "ID Number *" : "Passport Number *"}
+                          {formData.nationality === "South African" ? "ID Number" : "Passport Number"}{" "}
+                          <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           id="idOrPassport"
@@ -1910,7 +2185,9 @@ const PermanentContractGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                    <Label htmlFor="gender">Gender *</Label>
+                    <Label htmlFor="gender">
+                      Gender <span className="text-red-500">*</span>
+                    </Label>
                     <Select
                       value={formData.gender}
                       onValueChange={(value) => setFormData({ ...formData, gender: value as PermanentContractFormData["gender"] })}
@@ -1918,7 +2195,7 @@ const PermanentContractGenerator = ({
                       <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.gender))} ${permanentModalDropdownToneClass}`}>
                             <SelectValue placeholder="Select gender" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={permanentModalSelectContentClass}>
                             {genderOptions.map((option) => (
                               <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                                 {option}
@@ -1928,7 +2205,9 @@ const PermanentContractGenerator = ({
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                    <Label htmlFor="race">Race *</Label>
+                    <Label htmlFor="race">
+                      Race <span className="text-red-500">*</span>
+                    </Label>
                     <Select
                       value={formData.race}
                       onValueChange={(value) => setFormData({ ...formData, race: value as PermanentContractFormData["race"] })}
@@ -1936,7 +2215,7 @@ const PermanentContractGenerator = ({
                       <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.race))} ${permanentModalDropdownToneClass}`}>
                             <SelectValue placeholder="Select race" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={permanentModalSelectContentClass}>
                             {raceOptions.map((option) => (
                               <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                                 {option}
@@ -1946,17 +2225,9 @@ const PermanentContractGenerator = ({
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeEmail">Email</Label>
-                        <Input
-                          id="employeeEmail"
-                          type="email"
-                          value={formData.employeeEmail}
-                          onChange={(e) => setFormData({ ...formData, employeeEmail: e.target.value })}
-                          className={getPermanentModalInputClass(formData.employeeEmail.trim().length > 0)}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employeeCell">Cell Number *</Label>
+                        <Label htmlFor="employeeCell">
+                          Cell Number <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeCell"
                           value={formData.employeeCell}
@@ -1966,6 +2237,16 @@ const PermanentContractGenerator = ({
                           }}
                           placeholder="Insert contact number"
                           className={getPermanentModalInputClass(formData.employeeCell.trim().length > 0)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="employeeEmail">Email</Label>
+                        <Input
+                          id="employeeEmail"
+                          type="email"
+                          value={formData.employeeEmail}
+                          onChange={(e) => setFormData({ ...formData, employeeEmail: e.target.value })}
+                          className={getPermanentModalInputClass(formData.employeeEmail.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1982,7 +2263,9 @@ const PermanentContractGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
-                        <Label htmlFor="employeeAddress">Residential Address *</Label>
+                        <Label htmlFor="employeeAddress">
+                          Residential Address <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeAddress"
                           value={formData.employeeAddress}
@@ -1993,7 +2276,9 @@ const PermanentContractGenerator = ({
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
                         <div className="flex items-center gap-6">
-                          <Label htmlFor="employeePostalAddress">Postal Address *</Label>
+                          <Label htmlFor="employeePostalAddress">
+                            Postal Address <span className="text-red-500">*</span>
+                          </Label>
                           <Button
                             type="button"
                             variant="outline"
@@ -2004,7 +2289,7 @@ const PermanentContractGenerator = ({
                                 employeePostalAddress: prev.employeeAddress,
                               }))
                             }
-                            className="h-8 px-3 text-xs border-slate-300 text-gray-700 hover:border-blue-500 hover:bg-white hover:text-blue-600"
+                            className="h-6 px-2 text-[10px] text-slate-400 rounded-[5px] hover:bg-transparent hover:text-blue-600 hover:border-blue-600"
                           >
                             Copy from Residential
                           </Button>
@@ -2026,7 +2311,9 @@ const PermanentContractGenerator = ({
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="issueDate">Issue Date *</Label>
+                      <Label htmlFor="issueDate">
+                        Issue Date <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="issueDate"
                         type="date"
@@ -2036,7 +2323,9 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="startDate">Start Date *</Label>
+                      <Label htmlFor="startDate">
+                        Start Date <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="startDate"
                         type="date"
@@ -2046,7 +2335,9 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="jobTitle">Job Title *</Label>
+                      <Label htmlFor="jobTitle">
+                        Job Title <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="jobTitle"
                         value={formData.jobTitle}
@@ -2055,29 +2346,73 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="reportsTo">Reports To *</Label>
-                      <Input
-                        id="reportsTo"
-                        value={formData.reportsTo}
-                        onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value })}
-                        className={getPermanentModalInputClass(formData.reportsTo.trim().length > 0)}
-                      />
+                      <Label htmlFor="department">Department</Label>
+                      <Select
+                        value={formData.department}
+                        onValueChange={(value) => setFormData({ ...formData, department: value })}
+                        open={departmentSearchOpen}
+                        onOpenChange={(open) => {
+                          setDepartmentSearchOpen(open);
+                          if (open) setDepartmentSearchQuery("");
+                        }}
+                      >
+                        <SelectTrigger
+                          id="department"
+                          className={`${getPermanentModalSelectTriggerClass(Boolean(formData.department))} ${permanentModalDropdownToneClass}`}
+                        >
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent
+                          hideScrollButtons
+                          className={`${permanentModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
+                        >
+                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                            <Input
+                              ref={departmentSearchInputRef}
+                              value={departmentSearchQuery}
+                              onChange={(event) => setDepartmentSearchQuery(event.target.value)}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              placeholder="Type department..."
+                              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                            />
+                          </div>
+                          {searchedDepartments.length > 0 ? (
+                            searchedDepartments.map((option) => (
+                              <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
+                                {option}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-[11px] text-slate-500">No matching departments found.</div>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="salaryAmount">Salary Amount *</Label>
+                      <Label htmlFor="salaryAmount">
+                        Salary Amount <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="salaryAmount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.salaryAmount}
-                        onChange={(e) => setFormData({ ...formData, salaryAmount: e.target.value })}
+                        type="text"
+                        inputMode="decimal"
+                        value={
+                          isSalaryAmountFocused
+                            ? formatSalaryAmountTypingDisplay(formData.salaryAmount)
+                            : formatSalaryAmountDisplay(formData.salaryAmount)
+                        }
+                        onFocus={() => setIsSalaryAmountFocused(true)}
+                        onBlur={handleSalaryAmountBlur}
+                        onKeyDown={handleSalaryAmountKeyDown}
+                        onChange={(e) => handleSalaryAmountChange(e.target.value)}
                         placeholder="e.g. 25000"
                         className={getPermanentModalInputClass(formData.salaryAmount.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="salaryFrequency">Salary Frequency *</Label>
+                      <Label htmlFor="salaryFrequency">
+                        Salary Frequency <span className="text-red-500">*</span>
+                      </Label>
                       <Select
                         value={formData.salaryFrequency}
                         onValueChange={(value) =>
@@ -2090,7 +2425,7 @@ const PermanentContractGenerator = ({
                         <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.salaryFrequency))} ${permanentModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select frequency" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={permanentModalSelectContentClass}>
                           {salaryFrequencyOptions.map((option) => (
                             <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                               {salaryFrequencyLabels[option as PermanentContractFormData["salaryFrequency"]]}
@@ -2100,7 +2435,9 @@ const PermanentContractGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="probationPeriod">Probation *</Label>
+                      <Label htmlFor="probationPeriod">
+                        Probation <span className="text-red-500">*</span>
+                      </Label>
                       <Select
                         value={formData.probationPeriod}
                         onValueChange={(value) =>
@@ -2113,7 +2450,7 @@ const PermanentContractGenerator = ({
                         <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.probationPeriod))} ${permanentModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select probation period" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={permanentModalSelectContentClass}>
                           {probationOptions.map((option) => (
                             <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                               {probationLabels[option]}
@@ -2123,7 +2460,9 @@ const PermanentContractGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="annualLeaveDays">Annual leave days *</Label>
+                      <Label htmlFor="annualLeaveDays">
+                        Annual leave days <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="annualLeaveDays"
                         type="number"
@@ -2140,28 +2479,18 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="department">Department</Label>
-                      <Select
-                        value={formData.department}
-                        onValueChange={(value) => setFormData({ ...formData, department: value })}
-                      >
-                        <SelectTrigger
-                          id="department"
-                          className={`${getPermanentModalSelectTriggerClass(Boolean(formData.department))} ${permanentModalDropdownToneClass}`}
-                        >
-                          <SelectValue placeholder="Select department" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-64">
-                          {departmentOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="reportsTo">Reports To</Label>
+                      <Input
+                        id="reportsTo"
+                        value={formData.reportsTo}
+                        onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value })}
+                        className={getPermanentModalInputClass(formData.reportsTo.trim().length > 0)}
+                      />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="retirementAge">Retirement age *</Label>
+                      <Label htmlFor="retirementAge">
+                        Retirement age <span className="text-red-500">*</span>
+                      </Label>
                       <Select
                         value={formData.retirementAge}
                         onValueChange={(value) =>
@@ -2174,7 +2503,7 @@ const PermanentContractGenerator = ({
                         <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.retirementAge))} ${permanentModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select retirement age" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={permanentModalSelectContentClass}>
                           {retirementAgeOptions.map((option) => (
                             <SelectItem key={option} value={option} className={permanentModalSelectItemClass}>
                               Age {option}
@@ -2184,7 +2513,9 @@ const PermanentContractGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="workplace">Workplace *</Label>
+                      <Label htmlFor="workplace">
+                        Workplace <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="workplace"
                         value={formData.workplace}
@@ -2194,7 +2525,9 @@ const PermanentContractGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="interpreter">Interpreter required *</Label>
+                      <Label htmlFor="interpreter">
+                        Interpreter required <span className="text-red-500">*</span>
+                      </Label>
                       <Select
                         value={formData.interpreter}
                         onValueChange={(value) =>
@@ -2204,7 +2537,7 @@ const PermanentContractGenerator = ({
                         <SelectTrigger className={`${getPermanentModalSelectTriggerClass(Boolean(formData.interpreter))} ${permanentModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select option" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={permanentModalSelectContentClass}>
                           <SelectItem value="yes" className={permanentModalSelectItemClass}>Yes</SelectItem>
                           <SelectItem value="no" className={permanentModalSelectItemClass}>No</SelectItem>
                         </SelectContent>
@@ -2346,7 +2679,7 @@ const PermanentContractGenerator = ({
                                 onClick={handleDownload}
                                 disabled={isGenerating}
                                 aria-label="Download PDF"
-                                className="h-11 px-6 min-w-[72px] rounded-2xl bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
+                                className="h-11 px-6 min-w-[72px] rounded bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
                               >
                                 <div className="flex items-center gap-2">
                                   <Download />
@@ -2654,21 +2987,50 @@ const PermanentContractGenerator = ({
 
               const startEditingClause = (clause: ClauseDefinition) => {
                 setEditingClause(clause.id);
+                setClauseTitleDraft(clauseTitleEdits[clause.id] ?? clause.title);
                 setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
               };
 
-              const saveClauseEdit = (id: string) => {
-                const trimmed = clauseDraft.trim();
+              const cancelClauseEdit = () => {
+                setEditingClause(null);
+                setClauseTitleDraft("");
+                setClauseDraft("");
+              };
+
+              const saveClauseEdit = (clause: ClauseDefinition) => {
+                const trimmedTitle = clauseTitleDraft.trim();
+                if (!trimmedTitle) {
+                  toast({
+                    title: "Edit clause",
+                    description: "Clause title cannot be empty.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                const trimmedBody = clauseDraft.trim();
+                const baseClause = clauses.find((item) => item.id === clause.id);
+                const originalTitle = baseClause?.title ?? clause.title;
+                const originalBody = serializeClauseBody(baseClause?.body ?? clause.body).trim();
                 setClauseEdits((prev) => {
                   const next = { ...prev };
-                  if (trimmed) {
-                    next[id] = trimmed;
+                  if (trimmedBody && trimmedBody !== originalBody) {
+                    next[clause.id] = trimmedBody;
                   } else {
-                    delete next[id];
+                    delete next[clause.id];
+                  }
+                  return next;
+                });
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  if (trimmedTitle !== originalTitle) {
+                    next[clause.id] = trimmedTitle;
+                  } else {
+                    delete next[clause.id];
                   }
                   return next;
                 });
                 setEditingClause(null);
+                setClauseTitleDraft("");
                 setClauseDraft("");
               };
 
@@ -2678,7 +3040,13 @@ const PermanentContractGenerator = ({
                   delete next[id];
                   return next;
                 });
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 setEditingClause(null);
+                setClauseTitleDraft("");
                 setClauseDraft("");
               };
 
@@ -2725,11 +3093,20 @@ const PermanentContractGenerator = ({
                   delete next[id];
                   return next;
                 });
+                setClauseTitleEdits((prev) => {
+                  const next = { ...prev };
+                  delete next[id];
+                  return next;
+                });
                 if (editingClause === id) {
                   setEditingClause(null);
+                  setClauseTitleDraft("");
                   setClauseDraft("");
                 }
               };
+              const activeEditingClause = editingClause
+                ? clausesWithEdits.find((clause) => clause.id === editingClause) ?? null
+                : null;
 
               return (
                 <div className="space-y-8">
@@ -2743,66 +3120,27 @@ const PermanentContractGenerator = ({
                           {(() => {
                             let clauseNumber = 1;
                             const renderAddClauseControl = (afterId: string | null) => {
-                              const isFormOpen = addingAfter === afterId && addingAfter !== undefined;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
-                                  {isFormOpen ? (
-                                    <div className="w-full rounded-md border border-dashed border-slate-200 bg-slate-50/60 p-4">
-                                      <div className="grid gap-3">
-                                        <Input
-                                          value={newClauseTitle}
-                                          onChange={(e) => setNewClauseTitle(e.target.value)}
-                                          placeholder="Clause title"
-                                          className="text-xs"
-                                        />
-                                        <Textarea
-                                          value={newClauseBody}
-                                          onChange={(e) => setNewClauseBody(e.target.value)}
-                                          rows={4}
-                                          className="text-xs text-slate-600"
-                                          placeholder="Clause body. Separate paragraphs with a blank line."
-                                          spellCheck={true}
-                                          lang="en"
-                                          autoCorrect="on"
-                                        />
-                                        <div className="flex items-center justify-between text-[11px] text-slate-500">
-                                          <span>Paragraph numbering updates automatically.</span>
-                                          <div className="flex items-center gap-2">
-                                            <Button
-                                              size="sm"
-                                              className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
-                                              onClick={saveNewClause}
-                                            >
-                                              Add clause
-                                            </Button>
-                                            <Button size="sm" variant="ghost" className="h-8 px-3" onClick={cancelAddClause}>
-                                              Cancel
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddClauseForm(afterId)}
-                                      className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    >
-                                      <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
-                                        <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
-                                          <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
-                                        </span>
-                                        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                                          Add
-                                        </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openAddClauseForm(afterId)}
+                                    className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  >
+                                    <span className="relative z-10 inline-flex h-7 w-14 items-center justify-center bg-white text-[11px] font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                      <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                        <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
                                       </span>
-                                      <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                        <span className="w-16" />
-                                        <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                        Add
                                       </span>
-                                    </button>
-                                  )}
+                                    </span>
+                                    <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="w-14" />
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                    </span>
+                                  </button>
                                 </div>
                               );
                             };
@@ -2810,10 +3148,10 @@ const PermanentContractGenerator = ({
                             return clausesWithEdits.flatMap((clause) => {
                               const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
                               const isEditing = editingClause === clause.id;
-                              const isEdited = Boolean(clauseEdits[clause.id]);
+                              const isEdited = Boolean(clauseEdits[clause.id] || clauseTitleEdits[clause.id]);
                               const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
                               return [
-                                <div key={clause.id} className="space-y-2 rounded-md border border-slate-100/80 p-3">
+                                <div key={clause.id} className="space-y-2 rounded border border-slate-100/80 p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="flex items-center gap-2">
                                       <h3 className="font-semibold text-black">{clause.title}</h3>
@@ -2830,42 +3168,13 @@ const PermanentContractGenerator = ({
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {isEditing ? (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            className="h-8 px-3 bg-[#04b81f] hover:bg-[#049218]"
-                                            onClick={() => saveClauseEdit(clause.id)}
-                                          >
-                                            Save
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-8 px-3"
-                                            onClick={() => {
-                                              setEditingClause(null);
-                                              setClauseDraft("");
-                                            }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                          {isEdited ? (
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              className="h-8 px-3 text-slate-600 hover:text-slate-800"
-                                              onClick={() => resetClauseEdit(clause.id)}
-                                            >
-                                              Reset
-                                            </Button>
-                                          ) : null}
-                                        </>
+                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
                                       ) : (
                                         <>
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="h-8 px-3"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
                                             onClick={() => startEditingClause(clause)}
                                           >
                                             Edit
@@ -2874,7 +3183,7 @@ const PermanentContractGenerator = ({
                                             <Button
                                               size="sm"
                                               variant="ghost"
-                                              className="h-8 px-3 text-red-600 hover:text-red-700"
+                                              className="h-[28px] px-3 text-xs rounded text-red-600 hover:text-red-700"
                                               onClick={() => deleteCustomClause(clause.id)}
                                             >
                                               Delete
@@ -2884,24 +3193,6 @@ const PermanentContractGenerator = ({
                                       )}
                                     </div>
                                   </div>
-
-                                  {isEditing ? (
-                                    <div className="space-y-2">
-                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
-                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
-                                      </p>
-                                      <Textarea
-                                        value={clauseDraft}
-                                        onChange={(e) => setClauseDraft(e.target.value)}
-                                        rows={6}
-                                        className="text-xs text-slate-600"
-                                        spellCheck={true}
-                                        lang="en"
-                                        autoCorrect="on"
-                                      />
-                                    </div>
-                                  ) : null}
 
                                   <div className="space-y-1">
                                     {paragraphs.map((text) => {
@@ -2918,10 +3209,144 @@ const PermanentContractGenerator = ({
                                     })}
                                   </div>
                                 </div>,
-                                renderAddClauseControl(clause.id),
+                                clause.id === "introduction" ? null : renderAddClauseControl(clause.id),
                               ];
                             });
                           })()}
+                          {activeEditingClause && typeof document !== "undefined"
+                            ? createPortal(
+                                <div className="fixed inset-0 z-[999]">
+                                  <div className="absolute inset-0 bg-slate-900/35" />
+                                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                                    <div
+                                      className="pointer-events-auto w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                      role="dialog"
+                                      aria-modal="true"
+                                      aria-label={`Edit clause ${activeEditingClause.title}`}
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                    >
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <h3 className="text-sm font-semibold text-black">Edit Clause: {activeEditingClause.title}</h3>
+                                          <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
+                                        </div>
+                                        <Input
+                                          value={clauseTitleDraft}
+                                          onChange={(e) => setClauseTitleDraft(e.target.value)}
+                                          placeholder="Clause title"
+                                          className="text-xs rounded"
+                                        />
+                                        <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                          Separate paragraphs with a blank line. Paragraphs are numbered automatically.
+                                        </p>
+                                        <Textarea
+                                          value={clauseDraft}
+                                          onChange={(e) => setClauseDraft(e.target.value)}
+                                          rows={10}
+                                          className="text-xs text-slate-600 rounded border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                          spellCheck={true}
+                                          lang="en"
+                                          autoCorrect="on"
+                                        />
+                                        <div className="flex items-center justify-end gap-2">
+                                          {Boolean(
+                                            clauseEdits[activeEditingClause.id] || clauseTitleEdits[activeEditingClause.id],
+                                          ) ? (
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-[28px] px-3 text-xs rounded text-slate-600 hover:text-slate-800"
+                                              onClick={() => resetClauseEdit(activeEditingClause.id)}
+                                            >
+                                              Reset
+                                            </Button>
+                                          ) : null}
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            onClick={cancelClauseEdit}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-[28px] px-3 text-xs rounded bg-[#04b81f] hover:bg-[#049218]"
+                                            onClick={() => saveClauseEdit(activeEditingClause)}
+                                          >
+                                            Save
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>,
+                                document.body,
+                              )
+                            : null}
+                          {addingAfter !== undefined && typeof document !== "undefined"
+                            ? createPortal(
+                                <div className="fixed inset-0 z-[999]">
+                                  <div className="absolute inset-0 bg-slate-900/35" />
+                                  <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                                    <div
+                                      className="pointer-events-auto w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                      role="dialog"
+                                      aria-modal="true"
+                                      aria-label="Add clause"
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                    >
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <h3 className="text-sm font-semibold text-black">Add Clause</h3>
+                                          <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
+                                        </div>
+                                        <Input
+                                          value={newClauseTitle}
+                                          onChange={(e) => setNewClauseTitle(e.target.value)}
+                                          placeholder="Clause title"
+                                          className="text-xs rounded"
+                                          autoFocus
+                                        />
+                                        <p className="flex items-center gap-1 text-[11px] text-orange-600">
+                                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                          Separate paragraphs with a blank line. Paragraphs are numbered automatically.
+                                        </p>
+                                        <Textarea
+                                          value={newClauseBody}
+                                          onChange={(e) => setNewClauseBody(e.target.value)}
+                                          rows={8}
+                                          className="text-xs text-slate-600 rounded border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                          placeholder="Clause body. Separate paragraphs with a blank line."
+                                          spellCheck={true}
+                                          lang="en"
+                                          autoCorrect="on"
+                                        />
+                                        <div className="flex items-center justify-end gap-2">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            onClick={cancelAddClause}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                            onClick={saveNewClause}
+                                          >
+                                            Add clause
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>,
+                                document.body,
+                              )
+                            : null}
 
                       {validatedPreview.additionalNotes && (
                         <div className="space-y-1">

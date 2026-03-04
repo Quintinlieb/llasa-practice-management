@@ -47,8 +47,10 @@ type DocumentComponentProps = {
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
@@ -127,8 +129,10 @@ const Documents = () => {
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
@@ -227,6 +231,17 @@ const Documents = () => {
         ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
+  const canSelectTrackerStep = (index: number) => {
+    if (!stepMeta?.onStepSelect) return false;
+    if (stepMeta.canSelectStep) return stepMeta.canSelectStep(index);
+    const maxIndex = stepMeta.steps.length - 1;
+    if (index < 0 || index > maxIndex) return false;
+    return index < stepMeta.activeStep;
+  };
+  const handleTrackerStepSelect = (index: number) => {
+    if (!canSelectTrackerStep(index)) return;
+    stepMeta?.onStepSelect?.(index);
+  };
   const activeModalStepLabel = modalSteps[modalActiveStep] ?? modalSteps[0] ?? "";
   const addendumStepNotes = [
     [
@@ -585,18 +600,18 @@ const Documents = () => {
                       {modalSteps.map((step, index) => {
                         const isActive = index === modalActiveStep;
                         const isComplete = index < modalActiveStep;
-                        return (
-                          <div
-                            key={step}
-                            className={cn(
-                              "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
-                              isActive
-                                ? "border-blue-300 bg-blue-50"
-                                : isComplete
-                                  ? "border-emerald-300 bg-emerald-50"
-                                  : "border-slate-300 bg-white",
-                            )}
-                          >
+                        const isClickable = canSelectTrackerStep(index);
+                        const itemClasses = cn(
+                          "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
+                          isActive
+                            ? "border-blue-300 bg-blue-50"
+                            : isComplete
+                              ? "border-emerald-300 bg-emerald-50"
+                              : "border-slate-300 bg-white",
+                          isClickable && "cursor-pointer hover:border-blue-300 hover:bg-blue-50/40",
+                        );
+                        const itemContent = (
+                          <>
                             <span
                               className={cn(
                                 "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
@@ -611,12 +626,26 @@ const Documents = () => {
                             </span>
                             <span
                               className={cn(
-                                "text-xs font-semibold leading-5",
+                                "text-left text-xs font-semibold leading-5",
                                 isActive ? "text-blue-700" : isComplete ? "text-emerald-700" : "text-slate-600",
                               )}
                             >
                               {step}
                             </span>
+                          </>
+                        );
+                        return isClickable ? (
+                          <button
+                            key={step}
+                            type="button"
+                            onClick={() => handleTrackerStepSelect(index)}
+                            className={cn(itemClasses, "w-full text-left")}
+                          >
+                            {itemContent}
+                          </button>
+                        ) : (
+                          <div key={step} className={itemClasses}>
+                            {itemContent}
                           </div>
                         );
                       })}
@@ -708,18 +737,18 @@ const Documents = () => {
                   {modalSteps.map((step, index) => {
                     const isActive = index === modalActiveStep;
                     const isComplete = index < modalActiveStep;
-                    return (
-                      <div
-                        key={step}
-                        className={cn(
-                          "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
-                          isActive
-                            ? "border-blue-300 bg-blue-50"
-                            : isComplete
-                              ? "border-emerald-300 bg-emerald-50"
-                              : "border-slate-200 bg-white",
-                        )}
-                      >
+                    const isClickable = canSelectTrackerStep(index);
+                    const itemClasses = cn(
+                      "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
+                      isActive
+                        ? "border-blue-300 bg-blue-50"
+                        : isComplete
+                          ? "border-emerald-300 bg-emerald-50"
+                          : "border-slate-200 bg-white",
+                      isClickable && "cursor-pointer hover:border-blue-300 hover:bg-blue-50/40",
+                    );
+                    const itemContent = (
+                      <>
                         <span
                           className={cn(
                             "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
@@ -734,12 +763,26 @@ const Documents = () => {
                         </span>
                         <span
                           className={cn(
-                            "text-xs font-semibold leading-5",
+                            "text-left text-xs font-semibold leading-5",
                             isActive ? "text-blue-700" : isComplete ? "text-emerald-700" : "text-slate-600",
                           )}
                         >
                           {step}
                         </span>
+                      </>
+                    );
+                    return isClickable ? (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => handleTrackerStepSelect(index)}
+                        className={cn(itemClasses, "w-full text-left")}
+                      >
+                        {itemContent}
+                      </button>
+                    ) : (
+                      <div key={step} className={itemClasses}>
+                        {itemContent}
                       </div>
                     );
                   })}

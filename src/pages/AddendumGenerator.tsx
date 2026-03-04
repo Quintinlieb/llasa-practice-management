@@ -248,8 +248,10 @@ const AddendumGenerator = ({
     icons?: readonly ComponentType<SVGProps<SVGSVGElement>>[];
     canGoNext?: boolean;
     canGoBack?: boolean;
+    canSelectStep?: (index: number) => boolean;
     onNext?: () => void;
     onBack?: () => void;
+    onStepSelect?: (index: number) => void;
     onClear?: () => void;
     addendumType?: AddendumType | "";
     isFinished?: boolean;
@@ -280,6 +282,7 @@ const AddendumGenerator = ({
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
+  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -377,9 +380,21 @@ const AddendumGenerator = ({
       setShowEmployeeHint(false);
       return;
     }
-    const timer = setTimeout(() => setShowEmployeeHint(true), 1000);
+    if (hasShownEmployeeHint) return;
+    const timer = setTimeout(() => {
+      setShowEmployeeHint(true);
+      setHasShownEmployeeHint(true);
+    }, 1000);
     return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint]);
+  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
+
+  useEffect(() => {
+    if (!showEmployeeHint) return;
+    const autoDismissTimer = setTimeout(() => {
+      setShowEmployeeHint(false);
+    }, 10000);
+    return () => clearTimeout(autoDismissTimer);
+  }, [showEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -586,19 +601,37 @@ const AddendumGenerator = ({
   }, [activeStep, isEmployerStepComplete, isEmployeeStepComplete]);
 
   const canNavigateToStep = (index: number) => {
+    if (index < 0 || index >= steps.length) return false;
+    if (showFinalActions) return true;
     return index < activeStep;
   };
 
   const handleStepClick = (index: number) => {
-    if (canNavigateToStep(index)) {
-      if (index > 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
+    if (!canNavigateToStep(index)) return;
+    if (showFinalActions) {
+      setShowFinalActions(false);
+    }
+    if (index > 0 && showEmployeeHint) {
+      setShowEmployeeHint(false);
+    }
+    setActiveStep(index);
+  };
+
+  const canSelectStep = useCallback(
+    (index: number) => canNavigateToStep(index),
+    [activeStep, showFinalActions, steps.length],
+  );
+
+  const handleStepSelect = useCallback(
+    (index: number) => {
+      if (!canNavigateToStep(index)) return;
+      if (showFinalActions) {
+        setShowFinalActions(false);
       }
       setActiveStep(index);
-    }
-  };
+    },
+    [activeStep, showFinalActions, steps.length],
+  );
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
@@ -642,8 +675,10 @@ const AddendumGenerator = ({
       icons: stepIcons,
       canGoNext: showFinalActions ? !isGenerating : canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
+      canSelectStep,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
+      onStepSelect: handleStepSelect,
       onClear: clearCurrentStepFields,
       addendumType: formData.addendumType,
       isFinished: showFinalActions,
@@ -655,9 +690,11 @@ const AddendumGenerator = ({
     steps,
     stepIcons,
     canAdvance,
+    canSelectStep,
     handleNextOrFinish,
     handleBack,
     handleDownload,
+    handleStepSelect,
     isGenerating,
     isFormComplete,
     showFinalActions,
@@ -1449,7 +1486,7 @@ const AddendumGenerator = ({
     <>
       {showEmployeeHint && typeof document !== "undefined"
         ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-16 z-50 flex justify-center px-4">
+              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
                 <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
                 <span
                   className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
@@ -1514,15 +1551,8 @@ const AddendumGenerator = ({
                       : isActive
                         ? "border-blue-300 text-blue-700 bg-blue-100"
                         : "border-slate-200 text-slate-500 bg-white";
-                    const canClick = showFinalActions || index < activeStep;
-                    const handleClick = () => {
-                      if (showFinalActions) {
-                        setShowFinalActions(false);
-                        setActiveStep(index);
-                      } else if (canNavigateToStep(index)) {
-                        handleStepClick(index);
-                      }
-                    };
+                    const canClick = canNavigateToStep(index);
+                    const handleClick = () => handleStepClick(index);
 
                     return (
                       <div key={step} className="flex items-center gap-4">
@@ -1626,7 +1656,9 @@ const AddendumGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>Employer contact *</Label>
+                      <Label htmlFor="employerContact" className={modalFieldLabelClass}>
+                        Employer contact <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerContact"
                         value={formData.employerContact}
@@ -1639,7 +1671,9 @@ const AddendumGenerator = ({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>Employer email *</Label>
+                      <Label htmlFor="employerEmail" className={modalFieldLabelClass}>
+                        Employer email <span className="text-red-500">*</span>
+                      </Label>
                       <Input
                         id="employerEmail"
                         type="email"
@@ -1672,7 +1706,9 @@ const AddendumGenerator = ({
                     </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeName" className={modalFieldLabelClass}>Employee Name *</Label>
+                        <Label htmlFor="employeeName" className={modalFieldLabelClass}>
+                          Employee Name <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeName"
                           value={formData.employeeName}
@@ -1681,7 +1717,9 @@ const AddendumGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>Employee Surname *</Label>
+                        <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>
+                          Employee Surname <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                           id="employeeSurname"
                           value={formData.employeeSurname}
@@ -1690,7 +1728,9 @@ const AddendumGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className={modalFieldLabelClass}>ID/Passport *</Label>
+                        <Label className={modalFieldLabelClass}>
+                          ID/Passport <span className="text-red-500">*</span>
+                        </Label>
                         <Select
                           value={formData.idType}
                           onValueChange={(value) => {
@@ -1711,7 +1751,8 @@ const AddendumGenerator = ({
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="idOrPassport" className={modalFieldLabelClass}>
-                          {formData.idType === "id" ? "ID Number *" : "Passport Number *"}
+                          {formData.idType === "id" ? "ID Number" : "Passport Number"}{" "}
+                          <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           id="idOrPassport"
@@ -1754,7 +1795,9 @@ const AddendumGenerator = ({
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="addendumType" className={modalFieldLabelClass}>Addendum Type *</Label>
+                      <Label htmlFor="addendumType" className={modalFieldLabelClass}>
+                        Addendum Type <span className="text-red-500">*</span>
+                      </Label>
                       <Select
                         value={formData.addendumType}
                         onValueChange={(value) => {
@@ -1786,7 +1829,9 @@ const AddendumGenerator = ({
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate" className={modalFieldLabelClass}>Effective Date *</Label>
+                      <Label htmlFor="effectiveDate" className={modalFieldLabelClass}>
+                        Effective Date <span className="text-red-500">*</span>
+                      </Label>
                       <div className="flex items-start gap-2">
                         <Input
                           id="effectiveDate"
@@ -1818,7 +1863,9 @@ const AddendumGenerator = ({
                     {formData.addendumType === "extension" || formData.addendumType === "renewal" ? (
                       <>
                         <div className="space-y-1.5">
-                          <Label htmlFor="contractEndDate" className={modalFieldLabelClass}>What was the previous contract end date? *</Label>
+                          <Label htmlFor="contractEndDate" className={modalFieldLabelClass}>
+                            What was the previous contract end date? <span className="text-red-500">*</span>
+                          </Label>
                           <div className="flex items-start gap-2">
                             <Input
                               id="contractEndDate"
@@ -1852,7 +1899,9 @@ const AddendumGenerator = ({
                           </div>
                         </div>
                         <div className="space-y-1.5">
-                          <Label htmlFor="newEndDate" className={modalFieldLabelClass}>New End Date *</Label>
+                          <Label htmlFor="newEndDate" className={modalFieldLabelClass}>
+                            New End Date <span className="text-red-500">*</span>
+                          </Label>
                           <div className="flex items-start gap-2">
                             <Input
                               id="newEndDate"
@@ -1889,7 +1938,10 @@ const AddendumGenerator = ({
                     ) : null}
                     {formData.addendumType === "general" ? (
                       <div className="space-y-1.5 md:col-span-2">
-                        <Label htmlFor="contractReference" className={modalFieldLabelClass}>Select the date of the employment contract (signature or isuing date) *</Label>
+                        <Label htmlFor="contractReference" className={modalFieldLabelClass}>
+                          Select the date of the employment contract (signature or isuing date){" "}
+                          <span className="text-red-500">*</span>
+                        </Label>
                         <div className="flex items-start gap-2">
                           <Input
                             id="contractReference"

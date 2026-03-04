@@ -1041,9 +1041,10 @@ const baseContractSchema = z.object({
   }),
   reportsTo: z
     .string()
-    .min(2, "Please specify who the employee reports to")
     .max(120, "Reports to must not exceed 120 characters")
-    .transform(sanitizeText),
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : "")),
   additionalNotes: z
     .string()
     .max(2000, "Additional notes must not exceed 2000 characters")

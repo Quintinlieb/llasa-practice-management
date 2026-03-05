@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -160,10 +159,12 @@ const extractErrorMessage = (error: unknown): string => {
 };
 const WarningGenerator = ({
   embedded = false,
+  externalNavigation = false,
   onStepChange,
   onStepMetaChange,
 }: {
   embedded?: boolean;
+  externalNavigation?: boolean;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -175,6 +176,7 @@ const WarningGenerator = ({
     onNext?: () => void;
     onBack?: () => void;
     onStepSelect?: (index: number) => void;
+    onClear?: () => void;
     isFinished?: boolean;
   }) => void;
 }) => {
@@ -188,7 +190,10 @@ const WarningGenerator = ({
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRow[]>([]);
   const [misconductSearch, setMisconductSearch] = useState("");
   const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
-  const misconductPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
   const [employeeSelectResetCount, setEmployeeSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
@@ -246,15 +251,15 @@ const WarningGenerator = ({
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
   const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const warningModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const warningModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getWarningModalInputClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getWarningModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
 
   useEffect(() => {
@@ -439,6 +444,49 @@ const WarningGenerator = ({
     fetchEmployeeWarnings(formData.employeeId);
   }, [formData.employeeId, fetchEmployeeWarnings]);
 
+  const sortedEmployees = useMemo(
+    () =>
+      [...employees].sort((a, b) => {
+        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
+        if (nameOrder !== 0) return nameOrder;
+        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
+      }),
+    [employees],
+  );
+
+  const searchedEmployees = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return sortedEmployees;
+    const tokens = query.split(" ").filter(Boolean);
+    return sortedEmployees
+      .map((employee) => {
+        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
+        const fullNameLower = fullName.toLowerCase();
+        const firstNameLower = employee.employee_name.toLowerCase();
+        const surnameLower = employee.employee_surname.toLowerCase();
+        const idNumberLower = (employee.id_number ?? "").toLowerCase();
+        let score = 0;
+
+        if (fullNameLower === query) score += 1000;
+        if (fullNameLower.startsWith(query)) score += 800;
+        if (fullNameLower.includes(query)) score += 500;
+        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
+        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
+        if (query.length >= 3 && idNumberLower.includes(query)) score += 120;
+
+        return { employee, score, fullName };
+      })
+      .filter((item) => item.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.fullName.localeCompare(b.fullName, undefined, {
+            sensitivity: "base",
+          }),
+      )
+      .map((item) => item.employee);
+  }, [employeeSearchQuery, sortedEmployees]);
+
   useEffect(() => {
     setDuplicateOverrideAccepted(false);
   }, [formData.employeeId, formData.misconductTypes.join("|"), formData.warningType]);
@@ -452,12 +500,6 @@ const WarningGenerator = ({
     if (category === "Minor") return "text-emerald-700";
     if (category === "Serious") return "text-amber-700";
     return "text-red-700";
-  };
-
-  const misconductCheckboxClasses = (category: "Minor" | "Serious" | "Dismissible") => {
-    if (category === "Minor") return "border-emerald-500 data-[state=checked]:bg-emerald-100 data-[state=checked]:border-emerald-600 text-emerald-700";
-    if (category === "Serious") return "border-amber-500 data-[state=checked]:bg-amber-100 data-[state=checked]:border-amber-600 text-amber-700";
-    return "border-red-500 data-[state=checked]:bg-red-100 data-[state=checked]:border-red-600 text-red-700";
   };
 
   const getMisconductCategory = (name: string): "Minor" | "Serious" | "Dismissible" => {
@@ -665,16 +707,15 @@ const WarningGenerator = ({
 
   useEffect(() => {
     if (!isMisconductMenuOpen) return;
-    const handleScrollClose = (event: Event) => {
-      const target = event.target as Node | null;
-      if (target && misconductPopoverRef.current?.contains(target)) {
-        return; // allow internal scrolling without closing
-      }
-      handleMisconductMenuOpenChange(false);
-    };
-    window.addEventListener("scroll", handleScrollClose, true);
-    return () => window.removeEventListener("scroll", handleScrollClose, true);
+    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
   }, [isMisconductMenuOpen]);
+
+  useEffect(() => {
+    if (!employeeSearchOpen) return;
+    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [employeeSearchOpen]);
 
   const handleMisconductSelect = (type: string) => {
     const isSelected = formData.misconductTypes.includes(type);
@@ -768,6 +809,8 @@ const WarningGenerator = ({
         employeeSurname: employee.employee_surname,
         employeeIdNumber: employee.id_number ?? "",
       });
+      setEmployeeSearchOpen(false);
+      setEmployeeSearchQuery("");
       setEmployeeSelectResetCount((prev) => prev + 1);
     }
   };
@@ -1096,6 +1139,15 @@ const WarningGenerator = ({
     }));
     setEmployeeSelectResetCount((prev) => prev + 1);
   };
+  const clearCurrentStepFields = () => {
+    if (activeStep === 1) {
+      handleResetEmployeeStep();
+      return;
+    }
+    if (activeStep === 2) {
+      handleResetWarningStep();
+    }
+  };
 
   const isFormValid = () => {
     return (
@@ -1225,6 +1277,7 @@ const WarningGenerator = ({
       onNext: handleNextOrFinish,
       onBack: handleBack,
       onStepSelect: handleStepSelect,
+      onClear: clearCurrentStepFields,
       isFinished: showFinalActions,
     });
   }, [
@@ -1238,6 +1291,7 @@ const WarningGenerator = ({
     handleNextOrFinish,
     handleBack,
     handleStepSelect,
+    clearCurrentStepFields,
     isWarningStepComplete,
     showFinalActions,
   ]);
@@ -1285,6 +1339,7 @@ const WarningGenerator = ({
 
   const warningSelectKey = `${formData.misconductTypes.join("|") || "empty"}-${formData.warningType || "none"}-${warningSelectResetCount}`;
   const isFinalizedCurrent = showFinalActions && activeStep === steps.length - 1;
+  const useExternalShell = embedded && externalNavigation;
   const renderPreviewPage = () => (
     <div className="bg-white text-black px-8 pt-2 pb-8 mx-auto" style={{ width: "210mm", minHeight: "297mm" }}>
       {/* Header */}
@@ -1489,8 +1544,10 @@ const WarningGenerator = ({
         : null}
           <div
             className={cn(
-              "relative",
-              embedded ? "px-0 pt-4 pr-1 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+              "space-y-6",
+              embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
+              useExternalShell &&
+                (showFinalActions ? "space-y-0 pt-0 pr-0 pb-0" : "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0"),
             )}
             style={{ scrollbarGutter: "stable" }}
           >
@@ -1515,10 +1572,11 @@ const WarningGenerator = ({
               )}
 
                 {!showFinalActions ? (
-                <div className="translate-y-[-10px]">
+                <div>
                   <Card
                     className={cn(
-                      "flex-1 rounded-sm shadow-none bg-transparent border-0",
+                      "rounded-sm mt-4 shadow-none border-0 bg-transparent",
+                      useExternalShell && "mt-0 !backdrop-blur-none",
                       !embedded && "flex min-h-0 flex-col",
                     )}
                   >
@@ -1591,16 +1649,17 @@ const WarningGenerator = ({
 
                   <CardContent
                     className={cn(
-                      "pt-[11px] [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
+                      "pt-1 [&_label]:text-[10px] [&_label]:font-semibold [&_label]:text-slate-400 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                       embedded && "px-0",
                       !embedded && "flex-1 min-h-0 overflow-y-auto",
+                      useExternalShell && "p-0 overflow-visible",
                     )}
                   >
                     <form onSubmit={handleSubmit} className="space-y-4">
 
-                      <div className="space-y-4">
+                      <div className={cn("space-y-4", useExternalShell && "pr-1")}>
                 {activeStep === 0 && (
-                  <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="space-y-3">
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                       <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
@@ -1671,21 +1730,48 @@ const WarningGenerator = ({
               )}
 
               {activeStep === 1 && (
-                <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="space-y-2">
                     <Label htmlFor="employee" className={modalFieldLabelClass}>
                       Select Employee (optional)
                     </Label>
-                    <Select key={employeeSelectResetCount} onValueChange={handleEmployeeSelect}>
+                    <Select
+                      key={employeeSelectResetCount}
+                      value={formData.employeeId || undefined}
+                      onValueChange={handleEmployeeSelect}
+                      open={employeeSearchOpen}
+                      onOpenChange={(open) => {
+                        setEmployeeSearchOpen(open);
+                        if (open) setEmployeeSearchQuery("");
+                      }}
+                    >
                       <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.employeeId.trim().length > 0)} ${warningModalDropdownToneClass}`}>
                         <SelectValue placeholder="Select from saved employees or fill manually" />
                       </SelectTrigger>
-                      <SelectContent className="w-[var(--radix-select-trigger-width)]">
-                        {employees.map((employee) => (
-                          <SelectItem key={employee.id} value={employee.id} className={warningModalSelectItemClass}>
-                            {employee.employee_name} {employee.employee_surname}
-                          </SelectItem>
-                        ))}
+                      <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
+                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                          <Input
+                            ref={employeeSearchInputRef}
+                            value={employeeSearchQuery}
+                            onChange={(event) => setEmployeeSearchQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              (event.nativeEvent as KeyboardEvent).stopImmediatePropagation?.();
+                            }}
+                            onKeyUp={(event) => event.stopPropagation()}
+                            placeholder="Type full employee name..."
+                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                          />
+                        </div>
+                        {searchedEmployees.length > 0 ? (
+                          searchedEmployees.map((employee) => (
+                            <SelectItem key={employee.id} value={employee.id} className={warningModalSelectItemClass}>
+                              {employee.employee_name} {employee.employee_surname}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-[11px] text-slate-500">No matching employees found.</div>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1731,7 +1817,7 @@ const WarningGenerator = ({
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3 rounded-sm border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="space-y-3">
                   <div className="flex items-center justify-start">
                     {activeWarnings.length > 0 && (
                       <TooltipProvider delayDuration={0} skipDelayDuration={0}>
@@ -1798,87 +1884,88 @@ const WarningGenerator = ({
                     <Label className={modalFieldLabelClass}>
                       Misconduct Type(s) <span className="text-red-500">*</span>
                     </Label>
-                    <Popover open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={`${getWarningModalSelectTriggerClass(formData.misconductTypes.length > 0)} ${warningModalDropdownToneClass} w-full justify-start text-left font-normal`}
-                          type="button"
-                        >
-                          {formData.misconductTypes.length === 0
-                            ? "Select misconduct type(s)"
-                            : `${formData.misconductTypes.length} type(s) selected`}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent ref={misconductPopoverRef} className="w-[420px] p-4" align="start">
-                        <div className="space-y-3">
+                    <Select open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
+                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.misconductTypes.length > 0)} ${warningModalDropdownToneClass}`}>
+                        <SelectValue
+                          placeholder={
+                            formData.misconductTypes.length === 0
+                              ? "Select misconduct type(s)"
+                              : `${formData.misconductTypes.length} type(s) selected`
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
+                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
                           <Input
+                            ref={misconductSearchInputRef}
                             placeholder="Search misconduct types"
                             value={misconductSearch}
                             onChange={(e) => setMisconductSearch(e.target.value)}
+                            onKeyDown={(event) => event.stopPropagation()}
+                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
                           />
-                          <ScrollArea className="h-56 rounded-md border border-muted">
-                            <div className="space-y-2 p-3">
-                              {filteredMisconductTypes.length === 0 && (
-                                <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
-                              )}
-                              {["Minor", "Serious", "Dismissible"].map((category) => {
-                                const bucket = filteredMisconductTypes.filter((item) => item.category === category);
-                                if (bucket.length === 0) return null;
-                                return (
-                                  <div key={category} className="space-y-1">
-                                    <p
-                                      className={`text-xs font-semibold uppercase px-2 py-1 rounded-sm ${
-                                        category === "Minor"
-                                          ? "bg-emerald-600 text-white"
-                                          : category === "Serious"
-                                            ? "bg-amber-600 text-white"
-                                            : "bg-red-600 text-white"
-                                      }`}
+                        </div>
+                        <ScrollArea className="h-56">
+                          <div className="space-y-2 p-3">
+                            {filteredMisconductTypes.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
+                            )}
+                            {["Minor", "Serious", "Dismissible"].map((category) => {
+                              const bucket = filteredMisconductTypes.filter((item) => item.category === category);
+                              if (bucket.length === 0) return null;
+                              return (
+                                <div key={category} className="space-y-1">
+                                  <p
+                                    className={`text-xs font-semibold uppercase px-2 py-1 rounded-sm ${
+                                      category === "Minor"
+                                        ? "bg-emerald-600 text-white"
+                                        : category === "Serious"
+                                          ? "bg-amber-600 text-white"
+                                          : "bg-red-600 text-white"
+                                    }`}
+                                  >
+                                    {category} Offences
+                                  </p>
+                                  {bucket.map((item) => (
+                                    <label
+                                      key={`${category}-${item.name}`}
+                                      className={`flex items-center gap-2 cursor-pointer rounded-sm px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${warningModalSelectItemClass}`}
                                     >
-                                      {category} Offences
-                                    </p>
-                                    {bucket.map((item) => (
-                                      <label
-                                        key={`${category}-${item.name}`}
-                                        className={`flex items-center gap-2 text-sm cursor-pointer ${misconductColorClasses(item.category)}`}
-                                      >
-                                        <Checkbox
-                                          checked={formData.misconductTypes.includes(item.name)}
-                                          onCheckedChange={() => handleMisconductSelect(item.name)}
-                                          className={misconductCheckboxClasses(item.category)}
-                                        />
-                                        <span className="flex-1">{item.name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
+                                      <Checkbox
+                                        checked={formData.misconductTypes.includes(item.name)}
+                                        onCheckedChange={() => handleMisconductSelect(item.name)}
+                                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                                      />
+                                      <span className="flex-1">{item.name}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
+                        {formData.misconductTypes.length > 0 && (
+                          <div className="space-y-2 border-t border-slate-200 p-3">
+                            <p className="text-sm font-medium">Selected</p>
+                            <div className="flex flex-wrap gap-2">
+                              {formData.misconductTypes.map((type) => {
+                                const category = getMisconductCategory(type);
+                                return (
+                                  <Badge
+                                    key={type}
+                                    variant="secondary"
+                                    className="gap-1 text-slate-700"
+                                  >
+                                    {type}
+                                    <X className="h-3 w-3 cursor-pointer" onClick={() => toggleMisconductType(type)} />
+                                  </Badge>
                                 );
                               })}
                             </div>
-                          </ScrollArea>
-                          {formData.misconductTypes.length > 0 && (
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">Selected</p>
-                              <div className="flex flex-wrap gap-2">
-                                {formData.misconductTypes.map((type) => {
-                                  const category = getMisconductCategory(type);
-                                  return (
-                                    <Badge
-                                      key={type}
-                                      variant="secondary"
-                                      className={`gap-1 ${misconductColorClasses(category)}`}
-                                    >
-                                      {type}
-                                      <X className="h-3 w-3 cursor-pointer" onClick={() => toggleMisconductType(type)} />
-                                    </Badge>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
                     {formData.misconductTypes.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {formData.misconductTypes.map((type) => (
@@ -1979,7 +2066,7 @@ const WarningGenerator = ({
               )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                  {activeStep === steps.length - 1 ? (
+                  {!(embedded && externalNavigation) ? (activeStep === steps.length - 1 ? (
                     <div className="flex w-full items-center gap-3 flex-wrap justify-between">
                       <div className="flex-none">
                         <Button
@@ -2042,7 +2129,7 @@ const WarningGenerator = ({
                         )}
                       </div>
                     </div>
-                  )}
+                  )) : null}
                 </div>
                     </div>
                     </form>
@@ -2050,10 +2137,10 @@ const WarningGenerator = ({
                   </Card>
                 </div>
               ) : (
-                <div className="translate-y-[-10px]">
+                <div>
                   <Card
                     className={cn(
-                      "flex-1 rounded-sm shadow-none bg-transparent border-0",
+                      "rounded-sm mt-4 shadow-none border-0 bg-transparent",
                       !embedded && "flex min-h-0 flex-col",
                     )}
                   >
@@ -2061,36 +2148,39 @@ const WarningGenerator = ({
                   <CardContent
                     className={cn(
                       "space-y-6 pt-2",
+                      useExternalShell && "contents",
                       !embedded && "flex-1 min-h-0 overflow-y-auto",
                     )}
                   >
                     <div className="flex flex-col gap-4">
-                      <div className="h-[62vh] overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-4">
+                      <div className="h-[calc(62vh+25px)] overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-4">
                         {renderPreviewPage()}
                       </div>
-                      <div className="flex w-full items-center gap-2">
-                        <div className="flex-none">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleBack}
-                            className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                          >
-                            Back
-                          </Button>
+                      {!useExternalShell ? (
+                        <div className="flex w-full items-center gap-2">
+                          <div className="flex-none">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleBack}
+                              className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                            >
+                              Back
+                            </Button>
+                          </div>
+                          <div className="flex-1" />
+                          <div className="flex-none">
+                            <Button
+                              type="button"
+                              onClick={handleDownload}
+                              disabled={isLoading}
+                              className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                            >
+                              Download
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex-1" />
-                        <div className="flex-none">
-                          <Button
-                            type="button"
-                            onClick={handleDownload}
-                            disabled={isLoading}
-                            className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                          >
-                            Download
-                          </Button>
-                        </div>
-                      </div>
+                      ) : null}
                     </div>
                   </CardContent>
                   </Card>

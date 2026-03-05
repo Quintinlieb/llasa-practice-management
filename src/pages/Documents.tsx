@@ -312,8 +312,27 @@ const Documents = () => {
       "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
     ],
   ] as const;
+  const warningStepNotes = [
+    [
+      "The company name, registration number, and address can be changed in Company Settings.",
+      "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
+    ],
+    [
+      "You may either select from existing employees or enter employee details manually.",
+      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
+    ],
+    [
+      "Select one or more misconduct types, provide a detailed description, and choose the correct warning type.",
+      "The warning validity period is populated from the selected warning type.",
+    ],
+    [
+      "Review the warning preview and download once details are verified.",
+      "Use Back to return to the form if any information must be corrected.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
+  const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const temporaryEmployeeCount = stepMeta?.temporaryEmployeeCount ?? 0;
   const temporaryActiveNotes = (() => {
     const baseNotes = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
@@ -325,7 +344,9 @@ const Documents = () => {
     return baseNotes;
   })();
   const modalActiveNotes =
-    modalDocument === "permanentContract"
+    modalDocument === "warnings"
+      ? warningActiveNotes
+      : modalDocument === "permanentContract"
       ? permanentActiveNotes
       : modalDocument === "temporaryContract"
         ? temporaryActiveNotes
@@ -624,7 +645,8 @@ const Documents = () => {
       <DialogContent
         className={cn(
           "p-0 [&>button]:right-5 [&>button]:top-4",
-          modalDocument === "addendum"
+          modalDocument === "warnings"
+            || modalDocument === "addendum"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
             ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
@@ -632,18 +654,22 @@ const Documents = () => {
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "addendum" || modalDocument === "permanentContract" || modalDocument === "temporaryContract" ? (
+          {modalDocument === "warnings" || modalDocument === "addendum" || modalDocument === "permanentContract" || modalDocument === "temporaryContract" ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
               <header className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
                   <Menu className="h-3.5 w-3.5 -ml-1" />
                   <span className="font-semibold text-slate-700">
-                    {`Documents / Contracts / ${
+                    {`Documents / ${
+                      modalDocument === "warnings" ? "Discipline" : "Contracts"
+                    } / ${
                       modalDocument === "addendum"
                         ? "Addendum"
                         : modalDocument === "temporaryContract"
                           ? "Temporary Contract"
-                          : "Permanent Contract"
+                          : modalDocument === "permanentContract"
+                            ? "Permanent Contract"
+                            : "Warning Form"
                     }`}
                   </span>
                 </div>
@@ -723,7 +749,12 @@ const Documents = () => {
                     </div>
                   </aside>
                   <div className="min-w-0 flex-1 min-h-0 flex flex-col">
-                    <section className="relative flex-1 min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4">
+                    <section
+                      className={cn(
+                        "relative min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4",
+                        modalDocument === "warnings" ? "overflow-visible" : "flex-1",
+                      )}
+                    >
                       <Suspense
                         fallback={
                           <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">

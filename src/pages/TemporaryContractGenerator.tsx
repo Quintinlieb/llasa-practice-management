@@ -82,6 +82,42 @@ type AddTempEmployeeForm = {
   areaCode: string;
 };
 
+type ExistingTempEmployeeRow = {
+  id: string;
+  employee_name: string | null;
+  employee_surname: string | null;
+  id_number: string | null;
+  contract_type: string | null;
+  cell_number: string | null;
+  physical_address_line1: string | null;
+  physical_address_line2: string | null;
+  city: string | null;
+  province: string | null;
+  area_code: string | null;
+};
+
+type ExistingTempEmployeeOption = {
+  id: string;
+  label: string;
+  employeeName: string;
+  employeeSurname: string;
+  idNumber: string;
+  cellNumber: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  province: string;
+  areaCode: string;
+};
+
+type ExistingEmployeeQueryResult = {
+  data: ExistingTempEmployeeRow[] | null;
+  error: { message: string } | null;
+};
+
+const existingTempEmployeeSelectColumns =
+  "id, employee_name, employee_surname, id_number, contract_type, cell_number, physical_address_line1, physical_address_line2, city, province, area_code";
+
 const makeRowId = () => `emp-${Math.random().toString(16).slice(2, 8)}`;
 
 type ClauseDefinition = {
@@ -101,6 +137,26 @@ const salaryFrequencyLabels: Record<SalaryFrequency, string> = {
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
+
+const formatSalaryAmountDisplay = (value: string) => {
+  const normalized = value.replace(/,/g, "").trim();
+  if (!normalized) return "";
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount)) return "";
+  return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const formatSalaryAmountTypingDisplay = (value: string) => {
+  const normalized = value.replace(/,/g, "");
+  if (!normalized) return "";
+  const hasTrailingDot = normalized.endsWith(".");
+  const [wholePart = "", decimalPart] = normalized.split(".");
+  const safeWhole = wholePart.replace(/\D/g, "");
+  const wholeWithCommas = safeWhole ? Number(safeWhole).toLocaleString("en-US") : "0";
+  if (hasTrailingDot) return `${wholeWithCommas}.`;
+  if (decimalPart !== undefined) return `${wholeWithCommas}.${decimalPart}`;
+  return wholeWithCommas;
+};
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -197,6 +253,7 @@ const TemporaryContractGenerator = ({
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSalaryAmountFocused, setIsSalaryAmountFocused] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<ValidatedTempData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [clauseTitleEdits, setClauseTitleEdits] = useState<Record<string, string>>({});
@@ -219,6 +276,11 @@ const TemporaryContractGenerator = ({
   const [showBulkEmployeeDialog, setShowBulkEmployeeDialog] = useState(false);
   const [addEmployeeFormStep, setAddEmployeeFormStep] = useState<1 | 2>(1);
   const [newEmployeeIdType, setNewEmployeeIdType] = useState<"id" | "passport">("id");
+  const [existingEmployeeOptions, setExistingEmployeeOptions] = useState<ExistingTempEmployeeOption[]>([]);
+  const [isExistingEmployeesLoading, setIsExistingEmployeesLoading] = useState(false);
+  const [existingEmployeeOpen, setExistingEmployeeOpen] = useState(false);
+  const [existingEmployeeQuery, setExistingEmployeeQuery] = useState("");
+  const [selectedExistingEmployeeId, setSelectedExistingEmployeeId] = useState("");
   const [newEmployeeForm, setNewEmployeeForm] = useState<AddTempEmployeeForm>({
     employeeName: "",
     employeeSurname: "",
@@ -232,6 +294,7 @@ const TemporaryContractGenerator = ({
     areaCode: "",
   });
   const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const existingEmployeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
   const snippetContainerWidthMm = 150;
@@ -282,10 +345,24 @@ const TemporaryContractGenerator = ({
     );
   }, [newEmployeeForm]);
 
+  const filteredExistingEmployeeOptions = useMemo(() => {
+    const query = existingEmployeeQuery.trim().toLowerCase();
+    if (!query) return existingEmployeeOptions;
+    return existingEmployeeOptions.filter((employee) =>
+      `${employee.label} ${employee.idNumber} ${employee.cellNumber}`.toLowerCase().includes(query),
+    );
+  }, [existingEmployeeOptions, existingEmployeeQuery]);
+
   useEffect(() => {
     if (!embedded) return;
     onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
   }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
+
+  useEffect(() => {
+    if (!existingEmployeeOpen) return;
+    const timer = setTimeout(() => existingEmployeeSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [existingEmployeeOpen]);
 
 
   const [formData, setFormData] = useState<ContractFormState>({
@@ -355,6 +432,139 @@ const TemporaryContractGenerator = ({
     }
   }, [profile]);
 
+  useEffect(() => {
+    if (!user || !showAddEmployee) return;
+    let isSubscribed = true;
+
+    const fetchExistingEmployees = async () => {
+      setIsExistingEmployeesLoading(true);
+      const { data, error } = (await supabase
+        .from("employees")
+        .select(existingTempEmployeeSelectColumns)
+        .eq("company_id", user.id)
+        .order("employee_name", { ascending: true, nullsFirst: false })
+        .order("employee_surname", { ascending: true, nullsFirst: false })) as unknown as ExistingEmployeeQueryResult;
+
+      if (!isSubscribed) return;
+      if (error) {
+        setExistingEmployeeOptions([]);
+        setIsExistingEmployeesLoading(false);
+        toast({
+          title: "Unable to load employees",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const options = (Array.isArray(data) ? data : [])
+        .map((row) => row as ExistingTempEmployeeRow)
+        .filter((row) => {
+          const contractType = (row.contract_type ?? "").trim().toLowerCase();
+          return contractType.length === 0 || contractType === "temporary";
+        })
+        .map((row) => {
+          const employeeName = (row.employee_name ?? "").trim();
+          const employeeSurname = (row.employee_surname ?? "").trim();
+          const fullName = [employeeName, employeeSurname].filter(Boolean).join(" ").trim();
+          const idNumber = (row.id_number ?? "").replace(/\D/g, "").slice(0, 13);
+          const cellNumber = (row.cell_number ?? "").replace(/\D/g, "").slice(0, 10);
+          return {
+            id: row.id,
+            label: fullName || idNumber || "Unnamed employee",
+            employeeName,
+            employeeSurname,
+            idNumber,
+            cellNumber,
+            addressLine1: (row.physical_address_line1 ?? "").trim(),
+            addressLine2: (row.physical_address_line2 ?? "").trim(),
+            city: (row.city ?? "").trim(),
+            province: (row.province ?? "").trim(),
+            areaCode: (row.area_code ?? "").trim(),
+          } satisfies ExistingTempEmployeeOption;
+        });
+
+      setExistingEmployeeOptions(options);
+      setIsExistingEmployeesLoading(false);
+    };
+
+    void fetchExistingEmployees();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [showAddEmployee, toast, user]);
+
+  const handleExistingEmployeeSelect = useCallback((employeeId: string) => {
+    const employee = existingEmployeeOptions.find((option) => option.id === employeeId);
+    if (!employee) return;
+    setSelectedExistingEmployeeId(employee.id);
+    setExistingEmployeeOpen(false);
+    setExistingEmployeeQuery("");
+    setNewEmployeeIdType("id");
+    setNewEmployeeForm({
+      employeeName: employee.employeeName,
+      employeeSurname: employee.employeeSurname,
+      employeeIdNumber: employee.idNumber,
+      passportNumber: "",
+      employeeCell: employee.cellNumber,
+      addressLine1: employee.addressLine1,
+      addressLine2: employee.addressLine2,
+      city: employee.city,
+      province: employee.province,
+      areaCode: employee.areaCode,
+    });
+  }, [existingEmployeeOptions]);
+
+  const handleSalaryAmountChange = (value: string) => {
+    const sanitized = value.replace(/,/g, "").replace(/[^\d.]/g, "");
+    const firstDotIndex = sanitized.indexOf(".");
+    const normalized =
+      firstDotIndex >= 0
+        ? `${sanitized.slice(0, firstDotIndex + 1)}${sanitized.slice(firstDotIndex + 1).replace(/\./g, "")}`
+        : sanitized;
+    const [wholePart, decimalPart] = normalized.split(".");
+    const limitedWhole = wholePart.slice(0, 12);
+    const limitedDecimal = decimalPart !== undefined ? decimalPart.slice(0, 2) : undefined;
+    const nextValue = limitedDecimal !== undefined ? `${limitedWhole}.${limitedDecimal}` : limitedWhole;
+    setFormData((prev) => ({ ...prev, salaryAmount: nextValue }));
+  };
+
+  const handleSalaryAmountBlur = () => {
+    setIsSalaryAmountFocused(false);
+    const raw = formData.salaryAmount.replace(/,/g, "").trim();
+    if (!raw) return;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount)) return;
+    setFormData((prev) => ({ ...prev, salaryAmount: amount.toFixed(2) }));
+  };
+
+  const handleSalaryAmountKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowedControlKeys = [
+      "Backspace",
+      "Delete",
+      "Tab",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "Enter",
+    ];
+    if (allowedControlKeys.includes(event.key)) return;
+    if (event.ctrlKey || event.metaKey) return;
+    if (/^\d$/.test(event.key)) return;
+    if (event.key === ".") {
+      const input = event.currentTarget;
+      const value = input.value;
+      const hasDot = value.includes(".");
+      const start = input.selectionStart ?? 0;
+      const end = input.selectionEnd ?? 0;
+      const selectedText = value.slice(start, end);
+      const replacesExistingDot = selectedText.includes(".");
+      if (!hasDot || replacesExistingDot) return;
+    }
+    event.preventDefault();
+  };
+
   const applyEmployeeToFormData = useCallback((employee: TempEmployeeRow | null) => {
     setFormData((prev) => ({
       ...prev,
@@ -391,6 +601,9 @@ const TemporaryContractGenerator = ({
     });
     setAddEmployeeFormStep(1);
     setNewEmployeeIdType("id");
+    setSelectedExistingEmployeeId("");
+    setExistingEmployeeQuery("");
+    setExistingEmployeeOpen(false);
   };
 
   const handleAddEmployeeSave = () => {
@@ -655,6 +868,7 @@ const TemporaryContractGenerator = ({
     setAddingAfter(undefined);
     setNewClauseTitle("");
     setNewClauseBody("");
+    setIsSalaryAmountFocused(false);
   };
 
   const isEmployerStepComplete = useMemo(
@@ -792,6 +1006,7 @@ const TemporaryContractGenerator = ({
         interpreter: "no",
         additionalNotes: "",
       }));
+      setIsSalaryAmountFocused(false);
       return;
     }
     resetForm();
@@ -841,7 +1056,7 @@ const TemporaryContractGenerator = ({
       ...formData,
       issueDate: issueDateValue,
       ...primaryEmployee,
-      salaryAmount: formData.salaryAmount,
+      salaryAmount: formData.salaryAmount.replace(/,/g, ""),
       endDate: formData.endDate,
     }) as ValidatedTempData;
   };
@@ -1190,7 +1405,7 @@ const TemporaryContractGenerator = ({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       const label = `${index}.`;
-      const labelWidth = doc.getTextWidth(`${label} `);
+      const labelWidth = index === 9 ? doc.getTextWidth("10. ") : doc.getTextWidth(`${label} `);
       const indent = labelWidth + 2; // small padding so wrapped lines align under text start
       const maxWidth = contentWidth - indent;
       const lineHeight = 6;
@@ -1205,12 +1420,13 @@ const TemporaryContractGenerator = ({
         const lineWidth = doc.getTextWidth(line);
         const extraSpace = maxWidth - lineWidth;
         const canJustify = !isLastLine && extraSpace > 0 && line.includes(" ");
+        const x = margin + indent;
         if (canJustify) {
           // Distribute remaining width across characters; keeps block height unchanged
           const charSpace = extraSpace / Math.max(line.length - 1, 1);
-          doc.text(line, margin + indent, y + idx * lineHeight, { charSpace });
+          doc.text(line, x, y + idx * lineHeight, { charSpace });
         } else {
-          doc.text(line, margin + indent, y + idx * lineHeight);
+          doc.text(line, x, y + idx * lineHeight);
         }
       });
       y += lines.length * lineHeight + paragraphSpacing;
@@ -1553,7 +1769,7 @@ const TemporaryContractGenerator = ({
       }
       const baseData = {
         ...formData,
-        salaryAmount: formData.salaryAmount,
+        salaryAmount: formData.salaryAmount.replace(/,/g, ""),
         endDate: formData.endDate,
       };
       const zip = new JSZip();
@@ -1967,11 +2183,17 @@ const TemporaryContractGenerator = ({
                       <Label htmlFor="salaryAmount">Salary Amount <span className="text-red-600">*</span></Label>
                       <Input
                         id="salaryAmount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.salaryAmount}
-                        onChange={(e) => setFormData({ ...formData, salaryAmount: e.target.value })}
+                        type="text"
+                        inputMode="decimal"
+                        value={
+                          isSalaryAmountFocused
+                            ? formatSalaryAmountTypingDisplay(formData.salaryAmount)
+                            : formatSalaryAmountDisplay(formData.salaryAmount)
+                        }
+                        onFocus={() => setIsSalaryAmountFocused(true)}
+                        onBlur={handleSalaryAmountBlur}
+                        onKeyDown={handleSalaryAmountKeyDown}
+                        onChange={(e) => handleSalaryAmountChange(e.target.value)}
                         placeholder="e.g. 25000"
                         className={getTemporaryModalInputClass(formData.salaryAmount.trim().length > 0)}
                       />
@@ -2307,6 +2529,51 @@ const TemporaryContractGenerator = ({
             <div className="space-y-4">
               {addEmployeeFormStep === 1 ? (
                 <>
+                  <div className="relative w-full max-w-none">
+                    <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                      Select Employee
+                    </span>
+                    <Select
+                      value={selectedExistingEmployeeId || undefined}
+                      onValueChange={handleExistingEmployeeSelect}
+                      open={existingEmployeeOpen}
+                      onOpenChange={(open) => {
+                        setExistingEmployeeOpen(open);
+                        if (open) setExistingEmployeeQuery("");
+                      }}
+                    >
+                      <SelectTrigger className={`${getTemporaryModalSelectTriggerClass(selectedExistingEmployeeId.trim().length > 0)} ${temporaryModalDropdownToneClass}`}>
+                        <SelectValue placeholder={isExistingEmployeesLoading ? "Loading employees..." : "Select from saved employees or fill manually"} />
+                      </SelectTrigger>
+                      <SelectContent
+                        hideScrollButtons
+                        className="w-[var(--radix-select-trigger-width)] p-0 text-[11px]"
+                      >
+                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                          <Input
+                            ref={existingEmployeeSearchInputRef}
+                            value={existingEmployeeQuery}
+                            onChange={(event) => setExistingEmployeeQuery(event.target.value)}
+                            onKeyDown={(event) => event.stopPropagation()}
+                            placeholder="Type employee name..."
+                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                          />
+                        </div>
+                        {filteredExistingEmployeeOptions.length > 0 ? (
+                          filteredExistingEmployeeOptions.map((employee) => (
+                            <SelectItem key={employee.id} value={employee.id} className={temporaryModalSelectItemClass}>
+                              {employee.label}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-[11px] text-slate-500">
+                            {isExistingEmployeesLoading ? "Loading employees..." : "No eligible employees found."}
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="relative w-full max-w-none">
                     <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                       Name <span className="text-red-600">*</span>

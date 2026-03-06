@@ -752,7 +752,11 @@ const Documents = () => {
                     <section
                       className={cn(
                         "relative min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4",
-                        modalDocument === "warnings" ? "overflow-visible" : "flex-1",
+                        modalDocument === "warnings"
+                          ? stepMeta?.isFinished
+                            ? "flex-1"
+                            : "overflow-visible"
+                          : "flex-1",
                       )}
                     >
                       <Suspense

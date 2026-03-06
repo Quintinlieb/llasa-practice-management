@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download, X, Info, ArrowRight, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -189,7 +189,8 @@ const WarningGenerator = ({
   const [employees, setEmployees] = useState<WarningEmployee[]>([]);
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRow[]>([]);
   const [misconductSearch, setMisconductSearch] = useState("");
-  const [isMisconductMenuOpen, setIsMisconductMenuOpen] = useState(false);
+  const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
+  const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -225,7 +226,8 @@ const WarningGenerator = ({
   const [dismissibleOverride, setDismissibleOverride] = useState<{
     open: boolean;
     pending: string | null;
-  }>({ open: false, pending: null });
+    target: "form" | "draft";
+  }>({ open: false, pending: null, target: "form" });
   const [duplicateOverrideAccepted, setDuplicateOverrideAccepted] = useState(false);
   const [formData, setFormData] = useState<WarningFormData>({
     tradingName: "",
@@ -690,26 +692,20 @@ const WarningGenerator = ({
 
   const handleConfirmDismissible = (accept: boolean) => {
     if (accept && dismissibleOverride.pending) {
-      updateMisconductTypes((prev) => {
-        if (prev.includes(dismissibleOverride.pending!)) return prev;
-        return [...prev, dismissibleOverride.pending!];
-      });
+      if (dismissibleOverride.target === "draft") {
+        setDraftMisconductTypes((prev) => {
+          if (prev.includes(dismissibleOverride.pending!)) return prev;
+          return [...prev, dismissibleOverride.pending!];
+        });
+      } else {
+        updateMisconductTypes((prev) => {
+          if (prev.includes(dismissibleOverride.pending!)) return prev;
+          return [...prev, dismissibleOverride.pending!];
+        });
+      }
     }
-    setDismissibleOverride({ open: false, pending: null });
+    setDismissibleOverride({ open: false, pending: null, target: "form" });
   };
-
-  const handleMisconductMenuOpenChange = (open: boolean) => {
-    setIsMisconductMenuOpen(open);
-    if (!open) {
-      setMisconductSearch("");
-    }
-  };
-
-  useEffect(() => {
-    if (!isMisconductMenuOpen) return;
-    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [isMisconductMenuOpen]);
 
   useEffect(() => {
     if (!employeeSearchOpen) return;
@@ -717,18 +713,24 @@ const WarningGenerator = ({
     return () => clearTimeout(timer);
   }, [employeeSearchOpen]);
 
-  const handleMisconductSelect = (type: string) => {
-    const isSelected = formData.misconductTypes.includes(type);
+  useEffect(() => {
+    if (!misconductPickerOpen) return;
+    setDraftMisconductTypes(formData.misconductTypes);
+    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [misconductPickerOpen, formData.misconductTypes]);
+
+  const handleDraftMisconductSelect = (type: string) => {
+    const isSelected = draftMisconductTypes.includes(type);
     if (isSelected) {
-      updateMisconductTypes((prev) => prev.filter((item) => item !== type));
+      setDraftMisconductTypes((prev) => prev.filter((item) => item !== type));
       return;
     }
 
     const newCategory = getMisconductCategory(type);
-    const currentCategory =
-      formData.misconductTypes.length > 0 ? getMisconductCategory(formData.misconductTypes[0]) : null;
+    const currentCategory = draftMisconductTypes.length > 0 ? getMisconductCategory(draftMisconductTypes[0]) : null;
     if (newCategory === "Dismissible") {
-      setDismissibleOverride({ open: true, pending: type });
+      setDismissibleOverride({ open: true, pending: type, target: "draft" });
       return;
     }
     if (currentCategory && newCategory !== currentCategory) {
@@ -740,7 +742,24 @@ const WarningGenerator = ({
       return;
     }
 
-    updateMisconductTypes((prev) => [...prev, type]);
+    setDraftMisconductTypes((prev) => [...prev, type]);
+  };
+
+  const openMisconductPicker = () => {
+    setMisconductSearch("");
+    setMisconductPickerOpen(true);
+  };
+
+  const cancelMisconductPicker = () => {
+    setMisconductPickerOpen(false);
+    setMisconductSearch("");
+    setDraftMisconductTypes(formData.misconductTypes);
+  };
+
+  const applyMisconductPicker = () => {
+    updateMisconductTypes(() => draftMisconductTypes);
+    setMisconductPickerOpen(false);
+    setMisconductSearch("");
   };
 
   const handleWarningSelectOpenChange = (open: boolean) => {
@@ -772,13 +791,14 @@ const WarningGenerator = ({
   const handleWarningTypeChange = (value: WarningGeneratorFormData["warningType"]) => {
     const { requirement: selectionRequirement, matchedCount } = getSelectionRequirement(formData.misconductTypes);
     const newSeverity = severityFromWarningType(value);
+    const selectedWarningLabel = warningTypeLabels[value] || value;
 
     if (formData.misconductTypes.length > 0 && (conductOffences.length === 0 || matchedCount === 0)) {
       resetWarningSelection();
       setWarningSelectOpen(false);
       setWarningOverride({
         open: true,
-        message: `No Code of Conduct warning was found for the selected misconduct. Override and use "${value}" instead?`,
+        message: `No Code of Conduct warning was found for the selected misconduct. Override the Code of Conduct and use "${selectedWarningLabel}" instead?`,
         next: value,
       });
       return;
@@ -790,7 +810,7 @@ const WarningGenerator = ({
       setWarningSelectOpen(false);
       setWarningOverride({
         open: true,
-        message: `The Code of Conduct prescribes "${prescribed}" for ${selectionRequirement.type}. Override and use "${value}" instead?`,
+        message: `The Code of Conduct prescribes a "${prescribed}" for ${selectionRequirement.type}. Are you sure you want to override the Code of Conduct and use "${selectedWarningLabel}" instead?`,
         next: value,
       });
       return;
@@ -1082,7 +1102,9 @@ const WarningGenerator = ({
     });
     setPdfBlob(null);
     setWarningSelectOpen(false);
-    setIsMisconductMenuOpen(false);
+    setMisconductPickerOpen(false);
+    setDraftMisconductTypes([]);
+    setMisconductSearch("");
     setActiveStep(0);
     setShowFinalActions(false);
     resetWarningSelection();
@@ -1113,7 +1135,8 @@ const WarningGenerator = ({
       description: "",
     }));
     setWarningSelectOpen(false);
-    setIsMisconductMenuOpen(false);
+    setMisconductPickerOpen(false);
+    setDraftMisconductTypes([]);
     setMisconductSearch("");
     setShowFinalActions(false);
     resetWarningSelection();
@@ -1884,90 +1907,21 @@ const WarningGenerator = ({
                     <Label className={modalFieldLabelClass}>
                       Misconduct Type(s) <span className="text-red-500">*</span>
                     </Label>
-                    <Select open={isMisconductMenuOpen} onOpenChange={handleMisconductMenuOpenChange}>
-                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.misconductTypes.length > 0)} ${warningModalDropdownToneClass}`}>
-                        <SelectValue
-                          placeholder={
-                            formData.misconductTypes.length === 0
-                              ? "Select misconduct type(s)"
-                              : `${formData.misconductTypes.length} type(s) selected`
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
-                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
-                          <Input
-                            ref={misconductSearchInputRef}
-                            placeholder="Search misconduct types"
-                            value={misconductSearch}
-                            onChange={(e) => setMisconductSearch(e.target.value)}
-                            onKeyDown={(event) => event.stopPropagation()}
-                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
-                          />
-                        </div>
-                        <ScrollArea className="h-56">
-                          <div className="space-y-2 p-3">
-                            {filteredMisconductTypes.length === 0 && (
-                              <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
-                            )}
-                            {["Minor", "Serious", "Dismissible"].map((category) => {
-                              const bucket = filteredMisconductTypes.filter((item) => item.category === category);
-                              if (bucket.length === 0) return null;
-                              return (
-                                <div key={category} className="space-y-1">
-                                  <p
-                                    className={`text-xs font-semibold uppercase px-2 py-1 rounded-sm ${
-                                      category === "Minor"
-                                        ? "bg-emerald-600 text-white"
-                                        : category === "Serious"
-                                          ? "bg-amber-600 text-white"
-                                          : "bg-red-600 text-white"
-                                    }`}
-                                  >
-                                    {category} Offences
-                                  </p>
-                                  {bucket.map((item) => (
-                                    <label
-                                      key={`${category}-${item.name}`}
-                                      className={`flex items-center gap-2 cursor-pointer rounded-sm px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${warningModalSelectItemClass}`}
-                                    >
-                                      <Checkbox
-                                        checked={formData.misconductTypes.includes(item.name)}
-                                        onCheckedChange={() => handleMisconductSelect(item.name)}
-                                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
-                                      />
-                                      <span className="flex-1">{item.name}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </ScrollArea>
-                        {formData.misconductTypes.length > 0 && (
-                          <div className="space-y-2 border-t border-slate-200 p-3">
-                            <p className="text-sm font-medium">Selected</p>
-                            <div className="flex flex-wrap gap-2">
-                              {formData.misconductTypes.map((type) => {
-                                const category = getMisconductCategory(type);
-                                return (
-                                  <Badge
-                                    key={type}
-                                    variant="secondary"
-                                    className="gap-1 text-slate-700"
-                                  >
-                                    {type}
-                                    <X className="h-3 w-3 cursor-pointer" onClick={() => toggleMisconductType(type)} />
-                                  </Badge>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </SelectContent>
-                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openMisconductPicker}
+                      className="h-[34px] w-full justify-between rounded border-[1.75px] border-slate-300 bg-white px-3 text-[11px] font-medium text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-700"
+                    >
+                      <span>
+                        {formData.misconductTypes.length === 0
+                          ? "Select misconduct type(s)"
+                          : `${formData.misconductTypes.length} type(s) selected`}
+                      </span>
+                      <span className="text-[10px] text-slate-500">Open selector</span>
+                    </Button>
                     {formData.misconductTypes.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         {formData.misconductTypes.map((type) => (
                           <Badge
                             key={type}
@@ -1981,6 +1935,14 @@ const WarningGenerator = ({
                             />
                           </Badge>
                         ))}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => updateMisconductTypes(() => [])}
+                          className="h-6 px-2 text-[11px] text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                        >
+                          Clear all
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -2136,7 +2098,7 @@ const WarningGenerator = ({
                   </CardContent>
                   </Card>
                 </div>
-              ) : (
+              ) : useExternalShell ? null : (
                 <div>
                   <Card
                     className={cn(
@@ -2153,7 +2115,7 @@ const WarningGenerator = ({
                     )}
                   >
                     <div className="flex flex-col gap-4">
-                      <div className="h-[calc(62vh+25px)] overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-4">
+                      <div className="h-[calc(62vh+25px)] overflow-auto border border-slate-300 bg-white p-4">
                         {renderPreviewPage()}
                       </div>
                       {!useExternalShell ? (
@@ -2189,61 +2151,214 @@ const WarningGenerator = ({
             </div>
           </div>
 
+      {showFinalActions && useExternalShell ? (
+        <Card className="rounded-sm mt-0 shadow-none border-0 bg-transparent contents !backdrop-blur-none">
+          <CardHeader className="pt-4 pb-0" />
+          <CardContent className="space-y-6 pt-2 contents">
+            <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6">
+              {renderPreviewPage()}
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose one or more misconduct types. Use Done to apply or Cancel to discard changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <Input
+              ref={misconductSearchInputRef}
+              placeholder="Search misconduct types"
+              value={misconductSearch}
+              onChange={(e) => setMisconductSearch(e.target.value)}
+              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+            />
+            <ScrollArea className="h-72 rounded border border-slate-200 bg-white">
+              <div className="space-y-2 p-3">
+                {filteredMisconductTypes.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
+                )}
+                {["Minor", "Serious", "Dismissible"].map((category) => {
+                  const bucket = filteredMisconductTypes.filter((item) => item.category === category);
+                  if (bucket.length === 0) return null;
+                  return (
+                    <div key={category} className="space-y-1">
+                      <p
+                        className={`text-xs font-semibold uppercase px-2 py-1 rounded ${
+                          category === "Minor"
+                            ? "bg-emerald-600 text-white"
+                            : category === "Serious"
+                              ? "bg-amber-600 text-white"
+                              : "bg-red-600 text-white"
+                        }`}
+                      >
+                        {category} Offences
+                      </p>
+                      {bucket.map((item) => (
+                        <label
+                          key={`${category}-${item.name}`}
+                          className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${warningModalSelectItemClass}`}
+                        >
+                          <Checkbox
+                            checked={draftMisconductTypes.includes(item.name)}
+                            onCheckedChange={() => handleDraftMisconductSelect(item.name)}
+                            className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                          />
+                          <span className="flex-1">{item.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <div>
+              {draftMisconductTypes.length === 0 ? (
+                <div className="text-xs text-slate-600">No type selected</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {draftMisconductTypes.map((type) => (
+                    <Badge
+                      key={type}
+                      variant="secondary"
+                      className={`gap-1 ${misconductColorClasses(getMisconductCategory(type))}`}
+                    >
+                      {type}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelMisconductPicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftMisconductTypes([])}
+                  disabled={draftMisconductTypes.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyMisconductPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={warningOverride.open} onOpenChange={(open) => !open && confirmOverrideWarning(false)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader className="space-y-4 text-center">
-            <DialogTitle className="text-blue-700 text-xl w-full text-center">
-              Caution
-            </DialogTitle>
-            <DialogDescription className="mt-8 block text-gray-700 text-center">
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
               {warningOverride.message}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="pt-4">
-            <div className="flex w-full justify-center gap-2">
-              <Button
-                onClick={() => confirmOverrideWarning(false)}
-                className="min-w-[120px] border-2 border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white text-base"
-              >
-                No
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => confirmOverrideWarning(true)}
-                className="min-w-[90px] text-sm text-gray-700 hover:text-blue-700 hover:bg-white hover:border-blue-600"
-              >
-                Yes
-              </Button>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <div className="flex items-center gap-[42px]">
+                <Button
+                  type="button"
+                  onClick={() => confirmOverrideWarning(false)}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => confirmOverrideWarning(true)}
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                >
+                  Yes
+                </Button>
+              </div>
             </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={dismissibleOverride.open} onOpenChange={(open) => !open && handleConfirmDismissible(false)}>
-        <DialogContent className="sm:max-w-2xl sm:w-[640px]">
-          <DialogHeader className="space-y-4 text-center">
-            <DialogTitle className="text-blue-700 text-xl w-full text-center">
-              Caution
-            </DialogTitle>
-            <DialogDescription className="mt-8 block text-gray-700 text-center">
-              Issuing a warning for a dismissible offence may impact the consistency of disciplinary action and negatively impact a case before the CCMA or Bargaining Council in case of future dismissals. Continue?
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
+              Issuing a warning for a dismissible offence may impact the consistency of disciplinary action and negatively impact a case before the CCMA or Bargaining Council in case of future dismissals. Are you sure you want to continue?
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="pt-4">
-            <div className="flex w-full justify-center gap-2">
-              <Button
-                onClick={() => handleConfirmDismissible(false)}
-                className="min-w-[120px] border-2 border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white text-base"
-              >
-                No
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleConfirmDismissible(true)}
-                className="min-w-[90px] text-sm text-gray-700 hover:text-blue-700 hover:bg-white hover:border-blue-600"
-              >
-                Yes
-              </Button>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <div className="flex items-center gap-[42px]">
+                <Button
+                  type="button"
+                  onClick={() => handleConfirmDismissible(false)}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleConfirmDismissible(true)}
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                >
+                  Yes
+                </Button>
+              </div>
             </div>
           </DialogFooter>
         </DialogContent>

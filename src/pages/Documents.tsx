@@ -18,6 +18,7 @@ type DocumentKey =
   | "permanentContract"
   | "temporaryContract"
   | "addendum"
+  | "noticeTermination"
   | "disciplinaryHearing";
 
 type DocumentItem = {
@@ -64,6 +65,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
+  noticeTermination: lazy(() => import("./MisconductTerminationGenerator")),
   disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
 
@@ -92,6 +94,20 @@ const documentCategories: DocumentCategory[] = [
     items: [{ label: "Performance Appraisal Form", active: false }],
   },
   {
+    title: "Terminations",
+    icon: DocumentTextIcon,
+    items: [
+      { id: "noticeTermination", label: "Misconduct", active: true },
+      { label: "Ill Health", active: false },
+      { label: "Poor Performance", active: false },
+      { label: "Abscondment/Desertion", active: false },
+      { label: "Retrenchment", active: false },
+      { label: "Retirement", active: false },
+      { label: "End of Contract", active: false },
+      { label: "Mutual Separation Agreement", active: false },
+    ],
+  },
+  {
     title: "Outcomes",
     icon: (props) => <Gavel {...props} />,
     items: [
@@ -107,7 +123,7 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { label: "Notice of Hearing - Poor Performance", active: false },
       { label: "Notice of Demotion", active: false },
-      { label: "Notice of Termination", active: false },
+      { id: "noticeTermination", label: "Notice of Termination", active: true },
       { label: "Notice of Counselling", active: false },
       { label: "Notice of Contract Extension", active: false },
       { label: "Notice of Contract Renewal", active: false },
@@ -123,7 +139,9 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
-  const [modalDocument, setModalDocument] = useState<"warnings" | "addendum" | "permanentContract" | "temporaryContract" | null>(null);
+  const [modalDocument, setModalDocument] = useState<
+    "warnings" | "addendum" | "permanentContract" | "temporaryContract" | "noticeTermination" | null
+  >(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -216,6 +234,8 @@ const Documents = () => {
       ? "Warnings"
       : modalDocument === "addendum"
         ? "Addendum"
+        : modalDocument === "noticeTermination"
+          ? "Notice of Termination"
         : modalDocument === "permanentContract"
           ? "Permanent Contract"
           : modalDocument === "temporaryContract"
@@ -224,6 +244,7 @@ const Documents = () => {
   const modalSteps =
     modalDocument === "warnings" ||
     modalDocument === "addendum" ||
+    modalDocument === "noticeTermination" ||
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
       ? ([
@@ -233,6 +254,8 @@ const Documents = () => {
             ? "Warning Details"
             : modalDocument === "addendum"
               ? "Addendum Details"
+              : modalDocument === "noticeTermination"
+                ? "Notice Details"
               : modalDocument === "temporaryContract"
                 ? "Employment Details"
               : "Employment Details",
@@ -355,6 +378,7 @@ const Documents = () => {
     SelectedComponent &&
       selectedDocument !== "warnings" &&
       selectedDocument !== "addendum" &&
+      selectedDocument !== "noticeTermination" &&
       selectedDocument !== "permanentContract" &&
       selectedDocument !== "temporaryContract",
   );
@@ -414,13 +438,21 @@ const Documents = () => {
                                       if (
                                         item.id === "warnings" ||
                                         item.id === "addendum" ||
+                                        item.id === "noticeTermination" ||
                                         item.id === "permanentContract" ||
                                         item.id === "temporaryContract"
                                       ) {
                                         setSelectedDocument(item.id);
                                         setStepMeta(null);
                                         setBreadcrumbStep(null);
-                                        setModalDocument(item.id as "warnings" | "addendum" | "permanentContract" | "temporaryContract");
+                                        setModalDocument(
+                                          item.id as
+                                            | "warnings"
+                                            | "addendum"
+                                            | "noticeTermination"
+                                            | "permanentContract"
+                                            | "temporaryContract",
+                                        );
                                         return;
                                       }
                                       setSelectedDocument(item.id!);
@@ -457,7 +489,8 @@ const Documents = () => {
             stepMeta?.steps?.length &&
             selectedDocument !== "codeOfConduct" &&
             selectedDocument !== "warnings" &&
-            selectedDocument !== "addendum" ? (
+            selectedDocument !== "addendum" &&
+            selectedDocument !== "noticeTermination" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
                   <div className="flex items-start">
@@ -647,6 +680,7 @@ const Documents = () => {
           "p-0 [&>button]:right-5 [&>button]:top-4",
           modalDocument === "warnings"
             || modalDocument === "addendum"
+            || modalDocument === "noticeTermination"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
             ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
@@ -654,17 +688,27 @@ const Documents = () => {
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "warnings" || modalDocument === "addendum" || modalDocument === "permanentContract" || modalDocument === "temporaryContract" ? (
+          {modalDocument === "warnings" ||
+          modalDocument === "addendum" ||
+          modalDocument === "noticeTermination" ||
+          modalDocument === "permanentContract" ||
+          modalDocument === "temporaryContract" ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
               <header className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
                   <Menu className="h-3.5 w-3.5 -ml-1" />
                   <span className="font-semibold text-slate-700">
                     {`Documents / ${
-                      modalDocument === "warnings" ? "Discipline" : "Contracts"
+                      modalDocument === "warnings"
+                        ? "Discipline"
+                        : modalDocument === "noticeTermination"
+                          ? "Terminations"
+                          : "Contracts"
                     } / ${
                       modalDocument === "addendum"
                         ? "Addendum"
+                        : modalDocument === "noticeTermination"
+                          ? "Misconduct"
                         : modalDocument === "temporaryContract"
                           ? "Temporary Contract"
                           : modalDocument === "permanentContract"

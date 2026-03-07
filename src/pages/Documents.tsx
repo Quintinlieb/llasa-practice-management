@@ -385,7 +385,7 @@ const Documents = () => {
     noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
   const temporaryEmployeeCount = stepMeta?.temporaryEmployeeCount ?? 0;
   const temporaryActiveNotes = (() => {
-    const baseNotes = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
+    const baseNotes: string[] = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
     if (modalActiveStep === 2 && temporaryEmployeeCount > 1) {
       baseNotes.push(
         "The employment information selected and/or inserted in this step 3 will apply to all the employees. For example: Salary Amount will be the salary amount reflected on all the temporary contract of all the added employees at the previous step 2.",

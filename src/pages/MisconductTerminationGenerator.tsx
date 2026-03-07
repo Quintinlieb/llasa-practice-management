@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -270,6 +270,145 @@ const formatCompanyDisplayName = (companyName?: string | null, companyType?: str
   return `${name} ${type}`;
 };
 
+const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
+  new Promise((resolve) => {
+    const img = new Image();
+
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (!width || !height) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const pixels = imageData.data;
+
+      const findBounds = (ignoreNearWhite: boolean) => {
+        let minX = width;
+        let minY = height;
+        let maxX = -1;
+        let maxY = -1;
+
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const idx = (y * width + x) * 4;
+            const r = pixels[idx];
+            const g = pixels[idx + 1];
+            const b = pixels[idx + 2];
+            const a = pixels[idx + 3];
+
+            if (a <= 20) continue;
+
+            if (ignoreNearWhite && r >= 245 && g >= 245 && b >= 245) continue;
+
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+
+        if (maxX < 0 || maxY < 0) return null;
+        return { minX, minY, maxX, maxY };
+      };
+
+      let bounds = findBounds(true);
+      if (!bounds) {
+        // Fallback for very light logos where near-white is actual content.
+        bounds = findBounds(false);
+      }
+
+      if (!bounds) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const pad = 2;
+      const cropX = Math.max(0, bounds.minX - pad);
+      const cropY = Math.max(0, bounds.minY - pad);
+      const cropW = Math.min(width - cropX, bounds.maxX - bounds.minX + 1 + pad * 2);
+      const cropH = Math.min(height - cropY, bounds.maxY - bounds.minY + 1 + pad * 2);
+
+      const cropped = document.createElement("canvas");
+      cropped.width = cropW;
+      cropped.height = cropH;
+      const croppedCtx = cropped.getContext("2d");
+      if (!croppedCtx) {
+        resolve(dataUrl);
+        return;
+      }
+
+      croppedCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      resolve(cropped.toDataURL("image/png"));
+    };
+
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+const createLucidePdfIconDataUrl = (draw: (ctx: CanvasRenderingContext2D) => void, size = 24): string | null => {
+  if (typeof document === "undefined" || typeof Path2D === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  draw(ctx);
+
+  return canvas.toDataURL("image/png");
+};
+
+const createPdfPhoneIconDataUrl = () =>
+  createLucidePdfIconDataUrl((ctx) => {
+    const path = new Path2D(
+      "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z",
+    );
+    ctx.stroke(path);
+  });
+
+const createPdfMailIconDataUrl = () =>
+  createLucidePdfIconDataUrl((ctx) => {
+    const x = 2;
+    const y = 4;
+    const width = 20;
+    const height = 16;
+    const radius = 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.stroke();
+
+    const flap = new Path2D("m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7");
+    ctx.stroke(flap);
+  });
+
 type FirstPagePreviewProps = {
   data: AddendumData;
   compact?: boolean;
@@ -287,10 +426,16 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const employeeIdValue = data.idType === "id" ? displayValue(data.employeeIdNumber) : displayValue(data.passportNumber);
   const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
   const tradingNameDisplay = (data.tradingName || "").trim();
+  const registrationNumberDisplay = (profile?.registration_number || "").trim();
+  const hasUploadedLogo = Boolean(logoPreviewUrl);
+  const companyIdentityDisplay = tradingNameDisplay
+    ? `${companyNameDisplay} t/a ${tradingNameDisplay}`
+    : companyNameDisplay;
   const companyAddressLines = (profile?.physical_address || "Address")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+  const companyAddressDisplay = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
   const employeeAddressLines = [data.homeAddressLine, data.homeAddressLine2, data.homeCity, data.homeProvince, data.homeAreaCode]
     .map((value) => (value || "").trim())
     .filter(Boolean);
@@ -310,25 +455,33 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
 
   return (
     <div
-      className="bg-white text-black p-8 mx-auto shadow-sm flex flex-col"
+      className={cn(
+        "bg-white text-black mx-auto shadow-sm flex flex-col",
+        hasUploadedLogo ? "px-8 py-4" : "p-8",
+      )}
       style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
     >
-      {logoPreviewUrl ? (
-        <div className="mb-3 flex justify-start">
-          <img src={logoPreviewUrl} alt="Company logo" className="h-12 w-auto object-contain" />
-        </div>
-      ) : null}
-      <div className="flex-1 text-[12px] leading-relaxed text-black">
-        <div className="flex justify-end">
-          <div className="text-right leading-[1.1] text-[10px]">
-            <p className="font-semibold">{companyNameDisplay}</p>
-            {tradingNameDisplay ? <p>{tradingNameDisplay}</p> : null}
-            {companyAddressLines.length > 0 ? companyAddressLines.map((line) => <p key={`co-${line}`}>{line}</p>) : <p>Address</p>}
-            <p>Email: {displayValue(data.employerEmail)}</p>
-            <p>Tel: {displayValue(data.employerContact)}</p>
+      <div className="flex-1 flex flex-col text-[12px] leading-relaxed text-black">
+        {hasUploadedLogo ? (
+          <div className="flex justify-center">
+            <img
+              src={logoPreviewUrl}
+              alt="Company logo"
+              className="max-h-[25mm] w-auto max-w-[220px] object-contain"
+            />
           </div>
-        </div>
-        <div className="mt-4 border-t border-black/60" aria-hidden="true" />
+        ) : (
+          <div className="flex justify-end">
+            <div className="text-right leading-[1.1] text-[10px]">
+              <p className="font-semibold">{companyNameDisplay}</p>
+              {tradingNameDisplay ? <p>t/a {tradingNameDisplay}</p> : null}
+              {companyAddressLines.length > 0 ? companyAddressLines.map((line) => <p key={`co-${line}`}>{line}</p>) : <p>Address</p>}
+              <p>Email: {displayValue(data.employerEmail)}</p>
+              <p>Tel: {displayValue(data.employerContact)}</p>
+            </div>
+          </div>
+        )}
+        <div className={cn("border-t border-slate-300", hasUploadedLogo ? "mt-6" : "mt-4")} aria-hidden="true" />
         <div className="mt-2 text-right">{issueDateDisplay}</div>
         <div className="mt-4">
           <p className="flex items-baseline gap-4">
@@ -383,6 +536,23 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             </div>
           ) : null}
         </div>
+        {hasUploadedLogo ? (
+          <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]">
+            <p className="font-semibold">{companyIdentityDisplay}</p>
+            {registrationNumberDisplay ? <p className="mt-0.5">Reg No: {registrationNumberDisplay}</p> : null}
+            <p className="mt-0.5">{companyAddressDisplay}</p>
+            <div className="mt-1 flex items-center justify-center gap-4">
+              <span className="inline-flex items-center gap-1">
+                <Phone className="h-3 w-3" />
+                {displayValue(data.employerContact)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Mail className="h-3 w-3" />
+                {displayValue(data.employerEmail)}
+              </span>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1358,10 +1528,12 @@ const MisconductTerminationGenerator = ({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const result = typeof reader.result === "string" ? reader.result : "";
-      setCompanyLogoPreview(result);
-      setFormData((prev) => ({ ...prev, companyLogoDataUrl: result }));
+      if (!result) return;
+      const trimmedResult = await trimLogoWhitespace(result);
+      setCompanyLogoPreview(trimmedResult);
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult }));
     };
     reader.onerror = () => {
       toast({
@@ -1589,6 +1761,9 @@ const MisconductTerminationGenerator = ({
       y += lines.length * lineHeight;
     };
 
+    const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl();
+    const pdfMailIconDataUrl = createPdfMailIconDataUrl();
+
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
     const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
@@ -1657,44 +1832,58 @@ const MisconductTerminationGenerator = ({
       data.homeAreaCode?.trim(),
     ].filter((value): value is string => Boolean(value));
     const transmissionLines = data.transmissionMethods.map((method) => method.replace(/^By\s+/i, "Per "));
-
-    if (data.companyLogoDataUrl) {
-      try {
-        const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
-        doc.addImage(data.companyLogoDataUrl, imageType, margin, y, 34, 12, undefined, "FAST");
-      } catch {
-        // Keep generating even if logo rendering fails.
-      }
-    }
+    const hasUploadedLogo = Boolean(data.companyLogoDataUrl);
 
     const headerTop = y;
     const rightX = margin + contentWidth;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text(
+    const headerLineHeight = 4;
+    const headerLines = [
       valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)),
-      rightX,
-      headerTop,
-      { align: "right" },
-    );
-    y = headerTop + 4;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    if (data.tradingName?.trim()) {
-      doc.text(data.tradingName.trim(), rightX, y, { align: "right" });
-      y += 4;
-    }
-    companyAddressLines.forEach((line) => {
-      doc.text(line, rightX, y, { align: "right" });
-      y += 4;
-    });
-    doc.text(`Email: ${valueOrLine(data.employerEmail)}`, rightX, y, { align: "right" });
-    y += 4;
-    doc.text(`Tel: ${valueOrLine(data.employerContact)}`, rightX, y, { align: "right" });
-    y += 4;
+      ...(data.tradingName?.trim() ? [`t/a ${data.tradingName.trim()}`] : []),
+      ...(companyAddressLines.length > 0 ? companyAddressLines : ["Address"]),
+      `Email: ${valueOrLine(data.employerEmail)}`,
+      `Tel: ${valueOrLine(data.employerContact)}`,
+    ];
 
-    doc.setDrawColor(0, 0, 0);
+    let logoTopForBalance = margin;
+    if (hasUploadedLogo) {
+      try {
+        const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
+        const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
+        const imageRatio = imageProps.width / imageProps.height;
+        const targetLogoHeight = 25;
+        const maxLogoWidth = 60;
+        let logoHeight = targetLogoHeight;
+        let logoWidth = logoHeight * imageRatio;
+        if (logoWidth > maxLogoWidth) {
+          const scale = maxLogoWidth / logoWidth;
+          logoWidth = maxLogoWidth;
+          logoHeight *= scale;
+        }
+        const logoTop = Math.max(6, headerTop - 10);
+        logoTopForBalance = logoTop;
+        const logoX = (pageWidth - logoWidth) / 2;
+        doc.addImage(data.companyLogoDataUrl, imageType, logoX, logoTop, logoWidth, logoHeight, undefined, "FAST");
+        y = logoTop + logoHeight + 6;
+      } catch {
+        // Keep generating even if logo rendering fails.
+      }
+    } else {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(headerLines[0], rightX, headerTop, { align: "right" });
+      y = headerTop + headerLineHeight;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      headerLines.slice(1).forEach((line) => {
+        doc.text(line, rightX, y, { align: "right" });
+        y += headerLineHeight;
+      });
+    }
+
+    doc.setDrawColor(203, 213, 225);
     doc.line(margin, y, margin + contentWidth, y);
+    doc.setDrawColor(0, 0, 0);
     y += 4;
 
     doc.setFont("helvetica", "normal");
@@ -1723,9 +1912,10 @@ const MisconductTerminationGenerator = ({
     y += 10;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("RE: TERMINATION OF EMPLOYMENT", margin, y);
-    const subjectWidth = doc.getTextWidth("RE: TERMINATION OF EMPLOYMENT");
-    doc.line(margin, y + 1, margin + subjectWidth, y + 1);
+    const subjectText = "RE: TERMINATION OF EMPLOYMENT";
+    doc.text(subjectText, margin, y);
+    const subjectWidth = doc.getTextWidth(subjectText);
+    doc.line(margin, y + 1, margin + subjectWidth + 1, y + 1);
     y += 10;
 
     doc.setFont("helvetica", "normal");
@@ -1792,6 +1982,75 @@ const MisconductTerminationGenerator = ({
         doc.text(label, x, y + 4.5);
       });
       y = boxTop + boxHeight + 6;
+    }
+
+    if (hasUploadedLogo) {
+      const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
+      const companyIdentity = data.tradingName?.trim()
+        ? `${companyName} t/a ${data.tradingName.trim()}`
+        : companyName;
+      const registrationNumber = (profile?.registration_number || "").trim();
+      const hasRegistrationNumber = registrationNumber.length > 0;
+      const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
+      const footerHeight = hasRegistrationNumber ? 15.5 : 12;
+      const bottomGap = logoTopForBalance;
+      if (y > pageHeight - margin - footerHeight - 2) {
+        doc.addPage();
+      }
+      const footerStartY = pageHeight - bottomGap - footerHeight;
+      doc.setDrawColor(203, 213, 225);
+      doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
+      doc.setDrawColor(0, 0, 0);
+      const footerLineGap = 3.5;
+      y = footerStartY + 3.5;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text(companyIdentity, margin + contentWidth / 2, y, { align: "center" });
+      y += footerLineGap;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      if (hasRegistrationNumber) {
+        doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, y, { align: "center" });
+        y += footerLineGap;
+      }
+      doc.text(companyAddress, margin + contentWidth / 2, y, { align: "center" });
+      y += footerLineGap;
+      const phoneText = valueOrLine(data.employerContact);
+      const emailText = valueOrLine(data.employerEmail);
+      const iconTextGap = 0.9;
+      const itemGap = 4;
+      const iconSize = 3;
+      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
+      const hasMailIcon = Boolean(pdfMailIconDataUrl);
+      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
+      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
+      const phoneTextWidth = doc.getTextWidth(phoneText);
+      const emailTextWidth = doc.getTextWidth(emailText);
+      const contactRowWidth =
+        phoneIconWidth +
+        iconTextGap +
+        phoneTextWidth +
+        itemGap +
+        mailIconWidth +
+        iconTextGap +
+        emailTextWidth;
+      const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
+      if (hasPhoneIcon) {
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, y - iconSize + 0.25, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Tel:", contactStartX, y);
+      }
+      const phoneTextX = contactStartX + phoneIconWidth + iconTextGap;
+      doc.text(phoneText, phoneTextX, y);
+      const mailIconX = phoneTextX + phoneTextWidth + itemGap;
+      if (hasMailIcon) {
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, y - iconSize + 0.25, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Email:", mailIconX, y);
+      }
+      const emailTextX = mailIconX + mailIconWidth + iconTextGap;
+      doc.text(emailText, emailTextX, y);
+      doc.setLineWidth(0.2);
     }
 
     if (download) {
@@ -2097,25 +2356,29 @@ const MisconductTerminationGenerator = ({
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-[34px] rounded-sm border-slate-300 text-[11px] font-semibold text-slate-700"
+                          className="h-[34px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:bg-white hover:text-blue-600"
                           onClick={() => companyLogoInputRef.current?.click()}
                         >
-                          Upload logo
+                          {companyLogoPreview || formData.companyLogoDataUrl ? "Change logo" : "Upload logo"}
                         </Button>
                         {companyLogoPreview ? (
                           <Button
                             type="button"
                             variant="ghost"
-                            className="h-[34px] px-2 text-[11px] font-semibold text-slate-700 hover:text-red-600"
+                            className="h-[34px] border-0 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-none hover:bg-white hover:text-red-600 hover:underline hover:underline-offset-2"
                             onClick={clearCompanyLogo}
                           >
                             Remove
                           </Button>
                         ) : null}
                       </div>
-                      {companyLogoPreview ? (
-                        <div className="mt-2 rounded-sm border border-slate-300 bg-white p-2">
-                          <img src={companyLogoPreview} alt="Company logo preview" className="h-12 w-auto object-contain" />
+                      {companyLogoPreview || formData.companyLogoDataUrl ? (
+                        <div className="mt-2 inline-block w-fit rounded border border-slate-300 bg-white p-2">
+                          <img
+                            src={companyLogoPreview || formData.companyLogoDataUrl}
+                            alt="Company logo preview"
+                            className="h-12 w-auto object-contain"
+                          />
                         </div>
                       ) : null}
                     </div>

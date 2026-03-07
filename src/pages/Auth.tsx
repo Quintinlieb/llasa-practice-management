@@ -65,13 +65,6 @@ const Auth = () => {
   }, [location.search]);
 
   useEffect(() => {
-    const img = new Image();
-    img.src = "/AuthImage.png";
-    img.onload = () => setHeroLoaded(true);
-    img.onerror = () => setHeroLoaded(true);
-  }, []);
-
-  useEffect(() => {
     if (resetCooldownSeconds <= 0) return;
     const timer = window.setInterval(() => {
       setResetCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));

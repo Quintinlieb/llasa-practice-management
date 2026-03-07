@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -87,7 +87,7 @@ type AddendumData = PermanentContractFormData & {
 
 type SlimProfile = Pick<
   Tables<"profiles">,
-  "id" | "company_name" | "registration_number" | "physical_address" | "company_contact" | "company_email"
+  "id" | "company_name" | "company_type" | "registration_number" | "physical_address" | "company_contact" | "company_email"
 >;
 type SlimEmployee = {
   id: string;
@@ -249,6 +249,16 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
+const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
+  const name = (companyName || "").trim();
+  const type = (companyType || "").trim();
+  if (!name && !type) return "";
+  if (!name) return type;
+  if (!type) return name;
+  if (name.toLowerCase().includes(type.toLowerCase())) return name;
+  return `${name} ${type}`;
+};
+
 type FirstPagePreviewProps = {
   data: AddendumData;
   compact?: boolean;
@@ -262,7 +272,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
   const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
   const employeeIdValue = data.idType === "id" ? displayValue(data.employeeIdNumber) : displayValue(data.passportNumber);
-  const companyNameDisplay = displayValue(profile?.company_name);
+  const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
   const tradingNameDisplay = (data.tradingName || "").trim();
   const companyAddressLines = (profile?.physical_address || "Address")
     .split(",")
@@ -668,7 +678,7 @@ const MisconductTerminationGenerator = ({
     if (!user) return;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, company_name, registration_number, physical_address, company_contact, company_email")
+      .select("id, company_name, company_type, registration_number, physical_address, company_contact, company_email")
       .eq("id", user.id)
       .maybeSingle();
     if (error) {
@@ -942,7 +952,6 @@ const MisconductTerminationGenerator = ({
           formData.employeeSurname &&
           ((formData.idType === "id" && formData.employeeIdNumber) ||
             (formData.idType === "passport" && formData.passportNumber)) &&
-          formData.homeAddressLine &&
           formData.homeCity &&
           formData.homeProvince &&
           formData.homeAreaCode,
@@ -953,7 +962,6 @@ const MisconductTerminationGenerator = ({
       formData.employeeIdNumber,
       formData.passportNumber,
       formData.idType,
-      formData.homeAddressLine,
       formData.homeCity,
       formData.homeProvince,
       formData.homeAreaCode,
@@ -1353,7 +1361,6 @@ const MisconductTerminationGenerator = ({
     } else {
       checkRequired(formData.passportNumber, "Passport number");
     }
-    checkRequired(formData.homeAddressLine, "Address line 1");
     checkRequired(formData.homeCity, "City");
     checkRequired(formData.homeProvince, "Province");
     checkRequired(formData.homeAreaCode, "Area code");
@@ -1614,7 +1621,12 @@ const MisconductTerminationGenerator = ({
     const rightX = margin + contentWidth;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
-    doc.text(valueOrLine(profile?.company_name), rightX, headerTop, { align: "right" });
+    doc.text(
+      valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)),
+      rightX,
+      headerTop,
+      { align: "right" },
+    );
     y = headerTop + 4;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
@@ -1863,13 +1875,17 @@ const MisconductTerminationGenerator = ({
       <div
         className={cn(
           "space-y-6",
-          embedded ? "px-0 pt-4 pr-4 pb-4" : "-ml-6 -mr-6 pl-3 pr-3",
-          useExternalShell && "h-full min-h-0 space-y-0 pt-0 pr-0 pb-0",
+          embedded
+            ? useExternalShell
+              ? "px-0 pt-0 pr-0 pb-0"
+              : "px-0 pt-4 pr-4 pb-4"
+            : "-ml-6 -mr-6 pl-3 pr-3",
+          useExternalShell && showFinalActions && "h-full min-h-0 space-y-0",
         )}
         style={{ scrollbarGutter: "stable" }}
       >
         {!showFinalActions ? (
-          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0 h-full min-h-0")}>
+          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0")}>
             {!embedded && (
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-center gap-8 w-full">
@@ -1943,10 +1959,10 @@ const MisconductTerminationGenerator = ({
                 "pt-1 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
                 !embedded && "flex-1 min-h-0 overflow-y-auto",
-                useExternalShell && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
+                useExternalShell && showFinalActions && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
               )}
             >
-              <div className={cn("space-y-4", useExternalShell && "min-h-0 flex-1 overflow-y-auto pr-1")}>
+              <div className={cn("space-y-4", useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1")}>
               {activeStep === 0 && (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
@@ -2183,7 +2199,7 @@ const MisconductTerminationGenerator = ({
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="homeAddressLine" className={modalFieldLabelClass}>
-                          Address line 1 <span className="text-red-500">*</span>
+                          Address line 1 (optional)
                         </Label>
                         <Input
                           id="homeAddressLine"
@@ -2193,7 +2209,7 @@ const MisconductTerminationGenerator = ({
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="homeAddressLine2" className={modalFieldLabelClass}>Address line 2</Label>
+                        <Label htmlFor="homeAddressLine2" className={modalFieldLabelClass}>Address line 2 (optional)</Label>
                         <Input
                           id="homeAddressLine2"
                           value={formData.homeAddressLine2}
@@ -2261,7 +2277,11 @@ const MisconductTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              The date on which the notice letter is issued.
+                              Select the date when you will be issuing this termination letter to{" "}
+                              {formData.employeeName || formData.employeeSurname
+                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
+                                : "the employee"}
+                              .
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -2310,8 +2330,7 @@ const MisconductTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              In terms of the Basic Conditions of Employment Act, a notice period is not required for
-                              dismissal for misconduct. However, you may apply a notice period.
+                              In terms of the BCEA a notice period is generally not required for termination due to misconduct.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -2373,7 +2392,7 @@ const MisconductTerminationGenerator = ({
                     ) : null}
                     <div className="space-y-1.5">
                       <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of termination <span className="text-red-500">*</span>
+                        Date of Termination <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2387,7 +2406,11 @@ const MisconductTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              The actual last date that the employee worked or will work.
+                              This date is the last day that{" "}
+                              {formData.employeeName || formData.employeeSurname
+                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
+                                : "the employee"}{" "}
+                              will be working for you.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -2404,8 +2427,25 @@ const MisconductTerminationGenerator = ({
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="hearingDate" className={modalFieldLabelClass}>
+                      <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Date of Hearing <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Date of hearing info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              Before you dismiss an employee you should first conduct a disciplinary hearing.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <div className="flex items-start gap-2">
                         <Input
@@ -2451,8 +2491,11 @@ const MisconductTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Select only the types of misconduct the employee is being dismissed for. These are not
-                              necessarily the types of misconduct the employee was charged for.
+                              Select only the types of misconduct{" "}
+                              {formData.employeeName || formData.employeeSurname
+                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
+                                : "the employee"}{" "}
+                              was found guilty of following the disciplinary hearing.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -2461,7 +2504,7 @@ const MisconductTerminationGenerator = ({
                         id="misconductType"
                         type="button"
                         onClick={openMisconductPicker}
-                        className={`${getAddendumModalSelectTriggerClass(formData.misconductTypes.length > 0)} ${addendumModalDropdownToneClass} ${formData.misconductTypes.length > 0 ? "!border-emerald-500" : ""} w-full px-3 text-left`}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.misconductTypes.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
                         <span
                           className={cn(
@@ -2624,13 +2667,13 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="transmissionMethods" className={modalFieldLabelClass}>
-                        Method of Issuing
+                        Method of Issuing <span className="text-red-500">*</span>
                       </Label>
                       <button
                         id="transmissionMethods"
                         type="button"
                         onClick={openTransmissionPicker}
-                        className={`${getAddendumModalSelectTriggerClass(formData.transmissionMethods.length > 0)} ${addendumModalDropdownToneClass} w-full px-3 text-left`}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.transmissionMethods.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
                         <span
                           className={cn(
@@ -2936,19 +2979,23 @@ const MisconductTerminationGenerator = ({
                           {(() => {
                             const renderAddClauseControl = (afterId: string | null) => {
                               return (
-                                <div key={`add-${afterId ?? "start"}`} className="py-1">
+                                <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
                                   <button
                                     type="button"
                                     onClick={() => openAddClauseForm(afterId)}
-                                    className="group relative w-full py-2 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                   >
-                                    <span className="relative z-10 inline-flex items-center justify-center gap-1 bg-white px-2 text-[11px] text-blue-700 transition-all group-hover:font-semibold">
-                                      <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                                      Add paragraph
+                                    <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                      <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
+                                        <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
+                                      </span>
+                                      <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                                        Add
+                                      </span>
                                     </span>
                                     <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
                                       <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                      <span className="w-2" />
+                                      <span className="w-16" />
                                       <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
                                     </span>
                                   </button>
@@ -3347,7 +3394,7 @@ const MisconductTerminationGenerator = ({
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
             <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
+              <Mail className="h-4 w-4 text-white" />
               <DialogTitle className="text-sm font-semibold text-white">Select Method of Issuing</DialogTitle>
             </div>
             <DialogClose asChild>
@@ -3362,7 +3409,7 @@ const MisconductTerminationGenerator = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-6 pb-6 pt-4">
-            <ScrollArea className="h-52 rounded border border-slate-200 bg-white">
+            <ScrollArea className="max-h-44 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
                 {transmissionMethodOptions.map((method) => (
                   <label

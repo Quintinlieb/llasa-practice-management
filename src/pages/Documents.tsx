@@ -55,6 +55,8 @@ type DocumentComponentProps = {
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
+    isPreviewEditable?: boolean;
+    supportsPreviewEditToggle?: boolean;
     temporaryEmployeeCount?: number;
   }) => void;
 };
@@ -155,6 +157,8 @@ const Documents = () => {
     onClear?: () => void;
     addendumType?: "general" | "renewal" | "extension" | "";
     isFinished?: boolean;
+    isPreviewEditable?: boolean;
+    supportsPreviewEditToggle?: boolean;
     temporaryEmployeeCount?: number;
   } | null>(null);
 
@@ -353,9 +357,32 @@ const Documents = () => {
       "Use Back to return to the form if any information must be corrected.",
     ],
   ] as const;
+  const noticeTerminationStepNotes = [
+    [
+      "The company name, registration number, and address are pulled from Company Settings.",
+      "If applicable, you may insert a trading name. Employer contact and email are auto-populated but can be changed.",
+      "The contact number and email used here will be the contact details the employee uses for future communication.",
+    ],
+    [
+      "Select an employee from your saved list or capture the employee details manually.",
+      "For the address portion of this form, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Complete all fields in this step carefully, as these selections determine how key parts of the termination letter are worded.",
+      "Before moving to preview, confirm that each required field reflects the outcome you intend to communicate.",
+      "If you are unsure what to select, hover over the info icon next to the field label for guidance.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all text carefully before downloading the final termination letter.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
+  const noticeTerminationActiveNotes =
+    noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
   const temporaryEmployeeCount = stepMeta?.temporaryEmployeeCount ?? 0;
   const temporaryActiveNotes = (() => {
     const baseNotes = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
@@ -371,6 +398,8 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permanentContract"
       ? permanentActiveNotes
+      : modalDocument === "noticeTermination"
+        ? noticeTerminationActiveNotes
       : modalDocument === "temporaryContract"
         ? temporaryActiveNotes
         : addendumActiveNotes;
@@ -834,14 +863,25 @@ const Documents = () => {
                         </button>
                       </div>
                       <div className="justify-self-center">
-                        {stepMeta?.onClear && (stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished ? (
+                        {stepMeta?.onClear &&
+                        (((stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished) ||
+                          (stepMeta?.isFinished && stepMeta?.supportsPreviewEditToggle)) ? (
                           <button
                             type="button"
                             onClick={() => stepMeta.onClear?.()}
-                            className="inline-flex h-[28px] items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:text-blue-600 hover:underline"
+                            className={cn(
+                              "inline-flex h-[28px] w-[84px] items-center justify-center gap-1.5 rounded border bg-white text-xs font-semibold disabled:cursor-not-allowed",
+                              stepMeta?.isFinished
+                                ? "border-slate-300 text-slate-600 hover:border-blue-600 hover:bg-white hover:text-blue-600 disabled:border-slate-300 disabled:text-slate-300"
+                                : "border-transparent text-slate-700 hover:border-transparent hover:bg-white hover:text-blue-600 disabled:text-slate-300",
+                            )}
                           >
-                            <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            Reset
+                            {!stepMeta?.isFinished ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                            {stepMeta?.isFinished
+                              ? stepMeta?.isPreviewEditable
+                                ? "Save"
+                                : "Edit"
+                              : "Reset"}
                           </button>
                         ) : null}
                       </div>

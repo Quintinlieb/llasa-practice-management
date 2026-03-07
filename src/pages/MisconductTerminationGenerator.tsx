@@ -249,6 +249,17 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
+const formatMisconductList = (types: string[]) => {
+  const normalized = types
+    .map((type) => type.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (normalized.length === 0) return "[forms of misconduct]";
+  if (normalized.length === 1) return normalized[0];
+  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
+  return `${normalized.slice(0, -1).join(", ")} and ${normalized[normalized.length - 1]}`;
+};
+
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
   const name = (companyName || "").trim();
   const type = (companyType || "").trim();
@@ -270,6 +281,8 @@ type FirstPagePreviewProps = {
 const FirstPagePreview = ({ data, compact = false, children, profile, logoPreviewUrl }: FirstPagePreviewProps) => {
   const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
   const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
+  const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
+  const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
   const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
   const employeeIdValue = data.idType === "id" ? displayValue(data.employeeIdNumber) : displayValue(data.passportNumber);
   const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
@@ -338,7 +351,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
           ))}
         </div>
         <div className="mt-4 space-y-4">
-          <p>Dear Sir / Madam</p>
+          <p>{salutation}</p>
           <p className="pt-2 pb-2 font-bold underline">RE: TERMINATION OF EMPLOYMENT</p>
           <div className="space-y-4">{children}</div>
           <p>Yours faithfully</p>
@@ -397,6 +410,8 @@ const MisconductTerminationGenerator = ({
     onClear?: () => void;
     addendumType?: AddendumType | "";
     isFinished?: boolean;
+    isPreviewEditable?: boolean;
+    supportsPreviewEditToggle?: boolean;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -410,6 +425,7 @@ const MisconductTerminationGenerator = ({
   >([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [showFinalActions, setShowFinalActions] = useState(false);
+  const [isPreviewEditable, setIsPreviewEditable] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
@@ -1082,6 +1098,7 @@ const MisconductTerminationGenerator = ({
 
   const handleBack = () => {
     if (showFinalActions) {
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
       setActiveStep(steps.length - 1);
       return;
@@ -1091,21 +1108,40 @@ const MisconductTerminationGenerator = ({
     }
   };
 
+  const togglePreviewEditMode = useCallback(() => {
+    setIsPreviewEditable((prev) => {
+      const next = !prev;
+      if (!next) {
+        setEditingClause(null);
+        setClauseDraft("");
+        setCustomClauseTitleDraft("");
+        setAddingAfter(undefined);
+        setNewClauseTitle("");
+        setNewClauseBody("");
+        setNewClauseAmendmentType("");
+        setNewClauseAmendmentOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!embedded) return;
     onStepMetaChange?.({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext: showFinalActions ? !isGenerating : canAdvance,
+      canGoNext: showFinalActions ? !isGenerating && !isPreviewEditable : canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
       canSelectStep,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
       onStepSelect: handleStepSelect,
-      onClear: clearCurrentStepFields,
+      onClear: showFinalActions ? togglePreviewEditMode : clearCurrentStepFields,
       addendumType: formData.addendumType,
       isFinished: showFinalActions,
+      isPreviewEditable,
+      supportsPreviewEditToggle: true,
     });
   }, [
     activeStep,
@@ -1119,9 +1155,11 @@ const MisconductTerminationGenerator = ({
     handleBack,
     handleDownload,
     handleStepSelect,
+    togglePreviewEditMode,
     isGenerating,
     isFormComplete,
     showFinalActions,
+    isPreviewEditable,
     formData.addendumType,
   ]);
 
@@ -1554,24 +1592,36 @@ const MisconductTerminationGenerator = ({
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
     const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
-    const misconductDisplay = data.misconductTypes.length > 0 ? data.misconductTypes.join(", ") : "[forms of misconduct]";
+    const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
+    const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
+    const misconductDisplay = formatMisconductList(data.misconductTypes);
     const hasNoticePeriod = data.noticePeriod !== "No notice";
     const findingLine =
       data.chairperson === "internal"
         ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
         : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
     const dismissalLead =
-      hasNoticePeriod
-        ? "Take notice that you are hereby dismissed"
-        : data.appliedProgressiveDisciplinaryAction === "Yes"
-        ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-        : "Take notice that you are hereby summarily dismissed";
+      data.appliedProgressiveDisciplinaryAction === "Yes"
+        ? hasNoticePeriod
+          ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
+          : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
+        : hasNoticePeriod
+          ? "Take notice that you are hereby dismissed"
+          : "Take notice that you are hereby summarily dismissed";
     const noticeMethodLine =
       hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
         ? `You are required to work during your notice period of ${data.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
         : hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
           ? `You are not required to work during your notice period of ${data.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
           : "";
+    const lastDateOfEmploymentDisplay =
+      hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
+        ? issueDateDisplay || "[date of issue]"
+        : terminationDateDisplay || "[date of termination]";
+    const propertyReturnLine =
+      hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
+        ? "You are required to return all company property in your possession to the employer on your last day of employment."
+        : "You are required to return all company property in your possession to the employer immediately.";
 
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
@@ -1580,11 +1630,11 @@ const MisconductTerminationGenerator = ({
       },
       {
         title: "Paragraph 2",
-        body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${terminationDateDisplay || "[date of termination]"}. You are required to return all company property in your possession to the employer immediately.`,
+        body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
       },
       {
         title: "Paragraph 3",
-        body: "You may appeal against this decision to terminate your employment within five (5) days from the date of this notice letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+        body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
       },
       {
         title: "Paragraph 4",
@@ -1669,7 +1719,7 @@ const MisconductTerminationGenerator = ({
     y += 4;
 
     doc.setFont("helvetica", "normal");
-    doc.text("Dear Sir / Madam", margin, y);
+    doc.text(salutation, margin, y);
     y += 10;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
@@ -1782,6 +1832,7 @@ const MisconductTerminationGenerator = ({
     try {
       const validated = validateData(sameDayOverrideAccepted);
       setValidatedPreview(validated);
+      setIsPreviewEditable(false);
       setShowFinalActions(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
@@ -2792,29 +2843,37 @@ const MisconductTerminationGenerator = ({
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                   <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
+              const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
               const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const misconductDisplay =
-                validatedPreview.misconductTypes.length > 0
-                  ? validatedPreview.misconductTypes.join(", ")
-                  : "[forms of misconduct]";
+              const misconductDisplay = formatMisconductList(validatedPreview.misconductTypes);
               const hasNoticePeriod = validatedPreview.noticePeriod !== "No notice";
               const findingLine =
                 validatedPreview.chairperson === "internal"
                   ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
                   : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
               const dismissalLead =
-                hasNoticePeriod
-                  ? "Take notice that you are hereby dismissed"
-                  : validatedPreview.appliedProgressiveDisciplinaryAction === "Yes"
-                  ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-                  : "Take notice that you are hereby summarily dismissed";
+                validatedPreview.appliedProgressiveDisciplinaryAction === "Yes"
+                  ? hasNoticePeriod
+                    ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
+                    : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
+                  : hasNoticePeriod
+                    ? "Take notice that you are hereby dismissed"
+                    : "Take notice that you are hereby summarily dismissed";
               const noticeMethodLine =
                 hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
                   ? `You are required to work during your notice period of ${validatedPreview.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
                   : hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
                     ? `You are not required to work during your notice period of ${validatedPreview.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
                     : "";
+              const lastDateOfEmploymentDisplay =
+                hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
+                  ? issueDateDisplay || "[date of issue]"
+                  : terminationDateDisplay || "[date of termination]";
+              const propertyReturnLine =
+                hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
+                  ? "You are required to return all company property in your possession to the employer on your last day of employment."
+                  : "You are required to return all company property in your possession to the employer immediately.";
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -2822,11 +2881,11 @@ const MisconductTerminationGenerator = ({
                 },
                 {
                   title: "Paragraph 2",
-                  body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${terminationDateDisplay || "[date of termination]"}. You are required to return all company property in your possession to the employer immediately.`,
+                  body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
                 },
                 {
                   title: "Paragraph 3",
-                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date of this notice letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
                 },
                 {
                   title: "Paragraph 4",
@@ -2978,6 +3037,7 @@ const MisconductTerminationGenerator = ({
                     <div className="text-xs leading-relaxed space-y-5">
                           {(() => {
                             const renderAddClauseControl = (afterId: string | null) => {
+                              if (!isPreviewEditable) return null;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
                                   <button
@@ -3011,32 +3071,34 @@ const MisconductTerminationGenerator = ({
                               return [
                                 <div key={clause.id} className="space-y-2 py-1">
                                   <div className="flex items-center justify-end gap-2">
-                                    <div className="flex items-center gap-2">
-                                      {isEditing ? (
-                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
-                                      ) : (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
-                                            onClick={() => startEditingClause(clause)}
-                                          >
-                                            Edit
-                                          </Button>
-                                          {isCustomClause ? (
+                                    {isPreviewEditable ? (
+                                      <div className="flex items-center gap-2">
+                                        {isEditing ? (
+                                          <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
+                                        ) : (
+                                          <>
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
-                                              onClick={() => deleteCustomClause(clause.id)}
+                                              className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
+                                              onClick={() => startEditingClause(clause)}
                                             >
-                                              Delete
+                                              Edit
                                             </Button>
-                                          ) : null}
-                                        </>
-                                      )}
-                                    </div>
+                                            {isCustomClause ? (
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
+                                                onClick={() => deleteCustomClause(clause.id)}
+                                              >
+                                                Delete
+                                              </Button>
+                                            ) : null}
+                                          </>
+                                        )}
+                                      </div>
+                                    ) : null}
                                   </div>
 
                                   <div className="space-y-4">
@@ -3054,7 +3116,7 @@ const MisconductTerminationGenerator = ({
                             }),
                             ];
                           })()}
-                          {activeEditingClause ? (
+                          {isPreviewEditable && activeEditingClause ? (
                             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
                               <div
                                 className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
@@ -3121,7 +3183,7 @@ const MisconductTerminationGenerator = ({
                               </div>
                             </div>
                           ) : null}
-                          {addingAfter !== undefined ? (
+                          {isPreviewEditable && addingAfter !== undefined ? (
                             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
                               <div
                                 className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
@@ -3222,12 +3284,33 @@ const MisconductTerminationGenerator = ({
             )}
           </ScrollArea>
                 {!useExternalShell ? (
-                  <div className="flex w-full items-center justify-end gap-2">
+                  <div className="flex w-full items-center justify-between gap-2 flex-wrap">
+                    <div className="flex-none">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBack}
+                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                      >
+                        Back
+                      </Button>
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={togglePreviewEditMode}
+                        disabled={isGenerating}
+                        className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                      >
+                        {isPreviewEditable ? "Save" : "Edit"}
+                      </Button>
+                    </div>
                     <div className="flex-none">
                       <Button
                         type="button"
                         onClick={handleDownload}
-                        disabled={isGenerating}
+                        disabled={isGenerating || isPreviewEditable}
                         className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                       >
                         Download

@@ -605,10 +605,7 @@ const MisconductTerminationGenerator = ({
   const [customClauseTitleDraft, setCustomClauseTitleDraft] = useState("");
   const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
-  const [newClauseTitle, setNewClauseTitle] = useState("");
   const [newClauseBody, setNewClauseBody] = useState("");
-  const [newClauseAmendmentType, setNewClauseAmendmentType] = useState<AmendmentType | "">("");
-  const [newClauseAmendmentOpen, setNewClauseAmendmentOpen] = useState(false);
   const steps = ["Employer Details", "Employee Details", "Addendum Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
@@ -634,10 +631,11 @@ const MisconductTerminationGenerator = ({
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
-  const newClauseTitleInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
+  const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const addClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const previewScrollRef = useRef<HTMLDivElement | null>(null);
   const previewScrollTop = useRef(0);
   const [companyLogoPreview, setCompanyLogoPreview] = useState<string>("");
@@ -1078,8 +1076,7 @@ const MisconductTerminationGenerator = ({
     setEditingClause(null);
     setClauseDraft("");
     setCustomClauseTitleDraft("");
-    setAddingAfter(null);
-    setNewClauseTitle("");
+    setAddingAfter(undefined);
     setNewClauseBody("");
     setCompanyLogoPreview("");
   };
@@ -1286,10 +1283,7 @@ const MisconductTerminationGenerator = ({
         setClauseDraft("");
         setCustomClauseTitleDraft("");
         setAddingAfter(undefined);
-        setNewClauseTitle("");
         setNewClauseBody("");
-        setNewClauseAmendmentType("");
-        setNewClauseAmendmentOpen(false);
       }
       return next;
     });
@@ -1642,10 +1636,41 @@ const MisconductTerminationGenerator = ({
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
 
+  const normalizeSingleParagraphText = (text: string) => text.replace(/\r?\n+/g, " ").replace(/\s{2,}/g, " ").trim();
+  const stripParagraphBreaks = (text: string) => text.replace(/\r?\n+/g, " ");
+
+  const resizeEditClauseTextarea = useCallback(() => {
+    const textarea = editClauseTextareaRef.current;
+    if (!textarea) return;
+    const maxHeightPx = 320;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeightPx)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeightPx ? "auto" : "hidden";
+  }, []);
+
+  const resizeAddClauseTextarea = useCallback(() => {
+    const textarea = addClauseTextareaRef.current;
+    if (!textarea) return;
+    const maxHeightPx = 320;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeightPx)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeightPx ? "auto" : "hidden";
+  }, []);
+
   const normalizeBodyText = (text: string) => {
     const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
     return paragraphs.length ? paragraphs : text.trim();
   };
+
+  useEffect(() => {
+    if (!editingClause) return;
+    resizeEditClauseTextarea();
+  }, [editingClause, clauseDraft, resizeEditClauseTextarea]);
+
+  useEffect(() => {
+    if (addingAfter === undefined) return;
+    resizeAddClauseTextarea();
+  }, [addingAfter, newClauseBody, resizeAddClauseTextarea]);
 
   const applyClauseEdits = (clauses: ClauseDefinition[]): ClauseDefinition[] =>
     clauses.map((clause) => {
@@ -1655,7 +1680,7 @@ const MisconductTerminationGenerator = ({
       if (!edited) {
         return nextTitle === clause.title ? clause : { ...clause, title: nextTitle };
       }
-      return { ...clause, title: nextTitle, body: normalizeBodyText(edited) };
+      return { ...clause, title: nextTitle, body: normalizeSingleParagraphText(edited) };
     });
 
   const mergeClauses = useCallback(
@@ -3164,7 +3189,7 @@ const MisconductTerminationGenerator = ({
                 rememberPreviewScroll();
                 const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
                 setEditingClause(clause.id);
-                setClauseDraft(clauseEdits[clause.id] ?? serializeClauseBody(clause.body));
+                setClauseDraft(stripParagraphBreaks(clauseEdits[clause.id] ?? serializeClauseBody(clause.body)));
                 setCustomClauseTitleDraft(isCustomClause ? (customClauseTitleEdits[clause.id] ?? clause.title) : "");
               };
 
@@ -3175,7 +3200,7 @@ const MisconductTerminationGenerator = ({
               };
 
               const saveClauseEdit = (id: string) => {
-                const trimmed = clauseDraft.trim();
+                const trimmed = normalizeSingleParagraphText(clauseDraft);
                 const baseCustomClause = customClauses.find((clause) => clause.id === id);
                 if (baseCustomClause) {
                   const titleTrimmed = customClauseTitleDraft.trim();
@@ -3222,54 +3247,42 @@ const MisconductTerminationGenerator = ({
               const openAddClauseForm = (afterId: string | null) => {
                 rememberPreviewScroll();
                 setAddingAfter(afterId);
-                setNewClauseTitle("");
                 setNewClauseBody("");
-                setNewClauseAmendmentType("");
-                setNewClauseAmendmentOpen(false);
               };
 
               const cancelAddClause = () => {
                 setAddingAfter(undefined);
-                setNewClauseTitle("");
                 setNewClauseBody("");
-                setNewClauseAmendmentType("");
-                setNewClauseAmendmentOpen(false);
               };
 
               const saveNewClause = () => {
-                const title = newClauseTitle.trim();
-                const body = newClauseBody.trim();
-                if (!newClauseAmendmentType) {
+                const body = normalizeSingleParagraphText(newClauseBody);
+                if (!body) {
                   toast({
-                    title: "Add clause",
-                    description: "Please select an amendment type.",
+                    title: "Add paragraph",
+                    description: "Please provide paragraph content.",
                     variant: "destructive",
                   });
                   return;
                 }
-                if (!title || !body) {
-                  toast({
-                    title: "Add clause",
-                    description: "Please provide both a title and body for the new clause.",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-    const normalizedBody = normalizeBodyText(body);
                 setCustomClauses((prev) => [
                   ...prev,
                   {
                     id: generateCustomClauseId(),
-                    title,
-                    body: normalizedBody,
+                    title: "Paragraph",
+                    body,
                     insertAfterId: addingAfter,
-                    amendmentType: newClauseAmendmentType,
+                    amendmentType: "add",
                   },
                 ]);
                 cancelAddClause();
               };
 
               const deleteCustomClause = (id: string) => {
+                if (typeof window !== "undefined") {
+                  const shouldDelete = window.confirm("Are you sure you want to delete this paragraph?");
+                  if (!shouldDelete) return;
+                }
                 setCustomClauses((prev) => prev.filter((clause) => clause.id !== id));
                 setClauseEdits((prev) => {
                   const next = { ...prev };
@@ -3380,161 +3393,125 @@ const MisconductTerminationGenerator = ({
                             ];
                           })()}
                           {isPreviewEditable && activeEditingClause ? (
-                            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
-                              <div
-                                className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
-                                role="dialog"
-                                aria-modal="true"
-                                aria-label={`Edit clause ${activeEditingClause.title}`}
-                              >
-                                <div className="space-y-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-sm font-semibold text-black">Edit Clause: {activeEditingClause.title}</h3>
-                                    <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
-                                  </div>
-                                  {isActiveEditingClauseCustom ? (
-                                    <Input
-                                      value={customClauseTitleDraft}
-                                      onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
-                                      placeholder="Clause title"
-                                      className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
-                                    />
-                                  ) : null}
-                                  <p className="flex items-center gap-1 text-[11px] text-orange-600">
-                                    <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                                    Separate paragraphs with a blank line. Paragraph numbering updates automatically.
-                                  </p>
-                                  <Textarea
-                                    value={clauseDraft}
-                                    onChange={(e) => setClauseDraft(e.target.value)}
-                                    rows={10}
-                                    className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                    spellCheck={true}
-                                    lang="en"
-                                    autoCorrect="on"
-                                  />
-                                  <div className="flex items-center justify-end gap-2">
-                                    {Boolean(
-                                      clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
-                                    ) ? (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-blue-600 hover:underline underline-offset-2"
-                                        onClick={() => resetClauseEdit(activeEditingClause.id)}
-                                      >
-                                        Reset
-                                      </Button>
-                                    ) : null}
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
-                                      onClick={cancelClauseEdit}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                      onClick={() => saveClauseEdit(activeEditingClause.id)}
-                                    >
-                                      Save
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                          {isPreviewEditable && addingAfter !== undefined ? (
-                            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
-                              <div
-                                className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
-                                role="dialog"
-                                aria-modal="true"
-                                aria-label="Add clause"
-                              >
-                                <div className="space-y-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <h3 className="text-sm font-semibold text-black">Add Clause</h3>
-                                    <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
-                                  </div>
-                                  <div className="grid gap-1 text-left">
-                                    <Label className="text-xs">Amendment type</Label>
-                                    <Select
-                                      value={newClauseAmendmentType}
-                                      open={newClauseAmendmentOpen}
-                                      onOpenChange={setNewClauseAmendmentOpen}
-                                      onValueChange={(value) => {
-                                        setNewClauseAmendmentType(value as AmendmentType);
-                                        setNewClauseAmendmentOpen(false);
-                                        setTimeout(() => newClauseTitleInputRef.current?.focus(), 0);
-                                      }}
-                                    >
-                                      <SelectTrigger
-                                        className={`${getAddendumModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${addendumModalDropdownToneClass}`}
-                                      >
-                                        <SelectValue placeholder="Please Select amendment type" />
-                                      </SelectTrigger>
-                                      <SelectContent className="z-[1001] w-[var(--radix-select-trigger-width)] text-xs">
-                                        <SelectItem className={addendumModalSelectItemClass} value="add">
-                                          Add new term(s)
-                                        </SelectItem>
-                                        <SelectItem className={addendumModalSelectItemClass} value="amend">
-                                          Amend existing term(s)
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  {newClauseAmendmentType ? (
-                                    <>
-                                      <Input
-                                        ref={newClauseTitleInputRef}
-                                        value={newClauseTitle}
-                                        onChange={(e) => setNewClauseTitle(e.target.value)}
-                                        onMouseDown={() => setNewClauseAmendmentOpen(false)}
-                                        placeholder="Clause title"
-                                        className={getAddendumModalInputClass(newClauseTitle.trim().length > 0)}
-                                      />
-                                      <p className="flex items-center gap-1 text-[11px] text-orange-600">
-                                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                                        Separate paragraphs with a blank line. Paragraph numbering updates automatically.
-                                      </p>
+                                <div className="fixed inset-x-0 -top-16 bottom-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
+                                  <div
+                                    className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    aria-label="Edit paragraph"
+                                  >
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <h3 className="text-sm font-semibold text-black">Edit Paragraph</h3>
+                                        <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
+                                      </div>
+                                      {isActiveEditingClauseCustom ? (
+                                        <Input
+                                          value={customClauseTitleDraft}
+                                          onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
+                                          placeholder="Clause title"
+                                          className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
+                                        />
+                                      ) : null}
                                       <Textarea
-                                        value={newClauseBody}
-                                        onChange={(e) => setNewClauseBody(e.target.value)}
-                                        onMouseDown={() => setNewClauseAmendmentOpen(false)}
-                                        rows={8}
-                                        className="rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                        placeholder="Clause body. Separate paragraphs with a blank line."
+                                        ref={editClauseTextareaRef}
+                                        value={clauseDraft}
+                                        onChange={(e) => setClauseDraft(stripParagraphBreaks(e.target.value))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                          }
+                                        }}
+                                        rows={3}
+                                        className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
                                         spellCheck={true}
                                         lang="en"
                                         autoCorrect="on"
                                       />
-                                    </>
-                                  ) : null}
-                                  <div className="flex items-center justify-end gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
-                                      onClick={cancelAddClause}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                      onClick={saveNewClause}
-                                      disabled={!newClauseAmendmentType || !newClauseTitle.trim() || !newClauseBody.trim()}
-                                    >
-                                      Add clause
-                                    </Button>
+                                      <div className="flex items-center justify-end gap-2">
+                                        {Boolean(
+                                          clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
+                                        ) ? (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-black hover:underline underline-offset-2"
+                                            onClick={() => resetClauseEdit(activeEditingClause.id)}
+                                          >
+                                            Reset
+                                          </Button>
+                                        ) : null}
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                          onClick={cancelClauseEdit}
+                                        >
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                          onClick={() => saveClauseEdit(activeEditingClause.id)}
+                                        >
+                                          Save
+                                        </Button>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-                          ) : null}
+                            ) : null}
+                          {isPreviewEditable && addingAfter !== undefined ? (
+                                <div className="fixed inset-x-0 -top-16 bottom-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
+                                  <div
+                                    className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+                                    role="dialog"
+                                    aria-modal="true"
+                                    aria-label="Add paragraph"
+                                  >
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <h3 className="text-sm font-semibold text-black">Add Paragraph</h3>
+                                        <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
+                                      </div>
+                                      <Textarea
+                                        ref={addClauseTextareaRef}
+                                        value={newClauseBody}
+                                        onChange={(e) => setNewClauseBody(stripParagraphBreaks(e.target.value))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") {
+                                            e.preventDefault();
+                                          }
+                                        }}
+                                    rows={3}
+                                    className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                    placeholder="Type your new paragraph here..."
+                                    spellCheck={true}
+                                    lang="en"
+                                    autoCorrect="on"
+                                  />
+                                      <div className="flex items-center justify-end gap-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                          onClick={cancelAddClause}
+                                        >
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                          onClick={saveNewClause}
+                                          disabled={!newClauseBody.trim()}
+                                        >
+                                          Add paragraph
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                            ) : null}
 
                     </div>
                 </FirstPagePreview>

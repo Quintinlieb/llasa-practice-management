@@ -31,6 +31,7 @@ type ContractFormState = {
   employeeId: string;
   age: string;
   companyLogoDataUrl: string;
+  logoPlacement: "center" | "left";
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -69,6 +70,7 @@ type AddendumData = PermanentContractFormData & {
   newEndDate: string;
   idType: "id" | "passport";
   companyLogoDataUrl: string;
+  logoPlacement: "center" | "left";
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -145,6 +147,11 @@ const addendumTypeLabels: Record<AddendumType, string> = {
   renewal: "Contract Renewal",
   extension: "Contract Extension",
 };
+
+const logoPlacementOptions = [
+  { value: "center", label: "Header and footer" },
+  { value: "left", label: "Header only" },
+] as const;
 
 const noticePeriodOptions = [
   "No notice",
@@ -428,6 +435,8 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const tradingNameDisplay = (data.tradingName || "").trim();
   const registrationNumberDisplay = (profile?.registration_number || "").trim();
   const hasUploadedLogo = Boolean(logoPreviewUrl);
+  const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
+  const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
   const companyIdentityDisplay = tradingNameDisplay
     ? `${companyNameDisplay} t/a ${tradingNameDisplay}`
     : companyNameDisplay;
@@ -462,7 +471,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
       style={{ width: "210mm", minHeight: compact ? undefined : "297mm" }}
     >
       <div className="flex-1 flex flex-col text-[12px] leading-relaxed text-black">
-        {hasUploadedLogo ? (
+        {useCenteredLogoLayout ? (
           <div className="flex justify-center">
             <img
               src={logoPreviewUrl}
@@ -471,7 +480,14 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             />
           </div>
         ) : (
-          <div className="flex justify-end">
+          <div className={cn("flex", useLeftLogoLayout ? "items-start justify-between gap-4" : "justify-end")}>
+            {useLeftLogoLayout ? (
+              <img
+                src={logoPreviewUrl}
+                alt="Company logo"
+                className="max-h-[25mm] w-auto max-w-[220px] object-contain"
+              />
+            ) : null}
             <div className="text-right leading-[1.1] text-[10px]">
               <p className="font-semibold">{companyNameDisplay}</p>
               {tradingNameDisplay ? <p>t/a {tradingNameDisplay}</p> : null}
@@ -481,7 +497,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             </div>
           </div>
         )}
-        <div className={cn("border-t border-slate-300", hasUploadedLogo ? "mt-6" : "mt-4")} aria-hidden="true" />
+        <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} aria-hidden="true" />
         <div className="mt-2 text-right">{issueDateDisplay}</div>
         <div className="mt-4">
           <p className="flex items-baseline gap-4">
@@ -536,7 +552,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             </div>
           ) : null}
         </div>
-        {hasUploadedLogo ? (
+        {useCenteredLogoLayout ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]">
             <p className="font-semibold">{companyIdentityDisplay}</p>
             {registrationNumberDisplay ? <p className="mt-0.5">Reg No: {registrationNumberDisplay}</p> : null}
@@ -673,6 +689,7 @@ const MisconductTerminationGenerator = ({
     employeeId: "",
     age: "",
     companyLogoDataUrl: "",
+    logoPlacement: "center",
     issuer: "",
     chairperson: "",
     noticeMethod: "",
@@ -1016,6 +1033,7 @@ const MisconductTerminationGenerator = ({
       employeeId: "",
       age: "",
       companyLogoDataUrl: "",
+      logoPlacement: "center",
       issuer: "",
       chairperson: "",
       noticeMethod: "",
@@ -1353,6 +1371,7 @@ const MisconductTerminationGenerator = ({
       employerContact: profile?.company_contact || "",
       employerEmail: profile?.company_email || "",
       companyLogoDataUrl: "",
+      logoPlacement: "center",
     }));
     setCompanyLogoPreview("");
     if (companyLogoInputRef.current) {
@@ -1541,7 +1560,7 @@ const MisconductTerminationGenerator = ({
 
   const clearCompanyLogo = () => {
     setCompanyLogoPreview("");
-    setFormData((prev) => ({ ...prev, companyLogoDataUrl: "" }));
+    setFormData((prev) => ({ ...prev, companyLogoDataUrl: "", logoPlacement: "center" }));
     if (companyLogoInputRef.current) {
       companyLogoInputRef.current.value = "";
     }
@@ -1617,6 +1636,7 @@ const MisconductTerminationGenerator = ({
       contractEndDate: "",
       newEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
+      logoPlacement: formData.logoPlacement,
       issuer: formData.issuer,
       chairperson: formData.chairperson,
       noticeMethod: formData.noticeMethod,
@@ -1858,6 +1878,8 @@ const MisconductTerminationGenerator = ({
     ].filter((value): value is string => Boolean(value));
     const transmissionLines = data.transmissionMethods.map((method) => method.replace(/^By\s+/i, "Per "));
     const hasUploadedLogo = Boolean(data.companyLogoDataUrl);
+    const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
+    const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
 
     const headerTop = y;
     const rightX = margin + contentWidth;
@@ -1871,7 +1893,7 @@ const MisconductTerminationGenerator = ({
     ];
 
     let logoTopForBalance = margin;
-    if (hasUploadedLogo) {
+    if (useCenteredLogoLayout) {
       try {
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
@@ -1893,9 +1915,43 @@ const MisconductTerminationGenerator = ({
       } catch {
         // Keep generating even if logo rendering fails.
       }
+    } else if (useLeftLogoLayout) {
+      let logoBottomY = headerTop;
+      try {
+        const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
+        const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
+        const imageRatio = imageProps.width / imageProps.height;
+        const targetLogoHeight = 25;
+        const maxLogoWidth = 60;
+        let logoHeight = targetLogoHeight;
+        let logoWidth = logoHeight * imageRatio;
+        if (logoWidth > maxLogoWidth) {
+          const scale = maxLogoWidth / logoWidth;
+          logoWidth = maxLogoWidth;
+          logoHeight *= scale;
+        }
+        const logoTop = Math.max(6, headerTop);
+        const logoX = margin;
+        doc.addImage(data.companyLogoDataUrl, imageType, logoX, logoTop, logoWidth, logoHeight, undefined, "FAST");
+        logoBottomY = logoTop + logoHeight;
+      } catch {
+        // Keep generating even if logo rendering fails.
+      }
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.text(headerLines[0], rightX, headerTop, { align: "right" });
+      let detailsY = headerTop + headerLineHeight;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      headerLines.slice(1).forEach((line) => {
+        doc.text(line, rightX, detailsY, { align: "right" });
+        detailsY += headerLineHeight;
+      });
+      y = Math.max(logoBottomY + 6, detailsY + 2);
     } else {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
+      doc.setFontSize(8);
       doc.text(headerLines[0], rightX, headerTop, { align: "right" });
       y = headerTop + headerLineHeight;
       doc.setFont("helvetica", "normal");
@@ -2009,7 +2065,7 @@ const MisconductTerminationGenerator = ({
       y = boxTop + boxHeight + 6;
     }
 
-    if (hasUploadedLogo) {
+    if (useCenteredLogoLayout) {
       const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
       const companyIdentity = data.tradingName?.trim()
         ? `${companyName} t/a ${data.tradingName.trim()}`
@@ -2365,7 +2421,10 @@ const MisconductTerminationGenerator = ({
                         className={getAddendumModalInputClass(formData.employerEmail.trim().length > 0)}
                       />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className="md:col-span-2 pt-1" aria-hidden="true">
+                      <div className="border-t border-slate-200/80" />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="companyLogoUpload" className={modalFieldLabelClass}>
                         Company logo (optional)
                       </Label>
@@ -2407,6 +2466,80 @@ const MisconductTerminationGenerator = ({
                         </div>
                       ) : null}
                     </div>
+                    {companyLogoPreview || formData.companyLogoDataUrl ? (
+                      <div className="space-y-1.5">
+                        <Label className={modalFieldLabelClass}>Letterhead options</Label>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "center" }))}
+                            className={`rounded border p-2 text-left transition ${
+                              formData.logoPlacement === "center"
+                                ? "border-blue-600 bg-blue-50"
+                                : "border-slate-300 bg-white hover:border-blue-500"
+                            }`}
+                          >
+                            <div className="h-[99px] rounded border border-slate-200 bg-white p-2">
+                              {companyLogoPreview || formData.companyLogoDataUrl ? (
+                                <img
+                                  src={companyLogoPreview || formData.companyLogoDataUrl}
+                                  alt="Centered letterhead logo preview"
+                                  className="mx-auto h-4 w-12 object-contain"
+                                />
+                              ) : (
+                                <div className="mx-auto h-4 w-12 rounded bg-slate-300" />
+                              )}
+                              <div className="mt-2 h-px w-full bg-slate-300" />
+                              <div className="mt-2 w-16 space-y-1">
+                                <div className="h-1 w-full rounded bg-slate-300" />
+                                <div className="h-1 w-5/6 rounded bg-slate-300" />
+                                <div className="h-1 w-3/4 rounded bg-slate-300" />
+                              </div>
+                              <div className="mt-4 border-t border-slate-300 pt-1">
+                                <div className="mx-auto h-px w-20 rounded bg-slate-300" />
+                                <div className="mx-auto mt-1 h-px w-16 rounded bg-slate-300" />
+                              </div>
+                            </div>
+                            <p className="mt-2 text-[11px] font-semibold text-slate-700">{logoPlacementOptions[0].label}</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "left" }))}
+                            className={`rounded border p-2 text-left transition ${
+                              formData.logoPlacement === "left"
+                                ? "border-blue-600 bg-blue-50"
+                                : "border-slate-300 bg-white hover:border-blue-500"
+                            }`}
+                          >
+                            <div className="h-[99px] rounded border border-slate-200 bg-white p-2">
+                              <div className="flex items-start justify-between gap-2">
+                                {companyLogoPreview || formData.companyLogoDataUrl ? (
+                                  <img
+                                    src={companyLogoPreview || formData.companyLogoDataUrl}
+                                    alt="Left-aligned letterhead logo preview"
+                                    className="h-4 w-10 object-contain"
+                                  />
+                                ) : (
+                                  <div className="h-4 w-10 rounded bg-slate-300" />
+                                )}
+                                <div className="w-[74px] text-right text-[5px] leading-[1.05] text-slate-600">
+                                  <div className="ml-auto h-px w-10 rounded bg-slate-300" />
+                                  <div className="mt-1 ml-auto h-px w-8 rounded bg-slate-300" />
+                                  <div className="mt-1 ml-auto h-px w-6 rounded bg-slate-300" />
+                                </div>
+                              </div>
+                              <div className="mt-2 h-px w-full bg-slate-300" />
+                              <div className="mt-2 w-16 space-y-1">
+                                <div className="h-1 w-full rounded bg-slate-300" />
+                                <div className="h-1 w-4/5 rounded bg-slate-300" />
+                                <div className="h-1 w-3/4 rounded bg-slate-300" />
+                              </div>
+                            </div>
+                            <p className="mt-2 text-[11px] font-semibold text-slate-700">{logoPlacementOptions[1].label}</p>
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}

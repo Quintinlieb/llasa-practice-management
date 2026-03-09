@@ -688,7 +688,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   );
 };
 
-const MisconductTerminationGenerator = ({
+const PoorPerformanceTerminationGenerator = ({
   embedded = false,
   externalNavigation = false,
   onStepChange,
@@ -939,7 +939,7 @@ const MisconductTerminationGenerator = ({
   }, [misconductPickerOpen]);
 
   useEffect(() => {
-    if (formData.noticePeriod !== "No notice") return;
+    if (formData.noticePeriod && formData.noticePeriod !== "No notice") return;
     if (!formData.noticeMethod) return;
     setFormData((prev) => ({ ...prev, noticeMethod: "" }));
   }, [formData.noticePeriod, formData.noticeMethod]);
@@ -1293,7 +1293,8 @@ const MisconductTerminationGenerator = ({
     () => {
       const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
-      const hasNoticeMethod = formData.noticePeriod === "No notice" ? true : Boolean(formData.noticeMethod);
+      const hasNoticeMethod =
+        !formData.noticePeriod || formData.noticePeriod === "No notice" ? true : Boolean(formData.noticeMethod);
       const hasProgressiveDisciplinaryAction = Boolean(formData.appliedProgressiveDisciplinaryAction);
       const hasChairperson = Boolean(formData.chairperson);
       const hasHearingDate = Boolean(formData.hearingDate);
@@ -1760,12 +1761,12 @@ const MisconductTerminationGenerator = ({
     checkRequired(formData.effectiveDate, "Effective date");
     checkRequired(formData.issueDate, "Date of notice");
     checkRequired(formData.noticePeriod, "Notice period");
-    if (formData.noticePeriod !== "No notice") {
+    if (formData.noticePeriod && formData.noticePeriod !== "No notice") {
       checkRequired(formData.noticeMethod, "Notice Method");
     }
     checkRequired(formData.appliedProgressiveDisciplinaryAction, "Progressive Disciplinary Action (PDA)");
     checkRequired(formData.chairperson, "Chairperson");
-    checkRequired(formData.hearingDate, "Date of hearing");
+    checkRequired(formData.hearingDate, "Performance enquiry date");
     checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
@@ -1783,7 +1784,7 @@ const MisconductTerminationGenerator = ({
       const noticeDate = new Date(`${formData.issueDate}T00:00:00`);
       if (!Number.isNaN(hearingDate.getTime()) && !Number.isNaN(noticeDate.getTime())) {
         if (hearingDate > noticeDate) {
-          throw new Error("Date of hearing cannot be after Date of notice.");
+          throw new Error("Performance enquiry date cannot be after Date of notice.");
         }
         if (!allowSameDayHearingNotice && formData.hearingDate === formData.issueDate) {
           throw new Error(SAME_DAY_HEARING_NOTICE_CAUTION);
@@ -3087,7 +3088,7 @@ const MisconductTerminationGenerator = ({
                         </SelectContent>
                       </Select>
                     </div>
-                    {formData.noticePeriod !== "No notice" ? (
+                    {formData.noticePeriod && formData.noticePeriod !== "No notice" ? (
                       <div className="space-y-1.5">
                         <Label htmlFor="noticeMethod" className={modalFieldLabelClass}>
                           Notice method <span className="text-red-500">*</span>
@@ -3153,7 +3154,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of hearing <span className="text-red-500">*</span>
+                        Performance enquiry date <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3161,13 +3162,15 @@ const MisconductTerminationGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Date of hearing info"
+                                aria-label="Performance enquiry date info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Before you dismiss an employee you should first conduct a disciplinary hearing.
+                              Prior to a dimissal, a proper poor performance management procedure should be followed:
+                              <br />
+                              Consultation(s) &gt; time to imporve &gt; hearing.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -4296,7 +4299,7 @@ const MisconductTerminationGenerator = ({
   return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 };
 
-export default MisconductTerminationGenerator;
+export default PoorPerformanceTerminationGenerator;
 
 
 

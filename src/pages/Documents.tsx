@@ -19,6 +19,7 @@ type DocumentKey =
   | "temporaryContract"
   | "addendum"
   | "noticeTermination"
+  | "poorPerformanceTermination"
   | "disciplinaryHearing";
 
 type DocumentItem = {
@@ -68,6 +69,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
   noticeTermination: lazy(() => import("./MisconductTerminationGenerator")),
+  poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
   disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
 
@@ -101,7 +103,7 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { id: "noticeTermination", label: "Misconduct", active: true },
       { label: "Ill Health", active: false },
-      { label: "Poor Performance", active: false },
+      { id: "poorPerformanceTermination", label: "Poor Performance", active: true },
       { label: "Abscondment/Desertion", active: false },
       { label: "Retrenchment", active: false },
       { label: "Retirement", active: false },
@@ -142,7 +144,13 @@ const Documents = () => {
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
   const [modalDocument, setModalDocument] = useState<
-    "warnings" | "addendum" | "permanentContract" | "temporaryContract" | "noticeTermination" | null
+    | "warnings"
+    | "addendum"
+    | "permanentContract"
+    | "temporaryContract"
+    | "noticeTermination"
+    | "poorPerformanceTermination"
+    | null
   >(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
@@ -228,7 +236,9 @@ const Documents = () => {
         )?.title ?? ""
       : "";
   const breadcrumbCategoryTitle =
-    selectedDocument === "noticeTermination" ? "Termination Letter" : activeCategoryTitle;
+    selectedDocument === "noticeTermination" || selectedDocument === "poorPerformanceTermination"
+      ? "Termination Letter"
+      : activeCategoryTitle;
   const activeDocumentLabel =
     selectedDocument
       ? documentCategories
@@ -240,6 +250,8 @@ const Documents = () => {
       ? "Warnings"
       : modalDocument === "addendum"
         ? "Addendum"
+        : modalDocument === "poorPerformanceTermination"
+          ? "Poor Performance"
         : modalDocument === "noticeTermination"
           ? "Notice of Termination"
         : modalDocument === "permanentContract"
@@ -251,6 +263,7 @@ const Documents = () => {
     modalDocument === "warnings" ||
     modalDocument === "addendum" ||
     modalDocument === "noticeTermination" ||
+    modalDocument === "poorPerformanceTermination" ||
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
       ? ([
@@ -260,8 +273,8 @@ const Documents = () => {
             ? "Warning Details"
             : modalDocument === "addendum"
               ? "Addendum Details"
-              : modalDocument === "noticeTermination"
-                ? "Notice Details"
+              : modalDocument === "noticeTermination" || modalDocument === "poorPerformanceTermination"
+                ? "Termination Details"
               : modalDocument === "temporaryContract"
                 ? "Employment Details"
               : "Employment Details",
@@ -400,7 +413,7 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permanentContract"
       ? permanentActiveNotes
-      : modalDocument === "noticeTermination"
+      : modalDocument === "noticeTermination" || modalDocument === "poorPerformanceTermination"
         ? noticeTerminationActiveNotes
       : modalDocument === "temporaryContract"
         ? temporaryActiveNotes
@@ -410,6 +423,7 @@ const Documents = () => {
       selectedDocument !== "warnings" &&
       selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
+      selectedDocument !== "poorPerformanceTermination" &&
       selectedDocument !== "permanentContract" &&
       selectedDocument !== "temporaryContract",
   );
@@ -470,6 +484,7 @@ const Documents = () => {
                                         item.id === "warnings" ||
                                         item.id === "addendum" ||
                                         item.id === "noticeTermination" ||
+                                        item.id === "poorPerformanceTermination" ||
                                         item.id === "permanentContract" ||
                                         item.id === "temporaryContract"
                                       ) {
@@ -481,6 +496,7 @@ const Documents = () => {
                                             | "warnings"
                                             | "addendum"
                                             | "noticeTermination"
+                                            | "poorPerformanceTermination"
                                             | "permanentContract"
                                             | "temporaryContract",
                                         );
@@ -521,7 +537,8 @@ const Documents = () => {
             selectedDocument !== "codeOfConduct" &&
             selectedDocument !== "warnings" &&
             selectedDocument !== "addendum" &&
-            selectedDocument !== "noticeTermination" ? (
+            selectedDocument !== "noticeTermination" &&
+            selectedDocument !== "poorPerformanceTermination" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
                   <div className="flex items-start">
@@ -712,6 +729,7 @@ const Documents = () => {
           modalDocument === "warnings"
             || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
+            || modalDocument === "poorPerformanceTermination"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
             ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
@@ -722,6 +740,7 @@ const Documents = () => {
           {modalDocument === "warnings" ||
           modalDocument === "addendum" ||
           modalDocument === "noticeTermination" ||
+          modalDocument === "poorPerformanceTermination" ||
           modalDocument === "permanentContract" ||
           modalDocument === "temporaryContract" ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
@@ -732,12 +751,14 @@ const Documents = () => {
                     {`Documents / ${
                       modalDocument === "warnings"
                         ? "Discipline"
-                        : modalDocument === "noticeTermination"
+                        : modalDocument === "noticeTermination" || modalDocument === "poorPerformanceTermination"
                           ? "Termination Letter"
                           : "Contracts"
                     } / ${
                       modalDocument === "addendum"
                         ? "Addendum"
+                        : modalDocument === "poorPerformanceTermination"
+                          ? "Poor Performance"
                         : modalDocument === "noticeTermination"
                           ? "Misconduct"
                         : modalDocument === "temporaryContract"

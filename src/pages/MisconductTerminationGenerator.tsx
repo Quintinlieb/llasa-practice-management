@@ -32,6 +32,7 @@ type ContractFormState = {
   age: string;
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
+  letterheadColor: string;
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -71,6 +72,7 @@ type AddendumData = PermanentContractFormData & {
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
+  letterheadColor: string;
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -152,6 +154,40 @@ const logoPlacementOptions = [
   { value: "center", label: "Header and footer" },
   { value: "left", label: "Header only" },
 ] as const;
+
+const letterheadColorOptions = [
+  { value: "#111827" }, // black
+  { value: "#dc2626" }, // red
+  { value: "#1e3a8a" }, // blue (dark)
+  { value: "#166534" }, // green (dark)
+  { value: "#facc15" }, // yellow
+  { value: "#7f1d1d" }, // maroon
+  { value: "#7c3aed" }, // purple
+  { value: "#6b7280" }, // grey
+  { value: "#ea580c" }, // orange
+  { value: "#3b82f6" }, // blue (light)
+  { value: "#0f766e" }, // teal
+  { value: "#84cc16" }, // green (light)
+  { value: "#ff6f61" }, // coral
+  { value: "#ec4899" }, // pink
+] as const;
+
+const defaultLetterheadColor = letterheadColorOptions[0].value;
+
+const getLetterheadColorHex = (value?: string) =>
+  letterheadColorOptions.some((option) => option.value === value) ? (value as string) : defaultLetterheadColor;
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const normalized = hex.replace("#", "");
+  const full = normalized.length === 3
+    ? normalized.split("").map((char) => `${char}${char}`).join("")
+    : normalized;
+  const r = Number.parseInt(full.slice(0, 2), 16);
+  const g = Number.parseInt(full.slice(2, 4), 16);
+  const b = Number.parseInt(full.slice(4, 6), 16);
+  if ([r, g, b].some((channel) => Number.isNaN(channel))) return [29, 78, 216];
+  return [r, g, b];
+};
 
 const noticePeriodOptions = [
   "No notice",
@@ -365,8 +401,13 @@ const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
     img.src = dataUrl;
   });
 
-const createLucidePdfIconDataUrl = (draw: (ctx: CanvasRenderingContext2D) => void, size = 24): string | null => {
+const createLucidePdfIconDataUrl = (
+  draw: (ctx: CanvasRenderingContext2D) => void,
+  options?: { size?: number; strokeColor?: string },
+): string | null => {
   if (typeof document === "undefined" || typeof Path2D === "undefined") return null;
+  const size = options?.size ?? 24;
+  const strokeColor = options?.strokeColor ?? "#000";
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -374,7 +415,7 @@ const createLucidePdfIconDataUrl = (draw: (ctx: CanvasRenderingContext2D) => voi
   if (!ctx) return null;
 
   ctx.clearRect(0, 0, size, size);
-  ctx.strokeStyle = "#000";
+  ctx.strokeStyle = strokeColor;
   ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -383,15 +424,15 @@ const createLucidePdfIconDataUrl = (draw: (ctx: CanvasRenderingContext2D) => voi
   return canvas.toDataURL("image/png");
 };
 
-const createPdfPhoneIconDataUrl = () =>
+const createPdfPhoneIconDataUrl = (strokeColor = "#000") =>
   createLucidePdfIconDataUrl((ctx) => {
     const path = new Path2D(
       "M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z",
     );
     ctx.stroke(path);
-  });
+  }, { strokeColor });
 
-const createPdfMailIconDataUrl = () =>
+const createPdfMailIconDataUrl = (strokeColor = "#000") =>
   createLucidePdfIconDataUrl((ctx) => {
     const x = 2;
     const y = 4;
@@ -414,7 +455,7 @@ const createPdfMailIconDataUrl = () =>
 
     const flap = new Path2D("m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7");
     ctx.stroke(flap);
-  });
+  }, { strokeColor });
 
 type FirstPagePreviewProps = {
   data: AddendumData;
@@ -437,6 +478,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const hasUploadedLogo = Boolean(logoPreviewUrl);
   const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
   const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
+  const letterheadColorHex = getLetterheadColorHex(data.letterheadColor);
   const companyIdentityDisplay = tradingNameDisplay
     ? `${companyNameDisplay} t/a ${tradingNameDisplay}`
     : companyNameDisplay;
@@ -492,8 +534,23 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
               <p className="font-semibold">{companyNameDisplay}</p>
               {tradingNameDisplay ? <p>t/a {tradingNameDisplay}</p> : null}
               {companyAddressLines.length > 0 ? companyAddressLines.map((line) => <p key={`co-${line}`}>{line}</p>) : <p>Address</p>}
-              <p>Email: {displayValue(data.employerEmail)}</p>
-              <p>Tel: {displayValue(data.employerContact)}</p>
+              {useLeftLogoLayout ? (
+                <>
+                  <p className="inline-flex w-full items-center justify-end gap-1">
+                    <Mail className="h-2.5 w-2.5" style={{ color: letterheadColorHex }} />
+                    {displayValue(data.employerEmail)}
+                  </p>
+                  <p className="inline-flex w-full items-center justify-end gap-1">
+                    <Phone className="h-2.5 w-2.5" style={{ color: letterheadColorHex }} />
+                    {displayValue(data.employerContact)}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>Email: {displayValue(data.employerEmail)}</p>
+                  <p>Tel: {displayValue(data.employerContact)}</p>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -559,11 +616,11 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             <p className="mt-0.5">{companyAddressDisplay}</p>
             <div className="mt-1 flex items-center justify-center gap-4">
               <span className="inline-flex items-center gap-1">
-                <Phone className="h-3 w-3" />
+                <Phone className="h-3 w-3" style={{ color: letterheadColorHex }} />
                 {displayValue(data.employerContact)}
               </span>
               <span className="inline-flex items-center gap-1">
-                <Mail className="h-3 w-3" />
+                <Mail className="h-3 w-3" style={{ color: letterheadColorHex }} />
                 {displayValue(data.employerEmail)}
               </span>
             </div>
@@ -659,14 +716,15 @@ const MisconductTerminationGenerator = ({
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const addendumModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+  const addendumModalSelectContentClass = "!rounded";
   const addendumModalSelectItemClass =
-    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getAddendumModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
-  const fixedTooltipContentClass = "w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
+  const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
   const snippetContainerWidthMm = 150;
@@ -690,6 +748,7 @@ const MisconductTerminationGenerator = ({
     age: "",
     companyLogoDataUrl: "",
     logoPlacement: "center",
+    letterheadColor: defaultLetterheadColor,
     issuer: "",
     chairperson: "",
     noticeMethod: "",
@@ -740,6 +799,8 @@ const MisconductTerminationGenerator = ({
     reportsTo: "",
     additionalNotes: "",
   });
+  const selectedLetterheadColorOption =
+    letterheadColorOptions.find((option) => option.value === formData.letterheadColor) ?? letterheadColorOptions[0];
 
   const sortedEmployees = useMemo(
     () =>
@@ -1034,6 +1095,7 @@ const MisconductTerminationGenerator = ({
       age: "",
       companyLogoDataUrl: "",
       logoPlacement: "center",
+      letterheadColor: defaultLetterheadColor,
       issuer: "",
       chairperson: "",
       noticeMethod: "",
@@ -1372,6 +1434,7 @@ const MisconductTerminationGenerator = ({
       employerEmail: profile?.company_email || "",
       companyLogoDataUrl: "",
       logoPlacement: "center",
+      letterheadColor: defaultLetterheadColor,
     }));
     setCompanyLogoPreview("");
     if (companyLogoInputRef.current) {
@@ -1637,6 +1700,7 @@ const MisconductTerminationGenerator = ({
       newEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
+      letterheadColor: getLetterheadColorHex(formData.letterheadColor),
       issuer: formData.issuer,
       chairperson: formData.chairperson,
       noticeMethod: formData.noticeMethod,
@@ -1806,8 +1870,9 @@ const MisconductTerminationGenerator = ({
       y += lines.length * lineHeight;
     };
 
-    const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl();
-    const pdfMailIconDataUrl = createPdfMailIconDataUrl();
+    const letterheadColorHex = getLetterheadColorHex(data.letterheadColor);
+    const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl(letterheadColorHex);
+    const pdfMailIconDataUrl = createPdfMailIconDataUrl(letterheadColorHex);
 
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
@@ -1883,13 +1948,13 @@ const MisconductTerminationGenerator = ({
 
     const headerTop = y;
     const rightX = margin + contentWidth;
-    const headerLineHeight = 4;
-    const headerLines = [
+    const headerLineHeight = 3.5;
+    const employerEmailText = valueOrLine(data.employerEmail);
+    const employerPhoneText = valueOrLine(data.employerContact);
+    const headerInfoLines = [
       valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)),
       ...(data.tradingName?.trim() ? [`t/a ${data.tradingName.trim()}`] : []),
       ...(companyAddressLines.length > 0 ? companyAddressLines : ["Address"]),
-      `Email: ${valueOrLine(data.employerEmail)}`,
-      `Tel: ${valueOrLine(data.employerContact)}`,
     ];
 
     let logoTopForBalance = margin;
@@ -1939,27 +2004,59 @@ const MisconductTerminationGenerator = ({
       }
 
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(headerLines[0], rightX, headerTop, { align: "right" });
+      doc.setFontSize(7);
+      doc.text(headerInfoLines[0], rightX, headerTop, { align: "right" });
       let detailsY = headerTop + headerLineHeight;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      headerLines.slice(1).forEach((line) => {
+      doc.setFontSize(7);
+      headerInfoLines.slice(1).forEach((line) => {
         doc.text(line, rightX, detailsY, { align: "right" });
         detailsY += headerLineHeight;
       });
+      const iconTextGap = 0.9;
+      const iconSize = 2.7;
+      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
+      const hasMailIcon = Boolean(pdfMailIconDataUrl);
+      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
+      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
+      const phoneTextWidth = doc.getTextWidth(employerPhoneText);
+      const emailTextWidth = doc.getTextWidth(employerEmailText);
+      const emailRowWidth = mailIconWidth + iconTextGap + emailTextWidth;
+      const emailStartX = rightX - emailRowWidth;
+      if (hasMailIcon) {
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", emailStartX, detailsY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Email:", emailStartX, detailsY);
+      }
+      const emailTextX = emailStartX + mailIconWidth + iconTextGap;
+      doc.text(employerEmailText, emailTextX, detailsY);
+      detailsY += headerLineHeight;
+      const phoneRowWidth = phoneIconWidth + iconTextGap + phoneTextWidth;
+      const phoneStartX = rightX - phoneRowWidth;
+      if (hasPhoneIcon) {
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", phoneStartX, detailsY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Tel:", phoneStartX, detailsY);
+      }
+      const phoneTextX = phoneStartX + phoneIconWidth + iconTextGap;
+      doc.text(employerPhoneText, phoneTextX, detailsY);
+      detailsY += headerLineHeight;
       y = Math.max(logoBottomY + 6, detailsY + 2);
     } else {
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(headerLines[0], rightX, headerTop, { align: "right" });
+      doc.setFontSize(7);
+      doc.text(headerInfoLines[0], rightX, headerTop, { align: "right" });
       y = headerTop + headerLineHeight;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      headerLines.slice(1).forEach((line) => {
+      doc.setFontSize(7);
+      headerInfoLines.slice(1).forEach((line) => {
         doc.text(line, rightX, y, { align: "right" });
         y += headerLineHeight;
       });
+      doc.text(`Email: ${employerEmailText}`, rightX, y, { align: "right" });
+      y += headerLineHeight;
+      doc.text(`Tel: ${employerPhoneText}`, rightX, y, { align: "right" });
+      y += headerLineHeight;
     }
 
     doc.setDrawColor(203, 213, 225);
@@ -2085,11 +2182,11 @@ const MisconductTerminationGenerator = ({
       const footerLineGap = 3.5;
       y = footerStartY + 3.5;
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
+      doc.setFontSize(7);
       doc.text(companyIdentity, margin + contentWidth / 2, y, { align: "center" });
       y += footerLineGap;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       if (hasRegistrationNumber) {
         doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, y, { align: "center" });
         y += footerLineGap;
@@ -2100,7 +2197,7 @@ const MisconductTerminationGenerator = ({
       const emailText = valueOrLine(data.employerEmail);
       const iconTextGap = 0.9;
       const itemGap = 4;
-      const iconSize = 3;
+      const iconSize = 2.7;
       const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
       const hasMailIcon = Boolean(pdfMailIconDataUrl);
       const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
@@ -2117,7 +2214,7 @@ const MisconductTerminationGenerator = ({
         emailTextWidth;
       const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
       if (hasPhoneIcon) {
-        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, y - iconSize + 0.25, iconSize, iconSize, undefined, "FAST");
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
       } else {
         doc.text("Tel:", contactStartX, y);
       }
@@ -2125,7 +2222,7 @@ const MisconductTerminationGenerator = ({
       doc.text(phoneText, phoneTextX, y);
       const mailIconX = phoneTextX + phoneTextWidth + itemGap;
       if (hasMailIcon) {
-        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, y - iconSize + 0.25, iconSize, iconSize, undefined, "FAST");
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
       } else {
         doc.text("Email:", mailIconX, y);
       }
@@ -2540,6 +2637,41 @@ const MisconductTerminationGenerator = ({
                         </div>
                       </div>
                     ) : null}
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="letterheadColor" className={modalFieldLabelClass}>Letterhead color</Label>
+                      <Select
+                        value={getLetterheadColorHex(formData.letterheadColor)}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, letterheadColor: value }))}
+                      >
+                        <SelectTrigger
+                          id="letterheadColor"
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.letterheadColor))} ${addendumModalDropdownToneClass}`}
+                        >
+                          <div className="flex w-full items-center gap-2">
+                            <span
+                              className="h-4 w-4 shrink-0 rounded-[2px] border border-slate-300"
+                              style={{ backgroundColor: selectedLetterheadColorOption.value }}
+                              aria-hidden="true"
+                            />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent className={`${addendumModalSelectContentClass} p-2`}>
+                          <div className="grid grid-cols-7 gap-1">
+                            {letterheadColorOptions.map((option, index) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                                className="!h-6 !w-6 !rounded-[2px] !p-0 !pl-0 !pr-0 !justify-center border border-slate-300 [&_.absolute]:hidden"
+                                style={{ backgroundColor: option.value }}
+                                aria-label={`Color ${index + 1}`}
+                              >
+                                <span className="sr-only">{`Color ${index + 1}`}</span>
+                              </SelectItem>
+                            ))}
+                          </div>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2548,7 +2680,7 @@ const MisconductTerminationGenerator = ({
                 <div className="space-y-3">
                     <div className="space-y-2.5">
                       <div className="space-y-1.5">
-                        <Label htmlFor="employee" className={modalFieldLabelClass}>Select Employee (optional)</Label>
+                        <Label htmlFor="employee" className={modalFieldLabelClass}>Select employee (optional)</Label>
                       <Select
                         value={selectedEmployeeId}
                         onValueChange={handleEmployeeSelect}
@@ -2563,7 +2695,7 @@ const MisconductTerminationGenerator = ({
                         </SelectTrigger>
                         <SelectContent
                           hideScrollButtons
-                          className="w-[var(--radix-select-trigger-width)] p-0"
+                          className={`${addendumModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
                         >
                           <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
                             <Input
@@ -2590,7 +2722,7 @@ const MisconductTerminationGenerator = ({
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="employeeName" className={modalFieldLabelClass}>
-                          Employee Name <span className="text-red-500">*</span>
+                          Employee name <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           id="employeeName"
@@ -2601,7 +2733,7 @@ const MisconductTerminationGenerator = ({
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="employeeSurname" className={modalFieldLabelClass}>
-                          Employee Surname <span className="text-red-500">*</span>
+                          Employee surname <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           id="employeeSurname"
@@ -2626,7 +2758,7 @@ const MisconductTerminationGenerator = ({
                           <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.idType))} ${addendumModalDropdownToneClass}`}>
                             <SelectValue placeholder="Choose document type" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={addendumModalSelectContentClass}>
                             <SelectItem value="id" className={addendumModalSelectItemClass}>ID Number</SelectItem>
                             <SelectItem value="passport" className={addendumModalSelectItemClass}>Passport Number</SelectItem>
                           </SelectContent>
@@ -2634,7 +2766,7 @@ const MisconductTerminationGenerator = ({
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="idOrPassport" className={modalFieldLabelClass}>
-                          {formData.idType === "id" ? "ID Number" : "Passport Number"}{" "}
+                          {formData.idType === "id" ? "ID number" : "Passport number"}{" "}
                           <span className="text-red-500">*</span>
                         </Label>
                         <Input
@@ -2735,7 +2867,7 @@ const MisconductTerminationGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="issueDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of Notice <span className="text-red-500">*</span>
+                        Date of notice <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2773,7 +2905,7 @@ const MisconductTerminationGenerator = ({
                               openNoticeDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
+                          className={`${getAddendumModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                         <input
                           ref={noticeDatePickerRef}
@@ -2788,7 +2920,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="noticePeriod" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice Period <span className="text-red-500">*</span>
+                        Notice period <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2821,11 +2953,11 @@ const MisconductTerminationGenerator = ({
                         >
                           <SelectValue
                             placeholder="Select notice period"
-                            className="data-[placeholder]:text-slate-400"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
                             style={!formData.noticePeriod ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={addendumModalSelectContentClass}>
                           {noticePeriodOptions.map((option) => (
                             <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
                               {option}
@@ -2837,7 +2969,7 @@ const MisconductTerminationGenerator = ({
                     {formData.noticePeriod !== "No notice" ? (
                       <div className="space-y-1.5">
                         <Label htmlFor="noticeMethod" className={modalFieldLabelClass}>
-                          Notice Method <span className="text-red-500">*</span>
+                          Notice method <span className="text-red-500">*</span>
                         </Label>
                         <Select
                           value={formData.noticeMethod}
@@ -2848,11 +2980,11 @@ const MisconductTerminationGenerator = ({
                           >
                             <SelectValue
                               placeholder="Select notice method"
-                              className="data-[placeholder]:text-slate-400"
+                              className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
                               style={!formData.noticeMethod ? { color: "#94a3b8" } : undefined}
                             />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={addendumModalSelectContentClass}>
                             {noticeMethodOptions.map((option) => (
                               <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
                                 {option.label}
@@ -2864,7 +2996,7 @@ const MisconductTerminationGenerator = ({
                     ) : null}
                     <div className="space-y-1.5">
                       <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of Termination <span className="text-red-500">*</span>
+                        Date of termination <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2894,13 +3026,13 @@ const MisconductTerminationGenerator = ({
                           readOnly
                           placeholder="Auto-calculated from notice date and period"
                           value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:text-gray-900`}
+                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of Hearing <span className="text-red-500">*</span>
+                        Date of hearing <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2934,7 +3066,7 @@ const MisconductTerminationGenerator = ({
                               openHearingDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.hearingDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
+                          className={`${getAddendumModalInputClass(formData.hearingDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                         <input
                           ref={hearingDatePickerRef}
@@ -2981,7 +3113,7 @@ const MisconductTerminationGenerator = ({
                         <span
                           className={cn(
                             "block truncate text-[11px]",
-                            formData.misconductTypes.length > 0 ? "text-slate-900" : "text-slate-400",
+                            formData.misconductTypes.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
                           {formData.misconductTypes.length > 0
@@ -2992,7 +3124,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="appliedProgressiveDisciplinaryAction" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Progressive Disciplinary Action (PDA) <span className="text-red-500">*</span>
+                        Progressive disciplinary action (PDA) <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3024,11 +3156,11 @@ const MisconductTerminationGenerator = ({
                         >
                           <SelectValue
                             placeholder="Select yes or no"
-                            className="data-[placeholder]:text-slate-400"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
                             style={!formData.appliedProgressiveDisciplinaryAction ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={addendumModalSelectContentClass}>
                           {progressiveDisciplinaryActionOptions.map((option) => (
                             <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
                               {option}
@@ -3039,7 +3171,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice of Appeal <span className="text-red-500">*</span>
+                        Notice of appeal <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3067,11 +3199,11 @@ const MisconductTerminationGenerator = ({
                         >
                           <SelectValue
                             placeholder="Select notice of appeal"
-                            className="data-[placeholder]:text-slate-400"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
                             style={!formData.noticeOfAppeal ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={addendumModalSelectContentClass}>
                           {noticeOfAppealOptions.map((option) => (
                             <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
                               {option}
@@ -3112,11 +3244,11 @@ const MisconductTerminationGenerator = ({
                         >
                           <SelectValue
                             placeholder="Select chairperson type"
-                            className="data-[placeholder]:text-slate-400"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
                             style={!formData.chairperson ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className={addendumModalSelectContentClass}>
                           {chairpersonOptions.map((option) => (
                             <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
                               {option.label}
@@ -3133,13 +3265,13 @@ const MisconductTerminationGenerator = ({
                         id="issuer"
                         value={formData.issuer}
                         onChange={(e) => setFormData((prev) => ({ ...prev, issuer: e.target.value }))}
-                        placeholder="Name and Surname of person issuing this document."
-                        className={getAddendumModalInputClass(formData.issuer.trim().length > 0)}
+                        placeholder="Name and surname of person issuing this document."
+                        className={`${getAddendumModalInputClass(formData.issuer.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="transmissionMethods" className={modalFieldLabelClass}>
-                        Method of Issuing <span className="text-red-500">*</span>
+                        Method of issuing <span className="text-red-500">*</span>
                       </Label>
                       <button
                         id="transmissionMethods"
@@ -3150,7 +3282,7 @@ const MisconductTerminationGenerator = ({
                         <span
                           className={cn(
                             "block truncate text-[11px]",
-                            formData.transmissionMethods.length > 0 ? "text-slate-900" : "text-slate-400",
+                            formData.transmissionMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
                           {formData.transmissionMethods.length > 0
@@ -3194,7 +3326,7 @@ const MisconductTerminationGenerator = ({
                               Reset
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent side="top">Reset fields for this step</TooltipContent>
+                          <TooltipContent side="top" className="!rounded">Reset fields for this step</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                     </div>

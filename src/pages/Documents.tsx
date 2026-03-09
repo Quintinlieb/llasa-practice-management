@@ -359,9 +359,9 @@ const Documents = () => {
   ] as const;
   const noticeTerminationStepNotes = [
     [
-      "The company name, registration number, and address are pulled from Company Settings.",
-      "If applicable, you may insert a trading name. Employer contact and email are auto-populated but can be changed.",
-      "The contact number and email used here will be the contact details the employee uses for future communication.",
+      "This step sets how your company details appear on the letterhead in the final document.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this letter if needed.",
+      "If you upload a logo, choose the letterhead layout and colour theme carefully.",
     ],
     [
       "Select an employee from your saved list or capture the employee details manually.",

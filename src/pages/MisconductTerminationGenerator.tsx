@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,7 +32,7 @@ type ContractFormState = {
   age: string;
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
-  letterheadColor: string;
+  letterheadThemeColors: string[];
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -72,7 +72,7 @@ type AddendumData = PermanentContractFormData & {
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
-  letterheadColor: string;
+  letterheadThemeColors: string[];
   issuer: string;
   chairperson: string;
   noticeMethod: string;
@@ -157,7 +157,7 @@ const logoPlacementOptions = [
 
 const letterheadColorOptions = [
   { value: "#111827" }, // black
-  { value: "#dc2626" }, // red
+  { value: "#FF0000" }, // red
   { value: "#1e3a8a" }, // blue (dark)
   { value: "#166534" }, // green (dark)
   { value: "#facc15" }, // yellow
@@ -172,10 +172,32 @@ const letterheadColorOptions = [
   { value: "#ec4899" }, // pink
 ] as const;
 
-const defaultLetterheadColor = letterheadColorOptions[0].value;
+const defaultDividerColor = "#6b7280";
+const defaultIconColor = "#111827";
+const defaultDividerLineRgb: [number, number, number] = [203, 213, 225];
 
-const getLetterheadColorHex = (value?: string) =>
-  letterheadColorOptions.some((option) => option.value === value) ? (value as string) : defaultLetterheadColor;
+const sanitizeThemeColors = (values?: string[]) => {
+  const valid = new Set(letterheadColorOptions.map((option) => option.value.toLowerCase()));
+  const input = Array.isArray(values) ? values : [];
+  const normalizedValues: string[] = [];
+  input.forEach((value) => {
+    const normalized = (value || "").trim().toLowerCase();
+    if (!valid.has(normalized)) return;
+    const canonical = letterheadColorOptions.find((option) => option.value.toLowerCase() === normalized)?.value;
+    if (!canonical) return;
+    normalizedValues.push(canonical);
+  });
+  return normalizedValues.slice(0, 2);
+};
+
+const getThemeColors = (values?: string[]) => {
+  const selected = sanitizeThemeColors(values);
+  const dividerColor = selected[0] ?? defaultDividerColor;
+  const iconColor =
+    selected[1] ??
+    (selected[0] && isGreyLetterheadColor(selected[0]) ? selected[0] : defaultIconColor);
+  return { selected, dividerColor, iconColor };
+};
 
 const hexToRgb = (hex: string): [number, number, number] => {
   const normalized = hex.replace("#", "");
@@ -187,6 +209,33 @@ const hexToRgb = (hex: string): [number, number, number] => {
   const b = Number.parseInt(full.slice(4, 6), 16);
   if ([r, g, b].some((channel) => Number.isNaN(channel))) return [29, 78, 216];
   return [r, g, b];
+};
+
+const isBlackLetterheadColor = (hex: string) => hex.toLowerCase() === "#111827";
+const isGreyLetterheadColor = (hex: string) => hex.toLowerCase() === "#6b7280";
+const shouldTintDividerLines = (hex: string) => !isBlackLetterheadColor(hex) && !isGreyLetterheadColor(hex);
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const mixHexWithWhite = (hex: string, alpha = 0.5): [number, number, number] => {
+  const [r, g, b] = hexToRgb(hex);
+  const blend = (channel: number) => Math.round(channel * alpha + 255 * (1 - alpha));
+  return [blend(r), blend(g), blend(b)];
+};
+
+const getPreviewDividerColor = (hex: string) => {
+  if (isBlackLetterheadColor(hex)) return hex;
+  if (isGreyLetterheadColor(hex)) return undefined;
+  return hexToRgba(hex, 0.5);
+};
+
+const getPdfDividerRgb = (hex: string): [number, number, number] => {
+  if (isBlackLetterheadColor(hex)) return hexToRgb(hex);
+  if (isGreyLetterheadColor(hex)) return defaultDividerLineRgb;
+  return mixHexWithWhite(hex, 0.5);
 };
 
 const noticePeriodOptions = [
@@ -478,7 +527,9 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const hasUploadedLogo = Boolean(logoPreviewUrl);
   const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
   const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
-  const letterheadColorHex = getLetterheadColorHex(data.letterheadColor);
+  const { dividerColor, iconColor } = getThemeColors(data.letterheadThemeColors);
+  const previewDividerColor = getPreviewDividerColor(dividerColor);
+  const previewDividerStyle = previewDividerColor ? { borderColor: previewDividerColor } : undefined;
   const companyIdentityDisplay = tradingNameDisplay
     ? `${companyNameDisplay} t/a ${tradingNameDisplay}`
     : companyNameDisplay;
@@ -537,24 +588,30 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
               {useLeftLogoLayout ? (
                 <>
                   <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Mail className="h-2.5 w-2.5" style={{ color: letterheadColorHex }} />
+                    <Mail className="h-2.5 w-2.5" style={{ color: iconColor }} />
                     {displayValue(data.employerEmail)}
                   </p>
                   <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Phone className="h-2.5 w-2.5" style={{ color: letterheadColorHex }} />
+                    <Phone className="h-2.5 w-2.5" style={{ color: iconColor }} />
                     {displayValue(data.employerContact)}
                   </p>
                 </>
               ) : (
                 <>
-                  <p>Email: {displayValue(data.employerEmail)}</p>
-                  <p>Tel: {displayValue(data.employerContact)}</p>
+                  <p className="inline-flex w-full items-center justify-end gap-1">
+                    <Mail className="h-2.5 w-2.5" style={{ color: iconColor }} />
+                    {displayValue(data.employerEmail)}
+                  </p>
+                  <p className="inline-flex w-full items-center justify-end gap-1">
+                    <Phone className="h-2.5 w-2.5" style={{ color: iconColor }} />
+                    {displayValue(data.employerContact)}
+                  </p>
                 </>
               )}
             </div>
           </div>
         )}
-        <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} aria-hidden="true" />
+        <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
         <div className="mt-2 text-right">{issueDateDisplay}</div>
         <div className="mt-4">
           <p className="flex items-baseline gap-4">
@@ -610,17 +667,17 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
           ) : null}
         </div>
         {useCenteredLogoLayout ? (
-          <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]">
+          <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
             <p className="font-semibold">{companyIdentityDisplay}</p>
             {registrationNumberDisplay ? <p className="mt-0.5">Reg No: {registrationNumberDisplay}</p> : null}
             <p className="mt-0.5">{companyAddressDisplay}</p>
             <div className="mt-1 flex items-center justify-center gap-4">
               <span className="inline-flex items-center gap-1">
-                <Phone className="h-3 w-3" style={{ color: letterheadColorHex }} />
+                <Phone className="h-3 w-3" style={{ color: iconColor }} />
                 {displayValue(data.employerContact)}
               </span>
               <span className="inline-flex items-center gap-1">
-                <Mail className="h-3 w-3" style={{ color: letterheadColorHex }} />
+                <Mail className="h-3 w-3" style={{ color: iconColor }} />
                 {displayValue(data.employerEmail)}
               </span>
             </div>
@@ -698,6 +755,8 @@ const MisconductTerminationGenerator = ({
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
+  const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
+  const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
@@ -748,7 +807,7 @@ const MisconductTerminationGenerator = ({
     age: "",
     companyLogoDataUrl: "",
     logoPlacement: "center",
-    letterheadColor: defaultLetterheadColor,
+    letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
     chairperson: "",
     noticeMethod: "",
@@ -799,8 +858,7 @@ const MisconductTerminationGenerator = ({
     reportsTo: "",
     additionalNotes: "",
   });
-  const selectedLetterheadColorOption =
-    letterheadColorOptions.find((option) => option.value === formData.letterheadColor) ?? letterheadColorOptions[0];
+  const selectedLetterheadThemeColors = sanitizeThemeColors(formData.letterheadThemeColors);
 
   const sortedEmployees = useMemo(
     () =>
@@ -1095,7 +1153,7 @@ const MisconductTerminationGenerator = ({
       age: "",
       companyLogoDataUrl: "",
       logoPlacement: "center",
-      letterheadColor: defaultLetterheadColor,
+      letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
       chairperson: "",
       noticeMethod: "",
@@ -1434,7 +1492,7 @@ const MisconductTerminationGenerator = ({
       employerEmail: profile?.company_email || "",
       companyLogoDataUrl: "",
       logoPlacement: "center",
-      letterheadColor: defaultLetterheadColor,
+      letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     setCompanyLogoPreview("");
     if (companyLogoInputRef.current) {
@@ -1561,6 +1619,50 @@ const MisconductTerminationGenerator = ({
     setDraftTransmissionMethods([]);
   };
 
+  const openColorThemePicker = () => {
+    setDraftLetterheadThemeColors(sanitizeThemeColors(formData.letterheadThemeColors));
+    setColorThemePickerOpen(true);
+  };
+
+  const cancelColorThemePicker = () => {
+    setColorThemePickerOpen(false);
+    setDraftLetterheadThemeColors([]);
+  };
+
+  const toggleDraftThemeColor = (value: string) => {
+    setDraftLetterheadThemeColors((prev) => {
+      const normalized = sanitizeThemeColors(prev);
+      if (normalized.length < 2) {
+        return [...normalized, value];
+      }
+
+      const lastIndex = normalized.lastIndexOf(value);
+      if (lastIndex >= 0) {
+        return normalized.filter((_, index) => index !== lastIndex);
+      }
+
+      if (normalized.length >= 2) {
+        toast({
+          title: "Only two colors allowed",
+          description: "Choose up to two colors. Deselect one to choose another.",
+        });
+        return normalized;
+      }
+      return normalized;
+    });
+  };
+
+  const applyColorThemePicker = () => {
+    const nextColors = sanitizeThemeColors(draftLetterheadThemeColors);
+    setFormData((prev) => ({
+      ...prev,
+      letterheadThemeColors:
+        nextColors.length === 0 ? [defaultDividerColor, defaultIconColor] : nextColors,
+    }));
+    setColorThemePickerOpen(false);
+    setDraftLetterheadThemeColors([]);
+  };
+
   const openContractReferencePicker = () => {
     const picker = contractReferencePickerRef.current;
     if (!picker) return;
@@ -1623,7 +1725,12 @@ const MisconductTerminationGenerator = ({
 
   const clearCompanyLogo = () => {
     setCompanyLogoPreview("");
-    setFormData((prev) => ({ ...prev, companyLogoDataUrl: "", logoPlacement: "center" }));
+    setFormData((prev) => ({
+      ...prev,
+      companyLogoDataUrl: "",
+      logoPlacement: "center",
+      letterheadThemeColors: [defaultDividerColor, defaultIconColor],
+    }));
     if (companyLogoInputRef.current) {
       companyLogoInputRef.current.value = "";
     }
@@ -1700,7 +1807,7 @@ const MisconductTerminationGenerator = ({
       newEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
-      letterheadColor: getLetterheadColorHex(formData.letterheadColor),
+      letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
       chairperson: formData.chairperson,
       noticeMethod: formData.noticeMethod,
@@ -1870,9 +1977,10 @@ const MisconductTerminationGenerator = ({
       y += lines.length * lineHeight;
     };
 
-    const letterheadColorHex = getLetterheadColorHex(data.letterheadColor);
-    const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl(letterheadColorHex);
-    const pdfMailIconDataUrl = createPdfMailIconDataUrl(letterheadColorHex);
+    const { dividerColor, iconColor } = getThemeColors(data.letterheadThemeColors);
+    const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl(iconColor);
+    const pdfMailIconDataUrl = createPdfMailIconDataUrl(iconColor);
+    const [dividerR, dividerG, dividerB] = getPdfDividerRgb(dividerColor);
 
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
@@ -2053,16 +2161,40 @@ const MisconductTerminationGenerator = ({
         doc.text(line, rightX, y, { align: "right" });
         y += headerLineHeight;
       });
-      doc.text(`Email: ${employerEmailText}`, rightX, y, { align: "right" });
+      const iconTextGap = 0.9;
+      const iconSize = 2.7;
+      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
+      const hasMailIcon = Boolean(pdfMailIconDataUrl);
+      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
+      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
+      const phoneTextWidth = doc.getTextWidth(employerPhoneText);
+      const emailTextWidth = doc.getTextWidth(employerEmailText);
+      const emailRowWidth = mailIconWidth + iconTextGap + emailTextWidth;
+      const emailStartX = rightX - emailRowWidth;
+      if (hasMailIcon) {
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", emailStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Email:", emailStartX, y);
+      }
+      const emailTextX = emailStartX + mailIconWidth + iconTextGap;
+      doc.text(employerEmailText, emailTextX, y);
       y += headerLineHeight;
-      doc.text(`Tel: ${employerPhoneText}`, rightX, y, { align: "right" });
+      const phoneRowWidth = phoneIconWidth + iconTextGap + phoneTextWidth;
+      const phoneStartX = rightX - phoneRowWidth;
+      if (hasPhoneIcon) {
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", phoneStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Tel:", phoneStartX, y);
+      }
+      const phoneTextX = phoneStartX + phoneIconWidth + iconTextGap;
+      doc.text(employerPhoneText, phoneTextX, y);
       y += headerLineHeight;
     }
 
-    doc.setDrawColor(203, 213, 225);
+    doc.setDrawColor(dividerR, dividerG, dividerB);
     doc.line(margin, y, margin + contentWidth, y);
     doc.setDrawColor(0, 0, 0);
-    y += 4;
+    y += 4.6;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
@@ -2176,7 +2308,7 @@ const MisconductTerminationGenerator = ({
         doc.addPage();
       }
       const footerStartY = pageHeight - bottomGap - footerHeight;
-      doc.setDrawColor(203, 213, 225);
+      doc.setDrawColor(dividerR, dividerG, dividerB);
       doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
       doc.setDrawColor(0, 0, 0);
       const footerLineGap = 3.5;
@@ -2472,7 +2604,7 @@ const MisconductTerminationGenerator = ({
                         className={getAddendumModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className="space-y-1.5">
                       <Label htmlFor="physicalAddress" className={modalFieldLabelClass}>Registered address</Label>
                       <Input
                         id="physicalAddress"
@@ -2637,40 +2769,29 @@ const MisconductTerminationGenerator = ({
                         </div>
                       </div>
                     ) : null}
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="letterheadColor" className={modalFieldLabelClass}>Letterhead color</Label>
-                      <Select
-                        value={getLetterheadColorHex(formData.letterheadColor)}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, letterheadColor: value }))}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="letterheadColorTheme" className={modalFieldLabelClass}>Colour theme</Label>
+                      <button
+                        id="letterheadColorTheme"
+                        type="button"
+                        onClick={openColorThemePicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${selectedLetterheadThemeColors.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
-                        <SelectTrigger
-                          id="letterheadColor"
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.letterheadColor))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <div className="flex w-full items-center gap-2">
-                            <span
-                              className="h-4 w-4 shrink-0 rounded-[2px] border border-slate-300"
-                              style={{ backgroundColor: selectedLetterheadColorOption.value }}
-                              aria-hidden="true"
-                            />
-                          </div>
-                        </SelectTrigger>
-                        <SelectContent className={`${addendumModalSelectContentClass} p-2`}>
-                          <div className="grid grid-cols-7 gap-1">
-                            {letterheadColorOptions.map((option, index) => (
-                              <SelectItem
-                                key={option.value}
-                                value={option.value}
-                                className="!h-6 !w-6 !rounded-[2px] !p-0 !pl-0 !pr-0 !justify-center border border-slate-300 [&_.absolute]:hidden"
-                                style={{ backgroundColor: option.value }}
-                                aria-label={`Color ${index + 1}`}
-                              >
-                                <span className="sr-only">{`Color ${index + 1}`}</span>
-                              </SelectItem>
+                        {selectedLetterheadThemeColors.length > 0 ? (
+                          <span className="flex items-center gap-2">
+                            {selectedLetterheadThemeColors.map((color, index) => (
+                              <span
+                                key={`${color}-${index}`}
+                                className="relative h-4 w-4 rounded-[2px] border border-slate-300"
+                                style={{ backgroundColor: color }}
+                                aria-label={`Selected color ${index + 1}`}
+                              />
                             ))}
-                          </div>
-                        </SelectContent>
-                      </Select>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Select two colours</span>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -4063,6 +4184,103 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyTransmissionPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={colorThemePickerOpen} onOpenChange={(open) => (open ? openColorThemePicker() : cancelColorThemePicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Palette className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Colour Theme</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose up to two colours. Selection order applies: 1 for divider lines, 2 for icon colour.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <div className="rounded border border-slate-200 bg-white p-3">
+              <div className="grid grid-cols-7 gap-2">
+                {letterheadColorOptions.map((option) => {
+                  const selectedPositions = draftLetterheadThemeColors
+                    .map((color, index) => (color === option.value ? index + 1 : null))
+                    .filter((position): position is number => position !== null);
+                  const isSelected = selectedPositions.length > 0;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => toggleDraftThemeColor(option.value)}
+                      className={`relative h-8 w-8 rounded-[2px] border transition ${isSelected ? "border-blue-600 ring-1 ring-blue-200" : "border-slate-300 hover:border-blue-500"}`}
+                      style={{ backgroundColor: option.value }}
+                      aria-label={`Theme colour ${option.value}`}
+                    >
+                      {isSelected ? (
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                          {selectedPositions.join("/")}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              {draftLetterheadThemeColors.length === 0 ? (
+                <div className="text-xs text-slate-600">No colours selected</div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  {draftLetterheadThemeColors.map((color, index) => (
+                    <span key={`${color}-${index}`} className="inline-flex items-center gap-2 rounded border border-slate-300 px-2 py-1 text-xs text-slate-700">
+                      <span className="inline-flex h-4 w-4 rounded-[2px] border border-slate-300" style={{ backgroundColor: color }} />
+                      <span>{index === 0 ? "Divider(s)" : "Icons"}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelColorThemePicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftLetterheadThemeColors([])}
+                  disabled={draftLetterheadThemeColors.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyColorThemePicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done

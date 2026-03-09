@@ -227,6 +227,8 @@ const Documents = () => {
           category.items.some((item) => item.id === selectedDocument),
         )?.title ?? ""
       : "";
+  const breadcrumbCategoryTitle =
+    selectedDocument === "noticeTermination" ? "Termination Letter" : activeCategoryTitle;
   const activeDocumentLabel =
     selectedDocument
       ? documentCategories
@@ -413,7 +415,7 @@ const Documents = () => {
   );
   const greetingName = profile?.user_name ?? "";
   const breadcrumbParts: string[] = [];
-  if (activeCategoryTitle) breadcrumbParts.push(activeCategoryTitle);
+  if (breadcrumbCategoryTitle) breadcrumbParts.push(breadcrumbCategoryTitle);
   if (activeDocumentLabel) breadcrumbParts.push(activeDocumentLabel);
   if (breadcrumbStep) breadcrumbParts.push(breadcrumbStep);
 
@@ -731,7 +733,7 @@ const Documents = () => {
                       modalDocument === "warnings"
                         ? "Discipline"
                         : modalDocument === "noticeTermination"
-                          ? "Terminations"
+                          ? "Termination Letter"
                           : "Contracts"
                     } / ${
                       modalDocument === "addendum"

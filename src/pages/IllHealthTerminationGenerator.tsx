@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette, Ambulance } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,10 +39,6 @@ type ContractFormState = {
   transmissionMethods: string[];
   noticePeriod: string;
   noticeOfAppeal: string;
-  medicalEvidence: string[];
-  extentOfAbsence: string;
-  absencePeriodStartDate: string;
-  absencePeriodEndDate: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   performanceConsultationDate: string;
@@ -85,10 +81,6 @@ type AddendumData = PermanentContractFormData & {
   transmissionMethods: string[];
   noticePeriod: string;
   noticeOfAppeal: string;
-  medicalEvidence: string[];
-  extentOfAbsence: string;
-  absencePeriodStartDate: string;
-  absencePeriodEndDate: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   performanceConsultationDate: string;
@@ -298,19 +290,6 @@ const improvementPeriodOptions = [
 ] as const;
 
 const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
-const medicalEvidenceOptions = [
-  "Doctor's medical report",
-  "Medical certificate(s)",
-  "Specialist medical report",
-  "Occupational health practitioner report",
-  "Independent medical examination (IME) report",
-  "Hospital records / discharge summary",
-  "Psychological assessment report",
-  "Physiotherapist / rehabilitation report",
-  "Disability assessment report",
-  "Medical boarding recommendation",
-  "Employee's own medical disclosure",
-] as const;
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp"] as const;
 const chairpersonOptions = [
@@ -421,6 +400,15 @@ const formatCompanyDisplayName = (companyName?: string | null, companyType?: str
   if (!type) return name;
   if (name.toLowerCase().includes(type.toLowerCase())) return name;
   return `${name} ${type}`;
+};
+
+const formatNoticePeriodPossessive = (noticePeriodRaw: string) => {
+  const noticePeriod = noticePeriodRaw.trim();
+  if (!noticePeriod) return "[notice period]";
+  if (/^1\s+\w+$/i.test(noticePeriod) && !/s$/i.test(noticePeriod)) {
+    return `${noticePeriod}'s`;
+  }
+  return `${noticePeriod}'`;
 };
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
@@ -816,14 +804,10 @@ const IllHealthTerminationGenerator = ({
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
-  const [medicalEvidencePickerOpen, setMedicalEvidencePickerOpen] = useState(false);
-  const [draftMedicalEvidence, setDraftMedicalEvidence] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const absencePeriodStartDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const absencePeriodEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -880,10 +864,6 @@ const IllHealthTerminationGenerator = ({
     transmissionMethods: [],
     noticePeriod: "",
     noticeOfAppeal: "",
-    medicalEvidence: [],
-    extentOfAbsence: "",
-    absencePeriodStartDate: "",
-    absencePeriodEndDate: "",
     appliedProgressiveDisciplinaryAction: "",
     hearingDate: "",
     performanceConsultationDate: "",
@@ -1213,10 +1193,6 @@ const IllHealthTerminationGenerator = ({
       transmissionMethods: [],
       noticePeriod: "",
       noticeOfAppeal: "",
-      medicalEvidence: [],
-      extentOfAbsence: "",
-      absencePeriodStartDate: "",
-      absencePeriodEndDate: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
       performanceConsultationDate: "",
@@ -1350,9 +1326,6 @@ const IllHealthTerminationGenerator = ({
     () => {
       const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
-      const hasMedicalEvidence = formData.medicalEvidence.length > 0;
-      const hasExtentOfAbsence = Boolean(formData.extentOfAbsence);
-      const hasAbsencePeriod = Boolean(formData.absencePeriodStartDate) && Boolean(formData.absencePeriodEndDate);
       const hasChairperson = Boolean(formData.chairperson);
       const hasHearingDate = Boolean(formData.hearingDate);
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
@@ -1361,9 +1334,6 @@ const IllHealthTerminationGenerator = ({
           formData.issueDate &&
           hasNoticePeriod &&
           hasNoticeOfAppeal &&
-          hasMedicalEvidence &&
-          hasExtentOfAbsence &&
-          hasAbsencePeriod &&
           hasChairperson &&
           hasHearingDate &&
           hasTransmissionMethods,
@@ -1372,10 +1342,6 @@ const IllHealthTerminationGenerator = ({
     [
       formData.noticePeriod,
       formData.noticeOfAppeal,
-      formData.medicalEvidence,
-      formData.extentOfAbsence,
-      formData.absencePeriodStartDate,
-      formData.absencePeriodEndDate,
       formData.chairperson,
       formData.hearingDate,
       formData.performanceConsultationDate,
@@ -1569,10 +1535,6 @@ const IllHealthTerminationGenerator = ({
       transmissionMethods: [],
       noticePeriod: "",
       noticeOfAppeal: "",
-      medicalEvidence: [],
-      extentOfAbsence: "",
-      absencePeriodStartDate: "",
-      absencePeriodEndDate: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
       performanceConsultationDate: "",
@@ -1661,26 +1623,6 @@ const IllHealthTerminationGenerator = ({
     }
   };
 
-  const openAbsencePeriodStartDatePicker = () => {
-    const picker = absencePeriodStartDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openAbsencePeriodEndDatePicker = () => {
-    const picker = absencePeriodEndDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
   const openMisconductPicker = () => {
     setDraftMisconductTypes(formData.misconductTypes);
     setMisconductSearch("");
@@ -1713,22 +1655,6 @@ const IllHealthTerminationGenerator = ({
     setFormData((prev) => ({ ...prev, transmissionMethods: draftTransmissionMethods }));
     setTransmissionPickerOpen(false);
     setDraftTransmissionMethods([]);
-  };
-
-  const openMedicalEvidencePicker = () => {
-    setDraftMedicalEvidence(formData.medicalEvidence);
-    setMedicalEvidencePickerOpen(true);
-  };
-
-  const cancelMedicalEvidencePicker = () => {
-    setMedicalEvidencePickerOpen(false);
-    setDraftMedicalEvidence([]);
-  };
-
-  const applyMedicalEvidencePicker = () => {
-    setFormData((prev) => ({ ...prev, medicalEvidence: draftMedicalEvidence }));
-    setMedicalEvidencePickerOpen(false);
-    setDraftMedicalEvidence([]);
   };
 
   const openColorThemePicker = () => {
@@ -1874,12 +1800,6 @@ const IllHealthTerminationGenerator = ({
     checkRequired(formData.noticePeriod, "Notice period");
     checkRequired(formData.chairperson, "Chairperson");
     checkRequired(formData.hearingDate, "Illness enquiry date");
-    if (formData.medicalEvidence.length === 0) {
-      missingFields.push("Medical evidence");
-    }
-    checkRequired(formData.extentOfAbsence, "Extent of absence");
-    checkRequired(formData.absencePeriodStartDate, "Period of absence (start date)");
-    checkRequired(formData.absencePeriodEndDate, "Period of absence (end date)");
     checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
@@ -1899,17 +1819,6 @@ const IllHealthTerminationGenerator = ({
         if (!allowSameDayHearingNotice && formData.hearingDate === formData.issueDate) {
           throw new Error(SAME_DAY_HEARING_NOTICE_CAUTION);
         }
-      }
-    }
-
-    if (
-      /^\d{4}-\d{2}-\d{2}$/.test(formData.absencePeriodStartDate) &&
-      /^\d{4}-\d{2}-\d{2}$/.test(formData.absencePeriodEndDate)
-    ) {
-      const absenceStartDate = new Date(`${formData.absencePeriodStartDate}T00:00:00`);
-      const absenceEndDate = new Date(`${formData.absencePeriodEndDate}T00:00:00`);
-      if (!Number.isNaN(absenceStartDate.getTime()) && !Number.isNaN(absenceEndDate.getTime()) && absenceStartDate > absenceEndDate) {
-        throw new Error("Period of absence start date cannot be after end date.");
       }
     }
 
@@ -1936,10 +1845,6 @@ const IllHealthTerminationGenerator = ({
       transmissionMethods: formData.transmissionMethods,
       noticePeriod: formData.noticePeriod,
       noticeOfAppeal: formData.noticeOfAppeal,
-      medicalEvidence: formData.medicalEvidence,
-      extentOfAbsence: formData.extentOfAbsence,
-      absencePeriodStartDate: formData.absencePeriodStartDate,
-      absencePeriodEndDate: formData.absencePeriodEndDate,
       appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
       hearingDate: formData.hearingDate,
       performanceConsultationDate: formData.performanceConsultationDate,
@@ -2117,9 +2022,9 @@ const IllHealthTerminationGenerator = ({
     const paragraphOneText = `We refer to the abovementioned matter and the enquiry relating to your ill health held on ${hearingDateDisplay || "[inquiry date]"}.`;
     const paragraphTwoText =
       data.chairperson === "external"
-        ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
-        : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
-    const lastWorkingDaySentence = `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
+        ? "After the chairperson considered the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available."
+        : "After considering the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available.";
+    const lastWorkingDaySentence = `You will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
 
@@ -2134,7 +2039,7 @@ const IllHealthTerminationGenerator = ({
       },
       {
         title: "Paragraph 3",
-        body: `Take notice that your employment is herewith terminated for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+        body: `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(data.noticePeriod)} notice for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
       },
       {
         title: "Paragraph 4",
@@ -3260,9 +3165,7 @@ const IllHealthTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Prior to a dismissal, a proper ill health incapacity procedure should be followed:
-                              <br />
-                              Consultation(s) &gt; hearing/inquiry.
+                              Before you can dismiss, a proper ill health investigation should be concluded with a hearing.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -3293,143 +3196,6 @@ const IllHealthTerminationGenerator = ({
                           aria-hidden="true"
                           tabIndex={-1}
                         />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="medicalEvidence" className={modalFieldLabelClass}>
-                        Medical evidence <span className="text-red-500">*</span>
-                      </Label>
-                      <button
-                        id="medicalEvidence"
-                        type="button"
-                        onClick={openMedicalEvidencePicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.medicalEvidence.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
-                      >
-                        <span
-                          className={cn(
-                            "block truncate text-[11px]",
-                            formData.medicalEvidence.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
-                          )}
-                        >
-                          {formData.medicalEvidence.length > 0
-                            ? `${formData.medicalEvidence.length} item(s) selected`
-                            : "Select medical evidence item(s)"}
-                        </span>
-                      </button>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="extentOfAbsence" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Extent of absence <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Extent of absence info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This is the total number of days the employee has been absent due to illness/injury during the specific period of absence.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Input
-                        id="extentOfAbsence"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Number of days absent"
-                        value={formData.extentOfAbsence}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            extentOfAbsence: e.target.value.replace(/\D/g, ""),
-                          }))
-                        }
-                        className={`${getAddendumModalInputClass(formData.extentOfAbsence.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                      />
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label className={modalFieldLabelClass}>
-                        Period of absence <span className="text-red-500">*</span>
-                      </Label>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label htmlFor="absencePeriodStartDate" className={modalFieldLabelClass}>
-                            From
-                          </Label>
-                          <div className="flex items-start gap-2">
-                            <Input
-                              id="absencePeriodStartDate"
-                              type="text"
-                              readOnly
-                              placeholder="Please select a date"
-                              value={formData.absencePeriodStartDate ? toDisplayDate(formData.absencePeriodStartDate) : ""}
-                              onClick={openAbsencePeriodStartDatePicker}
-                              onFocus={openAbsencePeriodStartDatePicker}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  openAbsencePeriodStartDatePicker();
-                                }
-                              }}
-                              className={`${getAddendumModalInputClass(formData.absencePeriodStartDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                            />
-                            <input
-                              ref={absencePeriodStartDatePickerRef}
-                              type="date"
-                              value={
-                                formData.absencePeriodStartDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.absencePeriodStartDate)
-                                  ? formData.absencePeriodStartDate
-                                  : ""
-                              }
-                              onChange={(e) => setFormData((prev) => ({ ...prev, absencePeriodStartDate: e.target.value }))}
-                              className="sr-only"
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor="absencePeriodEndDate" className={modalFieldLabelClass}>
-                            To
-                          </Label>
-                          <div className="flex items-start gap-2">
-                            <Input
-                              id="absencePeriodEndDate"
-                              type="text"
-                              readOnly
-                              placeholder="Please select a date"
-                              value={formData.absencePeriodEndDate ? toDisplayDate(formData.absencePeriodEndDate) : ""}
-                              onClick={openAbsencePeriodEndDatePicker}
-                              onFocus={openAbsencePeriodEndDatePicker}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  openAbsencePeriodEndDatePicker();
-                                }
-                              }}
-                              className={`${getAddendumModalInputClass(formData.absencePeriodEndDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                            />
-                            <input
-                              ref={absencePeriodEndDatePickerRef}
-                              type="date"
-                              value={
-                                formData.absencePeriodEndDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.absencePeriodEndDate)
-                                  ? formData.absencePeriodEndDate
-                                  : ""
-                              }
-                              onChange={(e) => setFormData((prev) => ({ ...prev, absencePeriodEndDate: e.target.value }))}
-                              className="sr-only"
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            />
-                          </div>
-                        </div>
                       </div>
                     </div>
                     <div className="space-y-1.5">
@@ -3665,9 +3431,9 @@ const IllHealthTerminationGenerator = ({
               const paragraphOneText = `We refer to the abovementioned matter and the enquiry relating to your ill health held on ${hearingDateDisplay || "[inquiry date]"}.`;
               const paragraphTwoText =
                 validatedPreview.chairperson === "external"
-                  ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
-                  : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
-              const lastWorkingDaySentence = `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
+                  ? "After the chairperson considered the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available."
+                  : "After considering the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available.";
+              const lastWorkingDaySentence = `You will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -3679,7 +3445,7 @@ const IllHealthTerminationGenerator = ({
                 },
                 {
                   title: "Paragraph 3",
-                  body: `Take notice that your employment is herewith terminated for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+                  body: `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(validatedPreview.noticePeriod)} notice for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
                 },
                 {
                   title: "Paragraph 4",
@@ -4308,91 +4074,6 @@ const IllHealthTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyTransmissionPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={medicalEvidencePickerOpen} onOpenChange={(open) => (open ? openMedicalEvidencePicker() : cancelMedicalEvidencePicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Ambulance className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Medical Evidence</DialogTitle>
-            </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <DialogHeader className="px-6 pt-4 pb-0">
-            <DialogDescription className="text-[11px] text-slate-600">
-              Choose one or more evidence items. Use Done to apply or Cancel to discard changes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 px-6 pb-6 pt-4">
-            <ScrollArea className="max-h-[420px] rounded border border-slate-200 bg-white">
-              <div className="space-y-1 p-3">
-                {medicalEvidenceOptions.map((item) => (
-                  <label
-                    key={item}
-                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
-                  >
-                    <Checkbox
-                      checked={draftMedicalEvidence.includes(item)}
-                      onCheckedChange={(checked) =>
-                        setDraftMedicalEvidence((prev) =>
-                          checked ? (prev.includes(item) ? prev : [...prev, item]) : prev.filter((value) => value !== item),
-                        )
-                      }
-                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
-                    />
-                    <span className="flex-1">{item}</span>
-                  </label>
-                ))}
-              </div>
-            </ScrollArea>
-            <div>
-              {draftMedicalEvidence.length === 0 ? (
-                <div className="text-xs text-slate-600">No item selected</div>
-              ) : (
-                <div className="text-xs text-slate-600">{draftMedicalEvidence.length} item(s) selected</div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="px-6 pb-4 pt-0">
-            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
-              <div className="justify-self-start">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={cancelMedicalEvidencePicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                >
-                  Cancel
-                </Button>
-              </div>
-              <div className="justify-self-center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setDraftMedicalEvidence([])}
-                  disabled={draftMedicalEvidence.length === 0}
-                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
-                >
-                  Clear
-                </Button>
-              </div>
-              <div className="justify-self-end">
-                <Button
-                  type="button"
-                  onClick={applyMedicalEvidencePicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done

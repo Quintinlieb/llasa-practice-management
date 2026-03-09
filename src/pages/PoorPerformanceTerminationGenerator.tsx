@@ -41,6 +41,8 @@ type ContractFormState = {
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
+  performanceConsultationDate: string;
+  improvementPeriod: string;
   misconductTypes: string[];
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
@@ -81,6 +83,8 @@ type AddendumData = PermanentContractFormData & {
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
+  performanceConsultationDate: string;
+  improvementPeriod: string;
   misconductTypes: string[];
   homeAddressLine: string;
   homeAddressLine2: string;
@@ -242,7 +246,28 @@ const noticePeriodOptions = [
   "1 week",
   "2 weeks",
   "4 weeks",
-  "No notice",
+  "5 weeks",
+  "6 weeks",
+  "7 weeks",
+  "8 weeks",
+  "9 weeks",
+  "10 weeks",
+  "11 weeks",
+  "12 weeks",
+] as const;
+const improvementPeriodOptions = [
+  "1 week",
+  "2 weeks",
+  "3 weeks",
+  "1 month",
+  "5 weeks",
+  "6 weeks",
+  "7 weeks",
+  "2 months",
+  "9 weeks",
+  "10 weeks",
+  "11 weeks",
+  "3 months",
 ] as const;
 
 const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
@@ -759,6 +784,7 @@ const PoorPerformanceTerminationGenerator = ({
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -816,6 +842,8 @@ const PoorPerformanceTerminationGenerator = ({
     noticeOfAppeal: "",
     appliedProgressiveDisciplinaryAction: "",
     hearingDate: "",
+    performanceConsultationDate: "",
+    improvementPeriod: "",
     misconductTypes: [],
     contractReference: "",
     addendumType: "general",
@@ -939,25 +967,10 @@ const PoorPerformanceTerminationGenerator = ({
   }, [misconductPickerOpen]);
 
   useEffect(() => {
-    if (formData.noticePeriod && formData.noticePeriod !== "No notice") return;
+    if (formData.noticePeriod) return;
     if (!formData.noticeMethod) return;
     setFormData((prev) => ({ ...prev, noticeMethod: "" }));
   }, [formData.noticePeriod, formData.noticeMethod]);
-
-  useEffect(() => {
-    if (formData.misconductTypes.length === 0) {
-      if (!formData.appliedProgressiveDisciplinaryAction) return;
-      setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: "" }));
-      return;
-    }
-    // Auto-suggest based on selected misconduct, but allow user override afterwards.
-    if (formData.appliedProgressiveDisciplinaryAction) return;
-    const hasDismissibleMisconduct = formData.misconductTypes.some((type) =>
-      dismissibleMisconductNames.has(type.trim().toLowerCase()),
-    );
-    const expectedValue = hasDismissibleMisconduct ? "No PDA applied" : "Yes";
-    setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: expectedValue }));
-  }, [formData.misconductTypes, formData.appliedProgressiveDisciplinaryAction, dismissibleMisconductNames]);
 
   useEffect(() => {
     setSameDayOverrideAccepted(false);
@@ -1162,6 +1175,8 @@ const PoorPerformanceTerminationGenerator = ({
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
+      performanceConsultationDate: "",
+      improvementPeriod: "",
       misconductTypes: [],
       contractReference: "",
       addendumType: "general",
@@ -1245,13 +1260,11 @@ const PoorPerformanceTerminationGenerator = ({
       return;
     }
 
-    let nextDate = new Date(baseDate);
-    if (noticePeriod !== "No notice") {
-      const weeksMatch = noticePeriod.match(/^(\d+)\s+week/);
-      const weeks = weeksMatch ? Number(weeksMatch[1]) : 0;
-      if (weeks > 0) {
-        nextDate.setDate(nextDate.getDate() + weeks * 7);
-      }
+    const nextDate = new Date(baseDate);
+    const weeksMatch = noticePeriod.match(/^(\d+)\s+week/);
+    const weeks = weeksMatch ? Number(weeksMatch[1]) : 0;
+    if (weeks > 0) {
+      nextDate.setDate(nextDate.getDate() + weeks * 7);
     }
 
     const year = nextDate.getFullYear();
@@ -1293,12 +1306,9 @@ const PoorPerformanceTerminationGenerator = ({
     () => {
       const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
-      const hasNoticeMethod =
-        !formData.noticePeriod || formData.noticePeriod === "No notice" ? true : Boolean(formData.noticeMethod);
-      const hasProgressiveDisciplinaryAction = Boolean(formData.appliedProgressiveDisciplinaryAction);
+      const hasNoticeMethod = Boolean(formData.noticeMethod);
       const hasChairperson = Boolean(formData.chairperson);
       const hasHearingDate = Boolean(formData.hearingDate);
-      const hasMisconductTypes = formData.misconductTypes.length > 0;
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
         formData.effectiveDate &&
@@ -1306,10 +1316,8 @@ const PoorPerformanceTerminationGenerator = ({
           hasNoticePeriod &&
           hasNoticeOfAppeal &&
           hasNoticeMethod &&
-          hasProgressiveDisciplinaryAction &&
           hasChairperson &&
           hasHearingDate &&
-          hasMisconductTypes &&
           hasTransmissionMethods,
       );
     },
@@ -1317,10 +1325,10 @@ const PoorPerformanceTerminationGenerator = ({
       formData.noticePeriod,
       formData.noticeOfAppeal,
       formData.noticeMethod,
-      formData.appliedProgressiveDisciplinaryAction,
       formData.chairperson,
       formData.hearingDate,
-      formData.misconductTypes,
+      formData.performanceConsultationDate,
+      formData.improvementPeriod,
       formData.transmissionMethods,
       formData.effectiveDate,
       formData.issueDate,
@@ -1512,6 +1520,8 @@ const PoorPerformanceTerminationGenerator = ({
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
+      performanceConsultationDate: "",
+      improvementPeriod: "",
       misconductTypes: [],
       addendumType: "general",
       effectiveDate: "",
@@ -1578,6 +1588,16 @@ const PoorPerformanceTerminationGenerator = ({
 
   const openHearingDatePicker = () => {
     const picker = hearingDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
+  const openConsultationDatePicker = () => {
+    const picker = consultationDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1761,18 +1781,12 @@ const PoorPerformanceTerminationGenerator = ({
     checkRequired(formData.effectiveDate, "Effective date");
     checkRequired(formData.issueDate, "Date of notice");
     checkRequired(formData.noticePeriod, "Notice period");
-    if (formData.noticePeriod && formData.noticePeriod !== "No notice") {
-      checkRequired(formData.noticeMethod, "Notice Method");
-    }
-    checkRequired(formData.appliedProgressiveDisciplinaryAction, "Progressive Disciplinary Action (PDA)");
+    checkRequired(formData.noticeMethod, "Notice Method");
     checkRequired(formData.chairperson, "Chairperson");
     checkRequired(formData.hearingDate, "Performance enquiry date");
     checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
-    }
-    if (formData.misconductTypes.length === 0) {
-      missingFields.push("Type of misconduct");
     }
 
     if (missingFields.length) {
@@ -1817,6 +1831,8 @@ const PoorPerformanceTerminationGenerator = ({
       noticeOfAppeal: formData.noticeOfAppeal,
       appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
       hearingDate: formData.hearingDate,
+      performanceConsultationDate: formData.performanceConsultationDate,
+      improvementPeriod: formData.improvementPeriod,
       misconductTypes: formData.misconductTypes,
       homeAddressLine: formData.homeAddressLine,
       homeAddressLine2: formData.homeAddressLine2,
@@ -1942,6 +1958,7 @@ const PoorPerformanceTerminationGenerator = ({
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
     let y = margin;
+    let pageContentBottom = pageHeight - margin;
 
     const valueOrLine = (value?: string | number | null) => {
       if (typeof value === "number") return value.toString();
@@ -1950,7 +1967,7 @@ const PoorPerformanceTerminationGenerator = ({
     };
 
     const ensureSpace = (space: number) => {
-      if (y + space > pageHeight - margin) {
+      if (y + space > pageContentBottom) {
         doc.addPage();
         y = margin;
       }
@@ -1985,53 +2002,41 @@ const PoorPerformanceTerminationGenerator = ({
 
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
+    const consultationDateDisplay = formatDate(data.performanceConsultationDate);
     const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
+    const paragraphOneText = data.performanceConsultationDate
+      ? `We refer to the abovementioned matter, the performance consultation held on ${consultationDateDisplay || "[consultation date]"} and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`
+      : `We refer to the abovementioned matter and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`;
+    const paragraphTwoText =
+      data.chairperson === "external"
+        ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
+        : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
+    const lastWorkingDaySentence =
+      data.noticeMethod === "not_required_to_work_notice_period"
+        ? `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`
+        : `Your last working day will be ${terminationDateDisplay || "[date of termination]"}.`;
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
-    const misconductDisplay = formatMisconductList(data.misconductTypes);
-    const hasNoticePeriod = data.noticePeriod !== "No notice";
-    const findingLine =
-      data.chairperson === "internal"
-        ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
-        : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
-    const dismissalLead =
-      data.appliedProgressiveDisciplinaryAction === "Yes"
-        ? hasNoticePeriod
-          ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-          : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
-        : hasNoticePeriod
-          ? "Take notice that you are hereby dismissed"
-          : "Take notice that you are hereby summarily dismissed";
-    const noticeMethodLine =
-      hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
-        ? `You are required to work during your notice period of ${data.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
-        : hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
-          ? `You are not required to work during your notice period of ${data.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
-          : "";
-    const lastDateOfEmploymentDisplay =
-      hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
-        ? issueDateDisplay || "[date of issue]"
-        : terminationDateDisplay || "[date of termination]";
-    const propertyReturnLine =
-      hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
-        ? "You are required to return all company property in your possession to the employer on your last day of employment."
-        : "You are required to return all company property in your possession to the employer immediately.";
 
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
         title: "Paragraph 1",
-        body: `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay || "[date]"}.`,
+        body: paragraphOneText,
       },
       {
         title: "Paragraph 2",
-        body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
+        body: paragraphTwoText,
       },
       {
         title: "Paragraph 3",
-        body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+        body: `Take notice that your employment is herewith terminated for incapacity: poor work performance, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
       },
       {
         title: "Paragraph 4",
+        body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+      },
+      {
+        title: "Paragraph 5",
         body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
       },
     ];
@@ -2197,6 +2202,78 @@ const PoorPerformanceTerminationGenerator = ({
     doc.setDrawColor(0, 0, 0);
     y += 4.6;
 
+    const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
+    const companyIdentity = data.tradingName?.trim()
+      ? `${companyName} t/a ${data.tradingName.trim()}`
+      : companyName;
+    const registrationNumber = (profile?.registration_number || "").trim();
+    const hasRegistrationNumber = registrationNumber.length > 0;
+    const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
+    const centeredFooterHeight = hasRegistrationNumber ? 15.5 : 12;
+    const centeredFooterBottomGap = logoTopForBalance;
+    if (useCenteredLogoLayout) {
+      pageContentBottom = pageHeight - centeredFooterBottomGap - centeredFooterHeight - 2;
+    }
+
+    const drawCenteredFooter = (pageNumber: number) => {
+      if (!useCenteredLogoLayout) return;
+      doc.setPage(pageNumber);
+      const footerStartY = pageHeight - centeredFooterBottomGap - centeredFooterHeight;
+      doc.setDrawColor(dividerR, dividerG, dividerB);
+      doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
+      doc.setDrawColor(0, 0, 0);
+      const footerLineGap = 3.5;
+      let footerY = footerStartY + 3.5;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.text(companyIdentity, margin + contentWidth / 2, footerY, { align: "center" });
+      footerY += footerLineGap;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      if (hasRegistrationNumber) {
+        doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, footerY, { align: "center" });
+        footerY += footerLineGap;
+      }
+      doc.text(companyAddress, margin + contentWidth / 2, footerY, { align: "center" });
+      footerY += footerLineGap;
+      const phoneText = valueOrLine(data.employerContact);
+      const emailText = valueOrLine(data.employerEmail);
+      const iconTextGap = 0.9;
+      const itemGap = 4;
+      const iconSize = 2.7;
+      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
+      const hasMailIcon = Boolean(pdfMailIconDataUrl);
+      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
+      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
+      const phoneTextWidth = doc.getTextWidth(phoneText);
+      const emailTextWidth = doc.getTextWidth(emailText);
+      const contactRowWidth =
+        phoneIconWidth +
+        iconTextGap +
+        phoneTextWidth +
+        itemGap +
+        mailIconWidth +
+        iconTextGap +
+        emailTextWidth;
+      const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
+      if (hasPhoneIcon) {
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, footerY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Tel:", contactStartX, footerY);
+      }
+      const phoneTextX = contactStartX + phoneIconWidth + iconTextGap;
+      doc.text(phoneText, phoneTextX, footerY);
+      const mailIconX = phoneTextX + phoneTextWidth + itemGap;
+      if (hasMailIcon) {
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, footerY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Email:", mailIconX, footerY);
+      }
+      const emailTextX = mailIconX + mailIconWidth + iconTextGap;
+      doc.text(emailText, emailTextX, footerY);
+      doc.setLineWidth(0.2);
+    };
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.text(issueDateDisplay, rightX, y, { align: "right" });
@@ -2258,9 +2335,9 @@ const PoorPerformanceTerminationGenerator = ({
       const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
       const employeeIdValue = data.idType === "id" ? valueOrLine(data.employeeIdNumber) : valueOrLine(data.passportNumber);
       const employeeNameValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-      const boxTop = y;
       const boxHeight = 34;
       ensureSpace(boxHeight + 6);
+      const boxTop = y;
       doc.rect(margin, boxTop, contentWidth, boxHeight);
       y += 5;
       doc.setFont("helvetica", "normal");
@@ -2268,7 +2345,6 @@ const PoorPerformanceTerminationGenerator = ({
       const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
       const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this letter and confirm that the content hereof was explained to me.`;
       const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      ensureSpace(ackLines.length * 4.8 + 1);
       let ackCursorY = y;
       ackLines.forEach((line, idx) => {
         doc.text(line, margin + 2, ackCursorY + idx * 4.8);
@@ -2282,7 +2358,7 @@ const PoorPerformanceTerminationGenerator = ({
         doc.line(lineX, lineY, lineX + doc.getTextWidth(underlinedSegment), lineY);
       }
       y += ackLines.length * 4.8;
-      y = boxTop + boxHeight - 8;
+      y = boxTop + boxHeight - 10;
       const colWidth = 45;
       const labels = ["Signature", "Date", "Witness"];
       labels.forEach((label, idx) => {
@@ -2296,79 +2372,18 @@ const PoorPerformanceTerminationGenerator = ({
     }
 
     if (useCenteredLogoLayout) {
-      const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
-      const companyIdentity = data.tradingName?.trim()
-        ? `${companyName} t/a ${data.tradingName.trim()}`
-        : companyName;
-      const registrationNumber = (profile?.registration_number || "").trim();
-      const hasRegistrationNumber = registrationNumber.length > 0;
-      const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
-      const footerHeight = hasRegistrationNumber ? 15.5 : 12;
-      const bottomGap = logoTopForBalance;
-      if (y > pageHeight - margin - footerHeight - 2) {
-        doc.addPage();
+      const totalPages = doc.getNumberOfPages();
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        drawCenteredFooter(pageNumber);
       }
-      const footerStartY = pageHeight - bottomGap - footerHeight;
-      doc.setDrawColor(dividerR, dividerG, dividerB);
-      doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
-      doc.setDrawColor(0, 0, 0);
-      const footerLineGap = 3.5;
-      y = footerStartY + 3.5;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.text(companyIdentity, margin + contentWidth / 2, y, { align: "center" });
-      y += footerLineGap;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      if (hasRegistrationNumber) {
-        doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, y, { align: "center" });
-        y += footerLineGap;
-      }
-      doc.text(companyAddress, margin + contentWidth / 2, y, { align: "center" });
-      y += footerLineGap;
-      const phoneText = valueOrLine(data.employerContact);
-      const emailText = valueOrLine(data.employerEmail);
-      const iconTextGap = 0.9;
-      const itemGap = 4;
-      const iconSize = 2.7;
-      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
-      const hasMailIcon = Boolean(pdfMailIconDataUrl);
-      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
-      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
-      const phoneTextWidth = doc.getTextWidth(phoneText);
-      const emailTextWidth = doc.getTextWidth(emailText);
-      const contactRowWidth =
-        phoneIconWidth +
-        iconTextGap +
-        phoneTextWidth +
-        itemGap +
-        mailIconWidth +
-        iconTextGap +
-        emailTextWidth;
-      const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
-      if (hasPhoneIcon) {
-        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Tel:", contactStartX, y);
-      }
-      const phoneTextX = contactStartX + phoneIconWidth + iconTextGap;
-      doc.text(phoneText, phoneTextX, y);
-      const mailIconX = phoneTextX + phoneTextWidth + itemGap;
-      if (hasMailIcon) {
-        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Email:", mailIconX, y);
-      }
-      const emailTextX = mailIconX + mailIconWidth + iconTextGap;
-      doc.text(emailText, emailTextX, y);
-      doc.setLineWidth(0.2);
+      doc.setPage(totalPages);
     }
 
     if (download) {
-      doc.save(`Misconduct_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
+      doc.save(`Poor_Performance_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
-        description: "Misconduct termination letter has been generated.",
+        description: "Poor performance termination letter has been generated.",
       });
       return;
     }
@@ -3056,7 +3071,7 @@ const PoorPerformanceTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              In terms of the BCEA a notice period is generally not required for termination due to misconduct.
+                              In terms of the BCEA the minimum notice periods are based on employee&apos;s length of service: 1 week for less than 6 months, 2 weeks for less than a year but more than 6 months, 4 weeks for more than a year.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -3088,7 +3103,7 @@ const PoorPerformanceTerminationGenerator = ({
                         </SelectContent>
                       </Select>
                     </div>
-                    {formData.noticePeriod && formData.noticePeriod !== "No notice" ? (
+                    {formData.noticePeriod ? (
                       <div className="space-y-1.5">
                         <Label htmlFor="noticeMethod" className={modalFieldLabelClass}>
                           Notice method <span className="text-red-500">*</span>
@@ -3170,7 +3185,7 @@ const PoorPerformanceTerminationGenerator = ({
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
                               Prior to a dimissal, a proper poor performance management procedure should be followed:
                               <br />
-                              Consultation(s) &gt; time to imporve &gt; hearing.
+                              Consultation(s) &gt; time to imporve &gt; hearing/performance inquiry.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -3204,8 +3219,8 @@ const PoorPerformanceTerminationGenerator = ({
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="misconductType" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Type(s) of misconduct <span className="text-red-500">*</span>
+                      <Label htmlFor="performanceConsultationDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Performance consultation date
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3213,79 +3228,69 @@ const PoorPerformanceTerminationGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Types of misconduct info"
+                                aria-label="Performance consultation date info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Select only the types of misconduct{" "}
-                              {formData.employeeName || formData.employeeSurname
-                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
-                                : "the employee"}{" "}
-                              was found guilty of following the disciplinary hearing.
+                              The employee should be informed of any substandard performance issues in a consultation and granted reasonable time to improve.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </Label>
-                      <button
-                        id="misconductType"
-                        type="button"
-                        onClick={openMisconductPicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.misconductTypes.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
-                      >
-                        <span
-                          className={cn(
-                            "block truncate text-[11px]",
-                            formData.misconductTypes.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
-                          )}
-                        >
-                          {formData.misconductTypes.length > 0
-                            ? `${formData.misconductTypes.length} type(s) selected`
-                            : "Select misconduct type(s)"}
-                        </span>
-                      </button>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="performanceConsultationDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.performanceConsultationDate ? toDisplayDate(formData.performanceConsultationDate) : ""}
+                          onClick={openConsultationDatePicker}
+                          onFocus={openConsultationDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openConsultationDatePicker();
+                            }
+                          }}
+                          className={`${getAddendumModalInputClass(formData.performanceConsultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={consultationDatePickerRef}
+                          type="date"
+                          value={
+                            formData.performanceConsultationDate &&
+                            /^\d{4}-\d{2}-\d{2}$/.test(formData.performanceConsultationDate)
+                              ? formData.performanceConsultationDate
+                              : ""
+                          }
+                          onChange={(e) => setFormData((prev) => ({ ...prev, performanceConsultationDate: e.target.value }))}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="appliedProgressiveDisciplinaryAction" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Progressive disciplinary action (PDA) <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="PDA info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Progressive disciplinary action is implemented when an employee has a valid final written
-                              warning and commits the same type of misconduct within the validity period of that
-                              warning. Dismissible offences usually do not require a final warning to justify dismissal.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                      <Label htmlFor="improvementPeriod" className={modalFieldLabelClass}>
+                        Improvement period
                       </Label>
                       <Select
-                        value={formData.appliedProgressiveDisciplinaryAction}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: value }))
-                        }
+                        value={formData.improvementPeriod}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, improvementPeriod: value }))}
                       >
                         <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.appliedProgressiveDisciplinaryAction))} ${addendumModalDropdownToneClass}`}
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.improvementPeriod))} ${addendumModalDropdownToneClass}`}
                         >
                           <SelectValue
-                            placeholder="Select yes or no"
+                            placeholder="Select improvement period"
                             className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.appliedProgressiveDisciplinaryAction ? { color: "#94a3b8" } : undefined}
+                            style={!formData.improvementPeriod ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
                         <SelectContent className={addendumModalSelectContentClass}>
-                          {progressiveDisciplinaryActionOptions.map((option) => (
+                          {improvementPeriodOptions.map((option) => (
                             <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
                               {option}
                             </SelectItem>
@@ -3352,7 +3357,7 @@ const PoorPerformanceTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              It is advised that an external person chair the disciplinary hearing to ensure
+                              It is advised that an external person chair the performance hearing to ensure
                               impartiality in the decision-making process. You are not prohibited from chairing your
                               own hearing.
                             </TooltipContent>
@@ -3522,50 +3527,38 @@ const PoorPerformanceTerminationGenerator = ({
             {validatedPreview ? (() => {
               const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
+              const consultationDateDisplay = formatDate(validatedPreview.performanceConsultationDate);
               const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const misconductDisplay = formatMisconductList(validatedPreview.misconductTypes);
-              const hasNoticePeriod = validatedPreview.noticePeriod !== "No notice";
-              const findingLine =
-                validatedPreview.chairperson === "internal"
-                  ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
-                  : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
-              const dismissalLead =
-                validatedPreview.appliedProgressiveDisciplinaryAction === "Yes"
-                  ? hasNoticePeriod
-                    ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-                    : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
-                  : hasNoticePeriod
-                    ? "Take notice that you are hereby dismissed"
-                    : "Take notice that you are hereby summarily dismissed";
-              const noticeMethodLine =
-                hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
-                  ? `You are required to work during your notice period of ${validatedPreview.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
-                  : hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                    ? `You are not required to work during your notice period of ${validatedPreview.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
-                    : "";
-              const lastDateOfEmploymentDisplay =
-                hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                  ? issueDateDisplay || "[date of issue]"
-                  : terminationDateDisplay || "[date of termination]";
-              const propertyReturnLine =
-                hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
-                  ? "You are required to return all company property in your possession to the employer on your last day of employment."
-                  : "You are required to return all company property in your possession to the employer immediately.";
+              const paragraphOneText = validatedPreview.performanceConsultationDate
+                ? `We refer to the abovementioned matter, the performance consultation held on ${consultationDateDisplay || "[consultation date]"} and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`
+                : `We refer to the abovementioned matter and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`;
+              const paragraphTwoText =
+                validatedPreview.chairperson === "external"
+                  ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
+                  : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
+              const lastWorkingDaySentence =
+                validatedPreview.noticeMethod === "not_required_to_work_notice_period"
+                  ? `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`
+                  : `Your last working day will be ${terminationDateDisplay || "[date of termination]"}.`;
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
-                  body: `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay || "[date]"}.`,
+                  body: paragraphOneText,
                 },
                 {
                   title: "Paragraph 2",
-                  body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
+                  body: paragraphTwoText,
                 },
                 {
                   title: "Paragraph 3",
-                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+                  body: `Take notice that your employment is herewith terminated for incapacity: poor work performance, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
                 },
                 {
                   title: "Paragraph 4",
+                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
+                },
+                {
+                  title: "Paragraph 5",
                   body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
                 },
               ];

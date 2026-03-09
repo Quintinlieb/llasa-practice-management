@@ -812,7 +812,7 @@ const MisconductTerminationGenerator = ({
     chairperson: "",
     noticeMethod: "",
     transmissionMethods: [],
-    noticePeriod: "",
+    noticePeriod: "No notice",
     noticeOfAppeal: "",
     appliedProgressiveDisciplinaryAction: "",
     hearingDate: "",
@@ -1158,7 +1158,7 @@ const MisconductTerminationGenerator = ({
       chairperson: "",
       noticeMethod: "",
       transmissionMethods: [],
-      noticePeriod: "",
+      noticePeriod: "No notice",
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
@@ -1507,7 +1507,7 @@ const MisconductTerminationGenerator = ({
       chairperson: "",
       noticeMethod: "",
       transmissionMethods: [],
-      noticePeriod: "",
+      noticePeriod: "No notice",
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
@@ -1941,6 +1941,7 @@ const MisconductTerminationGenerator = ({
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
     let y = margin;
+    let pageContentBottom = pageHeight - margin;
 
     const valueOrLine = (value?: string | number | null) => {
       if (typeof value === "number") return value.toString();
@@ -1949,7 +1950,7 @@ const MisconductTerminationGenerator = ({
     };
 
     const ensureSpace = (space: number) => {
-      if (y + space > pageHeight - margin) {
+      if (y + space > pageContentBottom) {
         doc.addPage();
         y = margin;
       }
@@ -2196,6 +2197,78 @@ const MisconductTerminationGenerator = ({
     doc.setDrawColor(0, 0, 0);
     y += 4.6;
 
+    const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
+    const companyIdentity = data.tradingName?.trim()
+      ? `${companyName} t/a ${data.tradingName.trim()}`
+      : companyName;
+    const registrationNumber = (profile?.registration_number || "").trim();
+    const hasRegistrationNumber = registrationNumber.length > 0;
+    const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
+    const centeredFooterHeight = hasRegistrationNumber ? 15.5 : 12;
+    const centeredFooterBottomGap = logoTopForBalance;
+    if (useCenteredLogoLayout) {
+      pageContentBottom = pageHeight - centeredFooterBottomGap - centeredFooterHeight - 2;
+    }
+
+    const drawCenteredFooter = (pageNumber: number) => {
+      if (!useCenteredLogoLayout) return;
+      doc.setPage(pageNumber);
+      const footerStartY = pageHeight - centeredFooterBottomGap - centeredFooterHeight;
+      doc.setDrawColor(dividerR, dividerG, dividerB);
+      doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
+      doc.setDrawColor(0, 0, 0);
+      const footerLineGap = 3.5;
+      let footerY = footerStartY + 3.5;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.text(companyIdentity, margin + contentWidth / 2, footerY, { align: "center" });
+      footerY += footerLineGap;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      if (hasRegistrationNumber) {
+        doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, footerY, { align: "center" });
+        footerY += footerLineGap;
+      }
+      doc.text(companyAddress, margin + contentWidth / 2, footerY, { align: "center" });
+      footerY += footerLineGap;
+      const phoneText = valueOrLine(data.employerContact);
+      const emailText = valueOrLine(data.employerEmail);
+      const iconTextGap = 0.9;
+      const itemGap = 4;
+      const iconSize = 2.7;
+      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
+      const hasMailIcon = Boolean(pdfMailIconDataUrl);
+      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
+      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
+      const phoneTextWidth = doc.getTextWidth(phoneText);
+      const emailTextWidth = doc.getTextWidth(emailText);
+      const contactRowWidth =
+        phoneIconWidth +
+        iconTextGap +
+        phoneTextWidth +
+        itemGap +
+        mailIconWidth +
+        iconTextGap +
+        emailTextWidth;
+      const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
+      if (hasPhoneIcon) {
+        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, footerY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Tel:", contactStartX, footerY);
+      }
+      const phoneTextX = contactStartX + phoneIconWidth + iconTextGap;
+      doc.text(phoneText, phoneTextX, footerY);
+      const mailIconX = phoneTextX + phoneTextWidth + itemGap;
+      if (hasMailIcon) {
+        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, footerY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
+      } else {
+        doc.text("Email:", mailIconX, footerY);
+      }
+      const emailTextX = mailIconX + mailIconWidth + iconTextGap;
+      doc.text(emailText, emailTextX, footerY);
+      doc.setLineWidth(0.2);
+    };
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.text(issueDateDisplay, rightX, y, { align: "right" });
@@ -2257,9 +2330,9 @@ const MisconductTerminationGenerator = ({
       const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
       const employeeIdValue = data.idType === "id" ? valueOrLine(data.employeeIdNumber) : valueOrLine(data.passportNumber);
       const employeeNameValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-      const boxTop = y;
       const boxHeight = 34;
       ensureSpace(boxHeight + 6);
+      const boxTop = y;
       doc.rect(margin, boxTop, contentWidth, boxHeight);
       y += 5;
       doc.setFont("helvetica", "normal");
@@ -2267,7 +2340,6 @@ const MisconductTerminationGenerator = ({
       const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
       const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this letter and confirm that the content hereof was explained to me.`;
       const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      ensureSpace(ackLines.length * 4.8 + 1);
       let ackCursorY = y;
       ackLines.forEach((line, idx) => {
         doc.text(line, margin + 2, ackCursorY + idx * 4.8);
@@ -2295,72 +2367,11 @@ const MisconductTerminationGenerator = ({
     }
 
     if (useCenteredLogoLayout) {
-      const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
-      const companyIdentity = data.tradingName?.trim()
-        ? `${companyName} t/a ${data.tradingName.trim()}`
-        : companyName;
-      const registrationNumber = (profile?.registration_number || "").trim();
-      const hasRegistrationNumber = registrationNumber.length > 0;
-      const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
-      const footerHeight = hasRegistrationNumber ? 15.5 : 12;
-      const bottomGap = logoTopForBalance;
-      if (y > pageHeight - margin - footerHeight - 2) {
-        doc.addPage();
+      const totalPages = doc.getNumberOfPages();
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        drawCenteredFooter(pageNumber);
       }
-      const footerStartY = pageHeight - bottomGap - footerHeight;
-      doc.setDrawColor(dividerR, dividerG, dividerB);
-      doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
-      doc.setDrawColor(0, 0, 0);
-      const footerLineGap = 3.5;
-      y = footerStartY + 3.5;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.text(companyIdentity, margin + contentWidth / 2, y, { align: "center" });
-      y += footerLineGap;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      if (hasRegistrationNumber) {
-        doc.text(`Reg No: ${registrationNumber}`, margin + contentWidth / 2, y, { align: "center" });
-        y += footerLineGap;
-      }
-      doc.text(companyAddress, margin + contentWidth / 2, y, { align: "center" });
-      y += footerLineGap;
-      const phoneText = valueOrLine(data.employerContact);
-      const emailText = valueOrLine(data.employerEmail);
-      const iconTextGap = 0.9;
-      const itemGap = 4;
-      const iconSize = 2.7;
-      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
-      const hasMailIcon = Boolean(pdfMailIconDataUrl);
-      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
-      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
-      const phoneTextWidth = doc.getTextWidth(phoneText);
-      const emailTextWidth = doc.getTextWidth(emailText);
-      const contactRowWidth =
-        phoneIconWidth +
-        iconTextGap +
-        phoneTextWidth +
-        itemGap +
-        mailIconWidth +
-        iconTextGap +
-        emailTextWidth;
-      const contactStartX = margin + (contentWidth - contactRowWidth) / 2;
-      if (hasPhoneIcon) {
-        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", contactStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Tel:", contactStartX, y);
-      }
-      const phoneTextX = contactStartX + phoneIconWidth + iconTextGap;
-      doc.text(phoneText, phoneTextX, y);
-      const mailIconX = phoneTextX + phoneTextWidth + itemGap;
-      if (hasMailIcon) {
-        doc.addImage(pdfMailIconDataUrl as string, "PNG", mailIconX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Email:", mailIconX, y);
-      }
-      const emailTextX = mailIconX + mailIconWidth + iconTextGap;
-      doc.text(emailText, emailTextX, y);
-      doc.setLineWidth(0.2);
+      doc.setPage(totalPages);
     }
 
     if (download) {

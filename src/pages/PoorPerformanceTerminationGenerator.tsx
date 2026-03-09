@@ -255,6 +255,25 @@ const noticePeriodOptions = [
   "11 weeks",
   "12 weeks",
 ] as const;
+
+const getAutoNoticePeriodFromStartDate = (startDateRaw: string): (typeof noticePeriodOptions)[number] | "" => {
+  const value = (startDateRaw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const startDate = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (Number.isNaN(startDate.getTime()) || startDate > normalizedToday) return "";
+
+  let months = (normalizedToday.getFullYear() - startDate.getFullYear()) * 12;
+  months += normalizedToday.getMonth() - startDate.getMonth();
+  if (normalizedToday.getDate() < startDate.getDate()) {
+    months -= 1;
+  }
+
+  if (months < 6) return "1 week";
+  if (months < 12) return "2 weeks";
+  return "4 weeks";
+};
 const improvementPeriodOptions = [
   "1 week",
   "2 weeks",
@@ -1133,6 +1152,7 @@ const PoorPerformanceTerminationGenerator = ({
     const idNumber = hasIdNumber ? employee.id_number ?? "" : "";
     const ageFromId = hasIdNumber ? deriveAgeFromId(idNumber) : "";
     const nextIdType: "id" | "passport" = hasIdNumber ? "id" : "passport";
+    const autoNoticePeriod = getAutoNoticePeriodFromStartDate(startDate);
 
     setFormData((prev) => ({
       ...prev,
@@ -1157,6 +1177,7 @@ const PoorPerformanceTerminationGenerator = ({
       homeAreaCode: areaCode || prev.homeAreaCode,
       age: ageFromId,
       idType: nextIdType,
+      noticePeriod: autoNoticePeriod,
     }));
   };
 

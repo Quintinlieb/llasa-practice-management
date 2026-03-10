@@ -268,6 +268,8 @@ const PermanentContractGenerator = ({
     onStepSelect?: (index: number) => void;
     onClear?: () => void;
     isFinished?: boolean;
+    isPreviewEditable?: boolean;
+    supportsPreviewEditToggle?: boolean;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -312,6 +314,7 @@ const PermanentContractGenerator = ({
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPreviewEditable, setIsPreviewEditable] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<PermanentContractFormData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [clauseTitleEdits, setClauseTitleEdits] = useState<Record<string, string>>({});
@@ -896,6 +899,7 @@ const PermanentContractGenerator = ({
   const handleStepClick = (index: number) => {
     if (!canNavigateToStep(index)) return;
     if (showFinalActions) {
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
     }
     if (index > 0 && showEmployeeHint) {
@@ -913,6 +917,7 @@ const PermanentContractGenerator = ({
     (index: number) => {
       if (!canNavigateToStep(index)) return;
       if (showFinalActions) {
+        setIsPreviewEditable(false);
         setShowFinalActions(false);
       }
       setActiveStep(index);
@@ -945,6 +950,7 @@ const PermanentContractGenerator = ({
 
   const handleBack = () => {
     if (showFinalActions) {
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
       setActiveStep(steps.length - 1);
       return;
@@ -954,20 +960,37 @@ const PermanentContractGenerator = ({
     }
   };
 
+  const togglePreviewEditMode = useCallback(() => {
+    setIsPreviewEditable((prev) => {
+      const next = !prev;
+      if (!next) {
+        setEditingClause(null);
+        setClauseDraft("");
+        setClauseTitleDraft("");
+        setAddingAfter(undefined);
+        setNewClauseTitle("");
+        setNewClauseBody("");
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!embedded) return;
     onStepMetaChange?.({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext: showFinalActions ? !isGenerating : canAdvance,
+      canGoNext: showFinalActions ? !isGenerating && !isPreviewEditable : canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
       canSelectStep,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
       onStepSelect: handleStepSelect,
-      onClear: clearCurrentStepFields,
+      onClear: showFinalActions ? togglePreviewEditMode : clearCurrentStepFields,
       isFinished: showFinalActions,
+      isPreviewEditable,
+      supportsPreviewEditToggle: true,
     });
   }, [
     activeStep,
@@ -981,8 +1004,10 @@ const PermanentContractGenerator = ({
     handleBack,
     handleDownload,
     handleStepSelect,
+    togglePreviewEditMode,
     showFinalActions,
     isGenerating,
+    isPreviewEditable,
     clearCurrentStepFields,
     isFormComplete,
   ]);
@@ -1040,6 +1065,7 @@ const PermanentContractGenerator = ({
         description: message,
         variant: "destructive",
       });
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
     }
   }, [showFinalActions, formData]);
@@ -1799,6 +1825,7 @@ const PermanentContractGenerator = ({
       });
     } finally {
       setIsGenerating(false);
+      setIsPreviewEditable(false);
     }
   }
 
@@ -2677,7 +2704,7 @@ const PermanentContractGenerator = ({
                                 type="button"
                                 variant="ghost"
                                 onClick={handleDownload}
-                                disabled={isGenerating}
+                                disabled={isGenerating || isPreviewEditable}
                                 aria-label="Download PDF"
                                 className="h-11 px-6 min-w-[72px] rounded bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-transform duration-200 hover:scale-105 disabled:bg-blue-300 disabled:text-white [&_svg]:h-5 [&_svg]:w-5"
                               >
@@ -2699,16 +2726,24 @@ const PermanentContractGenerator = ({
                     <div className="flex-none">
                       <Button
                         variant="outline"
-                        onClick={() => setShowFinalActions(false)}
+                        onClick={() => {
+                          setIsPreviewEditable(false);
+                          setShowFinalActions(false);
+                        }}
                         className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                       >
                         Back to form
                       </Button>
                     </div>
-                    <div className="flex-1" />
-                    <div className="flex-none opacity-0 pointer-events-none">
-                      <Button variant="outline" className="gap-2 border-transparent">
-                        Placeholder
+                    <div className="flex-1 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={togglePreviewEditMode}
+                        disabled={isGenerating}
+                        className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                      >
+                        {isPreviewEditable ? "Save" : "Edit"}
                       </Button>
                     </div>
                   </div>
@@ -3120,6 +3155,7 @@ const PermanentContractGenerator = ({
                           {(() => {
                             let clauseNumber = 1;
                             const renderAddClauseControl = (afterId: string | null) => {
+                              if (!isPreviewEditable) return null;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
                                   <button
@@ -3167,30 +3203,32 @@ const PermanentContractGenerator = ({
                                       ) : null}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {isEditing ? (
-                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
-                                      ) : (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
-                                            onClick={() => startEditingClause(clause)}
-                                          >
-                                            Edit
-                                          </Button>
-                                          {isCustomClause ? (
+                                      {isPreviewEditable ? (
+                                        isEditing ? (
+                                          <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
+                                        ) : (
+                                          <>
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              className="h-[28px] px-3 text-xs rounded !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
-                                              onClick={() => deleteCustomClause(clause.id)}
+                                              className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                              onClick={() => startEditingClause(clause)}
                                             >
-                                              Delete
+                                              Edit
                                             </Button>
-                                          ) : null}
-                                        </>
-                                      )}
+                                            {isCustomClause ? (
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-[28px] px-3 text-xs rounded !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
+                                                onClick={() => deleteCustomClause(clause.id)}
+                                              >
+                                                Delete
+                                              </Button>
+                                            ) : null}
+                                          </>
+                                        )
+                                      ) : null}
                                     </div>
                                   </div>
 
@@ -3213,7 +3251,7 @@ const PermanentContractGenerator = ({
                               ];
                             });
                           })()}
-                          {activeEditingClause && typeof document !== "undefined"
+                          {isPreviewEditable && activeEditingClause && typeof document !== "undefined"
                             ? createPortal(
                                 <div className="fixed inset-0 z-[999]">
                                   <div className="absolute inset-0 bg-slate-900/35" />
@@ -3285,7 +3323,7 @@ const PermanentContractGenerator = ({
                                 document.body,
                               )
                             : null}
-                          {addingAfter !== undefined && typeof document !== "undefined"
+                          {isPreviewEditable && addingAfter !== undefined && typeof document !== "undefined"
                             ? createPortal(
                                 <div className="fixed inset-0 z-[999]">
                                   <div className="absolute inset-0 bg-slate-900/35" />

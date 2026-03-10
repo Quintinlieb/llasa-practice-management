@@ -23,6 +23,7 @@ import {
   salaryFrequencyOptions,
   extractDobFromId,
   calculateAgeFromDob,
+  southAfricanProvinces,
   type PermanentContractFormData,
 } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
@@ -2968,12 +2969,30 @@ const MisconductTerminationGenerator = ({
                         <Label htmlFor="homeProvince" className={modalFieldLabelClass}>
                           Province <span className="text-red-500">*</span>
                         </Label>
-                        <Input
-                          id="homeProvince"
+                        <Select
                           value={formData.homeProvince}
-                          onChange={(e) => setFormData({ ...formData, homeProvince: e.target.value })}
-                          className={getAddendumModalInputClass(formData.homeProvince.trim().length > 0)}
-                        />
+                          onValueChange={(value) => setFormData({ ...formData, homeProvince: value })}
+                        >
+                          <SelectTrigger
+                            id="homeProvince"
+                            className={`${getAddendumModalSelectTriggerClass(
+                              formData.homeProvince.trim().length > 0,
+                            )} ${addendumModalDropdownToneClass}`}
+                          >
+                            <SelectValue placeholder="Select province" />
+                          </SelectTrigger>
+                          <SelectContent className={addendumModalSelectContentClass}>
+                            {southAfricanProvinces.map((province) => (
+                              <SelectItem
+                                key={province}
+                                value={province}
+                                className={addendumModalSelectItemClass}
+                              >
+                                {province}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="homeAreaCode" className={modalFieldLabelClass}>
@@ -4308,6 +4327,7 @@ const MisconductTerminationGenerator = ({
 };
 
 export default MisconductTerminationGenerator;
+
 
 
 

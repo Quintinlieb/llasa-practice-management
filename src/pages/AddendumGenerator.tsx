@@ -255,6 +255,8 @@ const AddendumGenerator = ({
     onClear?: () => void;
     addendumType?: AddendumType | "";
     isFinished?: boolean;
+    isPreviewEditable?: boolean;
+    supportsPreviewEditToggle?: boolean;
   }) => void;
 }) => {
   const { user, loading } = useAuth();
@@ -266,6 +268,7 @@ const AddendumGenerator = ({
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPreviewEditable, setIsPreviewEditable] = useState(false);
   const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [customClauseTitleEdits, setCustomClauseTitleEdits] = useState<Record<string, string>>({});
@@ -653,6 +656,7 @@ const AddendumGenerator = ({
   const handleStepClick = (index: number) => {
     if (!canNavigateToStep(index)) return;
     if (showFinalActions) {
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
     }
     if (index > 0 && showEmployeeHint) {
@@ -670,6 +674,7 @@ const AddendumGenerator = ({
     (index: number) => {
       if (!canNavigateToStep(index)) return;
       if (showFinalActions) {
+        setIsPreviewEditable(false);
         setShowFinalActions(false);
       }
       setActiveStep(index);
@@ -702,6 +707,7 @@ const AddendumGenerator = ({
 
   const handleBack = () => {
     if (showFinalActions) {
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
       setActiveStep(steps.length - 1);
       return;
@@ -711,21 +717,40 @@ const AddendumGenerator = ({
     }
   };
 
+  const togglePreviewEditMode = useCallback(() => {
+    setIsPreviewEditable((prev) => {
+      const next = !prev;
+      if (!next) {
+        setEditingClause(null);
+        setClauseDraft("");
+        setCustomClauseTitleDraft("");
+        setAddingAfter(undefined);
+        setNewClauseTitle("");
+        setNewClauseBody("");
+        setNewClauseAmendmentType("");
+        setNewClauseAmendmentOpen(false);
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!embedded) return;
     onStepMetaChange?.({
       steps,
       activeStep,
       icons: stepIcons,
-      canGoNext: showFinalActions ? !isGenerating : canAdvance,
+      canGoNext: showFinalActions ? !isGenerating && !isPreviewEditable : canAdvance,
       canGoBack: showFinalActions || activeStep > 0,
       canSelectStep,
       onNext: showFinalActions ? handleDownload : handleNextOrFinish,
       onBack: handleBack,
       onStepSelect: handleStepSelect,
-      onClear: clearCurrentStepFields,
+      onClear: showFinalActions ? togglePreviewEditMode : clearCurrentStepFields,
       addendumType: formData.addendumType,
       isFinished: showFinalActions,
+      isPreviewEditable,
+      supportsPreviewEditToggle: true,
     });
   }, [
     activeStep,
@@ -739,9 +764,11 @@ const AddendumGenerator = ({
     handleBack,
     handleDownload,
     handleStepSelect,
+    togglePreviewEditMode,
     isGenerating,
     isFormComplete,
     showFinalActions,
+    isPreviewEditable,
     formData.addendumType,
   ]);
 
@@ -959,6 +986,7 @@ const AddendumGenerator = ({
         description: message,
         variant: "destructive",
       });
+      setIsPreviewEditable(false);
       setShowFinalActions(false);
     }
   }, [showFinalActions, formData]);
@@ -1499,6 +1527,7 @@ const AddendumGenerator = ({
       });
     } finally {
       setIsGenerating(false);
+      setIsPreviewEditable(false);
     }
   }
 
@@ -2406,6 +2435,7 @@ const AddendumGenerator = ({
                           {(() => {
                             let clauseNumber = 1;
                             const renderAddClauseControl = (afterId: string | null) => {
+                          if (!isPreviewEditable) return null;
                           if (afterId === "introduction" || afterId === "entire-agreement-and-acknoweldgement") return null;
                               return (
                                 <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
@@ -2474,30 +2504,32 @@ const AddendumGenerator = ({
                                       ) : null}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {isEditing ? (
-                                        <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
-                                      ) : (
-                                        <>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
-                                            onClick={() => startEditingClause(clause)}
-                                          >
-                                            Edit
-                                          </Button>
-                                          {isCustomClause ? (
+                                      {isPreviewEditable ? (
+                                        isEditing ? (
+                                          <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
+                                        ) : (
+                                          <>
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
-                                              onClick={() => deleteCustomClause(clause.id)}
+                                              className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
+                                              onClick={() => startEditingClause(clause)}
                                             >
-                                              Delete
+                                              Edit
                                             </Button>
-                                          ) : null}
-                                        </>
-                                      )}
+                                            {isCustomClause ? (
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
+                                                onClick={() => deleteCustomClause(clause.id)}
+                                              >
+                                                Delete
+                                              </Button>
+                                            ) : null}
+                                          </>
+                                        )
+                                      ) : null}
                                     </div>
                                   </div>
 
@@ -2524,7 +2556,7 @@ const AddendumGenerator = ({
                             }),
                             ];
                           })()}
-                          {activeEditingClause ? (
+                          {isPreviewEditable && activeEditingClause ? (
                             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
                               <div
                                 className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
@@ -2591,7 +2623,7 @@ const AddendumGenerator = ({
                               </div>
                             </div>
                           ) : null}
-                          {addingAfter !== undefined ? (
+                          {isPreviewEditable && addingAfter !== undefined ? (
                             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
                               <div
                                 className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
@@ -2720,12 +2752,23 @@ const AddendumGenerator = ({
             )}
           </ScrollArea>
                 {!useExternalShell ? (
-                  <div className="flex w-full items-center justify-end gap-2">
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <div className="flex-1 flex justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={togglePreviewEditMode}
+                        disabled={isGenerating}
+                        className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                      >
+                        {isPreviewEditable ? "Save" : "Edit"}
+                      </Button>
+                    </div>
                     <div className="flex-none">
                       <Button
                         type="button"
                         onClick={handleDownload}
-                        disabled={isGenerating}
+                        disabled={isGenerating || isPreviewEditable}
                         className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
                       >
                         Download

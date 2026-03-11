@@ -21,6 +21,7 @@ type DocumentKey =
   | "noticeTermination"
   | "illHealthTermination"
   | "abscondmentTermination"
+  | "retrenchmentTermination"
   | "poorPerformanceTermination"
   | "disciplinaryHearing";
 
@@ -73,6 +74,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   noticeTermination: lazy(() => import("./MisconductTerminationGenerator")),
   illHealthTermination: lazy(() => import("./IllHealthTerminationGenerator")),
   abscondmentTermination: lazy(() => import("./AbscondmentTerminationGenerator")),
+  retrenchmentTermination: lazy(() => import("./RetrenchmentTerminationGenerator")),
   poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
   disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
@@ -109,7 +111,7 @@ const documentCategories: DocumentCategory[] = [
       { id: "illHealthTermination", label: "Ill Health", active: true },
       { id: "poorPerformanceTermination", label: "Poor Performance", active: true },
       { id: "abscondmentTermination", label: "Abscondment/Desertion", active: true },
-      { label: "Retrenchment", active: false },
+      { id: "retrenchmentTermination", label: "Retrenchment", active: true },
       { label: "Retirement", active: false },
       { label: "End of Contract", active: false },
       { label: "Mutual Separation Agreement", active: false },
@@ -155,6 +157,7 @@ const Documents = () => {
     | "noticeTermination"
     | "illHealthTermination"
     | "abscondmentTermination"
+    | "retrenchmentTermination"
     | "poorPerformanceTermination"
     | null
   >(null);
@@ -245,6 +248,7 @@ const Documents = () => {
     selectedDocument === "noticeTermination" ||
     selectedDocument === "illHealthTermination" ||
     selectedDocument === "abscondmentTermination" ||
+    selectedDocument === "retrenchmentTermination" ||
     selectedDocument === "poorPerformanceTermination"
       ? "Termination Letter"
       : activeCategoryTitle;
@@ -265,6 +269,8 @@ const Documents = () => {
           ? "Ill Health"
         : modalDocument === "abscondmentTermination"
           ? "Abscondment/Desertion"
+        : modalDocument === "retrenchmentTermination"
+          ? "Retrenchment"
         : modalDocument === "noticeTermination"
           ? "Notice of Termination"
         : modalDocument === "permanentContract"
@@ -278,6 +284,7 @@ const Documents = () => {
     modalDocument === "noticeTermination" ||
     modalDocument === "illHealthTermination" ||
     modalDocument === "abscondmentTermination" ||
+    modalDocument === "retrenchmentTermination" ||
     modalDocument === "poorPerformanceTermination" ||
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
@@ -291,6 +298,7 @@ const Documents = () => {
               : modalDocument === "noticeTermination" ||
                 modalDocument === "illHealthTermination" ||
                 modalDocument === "abscondmentTermination" ||
+                modalDocument === "retrenchmentTermination" ||
                 modalDocument === "poorPerformanceTermination"
                 ? "Termination Details"
               : modalDocument === "temporaryContract"
@@ -434,6 +442,7 @@ const Documents = () => {
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
+        modalDocument === "retrenchmentTermination" ||
         modalDocument === "poorPerformanceTermination"
         ? noticeTerminationActiveNotes
       : modalDocument === "temporaryContract"
@@ -446,6 +455,7 @@ const Documents = () => {
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
       selectedDocument !== "abscondmentTermination" &&
+      selectedDocument !== "retrenchmentTermination" &&
       selectedDocument !== "poorPerformanceTermination" &&
       selectedDocument !== "permanentContract" &&
       selectedDocument !== "temporaryContract",
@@ -509,6 +519,7 @@ const Documents = () => {
                                         item.id === "noticeTermination" ||
                                         item.id === "illHealthTermination" ||
                                         item.id === "abscondmentTermination" ||
+                                        item.id === "retrenchmentTermination" ||
                                         item.id === "poorPerformanceTermination" ||
                                         item.id === "permanentContract" ||
                                         item.id === "temporaryContract"
@@ -523,6 +534,7 @@ const Documents = () => {
                                             | "noticeTermination"
                                             | "illHealthTermination"
                                             | "abscondmentTermination"
+                                            | "retrenchmentTermination"
                                             | "poorPerformanceTermination"
                                             | "permanentContract"
                                             | "temporaryContract",
@@ -567,6 +579,7 @@ const Documents = () => {
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
             selectedDocument !== "abscondmentTermination" &&
+            selectedDocument !== "retrenchmentTermination" &&
             selectedDocument !== "poorPerformanceTermination" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
@@ -760,6 +773,7 @@ const Documents = () => {
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
             || modalDocument === "abscondmentTermination"
+            || modalDocument === "retrenchmentTermination"
             || modalDocument === "poorPerformanceTermination"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
@@ -773,6 +787,7 @@ const Documents = () => {
           modalDocument === "noticeTermination" ||
           modalDocument === "illHealthTermination" ||
           modalDocument === "abscondmentTermination" ||
+          modalDocument === "retrenchmentTermination" ||
           modalDocument === "poorPerformanceTermination" ||
           modalDocument === "permanentContract" ||
           modalDocument === "temporaryContract" ? (
@@ -787,6 +802,7 @@ const Documents = () => {
                         : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
+                          modalDocument === "retrenchmentTermination" ||
                           modalDocument === "poorPerformanceTermination"
                           ? "Termination Letter"
                           : "Contracts"
@@ -797,6 +813,8 @@ const Documents = () => {
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"
                           ? "Abscondment/Desertion"
+                        : modalDocument === "retrenchmentTermination"
+                          ? "Retrenchment"
                         : modalDocument === "poorPerformanceTermination"
                           ? "Poor Performance"
                         : modalDocument === "noticeTermination"

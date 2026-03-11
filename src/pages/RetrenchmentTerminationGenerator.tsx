@@ -36,7 +36,8 @@ type ContractFormState = {
   issuer: string;
   chairperson: string;
   noticeMethod: string;
-  attemptedContactMethods: string[];
+  severancePackage: string;
+  voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
   abscondmentNoticeDate: string;
   absentFromDate: string;
@@ -47,6 +48,7 @@ type ContractFormState = {
   performanceConsultationDate: string;
   improvementPeriod: string;
   misconductTypes: string[];
+  selectionCriteria: string[];
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
@@ -81,7 +83,8 @@ type AddendumData = PermanentContractFormData & {
   issuer: string;
   chairperson: string;
   noticeMethod: string;
-  attemptedContactMethods: string[];
+  severancePackage: string;
+  voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
   abscondmentNoticeDate: string;
   absentFromDate: string;
@@ -92,6 +95,7 @@ type AddendumData = PermanentContractFormData & {
   performanceConsultationDate: string;
   improvementPeriod: string;
   misconductTypes: string[];
+  selectionCriteria: string[];
   homeAddressLine: string;
   homeAddressLine2: string;
   homeCity: string;
@@ -280,6 +284,30 @@ const getAutoNoticePeriodFromStartDate = (startDateRaw: string): (typeof noticeP
   if (months < 12) return "2 weeks";
   return "4 weeks";
 };
+const getAutoSeverancePackageFromStartDate = (startDateRaw: string): string => {
+  const value = (startDateRaw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "None";
+  const startDate = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (Number.isNaN(startDate.getTime()) || startDate > normalizedToday) return "None";
+
+  let completedYears = normalizedToday.getFullYear() - startDate.getFullYear();
+  if (
+    normalizedToday.getMonth() < startDate.getMonth() ||
+    (normalizedToday.getMonth() === startDate.getMonth() && normalizedToday.getDate() < startDate.getDate())
+  ) {
+    completedYears -= 1;
+  }
+
+  if (completedYears <= 0) return "None";
+  if (completedYears === 1) return "1 week";
+  if (completedYears === 2) return "2 weeks";
+  if (completedYears === 3) return "3 weeks";
+  if (completedYears === 4) return "4 weeks";
+  if (completedYears >= 32) return "32 weeks";
+  return `${completedYears} weeks`;
+};
 const improvementPeriodOptions = [
   "1 week",
   "2 weeks",
@@ -302,14 +330,24 @@ const noticeMethodOptions = [
 ] as const;
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
-const attemptedContactMethodOptions = [
-  "By Email",
-  "By Phone Call",
-  "By WhatsApp",
-  "By SMS",
-  "By Registered Post",
-  "By Regular Post",
-  "By Facebook",
+const severancePackageOptions = [
+  "None",
+  "1 week",
+  "2 weeks",
+  "3 weeks",
+  "4 weeks",
+  ...Array.from({ length: 28 }, (_, index) => `${index + 5} weeks`),
+] as const;
+const voluntaryRetrenchmentOptions = [
+  { value: "no", label: "No" },
+  { value: "yes", label: "Yes" },
+] as const;
+const selectionCriteriaOptions = [
+  "Last In, First Out (LIFO)",
+  "LIFO subject to skills retention",
+  "Bumping",
+  "Skills and qualifications",
+  "Affirmative action / Employment Equity considerations",
 ] as const;
 const chairpersonOptions = [
   { value: "external", label: "External" },
@@ -418,6 +456,21 @@ const formatNoticePeriodPossessive = (noticePeriodRaw: string) => {
   }
   return `${noticePeriod}'`;
 };
+
+const formatListWithAnd = (items: string[], fallback: string) => {
+  const normalized = items.map((item) => item.trim()).filter(Boolean);
+  if (normalized.length === 0) return fallback;
+  if (normalized.length === 1) return normalized[0];
+  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
+  return `${normalized.slice(0, -1).join(", ")} and ${normalized[normalized.length - 1]}`;
+};
+
+const formatSelectionCriteriaItem = (item: string) =>
+  item
+    .toLowerCase()
+    .replace(/\blifo\b/g, "LIFO");
+
+const formatRetrenchmentReasonItem = (item: string) => item.toLowerCase();
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
   new Promise((resolve) => {
@@ -810,8 +863,8 @@ const RetrenchmentTerminationGenerator = ({
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
-  const [attemptedContactPickerOpen, setAttemptedContactPickerOpen] = useState(false);
-  const [draftAttemptedContactMethods, setDraftAttemptedContactMethods] = useState<string[]>([]);
+  const [selectionCriteriaPickerOpen, setSelectionCriteriaPickerOpen] = useState(false);
+  const [draftSelectionCriteria, setDraftSelectionCriteria] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
@@ -872,7 +925,8 @@ const RetrenchmentTerminationGenerator = ({
     issuer: "",
     chairperson: "",
     noticeMethod: "",
-    attemptedContactMethods: [],
+    severancePackage: "None",
+    voluntaryRetrenchment: "no",
     transmissionMethods: [],
     abscondmentNoticeDate: "",
     absentFromDate: "",
@@ -883,6 +937,7 @@ const RetrenchmentTerminationGenerator = ({
     performanceConsultationDate: "",
     improvementPeriod: "",
     misconductTypes: [],
+    selectionCriteria: [],
     contractReference: "",
     addendumType: "general",
     effectiveDate: "",
@@ -1004,6 +1059,12 @@ const RetrenchmentTerminationGenerator = ({
     if (!formData.noticeMethod) return;
     setFormData((prev) => ({ ...prev, noticeMethod: "" }));
   }, [formData.noticePeriod, formData.noticeMethod]);
+
+  useEffect(() => {
+    if (formData.voluntaryRetrenchment !== "yes") return;
+    if (formData.selectionCriteria.length === 0) return;
+    setFormData((prev) => ({ ...prev, selectionCriteria: [] }));
+  }, [formData.voluntaryRetrenchment, formData.selectionCriteria.length]);
 
   useEffect(() => {
     setSameDayOverrideAccepted(false);
@@ -1167,6 +1228,7 @@ const RetrenchmentTerminationGenerator = ({
     const ageFromId = hasIdNumber ? deriveAgeFromId(idNumber) : "";
     const nextIdType: "id" | "passport" = hasIdNumber ? "id" : "passport";
     const autoNoticePeriod = getAutoNoticePeriodFromStartDate(startDate);
+    const autoSeverancePackage = getAutoSeverancePackageFromStartDate(startDate);
 
     setFormData((prev) => ({
       ...prev,
@@ -1192,6 +1254,9 @@ const RetrenchmentTerminationGenerator = ({
       age: ageFromId,
       idType: nextIdType,
       noticePeriod: autoNoticePeriod,
+      severancePackage: autoSeverancePackage,
+      voluntaryRetrenchment: "no",
+      selectionCriteria: [],
     }));
   };
 
@@ -1205,7 +1270,8 @@ const RetrenchmentTerminationGenerator = ({
       issuer: "",
       chairperson: "",
       noticeMethod: "",
-      attemptedContactMethods: [],
+      severancePackage: "None",
+      voluntaryRetrenchment: "no",
       transmissionMethods: [],
       abscondmentNoticeDate: "",
       absentFromDate: "",
@@ -1216,6 +1282,7 @@ const RetrenchmentTerminationGenerator = ({
       performanceConsultationDate: "",
       improvementPeriod: "",
       misconductTypes: [],
+      selectionCriteria: [],
       contractReference: "",
       addendumType: "general",
       effectiveDate: "",
@@ -1342,27 +1409,40 @@ const RetrenchmentTerminationGenerator = ({
 
   const isEmploymentStepComplete = useMemo(
     () => {
+      const hasS189ConsultationDate = Boolean(formData.abscondmentNoticeDate);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
       const hasChairperson = Boolean(formData.chairperson);
       const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeMethod = Boolean(formData.noticeMethod);
+      const hasSeverancePackage = Boolean(formData.severancePackage);
+      const hasVoluntaryRetrenchment = Boolean(formData.voluntaryRetrenchment);
+      const needsSelectionCriteria = formData.voluntaryRetrenchment !== "yes";
+      const hasSelectionCriteria = !needsSelectionCriteria || formData.selectionCriteria.length > 0;
       const hasRetrenchmentReasons = formData.misconductTypes.length > 0;
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
         formData.issueDate &&
+          hasS189ConsultationDate &&
           hasNoticeOfAppeal &&
           hasChairperson &&
           hasNoticePeriod &&
           hasNoticeMethod &&
+          hasSeverancePackage &&
+          hasVoluntaryRetrenchment &&
+          hasSelectionCriteria &&
           hasRetrenchmentReasons &&
           hasTransmissionMethods,
       );
     },
     [
+      formData.abscondmentNoticeDate,
       formData.noticeOfAppeal,
       formData.chairperson,
       formData.noticePeriod,
       formData.noticeMethod,
+      formData.severancePackage,
+      formData.voluntaryRetrenchment,
+      formData.selectionCriteria,
       formData.misconductTypes,
       formData.performanceConsultationDate,
       formData.improvementPeriod,
@@ -1551,7 +1631,8 @@ const RetrenchmentTerminationGenerator = ({
       issuer: "",
       chairperson: "",
       noticeMethod: "",
-      attemptedContactMethods: [],
+      severancePackage: "None",
+      voluntaryRetrenchment: "no",
       transmissionMethods: [],
       abscondmentNoticeDate: "",
       absentFromDate: "",
@@ -1562,6 +1643,7 @@ const RetrenchmentTerminationGenerator = ({
       performanceConsultationDate: "",
       improvementPeriod: "",
       misconductTypes: [],
+      selectionCriteria: [],
       addendumType: "general",
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
@@ -1673,25 +1755,25 @@ const RetrenchmentTerminationGenerator = ({
     setMisconductSearch("");
   };
 
+  const openSelectionCriteriaPicker = () => {
+    setDraftSelectionCriteria(formData.selectionCriteria);
+    setSelectionCriteriaPickerOpen(true);
+  };
+
+  const cancelSelectionCriteriaPicker = () => {
+    setSelectionCriteriaPickerOpen(false);
+    setDraftSelectionCriteria([]);
+  };
+
+  const applySelectionCriteriaPicker = () => {
+    setFormData((prev) => ({ ...prev, selectionCriteria: draftSelectionCriteria }));
+    setSelectionCriteriaPickerOpen(false);
+    setDraftSelectionCriteria([]);
+  };
+
   const openTransmissionPicker = () => {
     setDraftTransmissionMethods(formData.transmissionMethods);
     setTransmissionPickerOpen(true);
-  };
-
-  const openAttemptedContactPicker = () => {
-    setDraftAttemptedContactMethods(formData.attemptedContactMethods);
-    setAttemptedContactPickerOpen(true);
-  };
-
-  const cancelAttemptedContactPicker = () => {
-    setAttemptedContactPickerOpen(false);
-    setDraftAttemptedContactMethods([]);
-  };
-
-  const applyAttemptedContactPicker = () => {
-    setFormData((prev) => ({ ...prev, attemptedContactMethods: draftAttemptedContactMethods }));
-    setAttemptedContactPickerOpen(false);
-    setDraftAttemptedContactMethods([]);
   };
 
   const cancelTransmissionPicker = () => {
@@ -1844,12 +1926,18 @@ const RetrenchmentTerminationGenerator = ({
     checkRequired(formData.homeProvince, "Province");
     checkRequired(formData.homeAreaCode, "Area code");
     checkRequired(formData.issueDate, "Date of notice");
+    checkRequired(formData.abscondmentNoticeDate, "S189 Consultation");
     if (formData.misconductTypes.length === 0) {
       missingFields.push("Retrenchment reason(s)");
     }
     checkRequired(formData.chairperson, "Chairperson");
     checkRequired(formData.noticePeriod, "Notice period");
     checkRequired(formData.noticeMethod, "Notice Method");
+    checkRequired(formData.severancePackage, "Severance package");
+    checkRequired(formData.voluntaryRetrenchment, "Voluntary retrenchment");
+    if (formData.voluntaryRetrenchment !== "yes" && formData.selectionCriteria.length === 0) {
+      missingFields.push("Selection criteria");
+    }
     checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
@@ -1879,7 +1967,9 @@ const RetrenchmentTerminationGenerator = ({
       issuer: formData.issuer,
       chairperson: formData.chairperson,
       noticeMethod: formData.noticeMethod,
-      attemptedContactMethods: formData.attemptedContactMethods,
+      severancePackage: formData.severancePackage,
+      voluntaryRetrenchment: formData.voluntaryRetrenchment,
+      selectionCriteria: formData.selectionCriteria,
       transmissionMethods: formData.transmissionMethods,
       abscondmentNoticeDate: formData.abscondmentNoticeDate,
       absentFromDate: formData.absentFromDate,
@@ -2059,17 +2149,29 @@ const RetrenchmentTerminationGenerator = ({
     const issueDateDisplay = formatDate(data.issueDate);
     const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
     const abscondmentNoticeDateDisplay = formatDate(data.abscondmentNoticeDate || "");
-    const retrenchmentReasonsDisplay =
-      data.misconductTypes.length > 0 ? data.misconductTypes.join(", ") : "[retrenchment reason(s)]";
-    const paragraphOneText = data.abscondmentNoticeDate
-      ? `We refer to the abovementioned matter and the final S189 consultation dated ${abscondmentNoticeDateDisplay || "[S189 consultation date]"}.`
-      : "We refer to the abovementioned matter and the completed S189 consultation process.";
-    const paragraphTwoText = `Following the consultation process, the employer has determined that retrenchment is necessary for the following operational requirement reason(s): ${retrenchmentReasonsDisplay}.`;
+    const retrenchmentReasonsDisplay = formatListWithAnd(
+      data.misconductTypes.map(formatRetrenchmentReasonItem),
+      "[reason(s) for retrenchment]",
+    );
+    const selectionCriteriaDisplay = formatListWithAnd(
+      data.selectionCriteria.map(formatSelectionCriteriaItem),
+      "[selection criteria]",
+    );
+    const paragraphOneText = `We refer to the abovementioned matter and the S189 contemplated retrenchment consultation process concluded on ${abscondmentNoticeDateDisplay || "[S189 consultation date]"}.`;
+    const paragraphTwoText = `During the consultation process, we considered various factors affecting the business, including ${retrenchmentReasonsDisplay}. Despite exploring possible alternatives to dismissal, it has unfortunately not been possible to avoid the need for retrenchment.`;
     const lastWorkingDaySentence =
       data.noticeMethod === "required_to_work_notice_period"
         ? `You are required to work during your notice period of ${data.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
         : `You are not required to work during your notice period of ${data.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`;
-    const paragraphThreeText = `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(data.noticePeriod)} notice for operational requirements, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`;
+    const severanceSentence =
+      data.severancePackage === "None"
+        ? "No severance package is payable."
+        : `You will receive a severance package equivalent to ${data.severancePackage} pay.`;
+    const criteriaText =
+      data.voluntaryRetrenchment === "yes"
+        ? "for operational requirements after your voluntary retrenchment"
+        : `for operational requirements by applying ${selectionCriteriaDisplay} as selection criteria`;
+    const paragraphThreeText = `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(data.noticePeriod)} notice ${criteriaText}, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence} ${severanceSentence}`;
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
 
@@ -3112,7 +3214,7 @@ const RetrenchmentTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="abscondmentNoticeDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        S189 Consultation
+                        S189 Consultation <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3271,8 +3373,34 @@ const RetrenchmentTerminationGenerator = ({
                       </div>
                     ) : null}
                     <div className="space-y-1.5">
-                      <Label htmlFor="attemptedContactMethods" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Attempted contact
+                      <Label htmlFor="severancePackage" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Severance package <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={formData.severancePackage}
+                        onValueChange={(value) => setFormData((prev) => ({ ...prev, severancePackage: value }))}
+                      >
+                        <SelectTrigger
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.severancePackage))} ${addendumModalDropdownToneClass}`}
+                        >
+                          <SelectValue
+                            placeholder="Select severance package"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
+                            style={!formData.severancePackage ? { color: "#94a3b8" } : undefined}
+                          />
+                        </SelectTrigger>
+                        <SelectContent className={addendumModalSelectContentClass}>
+                          {severancePackageOptions.map((option) => (
+                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="voluntaryRetrenchment" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Voluntary retrenchment <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3280,35 +3408,76 @@ const RetrenchmentTerminationGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Attempted contact info"
+                                aria-label="Voluntary retrenchment info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Before proceeding to a hearing, make reasonable attempts to contact the employee to establish his/her whereabouts.
+                              Did the employee ask to be retrenched? If you agree to the voluntary retrenchment then say "Yes".
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </Label>
-                      <button
-                        id="attemptedContactMethods"
-                        type="button"
-                        onClick={openAttemptedContactPicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.attemptedContactMethods.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                      <Select
+                        value={formData.voluntaryRetrenchment}
+                        onValueChange={(value: "yes" | "no") => setFormData((prev) => ({ ...prev, voluntaryRetrenchment: value }))}
                       >
-                        <span
-                          className={cn(
-                            "block truncate text-[11px]",
-                            formData.attemptedContactMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
-                          )}
+                        <SelectTrigger
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.voluntaryRetrenchment))} ${addendumModalDropdownToneClass}`}
                         >
-                          {formData.attemptedContactMethods.length > 0
-                            ? `${formData.attemptedContactMethods.length} method(s) selected`
-                            : "Select attempted contact method(s)"}
-                        </span>
-                      </button>
+                          <SelectValue
+                            placeholder="Select voluntary retrenchment"
+                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
+                            style={!formData.voluntaryRetrenchment ? { color: "#94a3b8" } : undefined}
+                          />
+                        </SelectTrigger>
+                        <SelectContent className={addendumModalSelectContentClass}>
+                          {voluntaryRetrenchmentOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+                    {formData.voluntaryRetrenchment !== "yes" ? (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="selectionCriteria" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                          Selection criteria <span className="text-red-500">*</span>
+                        </Label>
+                        <button
+                          id="selectionCriteria"
+                          type="button"
+                          onClick={openSelectionCriteriaPicker}
+                          className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.selectionCriteria.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                        >
+                          <span
+                            className={cn(
+                              "block truncate text-[11px]",
+                              formData.selectionCriteria.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                            )}
+                          >
+                            {formData.selectionCriteria.length > 0
+                              ? `${formData.selectionCriteria.length} criteria selected`
+                              : "Select selection criteria"}
+                          </span>
+                        </button>
+                        {formData.selectionCriteria.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {formData.selectionCriteria.map((criteria) => (
+                              <Badge
+                                key={criteria}
+                                variant="outline"
+                                className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                              >
+                                {criteria}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="space-y-1.5">
                       <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Notice of appeal <span className="text-red-500">*</span>
@@ -3539,19 +3708,29 @@ const RetrenchmentTerminationGenerator = ({
               const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
               const abscondmentNoticeDateDisplay = formatDate(validatedPreview.abscondmentNoticeDate || "");
-              const retrenchmentReasonsDisplay =
-                validatedPreview.misconductTypes.length > 0
-                  ? validatedPreview.misconductTypes.join(", ")
-                  : "[retrenchment reason(s)]";
-              const paragraphOneText = validatedPreview.abscondmentNoticeDate
-                ? `We refer to the abovementioned matter and the final S189 consultation dated ${abscondmentNoticeDateDisplay || "[S189 consultation date]"}.`
-                : "We refer to the abovementioned matter and the completed S189 consultation process.";
-              const paragraphTwoText = `Following the consultation process, the employer has determined that retrenchment is necessary for the following operational requirement reason(s): ${retrenchmentReasonsDisplay}.`;
+              const retrenchmentReasonsDisplay = formatListWithAnd(
+                validatedPreview.misconductTypes.map(formatRetrenchmentReasonItem),
+                "[reason(s) for retrenchment]",
+              );
+              const selectionCriteriaDisplay = formatListWithAnd(
+                validatedPreview.selectionCriteria.map(formatSelectionCriteriaItem),
+                "[selection criteria]",
+              );
+              const paragraphOneText = `We refer to the abovementioned matter and the S189 contemplated retrenchment consultation process concluded on ${abscondmentNoticeDateDisplay || "[S189 consultation date]"}.`;
+              const paragraphTwoText = `During the consultation process, we considered various factors affecting the business, including ${retrenchmentReasonsDisplay}. Despite exploring possible alternatives to dismissal, it has unfortunately not been possible to avoid the need for retrenchment.`;
               const lastWorkingDaySentence =
                 validatedPreview.noticeMethod === "required_to_work_notice_period"
                   ? `You are required to work during your notice period of ${validatedPreview.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
                   : `You are not required to work during your notice period of ${validatedPreview.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`;
-              const paragraphThreeText = `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(validatedPreview.noticePeriod)} notice for operational requirements, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`;
+              const severanceSentence =
+                validatedPreview.severancePackage === "None"
+                  ? "No severance package is payable."
+                  : `You will receive a severance package equivalent to ${validatedPreview.severancePackage} pay.`;
+              const criteriaText =
+                validatedPreview.voluntaryRetrenchment === "yes"
+                  ? "for operational requirements after your voluntary retrenchment"
+                  : `for operational requirements by applying ${selectionCriteriaDisplay} as selection criteria`;
+              const paragraphThreeText = `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(validatedPreview.noticePeriod)} notice ${criteriaText}, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence} ${severanceSentence}`;
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -4027,7 +4206,7 @@ const RetrenchmentTerminationGenerator = ({
               onChange={(e) => setMisconductSearch(e.target.value)}
               className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
             />
-            <ScrollArea className="h-72 rounded border border-slate-200 bg-white">
+            <ScrollArea className="max-h-72 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
                 {filteredMisconductTypes.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No retrenchment reasons match your search.</p>
@@ -4126,7 +4305,7 @@ const RetrenchmentTerminationGenerator = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-6 pb-6 pt-4">
-            <ScrollArea className="max-h-44 rounded border border-slate-200 bg-white">
+            <ScrollArea className="max-h-64 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
                 {transmissionMethodOptions.map((method) => (
                   <label
@@ -4202,12 +4381,12 @@ const RetrenchmentTerminationGenerator = ({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={attemptedContactPickerOpen} onOpenChange={(open) => (open ? openAttemptedContactPicker() : cancelAttemptedContactPicker())}>
+      <Dialog open={selectionCriteriaPickerOpen} onOpenChange={(open) => (open ? openSelectionCriteriaPicker() : cancelSelectionCriteriaPicker())}>
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
             <div className="flex items-center gap-2 pl-2">
-              <Phone className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Attempted Contact</DialogTitle>
+              <Briefcase className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Selection Criteria</DialogTitle>
             </div>
             <DialogClose asChild>
               <button type="button" className="text-white hover:text-white/80">
@@ -4217,43 +4396,43 @@ const RetrenchmentTerminationGenerator = ({
           </div>
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
-              Choose one or more contact methods attempted. Use Done to apply or Cancel to discard changes.
+              Choose one or more selection criteria. Use Done to apply or Cancel to discard changes.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 px-6 py-6">
-            <ScrollArea className="rounded border border-slate-200 bg-white">
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <ScrollArea className="max-h-72 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
-                {attemptedContactMethodOptions.map((method) => (
+                {selectionCriteriaOptions.map((criteria) => (
                   <label
-                    key={method}
+                    key={criteria}
                     className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
                   >
                     <Checkbox
-                      checked={draftAttemptedContactMethods.includes(method)}
+                      checked={draftSelectionCriteria.includes(criteria)}
                       onCheckedChange={(checked) =>
-                        setDraftAttemptedContactMethods((prev) =>
-                          checked ? (prev.includes(method) ? prev : [...prev, method]) : prev.filter((item) => item !== method),
+                        setDraftSelectionCriteria((prev) =>
+                          checked ? (prev.includes(criteria) ? prev : [...prev, criteria]) : prev.filter((item) => item !== criteria),
                         )
                       }
                       className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
                     />
-                    <span className="flex-1">{method}</span>
+                    <span className="flex-1">{criteria}</span>
                   </label>
                 ))}
               </div>
             </ScrollArea>
             <div>
-              {draftAttemptedContactMethods.length === 0 ? (
-                <div className="text-xs text-slate-600">No method selected</div>
+              {draftSelectionCriteria.length === 0 ? (
+                <div className="text-xs text-slate-600">No criteria selected</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {draftAttemptedContactMethods.map((method) => (
+                  {draftSelectionCriteria.map((criteria) => (
                     <Badge
-                      key={method}
+                      key={criteria}
                       variant="outline"
                       className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
                     >
-                      {method}
+                      {criteria}
                     </Badge>
                   ))}
                 </div>
@@ -4266,7 +4445,7 @@ const RetrenchmentTerminationGenerator = ({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={cancelAttemptedContactPicker}
+                  onClick={cancelSelectionCriteriaPicker}
                   className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                 >
                   Cancel
@@ -4276,8 +4455,8 @@ const RetrenchmentTerminationGenerator = ({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => setDraftAttemptedContactMethods([])}
-                  disabled={draftAttemptedContactMethods.length === 0}
+                  onClick={() => setDraftSelectionCriteria([])}
+                  disabled={draftSelectionCriteria.length === 0}
                   className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
                 >
                   Clear
@@ -4286,7 +4465,7 @@ const RetrenchmentTerminationGenerator = ({
               <div className="justify-self-end">
                 <Button
                   type="button"
-                  onClick={applyAttemptedContactPicker}
+                  onClick={applySelectionCriteriaPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done
@@ -4400,6 +4579,7 @@ const RetrenchmentTerminationGenerator = ({
 };
 
 export default RetrenchmentTerminationGenerator;
+
 
 
 

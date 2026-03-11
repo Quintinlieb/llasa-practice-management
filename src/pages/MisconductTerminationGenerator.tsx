@@ -252,7 +252,7 @@ const noticeMethodOptions = [
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
 ] as const;
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
-const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp"] as const;
+const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
 const chairpersonOptions = [
   { value: "external", label: "External" },
   { value: "internal", label: "Internal" },
@@ -3018,7 +3018,7 @@ const MisconductTerminationGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="issueDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of notice <span className="text-red-500">*</span>
+                        Date of letter <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>

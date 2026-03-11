@@ -164,6 +164,16 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
 };
 
+const toDisplayDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
 const buildDurationClauseBody = (
   data: Pick<ValidatedTempData, "endType" | "projectScope" | "startDate" | "endDate">
 ) => {
@@ -298,6 +308,8 @@ const TemporaryContractGenerator = ({
   });
   const bulkUploadInputRef = useRef<HTMLInputElement | null>(null);
   const existingEmployeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const startDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const endDatePickerRef = useRef<HTMLInputElement | null>(null);
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
   const snippetContainerWidthMm = 150;
@@ -355,6 +367,28 @@ const TemporaryContractGenerator = ({
       `${employee.label} ${employee.idNumber} ${employee.cellNumber}`.toLowerCase().includes(query),
     );
   }, [existingEmployeeOptions, existingEmployeeQuery]);
+
+  const openStartDatePicker = useCallback(() => {
+    const picker = startDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+      return;
+    }
+    picker.focus();
+    picker.click();
+  }, []);
+
+  const openEndDatePicker = useCallback(() => {
+    const picker = endDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+      return;
+    }
+    picker.focus();
+    picker.click();
+  }, []);
 
   useEffect(() => {
     if (!embedded) return;
@@ -2187,24 +2221,64 @@ const TemporaryContractGenerator = ({
                     <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="startDate">Start Date <span className="text-red-600">*</span></Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                          value={formData.startDate}
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="startDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.startDate ? toDisplayDate(formData.startDate) : ""}
+                          onClick={openStartDatePicker}
+                          onFocus={openStartDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openStartDatePicker();
+                            }
+                          }}
+                          className={`${getTemporaryModalInputClass(formData.startDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={startDatePickerRef}
+                          type="date"
+                          value={formData.startDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.startDate) ? formData.startDate : ""}
                           onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                          className={getTemporaryModalInputClass(formData.startDate.trim().length > 0)}
-                      />
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                     {formData.endType === "date" ? (
                       <div className="space-y-1.5">
                         <Label htmlFor="endDate">End Date <span className="text-red-600">*</span></Label>
-                        <Input
-                          id="endDate"
-                          type="date"
-                          value={formData.endDate}
-                          onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                          className={getTemporaryModalInputClass(formData.endDate.trim().length > 0)}
-                        />
+                        <div className="flex items-start gap-2">
+                          <Input
+                            id="endDate"
+                            type="text"
+                            readOnly
+                            placeholder="Please select a date"
+                            value={formData.endDate ? toDisplayDate(formData.endDate) : ""}
+                            onClick={openEndDatePicker}
+                            onFocus={openEndDatePicker}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openEndDatePicker();
+                              }
+                            }}
+                            className={`${getTemporaryModalInputClass(formData.endDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          />
+                          <input
+                            ref={endDatePickerRef}
+                            type="date"
+                            value={formData.endDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.endDate) ? formData.endDate : ""}
+                            onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                            className="sr-only"
+                            aria-hidden="true"
+                            tabIndex={-1}
+                          />
+                        </div>
                       </div>
                     ) : null}
                     <div className="space-y-1.5">

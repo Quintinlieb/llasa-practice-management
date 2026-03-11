@@ -209,6 +209,16 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString("en-ZA", { year: "numeric", month: "long", day: "numeric" });
 };
 
+const toDisplayDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
 const extractYear = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value.slice(0, 4) : String(date.getFullYear());
@@ -337,6 +347,8 @@ const PermanentContractGenerator = ({
   const [departmentSearchOpen, setDepartmentSearchOpen] = useState(false);
   const [departmentSearchQuery, setDepartmentSearchQuery] = useState("");
   const departmentSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const issueDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const startDatePickerRef = useRef<HTMLInputElement | null>(null);
   const [isSalaryAmountFocused, setIsSalaryAmountFocused] = useState(false);
   const baseModalFieldClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 !hover:border-blue-400 !focus:border-blue-600 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
@@ -684,6 +696,28 @@ const PermanentContractGenerator = ({
     }
     event.preventDefault();
   };
+
+  const openIssueDatePicker = useCallback(() => {
+    const picker = issueDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+      return;
+    }
+    picker.focus();
+    picker.click();
+  }, []);
+
+  const openStartDatePicker = useCallback(() => {
+    const picker = startDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+      return;
+    }
+    picker.focus();
+    picker.click();
+  }, []);
 
   const resetForm = () => {
     setFormData({
@@ -2341,25 +2375,65 @@ const PermanentContractGenerator = ({
                       <Label htmlFor="issueDate">
                         Issue Date <span className="text-red-500">*</span>
                       </Label>
-                      <Input
-                        id="issueDate"
-                        type="date"
-                        value={formData.issueDate}
-                        onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
-                        className={getPermanentModalInputClass(formData.issueDate.trim().length > 0)}
-                      />
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="issueDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.issueDate ? toDisplayDate(formData.issueDate) : ""}
+                          onClick={openIssueDatePicker}
+                          onFocus={openIssueDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openIssueDatePicker();
+                            }
+                          }}
+                          className={`${getPermanentModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={issueDatePickerRef}
+                          type="date"
+                          value={formData.issueDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate) ? formData.issueDate : ""}
+                          onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="startDate">
                         Start Date <span className="text-red-500">*</span>
                       </Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                        value={formData.startDate}
-                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                        className={getPermanentModalInputClass(formData.startDate.trim().length > 0)}
-                      />
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="startDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.startDate ? toDisplayDate(formData.startDate) : ""}
+                          onClick={openStartDatePicker}
+                          onFocus={openStartDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openStartDatePicker();
+                            }
+                          }}
+                          className={`${getPermanentModalInputClass(formData.startDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={startDatePickerRef}
+                          type="date"
+                          value={formData.startDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.startDate) ? formData.startDate : ""}
+                          onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="jobTitle">

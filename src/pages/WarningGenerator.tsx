@@ -93,19 +93,36 @@ const formatDisplayDate = (value?: string | null) => {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
-  return date.toLocaleDateString("en-ZA", {
-    year: "numeric",
-    month: "2-digit",
+  return date.toLocaleDateString("en-GB", {
     day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   });
 };
 const normalizeMisconduct = (value?: string | null) => (value || "").trim().toLowerCase();
 const coerceWarningType = (value?: string | null) => {
-  const normalized = (value || "").toLowerCase();
-  if (normalized === "first" || normalized === "second" || normalized === "serious" || normalized === "final") {
-    return normalized as WarningGeneratorFormData["warningType"];
-  }
+  const normalized = (value || "").trim().toLowerCase();
+  if (!normalized) return "" as WarningGeneratorFormData["warningType"] | "";
+  if (normalized.includes("first")) return "first";
+  if (normalized.includes("second")) return "second";
+  if (normalized.includes("serious")) return "serious";
+  if (normalized.includes("final")) return "final";
   return "" as WarningGeneratorFormData["warningType"] | "";
+};
+const parseStoredMisconductTypes = (value?: string | null): string[] => {
+  const raw = (value || "").trim();
+  if (!raw) return [];
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item)).filter((item) => item.trim().length > 0);
+      }
+    } catch {
+      // Fall back to plain-string handling.
+    }
+  }
+  return [raw];
 };
 const warningValidityMonths: Record<WarningGeneratorFormData["warningType"], number> = {
   first: 6,
@@ -118,6 +135,15 @@ const warningTypeLabels: Record<WarningGeneratorFormData["warningType"], string>
   second: "Second Written Warning",
   serious: "Serious Written Warning",
   final: "Final Written Warning",
+};
+const duplicateWarningRecommendations: Record<
+  WarningGeneratorFormData["warningType"],
+  WarningGeneratorFormData["warningType"] | null
+> = {
+  first: "second",
+  second: "final",
+  serious: "final",
+  final: null,
 };
 const computeWarningExpiry = (
   warningType: WarningGeneratorFormData["warningType"] | "",
@@ -157,6 +183,18 @@ const extractErrorMessage = (error: unknown): string => {
 
   return "Something went wrong. Please try again.";
 };
+
+const resolveRecommendedWarningType = (
+  warningType: WarningGeneratorFormData["warningType"] | "",
+  warning: EmployeeWarningRow,
+) => {
+  const selectedRecommendation = warningType ? duplicateWarningRecommendations[warningType] : null;
+  if (selectedRecommendation) return selectedRecommendation;
+  const existingType = coerceWarningType(warning.warning_type);
+  if (existingType) return duplicateWarningRecommendations[existingType];
+  return null;
+};
+
 const WarningGenerator = ({
   embedded = false,
   externalNavigation = false,
@@ -195,6 +233,7 @@ const WarningGenerator = ({
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const dateIssuedPickerRef = useRef<HTMLInputElement | null>(null);
   const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
   const [employeeSelectResetCount, setEmployeeSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
@@ -228,6 +267,19 @@ const WarningGenerator = ({
     pending: string | null;
     target: "form" | "draft";
   }>({ open: false, pending: null, target: "form" });
+  const [mixedCategoryCaution, setMixedCategoryCaution] = useState<{
+    open: boolean;
+    existingMisconduct: string;
+    existingCategory: "Minor" | "Serious" | "Dismissible" | null;
+    attemptedMisconduct: string;
+    attemptedCategory: "Minor" | "Serious" | "Dismissible" | null;
+  }>({
+    open: false,
+    existingMisconduct: "",
+    existingCategory: null,
+    attemptedMisconduct: "",
+    attemptedCategory: null,
+  });
   const [duplicateOverrideAccepted, setDuplicateOverrideAccepted] = useState(false);
   const [formData, setFormData] = useState<WarningFormData>({
     tradingName: "",
@@ -592,13 +644,18 @@ const WarningGenerator = ({
     misconduct: string,
     warning: EmployeeWarningRow,
   ) => {
-    const label = warningType ? warningTypeLabels[warningType] : "Warning";
+    const existingWarningType = coerceWarningType(warning.warning_type);
+    const existingLabel = existingWarningType ? warningTypeLabels[existingWarningType] : "Warning";
+    const selectedLabel = warningType ? warningTypeLabels[warningType] : "Warning";
     const expiryDate = getWarningExpiryDate(warning);
     const expiryDisplay = expiryDate ? formatDisplayDate(expiryDate) : "--";
+    const recommendedType = resolveRecommendedWarningType("", warning);
+    const recommendedLabel = recommendedType ? warningTypeLabels[recommendedType] : "";
     return {
-      intro: `The employee already has a ${label} for "${misconduct}" that is valid until ${expiryDisplay}.`,
-      prompt:
-        "If you override your code of conduct it may result in disciplinary inconsistency. Do you wish to override and proceed with this warning?",
+      intro: `The employee already has a valid ${existingLabel} for "${misconduct}" which expires on ${expiryDisplay}.`,
+      prompt: recommendedType
+        ? `Recommendation: ${recommendedLabel} for "${misconduct}".\n\nDo you want to override and continue with ${selectedLabel} instead?`
+        : `No higher warning type is available for "${misconduct}".\n\nDo you want to override and continue with ${selectedLabel}?`,
     };
   };
 
@@ -607,18 +664,34 @@ const WarningGenerator = ({
     warningType: WarningGeneratorFormData["warningType"] | "",
   ) => {
     if (!formData.employeeId || !warningType || employeeWarnings.length === 0) return null;
-    const normalizedWarningType = warningType.toLowerCase();
+    const selectedWarningType = coerceWarningType(warningType);
+    if (!selectedWarningType) return null;
     const activeWarnings = employeeWarnings.filter(isWarningActive);
 
     for (const misconduct of misconductTypes) {
       const normalizedMisconduct = normalizeMisconduct(misconduct);
-      const warningMatch = activeWarnings.find((warning) => {
-        const warningTypeMatch = coerceWarningType(warning.warning_type);
-        if (!warningTypeMatch || warningTypeMatch !== normalizedWarningType) return false;
-        return normalizeMisconduct(warning.misconduct_type) === normalizedMisconduct;
+      const matchingWarnings = activeWarnings.filter((warning) => {
+        const storedMisconductTypes = parseStoredMisconductTypes(warning.misconduct_type).map(normalizeMisconduct);
+        return storedMisconductTypes.includes(normalizedMisconduct);
       });
-      if (warningMatch) {
-        return { warning: warningMatch, misconduct };
+
+      if (matchingWarnings.length === 0) continue;
+
+      const mostSevereMatch = matchingWarnings.reduce((current, candidate) => {
+        const currentType = coerceWarningType(current.warning_type);
+        const candidateType = coerceWarningType(candidate.warning_type);
+        if (!candidateType) return current;
+        if (!currentType) return candidate;
+        return severityFromWarningType(candidateType) > severityFromWarningType(currentType) ? candidate : current;
+      });
+      const existingType = coerceWarningType(mostSevereMatch.warning_type);
+      if (!existingType) continue;
+
+      const recommendedType = duplicateWarningRecommendations[existingType];
+      const isSelectedRecommended = recommendedType ? selectedWarningType === recommendedType : false;
+
+      if (!isSelectedRecommended) {
+        return { warning: mostSevereMatch, misconduct };
       }
     }
     return null;
@@ -674,6 +747,19 @@ const WarningGenerator = ({
   };
 
   const applyWarningTypeWithDuplicateCheck = (value: WarningGeneratorFormData["warningType"]) => {
+    if (!duplicateOverrideAccepted) {
+      const duplicate = findDuplicateWarning(formData.misconductTypes, value);
+      if (duplicate) {
+        const { intro, prompt } = buildDuplicateWarningMessageParts(value, duplicate.misconduct, duplicate.warning);
+        openDuplicateWarningOverride({
+          messageIntro: intro,
+          messagePrompt: prompt,
+          pendingWarningType: value,
+          viewUrl: duplicate.warning.file_url,
+        });
+        return;
+      }
+    }
     applyWarningType(value);
   };
 
@@ -707,6 +793,16 @@ const WarningGenerator = ({
     setDismissibleOverride({ open: false, pending: null, target: "form" });
   };
 
+  const closeMixedCategoryCaution = () => {
+    setMixedCategoryCaution({
+      open: false,
+      existingMisconduct: "",
+      existingCategory: null,
+      attemptedMisconduct: "",
+      attemptedCategory: null,
+    });
+  };
+
   useEffect(() => {
     if (!employeeSearchOpen) return;
     const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
@@ -734,10 +830,12 @@ const WarningGenerator = ({
       return;
     }
     if (currentCategory && newCategory !== currentCategory) {
-      toast({
-        title: "Choose one category",
-        description: "Select misconduct types from the same category only.",
-        variant: "destructive",
+      setMixedCategoryCaution({
+        open: true,
+        existingMisconduct: draftMisconductTypes[0] ?? "",
+        existingCategory: currentCategory,
+        attemptedMisconduct: type,
+        attemptedCategory: newCategory,
       });
       return;
     }
@@ -837,6 +935,16 @@ const WarningGenerator = ({
   const handleOpenWarningFile = useCallback((fileUrl: string | null) => {
     if (!fileUrl) return;
     window.open(fileUrl, "_blank", "noopener,noreferrer");
+  }, []);
+  const openDateIssuedPicker = useCallback(() => {
+    const picker = dateIssuedPickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+      return;
+    }
+    picker.focus();
+    picker.click();
   }, []);
 
   const generatePDF = (download = false) => {
@@ -2014,14 +2122,38 @@ const WarningGenerator = ({
                       <Label htmlFor="dateIssued" className={modalFieldLabelClass}>
                         Date of Issue <span className="text-red-500">*</span>
                       </Label>
-                      <Input
-                        id="dateIssued"
-                        type="date"
-                        value={formData.dateIssued}
-                        onChange={(e) => setFormData({ ...formData, dateIssued: e.target.value })}
-                        required
-                        className={getWarningModalInputClass(formData.dateIssued.trim().length > 0)}
-                      />
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="dateIssued"
+                          type="text"
+                          readOnly
+                          required
+                          placeholder="Please select a date"
+                          value={formData.dateIssued ? formatDisplayDate(formData.dateIssued) : ""}
+                          onClick={openDateIssuedPicker}
+                          onFocus={openDateIssuedPicker}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openDateIssuedPicker();
+                            }
+                          }}
+                          className={`${getWarningModalInputClass(formData.dateIssued.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={dateIssuedPickerRef}
+                          type="date"
+                          value={
+                            formData.dateIssued && /^\d{4}-\d{2}-\d{2}$/.test(formData.dateIssued)
+                              ? formData.dateIssued
+                              : ""
+                          }
+                          onChange={(event) => setFormData({ ...formData, dateIssued: event.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2365,12 +2497,20 @@ const WarningGenerator = ({
       </Dialog>
 
       <Dialog open={duplicateWarningOverride.open} onOpenChange={(open) => !open && confirmDuplicateWarningOverride(false)}>
-        <DialogContent className="sm:max-w-2xl sm:w-[720px]">
-          <DialogHeader className="space-y-4 text-center">
-            <DialogTitle className="text-blue-700 text-xl w-full text-center">
-              Caution
-            </DialogTitle>
-            <DialogDescription className="mt-8 block text-gray-700 text-center">
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
               {duplicateWarningOverride.messageIntro}{" "}
               {duplicateWarningOverride.viewUrl && (
                 <button
@@ -2382,24 +2522,68 @@ const WarningGenerator = ({
                 </button>
               )}
               {duplicateWarningOverride.messagePrompt && (
-                <span className="mt-3 block">{duplicateWarningOverride.messagePrompt}</span>
+                <span className="mt-3 block whitespace-pre-line">{duplicateWarningOverride.messagePrompt}</span>
               )}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="pt-4">
-            <div className="flex w-full justify-center gap-2">
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <div className="flex items-center gap-[42px]">
+                <Button
+                  type="button"
+                  onClick={() => confirmDuplicateWarningOverride(false)}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => confirmDuplicateWarningOverride(true)}
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                >
+                  Yes
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mixedCategoryCaution.open} onOpenChange={(open) => !open && closeMixedCategoryCaution()}>
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
+              The selected misconduct types are from different categories.
+              <span className="mt-3 block">
+                "{mixedCategoryCaution.existingMisconduct || "Selected misconduct"}" falls under{" "}
+                {mixedCategoryCaution.existingCategory || "another"} offences, while "
+                {mixedCategoryCaution.attemptedMisconduct || "the added misconduct"}" falls under{" "}
+                {mixedCategoryCaution.attemptedCategory || "a different"} offences.
+              </span>
+              <span className="mt-3 block">
+                Recommendation: Issue separate warnings for misconduct types from different categories.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
               <Button
-                onClick={() => confirmDuplicateWarningOverride(false)}
-                className="min-w-[120px] border-2 border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white text-base"
+                type="button"
+                onClick={closeMixedCategoryCaution}
+                className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
               >
-                No
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => confirmDuplicateWarningOverride(true)}
-                className="min-w-[90px] text-sm text-gray-700 hover:text-blue-700 hover:bg-white hover:border-blue-600"
-              >
-                Yes
+                OK
               </Button>
             </div>
           </DialogFooter>

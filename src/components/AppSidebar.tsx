@@ -1,4 +1,4 @@
-import { FolderOpen, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Calculator, Bot } from "lucide-react";
+import { FolderOpen, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Bot } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
 import {
@@ -20,7 +20,6 @@ const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
-  { title: "Payroll", url: "/documents/payroll", icon: Calculator },
   { title: "Calendar", url: "/calendar", icon: CalendarClock },
   { title: "Assistant", url: "/assistant", icon: Bot },
 ];
@@ -90,7 +89,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                 {primaryNavItems.map((item) => {
                   const isActive =
                     item.url === "/documents"
-                      ? pathname.startsWith("/documents") && !pathname.startsWith("/documents/payroll")
+                      ? pathname.startsWith("/documents")
                       : location.pathname === item.url;
                   return (
                     <SidebarMenuItem key={item.title}>

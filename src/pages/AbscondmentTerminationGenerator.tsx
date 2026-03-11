@@ -36,7 +36,10 @@ type ContractFormState = {
   issuer: string;
   chairperson: string;
   noticeMethod: string;
+  attemptedContactMethods: string[];
   transmissionMethods: string[];
+  abscondmentNoticeDate: string;
+  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
@@ -78,7 +81,10 @@ type AddendumData = PermanentContractFormData & {
   issuer: string;
   chairperson: string;
   noticeMethod: string;
+  attemptedContactMethods: string[];
   transmissionMethods: string[];
+  abscondmentNoticeDate: string;
+  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
@@ -291,7 +297,16 @@ const improvementPeriodOptions = [
 
 const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
-const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp"] as const;
+const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
+const attemptedContactMethodOptions = [
+  "By Email",
+  "By Phone Call",
+  "By WhatsApp",
+  "By SMS",
+  "By Registered Post",
+  "By Regular Post",
+  "By Facebook",
+] as const;
 const chairpersonOptions = [
   { value: "external", label: "External" },
   { value: "internal", label: "Internal" },
@@ -802,12 +817,16 @@ const AbscondmentTerminationGenerator = ({
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
+  const [attemptedContactPickerOpen, setAttemptedContactPickerOpen] = useState(false);
+  const [draftAttemptedContactMethods, setDraftAttemptedContactMethods] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const abscondmentNoticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const absentFromDatePickerRef = useRef<HTMLInputElement | null>(null);
   const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -861,7 +880,10 @@ const AbscondmentTerminationGenerator = ({
     issuer: "",
     chairperson: "",
     noticeMethod: "not_required_to_work_notice_period",
+    attemptedContactMethods: [],
     transmissionMethods: [],
+    abscondmentNoticeDate: "",
+    absentFromDate: "",
     noticePeriod: "",
     noticeOfAppeal: "",
     appliedProgressiveDisciplinaryAction: "",
@@ -1190,7 +1212,10 @@ const AbscondmentTerminationGenerator = ({
       issuer: "",
       chairperson: "",
       noticeMethod: "not_required_to_work_notice_period",
+      attemptedContactMethods: [],
       transmissionMethods: [],
+      abscondmentNoticeDate: "",
+      absentFromDate: "",
       noticePeriod: "",
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
@@ -1324,30 +1349,28 @@ const AbscondmentTerminationGenerator = ({
 
   const isEmploymentStepComplete = useMemo(
     () => {
-      const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
       const hasChairperson = Boolean(formData.chairperson);
       const hasHearingDate = Boolean(formData.hearingDate);
+      const hasAbsentFromDate = Boolean(formData.absentFromDate);
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
-        formData.effectiveDate &&
-          formData.issueDate &&
-          hasNoticePeriod &&
+        formData.issueDate &&
           hasNoticeOfAppeal &&
           hasChairperson &&
           hasHearingDate &&
+          hasAbsentFromDate &&
           hasTransmissionMethods,
       );
     },
     [
-      formData.noticePeriod,
       formData.noticeOfAppeal,
       formData.chairperson,
       formData.hearingDate,
+      formData.absentFromDate,
       formData.performanceConsultationDate,
       formData.improvementPeriod,
       formData.transmissionMethods,
-      formData.effectiveDate,
       formData.issueDate,
     ],
   );
@@ -1532,7 +1555,10 @@ const AbscondmentTerminationGenerator = ({
       issuer: "",
       chairperson: "",
       noticeMethod: "not_required_to_work_notice_period",
+      attemptedContactMethods: [],
       transmissionMethods: [],
+      abscondmentNoticeDate: "",
+      absentFromDate: "",
       noticePeriod: "",
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
@@ -1603,6 +1629,16 @@ const AbscondmentTerminationGenerator = ({
     }
   };
 
+  const openAbscondmentNoticeDatePicker = () => {
+    const picker = abscondmentNoticeDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
   const openHearingDatePicker = () => {
     const picker = hearingDatePickerRef.current;
     if (!picker) return;
@@ -1615,6 +1651,16 @@ const AbscondmentTerminationGenerator = ({
 
   const openConsultationDatePicker = () => {
     const picker = consultationDatePickerRef.current;
+    if (!picker) return;
+    if (typeof (picker as any).showPicker === "function") {
+      (picker as any).showPicker();
+    } else {
+      picker.click();
+    }
+  };
+
+  const openAbsentFromDatePicker = () => {
+    const picker = absentFromDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1644,6 +1690,22 @@ const AbscondmentTerminationGenerator = ({
   const openTransmissionPicker = () => {
     setDraftTransmissionMethods(formData.transmissionMethods);
     setTransmissionPickerOpen(true);
+  };
+
+  const openAttemptedContactPicker = () => {
+    setDraftAttemptedContactMethods(formData.attemptedContactMethods);
+    setAttemptedContactPickerOpen(true);
+  };
+
+  const cancelAttemptedContactPicker = () => {
+    setAttemptedContactPickerOpen(false);
+    setDraftAttemptedContactMethods([]);
+  };
+
+  const applyAttemptedContactPicker = () => {
+    setFormData((prev) => ({ ...prev, attemptedContactMethods: draftAttemptedContactMethods }));
+    setAttemptedContactPickerOpen(false);
+    setDraftAttemptedContactMethods([]);
   };
 
   const cancelTransmissionPicker = () => {
@@ -1795,11 +1857,10 @@ const AbscondmentTerminationGenerator = ({
     checkRequired(formData.homeCity, "City");
     checkRequired(formData.homeProvince, "Province");
     checkRequired(formData.homeAreaCode, "Area code");
-    checkRequired(formData.effectiveDate, "Effective date");
     checkRequired(formData.issueDate, "Date of notice");
-    checkRequired(formData.noticePeriod, "Notice period");
+    checkRequired(formData.absentFromDate, "Absent from");
     checkRequired(formData.chairperson, "Chairperson");
-    checkRequired(formData.hearingDate, "Illness enquiry date");
+    checkRequired(formData.hearingDate, "Date of hearing");
     checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
@@ -1814,7 +1875,7 @@ const AbscondmentTerminationGenerator = ({
       const noticeDate = new Date(`${formData.issueDate}T00:00:00`);
       if (!Number.isNaN(hearingDate.getTime()) && !Number.isNaN(noticeDate.getTime())) {
         if (hearingDate > noticeDate) {
-          throw new Error("Illness enquiry date cannot be after Date of notice.");
+          throw new Error("Date of hearing cannot be after Date of notice.");
         }
         if (!allowSameDayHearingNotice && formData.hearingDate === formData.issueDate) {
           throw new Error(SAME_DAY_HEARING_NOTICE_CAUTION);
@@ -1842,7 +1903,10 @@ const AbscondmentTerminationGenerator = ({
       issuer: formData.issuer,
       chairperson: formData.chairperson,
       noticeMethod: "not_required_to_work_notice_period",
+      attemptedContactMethods: formData.attemptedContactMethods,
       transmissionMethods: formData.transmissionMethods,
+      abscondmentNoticeDate: formData.abscondmentNoticeDate,
+      absentFromDate: formData.absentFromDate,
       noticePeriod: formData.noticePeriod,
       noticeOfAppeal: formData.noticeOfAppeal,
       appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
@@ -2018,13 +2082,15 @@ const AbscondmentTerminationGenerator = ({
 
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
-    const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
-    const paragraphOneText = `We refer to the abovementioned matter and the enquiry relating to your ill health held on ${hearingDateDisplay || "[inquiry date]"}.`;
-    const paragraphTwoText =
-      data.chairperson === "external"
-        ? "After the chairperson considered the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available."
-        : "After considering the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available.";
-    const lastWorkingDaySentence = `You will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
+    const abscondmentNoticeDateDisplay = formatDate(data.abscondmentNoticeDate || "");
+    const absentFromDisplay = formatDate(data.absentFromDate || "");
+    const attemptedContactDisplay =
+      data.attemptedContactMethods.length > 0 ? data.attemptedContactMethods.join(", ") : "[attempted contact]";
+    const paragraphOneText = data.abscondmentNoticeDate
+      ? `We refer to the abovementioned matter, abscondment letter dated ${abscondmentNoticeDateDisplay || "[notice of abscondment]"} and the hearing held on ${hearingDateDisplay || "[date of hearing]"}.`
+      : `We refer to the abovementioned matter and the hearing held on ${hearingDateDisplay || "[date of hearing]"}.`;
+    const paragraphTwoText = `You have been absent from work without authorisation since ${absentFromDisplay || "[absent from]"}. Despite reasonable attempts made by the employer to contact you (${attemptedContactDisplay}) and to afford you an opportunity to explain your absence, you show no intention of returning to work.`;
+    const paragraphThreeText = `Your lack of intention to return to work constitutes a repudiation of your employment contract. The employer hereby accepts your repudiation, and accordingly your employment contract is terminated with effect from ${absentFromDisplay || "[absent from]"}.`;
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
 
@@ -2039,7 +2105,7 @@ const AbscondmentTerminationGenerator = ({
       },
       {
         title: "Paragraph 3",
-        body: `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(data.noticePeriod)} notice for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+        body: paragraphThreeText,
       },
       {
         title: "Paragraph 4",
@@ -3014,7 +3080,7 @@ const AbscondmentTerminationGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="issueDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of notice <span className="text-red-500">*</span>
+                        Date of letter <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3066,8 +3132,8 @@ const AbscondmentTerminationGenerator = ({
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="noticePeriod" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice period <span className="text-red-500">*</span>
+                      <Label htmlFor="abscondmentNoticeDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Notice of abscondment
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3075,83 +3141,48 @@ const AbscondmentTerminationGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Notice period info"
+                                aria-label="Notice of abscondment info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              In terms of the BCEA the minimum notice periods are based on employee&apos;s length of service: 1 week for less than 6 months, 2 weeks for less than a year but more than 6 months, 4 weeks for more than a year.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.noticePeriod}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            noticePeriod: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select notice period"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.noticePeriod ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {noticePeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of termination <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Date of termination info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This date is the last day that{" "}
-                              {formData.employeeName || formData.employeeSurname
-                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
-                                : "the employee"}{" "}
-                              will be working for you.
+                              This is the date when the abscondment letter was sent to the employee informing him/her to return to work.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </Label>
                       <div className="flex items-start gap-2">
                         <Input
-                          id="effectiveDate"
+                          id="abscondmentNoticeDate"
                           type="text"
                           readOnly
-                          placeholder="Auto-calculated from notice date and period"
-                          value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          placeholder="Please select a date"
+                          value={formData.abscondmentNoticeDate ? toDisplayDate(formData.abscondmentNoticeDate) : ""}
+                          onClick={openAbscondmentNoticeDatePicker}
+                          onFocus={openAbscondmentNoticeDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openAbscondmentNoticeDatePicker();
+                            }
+                          }}
+                          className={`${getAddendumModalInputClass(formData.abscondmentNoticeDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={abscondmentNoticeDatePickerRef}
+                          type="date"
+                          value={formData.abscondmentNoticeDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.abscondmentNoticeDate) ? formData.abscondmentNoticeDate : ""}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, abscondmentNoticeDate: e.target.value }))}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
                         />
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Illness enquiry date <span className="text-red-500">*</span>
+                      <Label htmlFor="absentFromDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Absent from <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3159,13 +3190,62 @@ const AbscondmentTerminationGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Illness enquiry date info"
+                                aria-label="Absent from date info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Before you can dismiss, a proper ill health investigation should be concluded with a hearing.
+                              This is the date from which the employee did not return to work.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="absentFromDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.absentFromDate ? toDisplayDate(formData.absentFromDate) : ""}
+                          onClick={openAbsentFromDatePicker}
+                          onFocus={openAbsentFromDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openAbsentFromDatePicker();
+                            }
+                          }}
+                          className={`${getAddendumModalInputClass(formData.absentFromDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={absentFromDatePickerRef}
+                          type="date"
+                          value={formData.absentFromDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.absentFromDate) ? formData.absentFromDate : ""}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, absentFromDate: e.target.value }))}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Date of hearing <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Date of hearing info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              Select the date on which the abscondment hearing was held.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -3197,6 +3277,45 @@ const AbscondmentTerminationGenerator = ({
                           tabIndex={-1}
                         />
                       </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="attemptedContactMethods" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Attempted contact
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Attempted contact info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              Before proceeding to a hearing, make reasonable attempts to contact the employee to establish his/her whereabouts.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <button
+                        id="attemptedContactMethods"
+                        type="button"
+                        onClick={openAttemptedContactPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.attemptedContactMethods.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                      >
+                        <span
+                          className={cn(
+                            "block truncate text-[11px]",
+                            formData.attemptedContactMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                          )}
+                        >
+                          {formData.attemptedContactMethods.length > 0
+                            ? `${formData.attemptedContactMethods.length} method(s) selected`
+                            : "Select attempted contact method(s)"}
+                        </span>
+                      </button>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
@@ -3425,15 +3544,18 @@ const AbscondmentTerminationGenerator = ({
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                   <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
-              const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
-              const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const paragraphOneText = `We refer to the abovementioned matter and the enquiry relating to your ill health held on ${hearingDateDisplay || "[inquiry date]"}.`;
-              const paragraphTwoText =
-                validatedPreview.chairperson === "external"
-                  ? "After the chairperson considered the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available."
-                  : "After considering the statement(s) and/or evidence presented during the enquiry, it has been determined that you remain incapable of performing your duties due to ill health, and that no reasonable alternative to dismissal is available.";
-              const lastWorkingDaySentence = `You will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`;
+              const abscondmentNoticeDateDisplay = formatDate(validatedPreview.abscondmentNoticeDate || "");
+              const absentFromDisplay = formatDate(validatedPreview.absentFromDate || "");
+              const attemptedContactDisplay =
+                validatedPreview.attemptedContactMethods.length > 0
+                  ? validatedPreview.attemptedContactMethods.join(", ")
+                  : "[attempted contact]";
+              const paragraphOneText = validatedPreview.abscondmentNoticeDate
+                ? `We refer to the abovementioned matter, abscondment letter dated ${abscondmentNoticeDateDisplay || "[notice of abscondment]"} and the hearing held on ${hearingDateDisplay || "[date of hearing]"}.`
+                : `We refer to the abovementioned matter and the hearing held on ${hearingDateDisplay || "[date of hearing]"}.`;
+              const paragraphTwoText = `You have been absent from work without authorisation since ${absentFromDisplay || "[absent from]"}. Despite reasonable attempts made by the employer to contact you (${attemptedContactDisplay}) and to afford you an opportunity to explain your absence, you show no intention of returning to work.`;
+              const paragraphThreeText = `Your lack of intention to return to work constitutes a repudiation of your employment contract. The employer hereby accepts your repudiation, and accordingly your employment contract is terminated with effect from ${absentFromDisplay || "[absent from]"}.`;
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -3445,7 +3567,7 @@ const AbscondmentTerminationGenerator = ({
                 },
                 {
                   title: "Paragraph 3",
-                  body: `Take notice that your employment is herewith terminated with ${formatNoticePeriodPossessive(validatedPreview.noticePeriod)} notice for incapacity: ill health, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+                  body: paragraphThreeText,
                 },
                 {
                   title: "Paragraph 4",
@@ -4074,6 +4196,101 @@ const AbscondmentTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyTransmissionPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={attemptedContactPickerOpen} onOpenChange={(open) => (open ? openAttemptedContactPicker() : cancelAttemptedContactPicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Phone className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Attempted Contact</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose one or more contact methods attempted. Use Done to apply or Cancel to discard changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 py-6">
+            <ScrollArea className="rounded border border-slate-200 bg-white">
+              <div className="space-y-1 p-3">
+                {attemptedContactMethodOptions.map((method) => (
+                  <label
+                    key={method}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                  >
+                    <Checkbox
+                      checked={draftAttemptedContactMethods.includes(method)}
+                      onCheckedChange={(checked) =>
+                        setDraftAttemptedContactMethods((prev) =>
+                          checked ? (prev.includes(method) ? prev : [...prev, method]) : prev.filter((item) => item !== method),
+                        )
+                      }
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                    />
+                    <span className="flex-1">{method}</span>
+                  </label>
+                ))}
+              </div>
+            </ScrollArea>
+            <div>
+              {draftAttemptedContactMethods.length === 0 ? (
+                <div className="text-xs text-slate-600">No method selected</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {draftAttemptedContactMethods.map((method) => (
+                    <Badge
+                      key={method}
+                      variant="outline"
+                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                    >
+                      {method}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelAttemptedContactPicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftAttemptedContactMethods([])}
+                  disabled={draftAttemptedContactMethods.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyAttemptedContactPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done

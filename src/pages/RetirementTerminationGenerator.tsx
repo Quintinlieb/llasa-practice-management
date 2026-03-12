@@ -1914,6 +1914,7 @@ const RetirementTerminationGenerator = ({
     const pdfMailIconDataUrl = createPdfMailIconDataUrl(iconColor);
     const [dividerR, dividerG, dividerB] = getPdfDividerRgb(dividerColor);
 
+    const issueDateDisplay = formatDate(data.issueDate);
     const retirementDateDisplay = formatDate(data.effectiveDate || "");
     const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
     const noticeMethodDisplay =

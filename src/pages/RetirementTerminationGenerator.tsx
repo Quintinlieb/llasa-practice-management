@@ -23,7 +23,6 @@ import {
   salaryFrequencyOptions,
   extractDobFromId,
   calculateAgeFromDob,
-  southAfricanProvinces,
   type PermanentContractFormData,
 } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
@@ -35,9 +34,12 @@ type ContractFormState = {
   logoPlacement: "center" | "left";
   letterheadThemeColors: string[];
   issuer: string;
-  chairperson: string;
   noticeMethod: string;
+  severancePackage: string;
+  voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
+  abscondmentNoticeDate: string;
+  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
@@ -45,6 +47,7 @@ type ContractFormState = {
   performanceConsultationDate: string;
   improvementPeriod: string;
   misconductTypes: string[];
+  selectionCriteria: string[];
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
@@ -77,9 +80,12 @@ type AddendumData = PermanentContractFormData & {
   logoPlacement: "center" | "left";
   letterheadThemeColors: string[];
   issuer: string;
-  chairperson: string;
   noticeMethod: string;
+  severancePackage: string;
+  voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
+  abscondmentNoticeDate: string;
+  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
@@ -87,6 +93,7 @@ type AddendumData = PermanentContractFormData & {
   performanceConsultationDate: string;
   improvementPeriod: string;
   misconductTypes: string[];
+  selectionCriteria: string[];
   homeAddressLine: string;
   homeAddressLine2: string;
   homeCity: string;
@@ -101,6 +108,8 @@ type SlimProfile = Pick<
 type SlimEmployee = {
   id: string;
   id_number: string | null;
+  date_of_birth: string | null;
+  retirement_age: number | null;
   employee_name: string;
   employee_surname: string;
   nationality: string | null;
@@ -141,7 +150,7 @@ const probationLabels: Record<PermanentContractFormData["probationPeriod"], stri
   "6": "6 Months",
 };
 
-const retirementAgeOptions: PermanentContractFormData["retirementAge"][] = ["55", "60", "65"];
+const retirementAgeOptions = ["55", "60", "65", "70"] as const;
 
 const addendumTypeOptions: Array<{ value: AddendumType; label: string }> = [
   { value: "general", label: "General Addendum" },
@@ -295,33 +304,7 @@ const noticeMethodOptions = [
   { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
 ] as const;
-const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
-const chairpersonOptions = [
-  { value: "external", label: "External" },
-  { value: "internal", label: "Internal" },
-] as const;
-
-const MISCONDUCT_TYPES = [
-  "Unauthorised Absenteeism",
-  "Poor Time Keeping",
-  "Sleeping On Duty",
-  "Using Phone on Duty",
-  "Insubordination",
-  "Insolent Behaviour",
-  "Unauthorised Possession",
-  "Unauthorised Excess",
-  "Unauthorised Removal",
-  "Testing Positive for Alcohol",
-  "Intoxicated at Work",
-  "Dereliction of Duties",
-  "Negligence",
-  "Dishonesty",
-  "Breach of Policy",
-  "Breach of Rule(s)",
-  "Breach of Procedure",
-] as const;
-
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
 
@@ -379,22 +362,12 @@ const generateCustomClauseId = () =>
     : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const SAME_DAY_HEARING_NOTICE_CAUTION = "__SAME_DAY_HEARING_NOTICE_CAUTION__";
+const RETIREMENT_NOTICE_RULE_CAUTION = "__RETIREMENT_NOTICE_RULE_CAUTION__";
 
 const deriveAgeFromId = (id: string) => {
   const dob = extractDobFromId(id);
   if (!dob) return "";
   return String(calculateAgeFromDob(dob));
-};
-
-const formatMisconductList = (types: string[]) => {
-  const normalized = types
-    .map((type) => type.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (normalized.length === 0) return "[forms of misconduct]";
-  if (normalized.length === 1) return normalized[0];
-  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
-  return `${normalized.slice(0, -1).join(", ")} and ${normalized[normalized.length - 1]}`;
 };
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
@@ -405,6 +378,82 @@ const formatCompanyDisplayName = (companyName?: string | null, companyType?: str
   if (!type) return name;
   if (name.toLowerCase().includes(type.toLowerCase())) return name;
   return `${name} ${type}`;
+};
+
+const computeRetirementDateFromProfile = (employee: SlimEmployee) => {
+  const retirementAgeRaw = Number(employee.retirement_age ?? 65);
+  const retirementAge = Number.isFinite(retirementAgeRaw) && retirementAgeRaw > 0 ? retirementAgeRaw : 65;
+  const dobFromProfile = (employee.date_of_birth ?? "").trim();
+  const dobFromIdRaw = (employee.id_number ?? "").trim().length === 13
+    ? extractDobFromId((employee.id_number ?? "").trim())
+    : "";
+  const dobFromId = dobFromIdRaw instanceof Date
+    ? `${dobFromIdRaw.getFullYear()}-${String(dobFromIdRaw.getMonth() + 1).padStart(2, "0")}-${String(dobFromIdRaw.getDate()).padStart(2, "0")}`
+    : (dobFromIdRaw ?? "");
+  const dob = dobFromProfile || dobFromId;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return "";
+  const base = new Date(`${dob}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return "";
+  const retirementDate = new Date(base);
+  retirementDate.setFullYear(retirementDate.getFullYear() + retirementAge);
+  const year = retirementDate.getFullYear();
+  const month = String(retirementDate.getMonth() + 1).padStart(2, "0");
+  const day = String(retirementDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const deriveAgeFromDateOfBirth = (dateOfBirthRaw: string) => {
+  const value = (dateOfBirthRaw || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return String(calculateAgeFromDob(date));
+};
+
+const getNormalizedDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
+const getNoticePeriodEndDate = (issueDateRaw: string, noticePeriodRaw: string) => {
+  const issueDate = getNormalizedDate(issueDateRaw);
+  if (!issueDate) return null;
+
+  const notice = (noticePeriodRaw || "").trim().toLowerCase();
+  const match = notice.match(/^(\d+)\s+(day|days|week|weeks|month|months)$/);
+  if (!match) return null;
+
+  const amount = Number.parseInt(match[1], 10);
+  const unit = match[2];
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const endDate = new Date(issueDate);
+  if (unit === "day" || unit === "days") {
+    endDate.setDate(endDate.getDate() + amount);
+    return endDate;
+  }
+  if (unit === "week" || unit === "weeks") {
+    endDate.setDate(endDate.getDate() + amount * 7);
+    return endDate;
+  }
+  endDate.setMonth(endDate.getMonth() + amount);
+  return endDate;
+};
+
+const shouldShowRetirementNoticeRuleCaution = (issueDateRaw: string, retirementDateRaw: string, noticePeriodRaw: string) => {
+  const retirementDate = getNormalizedDate(retirementDateRaw);
+  if (!retirementDate) return false;
+
+  const today = new Date();
+  const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const hasReachedRetirementDate = normalizedToday >= retirementDate;
+  if (hasReachedRetirementDate) return false;
+
+  const noticeEndDate = getNoticePeriodEndDate(issueDateRaw, noticePeriodRaw);
+  if (!noticeEndDate) return false;
+  return noticeEndDate < retirementDate;
 };
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
@@ -733,14 +782,16 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   );
 };
 
-const PoorPerformanceTerminationGenerator = ({
+const RetirementTerminationGenerator = ({
   embedded = false,
   externalNavigation = false,
+  onRequestClose,
   onStepChange,
   onStepMetaChange,
 }: {
   embedded?: boolean;
   externalNavigation?: boolean;
+  onRequestClose?: () => void;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -765,9 +816,6 @@ const PoorPerformanceTerminationGenerator = ({
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
-  const [conductOffences, setConductOffences] = useState<
-    { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
-  >([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(false);
@@ -785,6 +833,7 @@ const PoorPerformanceTerminationGenerator = ({
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
+  const [retirementAgeInput, setRetirementAgeInput] = useState<(typeof retirementAgeOptions)[number]>("65");
   const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
   const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
@@ -795,22 +844,20 @@ const PoorPerformanceTerminationGenerator = ({
   });
   const [sameDayOverrideAccepted, setSameDayOverrideAccepted] = useState(false);
   const [sameDayCautionDismissed, setSameDayCautionDismissed] = useState(false);
-  const [misconductSearch, setMisconductSearch] = useState("");
-  const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
-  const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
+  const [retirementDateCaution, setRetirementDateCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
+    open: false,
+    pendingAction: "",
+  });
+  const [retirementDateOverrideAccepted, setRetirementDateOverrideAccepted] = useState(false);
+  const [retirementDateCautionDismissed, setRetirementDateCautionDismissed] = useState(false);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const retirementDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const addClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -855,9 +902,12 @@ const PoorPerformanceTerminationGenerator = ({
     logoPlacement: "center",
     letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
-    chairperson: "",
     noticeMethod: "",
+    severancePackage: "None",
+    voluntaryRetrenchment: "no",
     transmissionMethods: [],
+    abscondmentNoticeDate: "",
+    absentFromDate: "",
     noticePeriod: "",
     noticeOfAppeal: "",
     appliedProgressiveDisciplinaryAction: "",
@@ -865,6 +915,7 @@ const PoorPerformanceTerminationGenerator = ({
     performanceConsultationDate: "",
     improvementPeriod: "",
     misconductTypes: [],
+    selectionCriteria: [],
     contractReference: "",
     addendumType: "general",
     effectiveDate: "",
@@ -951,23 +1002,6 @@ const PoorPerformanceTerminationGenerator = ({
       .map((item) => item.employee);
   }, [employeeSearchQuery, sortedEmployees]);
 
-  const misconductOptions = useMemo(() => {
-    if (conductOffences.length > 0) {
-      return Array.from(new Set(conductOffences.map((item) => item.name)));
-    }
-    return MISCONDUCT_TYPES;
-  }, [conductOffences]);
-  const dismissibleMisconductNames = useMemo(
-    () => new Set(conductOffences.filter((item) => item.category === "Dismissible").map((item) => item.name.trim().toLowerCase())),
-    [conductOffences],
-  );
-
-  const filteredMisconductTypes = useMemo(() => {
-    const query = misconductSearch.trim().toLowerCase();
-    if (!query) return misconductOptions;
-    return misconductOptions.filter((type) => type.toLowerCase().includes(query));
-  }, [misconductSearch, misconductOptions]);
-
   useEffect(() => {
     if (!loading && !user) {
       navigate("/auth");
@@ -981,12 +1015,6 @@ const PoorPerformanceTerminationGenerator = ({
   }, [employeeSearchOpen]);
 
   useEffect(() => {
-    if (!misconductPickerOpen) return;
-    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [misconductPickerOpen]);
-
-  useEffect(() => {
     if (formData.noticePeriod) return;
     if (!formData.noticeMethod) return;
     setFormData((prev) => ({ ...prev, noticeMethod: "" }));
@@ -996,6 +1024,28 @@ const PoorPerformanceTerminationGenerator = ({
     setSameDayOverrideAccepted(false);
     setSameDayCautionDismissed(false);
   }, [formData.issueDate, formData.hearingDate]);
+
+  useEffect(() => {
+    setRetirementDateOverrideAccepted(false);
+    setRetirementDateCautionDismissed(false);
+  }, [formData.issueDate, formData.effectiveDate, formData.noticePeriod]);
+
+  useEffect(() => {
+    if (activeStep !== 2) return;
+    if (retirementDateOverrideAccepted) return;
+    if (retirementDateCautionDismissed) return;
+    if (retirementDateCaution.open) return;
+    if (!shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)) return;
+    setRetirementDateCaution({ open: true, pendingAction: "" });
+  }, [
+    activeStep,
+    formData.issueDate,
+    formData.effectiveDate,
+    formData.noticePeriod,
+    retirementDateOverrideAccepted,
+    retirementDateCautionDismissed,
+    retirementDateCaution.open,
+  ]);
 
   useEffect(() => {
     if (sameDayOverrideAccepted) return;
@@ -1043,76 +1093,25 @@ const PoorPerformanceTerminationGenerator = ({
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("employees")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
+        "id, id_number, date_of_birth, retirement_age, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
       )
       .eq("company_id", user.id);
     if (error) {
       console.warn("Unable to load employees", error);
       return;
     }
-    if (data) setEmployees(data as SlimEmployee[]);
-  }, [user]);
-
-  const fetchConductOffences = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await (supabase as any)
-      .from("company_code_of_conduct")
-      .select("data")
-      .eq("company_id", user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.warn("Unable to load conduct offences", error);
-      return;
-    }
-
-    const sections =
-      (
-        data?.data as {
-          sections?: Array<{
-            title?: string;
-            offences?: Array<{ name?: string; category?: string; first?: string }>;
-          }>;
-        }
-      )?.sections ?? [];
-
-    const mapped = sections
-      .flatMap((section) => {
-        const sectionCategory = section.title?.toLowerCase().includes("dismiss")
-          ? "Dismissible"
-          : section.title?.toLowerCase().includes("minor")
-            ? "Minor"
-          : section.title?.toLowerCase().includes("serious")
-            ? "Serious"
-            : undefined;
-        return (section.offences ?? []).map((offence) => {
-          const name = offence.name?.trim();
-          if (!name) return null;
-          const category =
-            (offence.category as "Minor" | "Serious" | "Dismissible" | undefined) ?? sectionCategory ?? "Serious";
-          return { name, category, firstOutcome: offence.first ?? "" };
-        });
-      })
-      .filter(
-        (item): item is { name: string; category: "Minor" | "Serious" | "Dismissible"; firstOutcome: string } =>
-          Boolean(item?.name),
-      );
-
-    if (mapped.length > 0) {
-      setConductOffences(mapped);
-    }
+    if (data) setEmployees(data as unknown as SlimEmployee[]);
   }, [user]);
 
   useEffect(() => {
     if (user) {
       fetchProfile();
       fetchEmployees();
-      fetchConductOffences();
     }
-  }, [user, fetchEmployees, fetchProfile, fetchConductOffences]);
+  }, [user, fetchEmployees, fetchProfile]);
 
   useEffect(() => {
     if (profile) {
@@ -1152,8 +1151,13 @@ const PoorPerformanceTerminationGenerator = ({
     const areaCode = (employee as Partial<Tables<"employees">> & { area_code?: string }).area_code ?? "";
     const idNumber = hasIdNumber ? employee.id_number ?? "" : "";
     const ageFromId = hasIdNumber ? deriveAgeFromId(idNumber) : "";
+    const ageFromDob = deriveAgeFromDateOfBirth(employee.date_of_birth ?? "");
+    const resolvedAge = ageFromId || ageFromDob;
     const nextIdType: "id" | "passport" = hasIdNumber ? "id" : "passport";
     const autoNoticePeriod = getAutoNoticePeriodFromStartDate(startDate);
+    const computedRetirementDate = computeRetirementDateFromProfile(employee);
+    const selectedRetirementAge =
+      retirementAgeOptions.find((option) => option === String(employee.retirement_age ?? 65)) ?? "65";
 
     setFormData((prev) => ({
       ...prev,
@@ -1176,10 +1180,12 @@ const PoorPerformanceTerminationGenerator = ({
       homeCity: city || prev.homeCity,
       homeProvince: province || prev.homeProvince,
       homeAreaCode: areaCode || prev.homeAreaCode,
-      age: ageFromId,
+      age: resolvedAge,
       idType: nextIdType,
       noticePeriod: autoNoticePeriod,
+      effectiveDate: computedRetirementDate,
     }));
+    setRetirementAgeInput(selectedRetirementAge);
   };
 
   const resetForm = () => {
@@ -1190,9 +1196,12 @@ const PoorPerformanceTerminationGenerator = ({
       logoPlacement: "center",
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
-      chairperson: "",
       noticeMethod: "",
+      severancePackage: "None",
+      voluntaryRetrenchment: "no",
       transmissionMethods: [],
+      abscondmentNoticeDate: "",
+      absentFromDate: "",
       noticePeriod: "",
       noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
@@ -1200,6 +1209,7 @@ const PoorPerformanceTerminationGenerator = ({
       performanceConsultationDate: "",
       improvementPeriod: "",
       misconductTypes: [],
+      selectionCriteria: [],
       contractReference: "",
       addendumType: "general",
       effectiveDate: "",
@@ -1242,6 +1252,7 @@ const PoorPerformanceTerminationGenerator = ({
       additionalNotes: "",
     });
     setSelectedEmployeeId("");
+    setRetirementAgeInput("65");
     setValidatedPreview(null);
     setShowFinalActions(false);
     setActiveStep(0);
@@ -1262,39 +1273,6 @@ const PoorPerformanceTerminationGenerator = ({
       setFormData((prev) => (derived !== prev.age ? { ...prev, age: derived } : prev));
     }
   }, [formData.employeeIdNumber, formData.idType]);
-
-  useEffect(() => {
-    const noticeDate = formData.issueDate.trim();
-    const noticePeriod = formData.noticePeriod.trim();
-    if (!noticeDate || !noticePeriod) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(noticeDate)) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    const baseDate = new Date(`${noticeDate}T00:00:00`);
-    if (Number.isNaN(baseDate.getTime())) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    const nextDate = new Date(baseDate);
-    const weeksMatch = noticePeriod.match(/^(\d+)\s+week/);
-    const weeks = weeksMatch ? Number(weeksMatch[1]) : 0;
-    if (weeks > 0) {
-      nextDate.setDate(nextDate.getDate() + weeks * 7);
-    }
-
-    const year = nextDate.getFullYear();
-    const month = String(nextDate.getMonth() + 1).padStart(2, "0");
-    const day = String(nextDate.getDate()).padStart(2, "0");
-    const computed = `${year}-${month}-${day}`;
-    setFormData((prev) => (prev.effectiveDate !== computed ? { ...prev, effectiveDate: computed } : prev));
-  }, [formData.issueDate, formData.noticePeriod]);
 
   const isEmployerStepComplete = useMemo(
     () => Boolean(formData.employerContact && formData.employerEmail),
@@ -1326,33 +1304,25 @@ const PoorPerformanceTerminationGenerator = ({
 
   const isEmploymentStepComplete = useMemo(
     () => {
-      const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
+      const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeMethod = Boolean(formData.noticeMethod);
-      const hasChairperson = Boolean(formData.chairperson);
-      const hasHearingDate = Boolean(formData.hearingDate);
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
-        formData.effectiveDate &&
-          formData.issueDate &&
-          hasNoticePeriod &&
+        formData.issueDate &&
+          formData.effectiveDate &&
           hasNoticeOfAppeal &&
+          hasNoticePeriod &&
           hasNoticeMethod &&
-          hasChairperson &&
-          hasHearingDate &&
           hasTransmissionMethods,
       );
     },
     [
-      formData.noticePeriod,
-      formData.noticeOfAppeal,
-      formData.noticeMethod,
-      formData.chairperson,
-      formData.hearingDate,
-      formData.performanceConsultationDate,
-      formData.improvementPeriod,
-      formData.transmissionMethods,
       formData.effectiveDate,
+      formData.noticeOfAppeal,
+      formData.noticePeriod,
+      formData.noticeMethod,
+      formData.transmissionMethods,
       formData.issueDate,
     ],
   );
@@ -1513,6 +1483,7 @@ const PoorPerformanceTerminationGenerator = ({
       homeAreaCode: "",
     }));
     setSelectedEmployeeId("");
+    setRetirementAgeInput("65");
   };
 
   const resetEmployerStepFields = () => {
@@ -1535,22 +1506,12 @@ const PoorPerformanceTerminationGenerator = ({
     setFormData((prev) => ({
       ...prev,
       issuer: "",
-      chairperson: "",
       noticeMethod: "",
       transmissionMethods: [],
       noticePeriod: "",
       noticeOfAppeal: "",
-      appliedProgressiveDisciplinaryAction: "",
-      hearingDate: "",
-      performanceConsultationDate: "",
-      improvementPeriod: "",
-      misconductTypes: [],
-      addendumType: "general",
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
-      contractEndDate: "",
-      newEndDate: "",
-      contractReference: "",
     }));
   };
 
@@ -1601,49 +1562,23 @@ const PoorPerformanceTerminationGenerator = ({
   const openNoticeDatePicker = () => {
     const picker = noticeDatePickerRef.current;
     if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
+    const pickerWithApi = picker as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerWithApi.showPicker === "function") {
+      pickerWithApi.showPicker();
     } else {
       picker.click();
     }
   };
 
-  const openHearingDatePicker = () => {
-    const picker = hearingDatePickerRef.current;
+  const openRetirementDatePicker = () => {
+    const picker = retirementDatePickerRef.current;
     if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
+    const pickerWithApi = picker as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerWithApi.showPicker === "function") {
+      pickerWithApi.showPicker();
     } else {
       picker.click();
     }
-  };
-
-  const openConsultationDatePicker = () => {
-    const picker = consultationDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openMisconductPicker = () => {
-    setDraftMisconductTypes(formData.misconductTypes);
-    setMisconductSearch("");
-    setMisconductPickerOpen(true);
-  };
-
-  const cancelMisconductPicker = () => {
-    setMisconductPickerOpen(false);
-    setMisconductSearch("");
-    setDraftMisconductTypes([]);
-  };
-
-  const applyMisconductPicker = () => {
-    setFormData((prev) => ({ ...prev, misconductTypes: draftMisconductTypes }));
-    setMisconductPickerOpen(false);
-    setMisconductSearch("");
   };
 
   const openTransmissionPicker = () => {
@@ -1706,36 +1641,6 @@ const PoorPerformanceTerminationGenerator = ({
     setDraftLetterheadThemeColors([]);
   };
 
-  const openContractReferencePicker = () => {
-    const picker = contractReferencePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openContractEndDatePicker = () => {
-    const picker = contractEndDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openNewEndDatePicker = () => {
-    const picker = newEndDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
   const handleCompanyLogoUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1779,7 +1684,7 @@ const PoorPerformanceTerminationGenerator = ({
     }
   };
 
-  const validateData = (allowSameDayHearingNotice = false) => {
+  const validateData = () => {
     const missingFields: string[] = [];
     const checkRequired = (value: string | undefined | null, label: string) => {
       if (!value || !value.toString().trim()) {
@@ -1800,32 +1705,24 @@ const PoorPerformanceTerminationGenerator = ({
     checkRequired(formData.homeCity, "City");
     checkRequired(formData.homeProvince, "Province");
     checkRequired(formData.homeAreaCode, "Area code");
-    checkRequired(formData.effectiveDate, "Effective date");
-    checkRequired(formData.issueDate, "Date of notice");
+    checkRequired(formData.issueDate, "Date of letter");
+    checkRequired(formData.effectiveDate, "Retirement date");
     checkRequired(formData.noticePeriod, "Notice period");
-    checkRequired(formData.noticeMethod, "Notice Method");
-    checkRequired(formData.chairperson, "Chairperson");
-    checkRequired(formData.hearingDate, "Performance enquiry date");
-    checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
+    checkRequired(formData.noticeMethod, "Notice method");
+    checkRequired(formData.noticeOfAppeal, "Notice of appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
     }
 
-    if (missingFields.length) {
-      throw new Error(`Please fill in the following required fields: ${missingFields.join(", ")}`);
+    if (
+      !retirementDateOverrideAccepted &&
+      shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)
+    ) {
+      throw new Error(RETIREMENT_NOTICE_RULE_CAUTION);
     }
 
-    if (/^\d{4}-\d{2}-\d{2}$/.test(formData.hearingDate) && /^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate)) {
-      const hearingDate = new Date(`${formData.hearingDate}T00:00:00`);
-      const noticeDate = new Date(`${formData.issueDate}T00:00:00`);
-      if (!Number.isNaN(hearingDate.getTime()) && !Number.isNaN(noticeDate.getTime())) {
-        if (hearingDate > noticeDate) {
-          throw new Error("Performance enquiry date cannot be after Date of notice.");
-        }
-        if (!allowSameDayHearingNotice && formData.hearingDate === formData.issueDate) {
-          throw new Error(SAME_DAY_HEARING_NOTICE_CAUTION);
-        }
-      }
+    if (missingFields.length) {
+      throw new Error(`Please fill in the following required fields: ${missingFields.join(", ")}`);
     }
 
     const issueDate = formData.issueDate;
@@ -1846,16 +1743,11 @@ const PoorPerformanceTerminationGenerator = ({
       logoPlacement: formData.logoPlacement,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
-      chairperson: formData.chairperson,
       noticeMethod: formData.noticeMethod,
       transmissionMethods: formData.transmissionMethods,
+      effectiveDate: formData.effectiveDate,
       noticePeriod: formData.noticePeriod,
       noticeOfAppeal: formData.noticeOfAppeal,
-      appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
-      hearingDate: formData.hearingDate,
-      performanceConsultationDate: formData.performanceConsultationDate,
-      improvementPeriod: formData.improvementPeriod,
-      misconductTypes: formData.misconductTypes,
       homeAddressLine: formData.homeAddressLine,
       homeAddressLine2: formData.homeAddressLine2,
       homeCity: formData.homeCity,
@@ -1942,7 +1834,7 @@ const PoorPerformanceTerminationGenerator = ({
       });
       setShowFinalActions(false);
     }
-  }, [showFinalActions, formData]);
+  }, [showFinalActions, formData, retirementDateOverrideAccepted]);
 
   const addWrappedText = (
     doc: jsPDF,
@@ -2022,21 +1914,17 @@ const PoorPerformanceTerminationGenerator = ({
     const pdfMailIconDataUrl = createPdfMailIconDataUrl(iconColor);
     const [dividerR, dividerG, dividerB] = getPdfDividerRgb(dividerColor);
 
-    const issueDateDisplay = formatDate(data.issueDate);
-    const hearingDateDisplay = formatDate(data.hearingDate);
-    const consultationDateDisplay = formatDate(data.performanceConsultationDate);
-    const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
-    const paragraphOneText = data.performanceConsultationDate
-      ? `We refer to the abovementioned matter, the performance consultation held on ${consultationDateDisplay || "[consultation date]"} and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`
-      : `We refer to the abovementioned matter and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`;
-    const paragraphTwoText =
-      data.chairperson === "external"
-        ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
-        : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
-    const lastWorkingDaySentence =
-      data.noticeMethod === "not_required_to_work_notice_period"
-        ? `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`
-        : `Your last working day will be ${terminationDateDisplay || "[date of termination]"}.`;
+    const retirementDateDisplay = formatDate(data.effectiveDate || "");
+    const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
+    const noticeMethodDisplay =
+      data.noticeMethod === "required_to_work_notice_period"
+        ? "be required to work during the notice period"
+        : data.noticeMethod === "not_required_to_work_notice_period"
+          ? "not be required to work during the notice period and be paid in lieu of notice"
+          : "[notice method]";
+    const paragraphOneText = "We refer to the abovementioned matter.";
+    const paragraphTwoText = `According to the employer's records, you will reach the agreed retirement age of ${retirementAgeDisplay} on ${retirementDateDisplay || "[Retirement date]"}. Your employment will therefore terminate on account of retirement.`;
+    const paragraphThreeText = `Take notice that your employment will terminate on ${retirementDateDisplay || "[retirement date]"} and you will ${noticeMethodDisplay}.`;
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
 
@@ -2051,14 +1939,10 @@ const PoorPerformanceTerminationGenerator = ({
       },
       {
         title: "Paragraph 3",
-        body: `Take notice that your employment is herewith terminated for incapacity: poor work performance, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+        body: paragraphThreeText,
       },
       {
         title: "Paragraph 4",
-        body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
-      },
-      {
-        title: "Paragraph 5",
         body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
       },
     ];
@@ -2367,7 +2251,7 @@ const PoorPerformanceTerminationGenerator = ({
       const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
       const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this letter and confirm that the content hereof was explained to me.`;
       const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      let ackCursorY = y;
+      const ackCursorY = y;
       ackLines.forEach((line, idx) => {
         doc.text(line, margin + 2, ackCursorY + idx * 4.8);
       });
@@ -2405,7 +2289,7 @@ const PoorPerformanceTerminationGenerator = ({
       doc.save(`Poor_Performance_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
-        description: "Poor performance termination letter has been generated.",
+        description: "Retirement termination letter has been generated.",
       });
       return;
     }
@@ -2417,12 +2301,16 @@ const PoorPerformanceTerminationGenerator = ({
   function handleDownload() {
     try {
       setIsGenerating(true);
-      const validated = validateData(sameDayOverrideAccepted);
+      const validated = validateData();
       generatePDF(validated, true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
       if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
         setSameDayCaution({ open: true, pendingAction: "download" });
+        return;
+      }
+      if (message === RETIREMENT_NOTICE_RULE_CAUTION) {
+        setRetirementDateCaution({ open: true, pendingAction: "download" });
         return;
       }
       toast({
@@ -2437,7 +2325,7 @@ const PoorPerformanceTerminationGenerator = ({
 
   function handleFinish() {
     try {
-      const validated = validateData(sameDayOverrideAccepted);
+      const validated = validateData();
       setValidatedPreview(validated);
       setIsPreviewEditable(false);
       setShowFinalActions(true);
@@ -2445,6 +2333,10 @@ const PoorPerformanceTerminationGenerator = ({
       const message = error instanceof Error ? error.message : "Please check the required fields.";
       if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
         setSameDayCaution({ open: true, pendingAction: "finish" });
+        return;
+      }
+      if (message === RETIREMENT_NOTICE_RULE_CAUTION) {
+        setRetirementDateCaution({ open: true, pendingAction: "finish" });
         return;
       }
       toast({
@@ -2466,6 +2358,29 @@ const PoorPerformanceTerminationGenerator = ({
     setSameDayOverrideAccepted(true);
     setSameDayCautionDismissed(false);
     setSameDayCaution({ open: false, pendingAction: "" });
+    if (pending === "download") {
+      handleDownload();
+      return;
+    }
+    if (pending === "finish") {
+      handleFinish();
+    }
+  };
+
+  const closeRetirementDateCaution = () => {
+    setRetirementDateCautionDismissed(true);
+    setRetirementDateCaution({ open: false, pendingAction: "" });
+  };
+  const exitRetirementFromCaution = () => {
+    closeRetirementDateCaution();
+    onRequestClose?.();
+  };
+
+  const confirmRetirementDateCaution = () => {
+    const pending = retirementDateCaution.pendingAction;
+    setRetirementDateOverrideAccepted(true);
+    setRetirementDateCautionDismissed(false);
+    setRetirementDateCaution({ open: false, pendingAction: "" });
     if (pending === "download") {
       handleDownload();
       return;
@@ -2960,6 +2875,63 @@ const PoorPerformanceTerminationGenerator = ({
                           }
                         />
                       </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="currentAge" className={modalFieldLabelClass}>
+                          Current age
+                        </Label>
+                        <Input
+                          id="currentAge"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={3}
+                          value={formData.age}
+                          onKeyDown={(e) => {
+                            const isDigit = /^[0-9]$/.test(e.key);
+                            const allowedControlKey =
+                              e.key === "Backspace" ||
+                              e.key === "Delete" ||
+                              e.key === "Tab" ||
+                              e.key === "ArrowLeft" ||
+                              e.key === "ArrowRight" ||
+                              e.key === "Home" ||
+                              e.key === "End";
+                            const allowedShortcut = (e.ctrlKey || e.metaKey) && ["a", "c", "v", "x"].includes(e.key.toLowerCase());
+
+                            if (!isDigit && !allowedControlKey && !allowedShortcut) {
+                              e.preventDefault();
+                            }
+                          }}
+                          onChange={(e) => {
+                            const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                            setFormData((prev) => ({ ...prev, age: digitsOnly }));
+                          }}
+                          placeholder="Insert age"
+                          className={getAddendumModalInputClass(formData.age.trim().length > 0)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="retirementAge" className={modalFieldLabelClass}>
+                          Retirement age
+                        </Label>
+                        <Select
+                          value={retirementAgeInput}
+                          onValueChange={(value) =>
+                            setRetirementAgeInput(value as (typeof retirementAgeOptions)[number])
+                          }
+                        >
+                          <SelectTrigger className={`${getAddendumModalSelectTriggerClass(true)} ${addendumModalDropdownToneClass}`}>
+                            <SelectValue placeholder="Select retirement age" />
+                          </SelectTrigger>
+                          <SelectContent className={addendumModalSelectContentClass}>
+                            {retirementAgeOptions.map((option) => (
+                              <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <div className="md:col-span-2 border-t border-slate-200/80 my-1" />
                       <div className="space-y-1.5">
                         <Label htmlFor="homeAddressLine" className={modalFieldLabelClass}>
@@ -2996,30 +2968,12 @@ const PoorPerformanceTerminationGenerator = ({
                         <Label htmlFor="homeProvince" className={modalFieldLabelClass}>
                           Province <span className="text-red-500">*</span>
                         </Label>
-                        <Select
+                        <Input
+                          id="homeProvince"
                           value={formData.homeProvince}
-                          onValueChange={(value) => setFormData({ ...formData, homeProvince: value })}
-                        >
-                          <SelectTrigger
-                            id="homeProvince"
-                            className={`${getAddendumModalSelectTriggerClass(
-                              formData.homeProvince.trim().length > 0,
-                            )} ${addendumModalDropdownToneClass}`}
-                          >
-                            <SelectValue placeholder="Select province" />
-                          </SelectTrigger>
-                          <SelectContent className={addendumModalSelectContentClass}>
-                            {southAfricanProvinces.map((province) => (
-                              <SelectItem
-                                key={province}
-                                value={province}
-                                className={addendumModalSelectItemClass}
-                              >
-                                {province}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onChange={(e) => setFormData({ ...formData, homeProvince: e.target.value })}
+                          className={getAddendumModalInputClass(formData.homeProvince.trim().length > 0)}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="homeAreaCode" className={modalFieldLabelClass}>
@@ -3090,6 +3044,55 @@ const PoorPerformanceTerminationGenerator = ({
                           type="date"
                           value={formData.issueDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate) ? formData.issueDate : ""}
                           onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Retirement date <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Retirement date info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              This is the employee&apos;s final date of employment due to retirement.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="effectiveDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
+                          onClick={openRetirementDatePicker}
+                          onFocus={openRetirementDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openRetirementDatePicker();
+                            }
+                          }}
+                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={retirementDatePickerRef}
+                          type="date"
+                          value={formData.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.effectiveDate) ? formData.effectiveDate : ""}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, effectiveDate: e.target.value }))}
                           className="sr-only"
                           aria-hidden="true"
                           tabIndex={-1}
@@ -3173,173 +3176,6 @@ const PoorPerformanceTerminationGenerator = ({
                       </div>
                     ) : null}
                     <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of termination <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Date of termination info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This date is the last day that{" "}
-                              {formData.employeeName || formData.employeeSurname
-                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
-                                : "the employee"}{" "}
-                              will be working for you.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="effectiveDate"
-                          type="text"
-                          readOnly
-                          placeholder="Auto-calculated from notice date and period"
-                          value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="hearingDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Performance enquiry date <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Performance enquiry date info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Prior to a dimissal, a proper poor performance management procedure should be followed:
-                              <br />
-                              Consultation(s) &gt; time to imporve &gt; hearing/performance inquiry.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="hearingDate"
-                          type="text"
-                          readOnly
-                          placeholder="Please select a date"
-                          value={formData.hearingDate ? toDisplayDate(formData.hearingDate) : ""}
-                          onClick={openHearingDatePicker}
-                          onFocus={openHearingDatePicker}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openHearingDatePicker();
-                            }
-                          }}
-                          className={`${getAddendumModalInputClass(formData.hearingDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                        />
-                        <input
-                          ref={hearingDatePickerRef}
-                          type="date"
-                          value={formData.hearingDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.hearingDate) ? formData.hearingDate : ""}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, hearingDate: e.target.value }))}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="performanceConsultationDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Performance consultation date
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Performance consultation date info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              The employee should be informed of any substandard performance issues in a consultation and granted reasonable time to improve.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="performanceConsultationDate"
-                          type="text"
-                          readOnly
-                          placeholder="Please select a date"
-                          value={formData.performanceConsultationDate ? toDisplayDate(formData.performanceConsultationDate) : ""}
-                          onClick={openConsultationDatePicker}
-                          onFocus={openConsultationDatePicker}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openConsultationDatePicker();
-                            }
-                          }}
-                          className={`${getAddendumModalInputClass(formData.performanceConsultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                        />
-                        <input
-                          ref={consultationDatePickerRef}
-                          type="date"
-                          value={
-                            formData.performanceConsultationDate &&
-                            /^\d{4}-\d{2}-\d{2}$/.test(formData.performanceConsultationDate)
-                              ? formData.performanceConsultationDate
-                              : ""
-                          }
-                          onChange={(e) => setFormData((prev) => ({ ...prev, performanceConsultationDate: e.target.value }))}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="improvementPeriod" className={modalFieldLabelClass}>
-                        Improvement period
-                      </Label>
-                      <Select
-                        value={formData.improvementPeriod}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, improvementPeriod: value }))}
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.improvementPeriod))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select improvement period"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.improvementPeriod ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {improvementPeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
                       <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Notice of appeal <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
@@ -3355,7 +3191,7 @@ const PoorPerformanceTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This is the time allowed for an employee to lodge an appeal against the decision to dismiss.
+                              This is the time allowed for an employee to lodge an appeal against this retirement termination decision.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -3377,51 +3213,6 @@ const PoorPerformanceTerminationGenerator = ({
                           {noticeOfAppealOptions.map((option) => (
                             <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
                               {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="chairperson" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Chairperson <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Chairperson info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              It is advised that an external person chair the performance hearing to ensure
-                              impartiality in the decision-making process. You are not prohibited from chairing your
-                              own hearing.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.chairperson}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, chairperson: value }))}
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.chairperson))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select chairperson type"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.chairperson ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {chairpersonOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
-                              {option.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -3566,21 +3357,17 @@ const PoorPerformanceTerminationGenerator = ({
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                   <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
-              const issueDateDisplay = formatDate(validatedPreview.issueDate);
-              const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
-              const consultationDateDisplay = formatDate(validatedPreview.performanceConsultationDate);
-              const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const paragraphOneText = validatedPreview.performanceConsultationDate
-                ? `We refer to the abovementioned matter, the performance consultation held on ${consultationDateDisplay || "[consultation date]"} and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`
-                : `We refer to the abovementioned matter and the enquiry relating to your poor work performance held on ${hearingDateDisplay || "[performance inquiry date]"}.`;
-              const paragraphTwoText =
-                validatedPreview.chairperson === "external"
-                  ? "After the chairperson considered the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard."
-                  : "After considering the statement(s) and/or evidence presented during the inquiry, it has been determined that you do not possess the required capacity to perform your duties to the required standard.";
-              const lastWorkingDaySentence =
-                validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                  ? `Your last working day will be ${issueDateDisplay || "[date of notice]"} and you will be paid in lieu of notice up to ${terminationDateDisplay || "[date of termination]"}.`
-                  : `Your last working day will be ${terminationDateDisplay || "[date of termination]"}.`;
+              const retirementDateDisplay = formatDate(validatedPreview.effectiveDate || "");
+              const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
+              const noticeMethodDisplay =
+                validatedPreview.noticeMethod === "required_to_work_notice_period"
+                  ? "be required to work during the notice period"
+                  : validatedPreview.noticeMethod === "not_required_to_work_notice_period"
+                    ? "not be required to work during the notice period and be paid in lieu of notice"
+                    : "[notice method]";
+              const paragraphOneText = "We refer to the abovementioned matter.";
+              const paragraphTwoText = `According to the employer's records, you will reach the agreed retirement age of ${retirementAgeDisplay} on ${retirementDateDisplay || "[Retirement date]"}. Your employment will therefore terminate on account of retirement.`;
+              const paragraphThreeText = `Take notice that your employment will terminate on ${retirementDateDisplay || "[retirement date]"} and you will ${noticeMethodDisplay}.`;
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -3592,14 +3379,10 @@ const PoorPerformanceTerminationGenerator = ({
                 },
                 {
                   title: "Paragraph 3",
-                  body: `Take notice that your employment is herewith terminated for incapacity: poor work performance, effective ${issueDateDisplay || "[date of notice]"}. ${lastWorkingDaySentence}`,
+                  body: paragraphThreeText,
                 },
                 {
                   title: "Paragraph 4",
-                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
-                },
-                {
-                  title: "Paragraph 5",
                   body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
                 },
               ];
@@ -3852,9 +3635,7 @@ const PoorPerformanceTerminationGenerator = ({
                                         autoCorrect="on"
                                       />
                                       <div className="flex items-center justify-end gap-2">
-                                        {Boolean(
-                                          clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
-                                        ) ? (
+                                        {clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id] ? (
                                           <Button
                                             size="sm"
                                             variant="ghost"
@@ -4030,112 +3811,6 @@ const PoorPerformanceTerminationGenerator = ({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
-            </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <DialogHeader className="px-6 pt-4 pb-0">
-            <DialogDescription className="text-[11px] text-slate-600">
-              Choose one or more misconduct types. Use Done to apply or Cancel to discard changes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 px-6 pb-6 pt-4">
-            <Input
-              ref={misconductSearchInputRef}
-              placeholder="Search misconduct types"
-              value={misconductSearch}
-              onChange={(e) => setMisconductSearch(e.target.value)}
-              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
-            />
-            <ScrollArea className="h-72 rounded border border-slate-200 bg-white">
-              <div className="space-y-1 p-3">
-                {filteredMisconductTypes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No misconduct types match your search.</p>
-                ) : (
-                  filteredMisconductTypes.map((type) => (
-                    <label
-                      key={type}
-                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
-                    >
-                      <Checkbox
-                        checked={draftMisconductTypes.includes(type)}
-                        onCheckedChange={(checked) =>
-                          setDraftMisconductTypes((prev) =>
-                            checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
-                          )
-                        }
-                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
-                      />
-                      <span className="flex-1">{type}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
-            <div>
-              {draftMisconductTypes.length === 0 ? (
-                <div className="text-xs text-slate-600">No type selected</div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {draftMisconductTypes.map((type) => (
-                    <Badge
-                      key={type}
-                      variant="outline"
-                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
-                    >
-                      {type}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="px-6 pb-4 pt-0">
-            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
-              <div className="justify-self-start">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={cancelMisconductPicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                >
-                  Cancel
-                </Button>
-              </div>
-              <div className="justify-self-center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setDraftMisconductTypes([])}
-                  disabled={draftMisconductTypes.length === 0}
-                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
-                >
-                  Clear
-                </Button>
-              </div>
-              <div className="justify-self-end">
-                <Button
-                  type="button"
-                  onClick={applyMisconductPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={transmissionPickerOpen} onOpenChange={(open) => (open ? openTransmissionPicker() : cancelTransmissionPicker())}>
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
@@ -4155,7 +3830,7 @@ const PoorPerformanceTerminationGenerator = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-6 pb-6 pt-4">
-            <ScrollArea className="max-h-44 rounded border border-slate-200 bg-white">
+            <ScrollArea className="max-h-64 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
                 {transmissionMethodOptions.map((method) => (
                   <label
@@ -4224,6 +3899,50 @@ const PoorPerformanceTerminationGenerator = ({
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={retirementDateCaution.open} onOpenChange={(open) => (!open ? closeRetirementDateCaution() : undefined)}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80" onClick={closeRetirementDateCaution}>
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
+              <span>
+                This retirement date may be significantly earlier than the employee's normal or agreed retirement age. Termination based on age before the employee reaches the normal or agreed retirement age may constitute automatically unfair discrimination in terms of South African labour law. This retirement notice may only be issued if the employee has reached the retirement age or if the notice period ends on or after the retirement date.
+              </span>
+              <span className="mt-2 block">Do you want to proceed with this termination letter or exit?</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <div className="flex items-center gap-[42px]">
+                <Button
+                  type="button"
+                  onClick={exitRetirementFromCaution}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Exit
+                </Button>
+                <Button
+                  type="button"
+                  onClick={confirmRetirementDateCaution}
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                >
+                  Proceed
                 </Button>
               </div>
             </div>
@@ -4333,7 +4052,9 @@ const PoorPerformanceTerminationGenerator = ({
   return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 };
 
-export default PoorPerformanceTerminationGenerator;
+export default RetirementTerminationGenerator;
+
+
 
 
 

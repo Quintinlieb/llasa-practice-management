@@ -119,9 +119,9 @@ const terminationDocumentTable = () => (supabase as any).from("employee_terminat
 const employeeTableSelectColumns =
   "id, employee_name, employee_surname, id_number, status, start_date, contract_type, job_title, cell_number, nationality, gender, race";
 const employeeSelectColumnsBase =
-  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, retirement_age, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
 const employeeSelectColumnsWithTermination =
-  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
+  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, retirement_age, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -129,6 +129,7 @@ type Employee = Tables<"employees"> & {
   end_date?: string | null;
   contract_type?: string | null;
   probation_period?: string | null;
+  retirement_age?: number | null;
   union_member?: string | null;
   trade_union?: string | null;
   department?: string | null;
@@ -173,6 +174,7 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   start_date?: string | null;
   end_date?: string | null;
   probation_period?: string | null;
+  retirement_age?: number | null;
   union_member?: string | null;
   trade_union?: string | null;
   department?: string | null;
@@ -356,6 +358,7 @@ const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumb
 const normalizeEmployeeNumber = (value?: string | null) => (value || "").trim().toLowerCase();
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
+const retirementAgeOptions = ["55", "60", "65", "70"] as const;
 const dateToday = () => new Date().toISOString().split("T")[0];
 const MISCONDUCT_TYPES = [
   // Minor
@@ -1076,6 +1079,7 @@ const Employees = () => {
   const [employmentStatus, setEmploymentStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
   const [employeeStatus, setEmployeeStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
   const [probationPeriod, setProbationPeriod] = useState("");
+  const [retirementAge, setRetirementAge] = useState<(typeof retirementAgeOptions)[number]>("65");
   const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
   const [branch, setBranch] = useState("");
   const [companyBranchesEnabled, setCompanyBranchesEnabled] = useState(false);
@@ -1207,6 +1211,13 @@ const Employees = () => {
   );
   const originalProbationPeriod = useMemo(
     () => (selectedEmployee?.probation_period ?? ""),
+    [selectedEmployee],
+  );
+  const originalRetirementAge = useMemo<(typeof retirementAgeOptions)[number]>(
+    () => {
+      const value = (selectedEmployee?.retirement_age ?? 65).toString();
+      return (retirementAgeOptions.find((option) => option === value) ?? "65");
+    },
     [selectedEmployee],
   );
   const originalUnionMember = useMemo(
@@ -1430,6 +1441,7 @@ const Employees = () => {
         setSelectedEmployee(nextSelected);
         setProfileForm(createProfileFormFromEmployee(nextSelected));
         setProbationPeriod("");
+        setRetirementAge("65");
         setUnionMember("");
         setTradeUnion("");
         setPendingEmploymentContractFile(null);
@@ -1506,6 +1518,7 @@ const Employees = () => {
       employmentStatus:
         compare(["startDate", "contractType", "endDate", "employeeNumber"]) ||
         probationPeriod !== originalProbationPeriod ||
+        retirementAge !== originalRetirementAge ||
         !!pendingEmploymentContractFile ||
         isEmploymentContractMarkedForRemoval,
       employmentOrg:
@@ -1540,6 +1553,8 @@ const Employees = () => {
     originalProfile,
     probationPeriod,
     originalProbationPeriod,
+    retirementAge,
+    originalRetirementAge,
     department,
     originalDepartment,
     branch,
@@ -3376,6 +3391,7 @@ const Employees = () => {
       { label: "Job Title", value: profileForm.jobTitle },
       { label: "Employee Number", value: profileForm.employeeNumber },
       { label: "Probation Period", value: probationPeriod },
+      { label: "Retirement Age", value: retirementAge },
       { label: "Department", value: department },
       ...(companyBranchesEnabled ? [{ label: "Branch", value: branch }] : []),
       { label: "Reporting To", value: reportingTo },
@@ -3454,6 +3470,7 @@ const Employees = () => {
     contractsForSelectedEmployee,
     isSouthAfricanNationality,
     probationPeriod,
+    retirementAge,
     department,
     branch,
     companyBranchesEnabled,
@@ -3539,6 +3556,9 @@ const Employees = () => {
       setSelectedEmployee(employeeForProfile);
       setProfileForm(createProfileFormFromEmployee(employeeForProfile));
       setProbationPeriod(employeeForProfile.probation_period ?? "");
+      setRetirementAge(
+        retirementAgeOptions.find((option) => option === String(employeeForProfile.retirement_age ?? 65)) ?? "65",
+      );
       setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
       setTradeUnion(employeeForProfile.trade_union ?? "");
       setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
@@ -5198,6 +5218,9 @@ const Employees = () => {
     setSelectedEmployee(employeeForProfile);
     setProfileForm(createProfileFormFromEmployee(employeeForProfile));
     setProbationPeriod(employeeForProfile.probation_period ?? "");
+    setRetirementAge(
+      retirementAgeOptions.find((option) => option === String(employeeForProfile.retirement_age ?? 65)) ?? "65",
+    );
     setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
     setTradeUnion(employeeForProfile.trade_union ?? "");
     setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
@@ -5239,6 +5262,7 @@ const Employees = () => {
     setIsEditMode(false);
     setActiveEditSection(null);
     setProbationPeriod("");
+    setRetirementAge("65");
     setUnionMember("");
     setTradeUnion("");
     setTradeUnionOpen(false);
@@ -5303,7 +5327,8 @@ const Employees = () => {
       const hasEmploymentStatusFieldChanges =
         section === "employmentStatus" && !!originalProfile
           ? employmentStatusFieldKeys.some((key) => profileForm[key] !== originalProfile[key]) ||
-            probationPeriod !== originalProbationPeriod
+            probationPeriod !== originalProbationPeriod ||
+            retirementAge !== originalRetirementAge
           : false;
       const isEmploymentSection =
         section === "employmentStatus" ||
@@ -5453,6 +5478,7 @@ const Employees = () => {
                     employee_number: validated.employeeNumber || null,
                     job_title: validated.jobTitle || null,
                     probation_period: probationPeriod || null,
+                    retirement_age: Number.parseInt(retirementAge || "65", 10) || 65,
                     union_member: unionMember || null,
                     trade_union: unionMember === "Yes" ? tradeUnion || null : null,
                     department: department || null,
@@ -5500,6 +5526,9 @@ const Employees = () => {
       setSelectedEmployee(updatedEmployee);
       setProfileForm(createProfileFormFromEmployee(updatedEmployee));
       setProbationPeriod(updatedEmployee.probation_period ?? "");
+      setRetirementAge(
+        retirementAgeOptions.find((option) => option === String(updatedEmployee.retirement_age ?? 65)) ?? "65",
+      );
       setUnionMember((updatedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
       setTradeUnion(updatedEmployee.trade_union ?? "");
       setDepartment((updatedEmployee.department as (typeof departmentOptions)[number]) ?? "");
@@ -5552,6 +5581,9 @@ const Employees = () => {
     if (!selectedEmployee) return;
     setProfileForm(createProfileFormFromEmployee(selectedEmployee));
     setProbationPeriod(selectedEmployee.probation_period ?? "");
+    setRetirementAge(
+      retirementAgeOptions.find((option) => option === String(selectedEmployee.retirement_age ?? 65)) ?? "65",
+    );
     setUnionMember((selectedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
     setTradeUnion(selectedEmployee.trade_union ?? "");
     setDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
@@ -7214,6 +7246,37 @@ const Employees = () => {
               readOnly
               disabled
             />
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Retirement Age</Label>
+            <Select
+              value={retirementAge}
+              onValueChange={(value) => setRetirementAge(value as (typeof retirementAgeOptions)[number])}
+              onOpenChange={(open) => {
+                if (open && !isEditMode) {
+                  return;
+                }
+              }}
+              disabled={!isEditMode}
+            >
+              <SelectTrigger
+                className={employeeDropdownTriggerClass}
+                disabled={!isEditMode}
+              >
+                <SelectValue placeholder="Select retirement age" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {retirementAgeOptions.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className={employeeDropdownSelectItemClass}
+                  >
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-3" style={{ transform: "translateY(5px)" }}>
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload Contract</Label>

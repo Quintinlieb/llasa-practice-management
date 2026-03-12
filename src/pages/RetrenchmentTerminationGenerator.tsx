@@ -3095,6 +3095,7 @@ const RetrenchmentTerminationGenerator = ({
                           }
                         />
                       </div>
+                      <div className="md:col-span-2 border-t border-slate-200/80 my-1" />
                       <div className="space-y-1.5">
                         <Label htmlFor="homeAddressLine" className={modalFieldLabelClass}>
                           Address line 1 (optional)

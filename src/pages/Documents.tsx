@@ -22,6 +22,7 @@ type DocumentKey =
   | "illHealthTermination"
   | "abscondmentTermination"
   | "retrenchmentTermination"
+  | "retirementTermination"
   | "poorPerformanceTermination"
   | "disciplinaryHearing";
 
@@ -45,6 +46,7 @@ type StoredProfile = {
 type DocumentComponentProps = {
   embedded?: boolean;
   externalNavigation?: boolean;
+  onRequestClose?: () => void;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -75,6 +77,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   illHealthTermination: lazy(() => import("./IllHealthTerminationGenerator")),
   abscondmentTermination: lazy(() => import("./AbscondmentTerminationGenerator")),
   retrenchmentTermination: lazy(() => import("./RetrenchmentTerminationGenerator")),
+  retirementTermination: lazy(() => import("./RetirementTerminationGenerator")),
   poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
   disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
@@ -112,7 +115,7 @@ const documentCategories: DocumentCategory[] = [
       { id: "poorPerformanceTermination", label: "Poor Performance", active: true },
       { id: "abscondmentTermination", label: "Abscondment/Desertion", active: true },
       { id: "retrenchmentTermination", label: "Retrenchment", active: true },
-      { label: "Retirement", active: false },
+      { id: "retirementTermination", label: "Retirement", active: true },
       { label: "End of Contract", active: false },
       { label: "Mutual Separation Agreement", active: false },
     ],
@@ -158,6 +161,7 @@ const Documents = () => {
     | "illHealthTermination"
     | "abscondmentTermination"
     | "retrenchmentTermination"
+    | "retirementTermination"
     | "poorPerformanceTermination"
     | null
   >(null);
@@ -249,6 +253,7 @@ const Documents = () => {
     selectedDocument === "illHealthTermination" ||
     selectedDocument === "abscondmentTermination" ||
     selectedDocument === "retrenchmentTermination" ||
+    selectedDocument === "retirementTermination" ||
     selectedDocument === "poorPerformanceTermination"
       ? "Termination Letter"
       : activeCategoryTitle;
@@ -271,6 +276,8 @@ const Documents = () => {
           ? "Abscondment/Desertion"
         : modalDocument === "retrenchmentTermination"
           ? "Retrenchment"
+        : modalDocument === "retirementTermination"
+          ? "Retirement"
         : modalDocument === "noticeTermination"
           ? "Notice of Termination"
         : modalDocument === "permanentContract"
@@ -285,6 +292,7 @@ const Documents = () => {
     modalDocument === "illHealthTermination" ||
     modalDocument === "abscondmentTermination" ||
     modalDocument === "retrenchmentTermination" ||
+    modalDocument === "retirementTermination" ||
     modalDocument === "poorPerformanceTermination" ||
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
@@ -299,6 +307,7 @@ const Documents = () => {
                 modalDocument === "illHealthTermination" ||
                 modalDocument === "abscondmentTermination" ||
                 modalDocument === "retrenchmentTermination" ||
+                modalDocument === "retirementTermination" ||
                 modalDocument === "poorPerformanceTermination"
                 ? "Termination Details"
               : modalDocument === "temporaryContract"
@@ -443,6 +452,7 @@ const Documents = () => {
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
         modalDocument === "retrenchmentTermination" ||
+        modalDocument === "retirementTermination" ||
         modalDocument === "poorPerformanceTermination"
         ? noticeTerminationActiveNotes
       : modalDocument === "temporaryContract"
@@ -456,6 +466,7 @@ const Documents = () => {
       selectedDocument !== "illHealthTermination" &&
       selectedDocument !== "abscondmentTermination" &&
       selectedDocument !== "retrenchmentTermination" &&
+      selectedDocument !== "retirementTermination" &&
       selectedDocument !== "poorPerformanceTermination" &&
       selectedDocument !== "permanentContract" &&
       selectedDocument !== "temporaryContract",
@@ -520,6 +531,7 @@ const Documents = () => {
                                         item.id === "illHealthTermination" ||
                                         item.id === "abscondmentTermination" ||
                                         item.id === "retrenchmentTermination" ||
+                                        item.id === "retirementTermination" ||
                                         item.id === "poorPerformanceTermination" ||
                                         item.id === "permanentContract" ||
                                         item.id === "temporaryContract"
@@ -535,6 +547,7 @@ const Documents = () => {
                                             | "illHealthTermination"
                                             | "abscondmentTermination"
                                             | "retrenchmentTermination"
+                                            | "retirementTermination"
                                             | "poorPerformanceTermination"
                                             | "permanentContract"
                                             | "temporaryContract",
@@ -580,6 +593,7 @@ const Documents = () => {
             selectedDocument !== "illHealthTermination" &&
             selectedDocument !== "abscondmentTermination" &&
             selectedDocument !== "retrenchmentTermination" &&
+            selectedDocument !== "retirementTermination" &&
             selectedDocument !== "poorPerformanceTermination" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
@@ -774,6 +788,7 @@ const Documents = () => {
             || modalDocument === "illHealthTermination"
             || modalDocument === "abscondmentTermination"
             || modalDocument === "retrenchmentTermination"
+            || modalDocument === "retirementTermination"
             || modalDocument === "poorPerformanceTermination"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
@@ -788,6 +803,7 @@ const Documents = () => {
           modalDocument === "illHealthTermination" ||
           modalDocument === "abscondmentTermination" ||
           modalDocument === "retrenchmentTermination" ||
+          modalDocument === "retirementTermination" ||
           modalDocument === "poorPerformanceTermination" ||
           modalDocument === "permanentContract" ||
           modalDocument === "temporaryContract" ? (
@@ -803,6 +819,7 @@ const Documents = () => {
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
                           modalDocument === "retrenchmentTermination" ||
+                          modalDocument === "retirementTermination" ||
                           modalDocument === "poorPerformanceTermination"
                           ? "Termination Letter"
                           : "Contracts"
@@ -815,6 +832,8 @@ const Documents = () => {
                           ? "Abscondment/Desertion"
                         : modalDocument === "retrenchmentTermination"
                           ? "Retrenchment"
+                        : modalDocument === "retirementTermination"
+                          ? "Retirement"
                         : modalDocument === "poorPerformanceTermination"
                           ? "Poor Performance"
                         : modalDocument === "noticeTermination"
@@ -1055,6 +1074,11 @@ const Documents = () => {
                     {ModalComponent ? (
                       <ModalComponent
                         embedded
+                        onRequestClose={() => {
+                          setModalDocument(null);
+                          setStepMeta(null);
+                          setBreadcrumbStep(null);
+                        }}
                         onStepChange={setBreadcrumbStep}
                         onStepMetaChange={setStepMeta}
                       />

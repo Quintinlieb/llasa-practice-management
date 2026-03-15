@@ -41,7 +41,6 @@ type ContractFormState = {
   abscondmentNoticeDate: string;
   absentFromDate: string;
   noticePeriod: string;
-  noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   performanceConsultationDate: string;
@@ -87,7 +86,6 @@ type AddendumData = PermanentContractFormData & {
   abscondmentNoticeDate: string;
   absentFromDate: string;
   noticePeriod: string;
-  noticeOfAppeal: string;
   appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   performanceConsultationDate: string;
@@ -299,7 +297,6 @@ const improvementPeriodOptions = [
   "3 months",
 ] as const;
 
-const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const noticeMethodOptions = [
   { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
@@ -333,6 +330,13 @@ const toIsoDate = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? null : iso;
 };
 
+const toLocalIsoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string, newEndDate = "") => {
   const replaceText = (text: string) =>
     text
@@ -362,7 +366,7 @@ const generateCustomClauseId = () =>
     : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const SAME_DAY_HEARING_NOTICE_CAUTION = "__SAME_DAY_HEARING_NOTICE_CAUTION__";
-const RETIREMENT_NOTICE_RULE_CAUTION = "__RETIREMENT_NOTICE_RULE_CAUTION__";
+const RETIREMENT_SHORT_NOTICE_CAUTION = "__RETIREMENT_SHORT_NOTICE_CAUTION__";
 
 const deriveAgeFromId = (id: string) => {
   const dob = extractDobFromId(id);
@@ -451,9 +455,24 @@ const shouldShowRetirementNoticeRuleCaution = (issueDateRaw: string, retirementD
   const hasReachedRetirementDate = normalizedToday >= retirementDate;
   if (hasReachedRetirementDate) return false;
 
+  const oneMonthFromToday = new Date(normalizedToday);
+  oneMonthFromToday.setMonth(oneMonthFromToday.getMonth() + 1);
+  if (retirementDate <= oneMonthFromToday) return false;
+
   const noticeEndDate = getNoticePeriodEndDate(issueDateRaw, noticePeriodRaw);
   if (!noticeEndDate) return false;
   return noticeEndDate < retirementDate;
+};
+
+const shouldShowRetirementShortNoticeCaution = (issueDateRaw: string, retirementDateRaw: string) => {
+  const issueDate = getNormalizedDate(issueDateRaw);
+  const retirementDate = getNormalizedDate(retirementDateRaw);
+  if (!issueDate || !retirementDate) return false;
+  if (issueDate >= retirementDate) return false;
+
+  const oneMonthFromIssueDate = new Date(issueDate);
+  oneMonthFromIssueDate.setMonth(oneMonthFromIssueDate.getMonth() + 1);
+  return retirementDate < oneMonthFromIssueDate;
 };
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
@@ -844,12 +863,18 @@ const RetirementTerminationGenerator = ({
   });
   const [sameDayOverrideAccepted, setSameDayOverrideAccepted] = useState(false);
   const [sameDayCautionDismissed, setSameDayCautionDismissed] = useState(false);
-  const [retirementDateCaution, setRetirementDateCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
+  const [retirementDateCaution, setRetirementDateCaution] = useState<{ open: boolean; pendingAction: "" | "next" }>({
     open: false,
     pendingAction: "",
   });
   const [retirementDateOverrideAccepted, setRetirementDateOverrideAccepted] = useState(false);
   const [retirementDateCautionDismissed, setRetirementDateCautionDismissed] = useState(false);
+  const [shortNoticeCaution, setShortNoticeCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
+    open: false,
+    pendingAction: "",
+  });
+  const [shortNoticeOverrideAccepted, setShortNoticeOverrideAccepted] = useState(false);
+  const [shortNoticeCautionDismissed, setShortNoticeCautionDismissed] = useState(false);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
@@ -909,7 +934,6 @@ const RetirementTerminationGenerator = ({
     abscondmentNoticeDate: "",
     absentFromDate: "",
     noticePeriod: "",
-    noticeOfAppeal: "",
     appliedProgressiveDisciplinaryAction: "",
     hearingDate: "",
     performanceConsultationDate: "",
@@ -1031,20 +1055,24 @@ const RetirementTerminationGenerator = ({
   }, [formData.issueDate, formData.effectiveDate, formData.noticePeriod]);
 
   useEffect(() => {
+    setShortNoticeOverrideAccepted(false);
+    setShortNoticeCautionDismissed(false);
+  }, [formData.issueDate, formData.effectiveDate]);
+
+  useEffect(() => {
     if (activeStep !== 2) return;
-    if (retirementDateOverrideAccepted) return;
-    if (retirementDateCautionDismissed) return;
-    if (retirementDateCaution.open) return;
-    if (!shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)) return;
-    setRetirementDateCaution({ open: true, pendingAction: "" });
+    if (shortNoticeOverrideAccepted) return;
+    if (shortNoticeCautionDismissed) return;
+    if (shortNoticeCaution.open) return;
+    if (!shouldShowRetirementShortNoticeCaution(formData.issueDate, formData.effectiveDate)) return;
+    setShortNoticeCaution({ open: true, pendingAction: "" });
   }, [
     activeStep,
     formData.issueDate,
     formData.effectiveDate,
-    formData.noticePeriod,
-    retirementDateOverrideAccepted,
-    retirementDateCautionDismissed,
-    retirementDateCaution.open,
+    shortNoticeOverrideAccepted,
+    shortNoticeCautionDismissed,
+    shortNoticeCaution.open,
   ]);
 
   useEffect(() => {
@@ -1203,7 +1231,6 @@ const RetirementTerminationGenerator = ({
       abscondmentNoticeDate: "",
       absentFromDate: "",
       noticePeriod: "",
-      noticeOfAppeal: "",
       appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
       performanceConsultationDate: "",
@@ -1304,14 +1331,12 @@ const RetirementTerminationGenerator = ({
 
   const isEmploymentStepComplete = useMemo(
     () => {
-      const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
       const hasNoticePeriod = Boolean(formData.noticePeriod);
       const hasNoticeMethod = Boolean(formData.noticeMethod);
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
         formData.issueDate &&
           formData.effectiveDate &&
-          hasNoticeOfAppeal &&
           hasNoticePeriod &&
           hasNoticeMethod &&
           hasTransmissionMethods,
@@ -1319,7 +1344,6 @@ const RetirementTerminationGenerator = ({
     },
     [
       formData.effectiveDate,
-      formData.noticeOfAppeal,
       formData.noticePeriod,
       formData.noticeMethod,
       formData.transmissionMethods,
@@ -1381,6 +1405,15 @@ const RetirementTerminationGenerator = ({
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
+      if (
+        activeStep === 1 &&
+        !retirementDateOverrideAccepted &&
+        shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)
+      ) {
+        setRetirementDateCautionDismissed(false);
+        setRetirementDateCaution({ open: true, pendingAction: "next" });
+        return;
+      }
       if (activeStep === 0) {
         if (showEmployeeHint) {
           setShowEmployeeHint(false);
@@ -1509,7 +1542,6 @@ const RetirementTerminationGenerator = ({
       noticeMethod: "",
       transmissionMethods: [],
       noticePeriod: "",
-      noticeOfAppeal: "",
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
     }));
@@ -1709,16 +1741,12 @@ const RetirementTerminationGenerator = ({
     checkRequired(formData.effectiveDate, "Retirement date");
     checkRequired(formData.noticePeriod, "Notice period");
     checkRequired(formData.noticeMethod, "Notice method");
-    checkRequired(formData.noticeOfAppeal, "Notice of appeal");
     if (formData.transmissionMethods.length === 0) {
       missingFields.push("Method of Issuing");
     }
 
-    if (
-      !retirementDateOverrideAccepted &&
-      shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)
-    ) {
-      throw new Error(RETIREMENT_NOTICE_RULE_CAUTION);
+    if (!shortNoticeOverrideAccepted && shouldShowRetirementShortNoticeCaution(formData.issueDate, formData.effectiveDate)) {
+      throw new Error(RETIREMENT_SHORT_NOTICE_CAUTION);
     }
 
     if (missingFields.length) {
@@ -1747,7 +1775,6 @@ const RetirementTerminationGenerator = ({
       transmissionMethods: formData.transmissionMethods,
       effectiveDate: formData.effectiveDate,
       noticePeriod: formData.noticePeriod,
-      noticeOfAppeal: formData.noticeOfAppeal,
       homeAddressLine: formData.homeAddressLine,
       homeAddressLine2: formData.homeAddressLine2,
       homeCity: formData.homeCity,
@@ -1917,15 +1944,22 @@ const RetirementTerminationGenerator = ({
     const issueDateDisplay = formatDate(data.issueDate);
     const retirementDateDisplay = formatDate(data.effectiveDate || "");
     const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
-    const noticeMethodDisplay =
-      data.noticeMethod === "required_to_work_notice_period"
-        ? "be required to work during the notice period"
-        : data.noticeMethod === "not_required_to_work_notice_period"
-          ? "not be required to work during the notice period and be paid in lieu of notice"
-          : "[notice method]";
+    const issueDateForRule = getNormalizedDate(data.issueDate);
+    const retirementDateForRule = getNormalizedDate(data.effectiveDate || "");
+    const noticeEndDateForRule = getNoticePeriodEndDate(data.issueDate, data.noticePeriod);
+    const shouldUseNoticeEndTerminationDate = Boolean(
+      issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
+    );
+    const hasReachedRetirementAge = Boolean(issueDateForRule && retirementDateForRule && issueDateForRule >= retirementDateForRule);
+    const terminationDateDisplay = shouldUseNoticeEndTerminationDate && noticeEndDateForRule
+      ? formatDate(toLocalIsoDate(noticeEndDateForRule))
+      : (retirementDateDisplay || "[retirement date]");
     const paragraphOneText = "We refer to the abovementioned matter.";
-    const paragraphTwoText = `According to the employer's records, you will reach the agreed retirement age of ${retirementAgeDisplay} on ${retirementDateDisplay || "[Retirement date]"}. Your employment will therefore terminate on account of retirement.`;
-    const paragraphThreeText = `Take notice that your employment will terminate on ${retirementDateDisplay || "[retirement date]"} and you will ${noticeMethodDisplay}.`;
+    const paragraphTwoIntro = hasReachedRetirementAge
+      ? `Kindly take note that you have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
+      : `Kindly take note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
+    const paragraphTwoText = `${paragraphTwoIntro} Your employment contract will therefore terminate on ${terminationDateDisplay}, and you are required to work up to and including the aforementioned date.`;
+    const paragraphThreeText = "We commend you for the valuable contribution you have made to the company, and your commitment is sincerely appreciated.";
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
 
@@ -2310,8 +2344,8 @@ const RetirementTerminationGenerator = ({
         setSameDayCaution({ open: true, pendingAction: "download" });
         return;
       }
-      if (message === RETIREMENT_NOTICE_RULE_CAUTION) {
-        setRetirementDateCaution({ open: true, pendingAction: "download" });
+      if (message === RETIREMENT_SHORT_NOTICE_CAUTION) {
+        setShortNoticeCaution({ open: true, pendingAction: "download" });
         return;
       }
       toast({
@@ -2336,8 +2370,8 @@ const RetirementTerminationGenerator = ({
         setSameDayCaution({ open: true, pendingAction: "finish" });
         return;
       }
-      if (message === RETIREMENT_NOTICE_RULE_CAUTION) {
-        setRetirementDateCaution({ open: true, pendingAction: "finish" });
+      if (message === RETIREMENT_SHORT_NOTICE_CAUTION) {
+        setShortNoticeCaution({ open: true, pendingAction: "finish" });
         return;
       }
       toast({
@@ -2369,6 +2403,9 @@ const RetirementTerminationGenerator = ({
   };
 
   const closeRetirementDateCaution = () => {
+    if (retirementDateCaution.pendingAction === "next") {
+      setActiveStep((prev) => Math.min(prev, 1));
+    }
     setRetirementDateCautionDismissed(true);
     setRetirementDateCaution({ open: false, pendingAction: "" });
   };
@@ -2382,6 +2419,26 @@ const RetirementTerminationGenerator = ({
     setRetirementDateOverrideAccepted(true);
     setRetirementDateCautionDismissed(false);
     setRetirementDateCaution({ open: false, pendingAction: "" });
+    if (pending === "next") {
+      setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
+    }
+  };
+
+  const closeShortNoticeCaution = () => {
+    setShortNoticeCautionDismissed(true);
+    setShortNoticeCaution({ open: false, pendingAction: "" });
+  };
+
+  const exitShortNoticeCaution = () => {
+    closeShortNoticeCaution();
+    onRequestClose?.();
+  };
+
+  const confirmShortNoticeCaution = () => {
+    const pending = shortNoticeCaution.pendingAction;
+    setShortNoticeOverrideAccepted(true);
+    setShortNoticeCautionDismissed(false);
+    setShortNoticeCaution({ open: false, pendingAction: "" });
     if (pending === "download") {
       handleDownload();
       return;
@@ -3177,49 +3234,6 @@ const RetirementTerminationGenerator = ({
                       </div>
                     ) : null}
                     <div className="space-y-1.5">
-                      <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice of appeal <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Notice of appeal info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This is the time allowed for an employee to lodge an appeal against this retirement termination decision.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.noticeOfAppeal}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeOfAppeal: value }))}
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select notice of appeal"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.noticeOfAppeal ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {noticeOfAppealOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
                       <Label htmlFor="issuer" className={modalFieldLabelClass}>
                         Issuer
                       </Label>
@@ -3360,15 +3374,22 @@ const RetirementTerminationGenerator = ({
             {validatedPreview ? (() => {
               const retirementDateDisplay = formatDate(validatedPreview.effectiveDate || "");
               const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
-              const noticeMethodDisplay =
-                validatedPreview.noticeMethod === "required_to_work_notice_period"
-                  ? "be required to work during the notice period"
-                  : validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                    ? "not be required to work during the notice period and be paid in lieu of notice"
-                    : "[notice method]";
+              const issueDateForRule = getNormalizedDate(validatedPreview.issueDate);
+              const retirementDateForRule = getNormalizedDate(validatedPreview.effectiveDate || "");
+              const noticeEndDateForRule = getNoticePeriodEndDate(validatedPreview.issueDate, validatedPreview.noticePeriod);
+              const shouldUseNoticeEndTerminationDate = Boolean(
+                issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
+              );
+              const hasReachedRetirementAge = Boolean(issueDateForRule && retirementDateForRule && issueDateForRule >= retirementDateForRule);
+              const terminationDateDisplay = shouldUseNoticeEndTerminationDate && noticeEndDateForRule
+                ? formatDate(toLocalIsoDate(noticeEndDateForRule))
+                : (retirementDateDisplay || "[retirement date]");
               const paragraphOneText = "We refer to the abovementioned matter.";
-              const paragraphTwoText = `According to the employer's records, you will reach the agreed retirement age of ${retirementAgeDisplay} on ${retirementDateDisplay || "[Retirement date]"}. Your employment will therefore terminate on account of retirement.`;
-              const paragraphThreeText = `Take notice that your employment will terminate on ${retirementDateDisplay || "[retirement date]"} and you will ${noticeMethodDisplay}.`;
+              const paragraphTwoIntro = hasReachedRetirementAge
+                ? `Kindly take note that you have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
+                : `Kindly take note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
+              const paragraphTwoText = `${paragraphTwoIntro} Your employment contract will therefore terminate on ${terminationDateDisplay}, and you are required to work up to and including the aforementioned date.`;
+              const paragraphThreeText = "We commend you for the valuable contribution you have made to the company, and your commitment is sincerely appreciated.";
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -3923,9 +3944,8 @@ const RetirementTerminationGenerator = ({
           <DialogHeader className="px-6 pt-5 pb-1">
             <DialogDescription className="py-1 text-[11px] text-slate-600">
               <span>
-                This retirement date may be significantly earlier than the employee's normal or agreed retirement age. Termination based on age before the employee reaches the normal or agreed retirement age may constitute automatically unfair discrimination in terms of South African labour law. This retirement notice may only be issued if the employee has reached the retirement age or if the notice period ends on or after the retirement date.
+                This employee&apos;s retirement is more than a month away. Termination based on age before the employee reaches the normal or agreed retirement age may constitute automatically unfair discrimination in terms of South African labour law. This retirement notice may only be issued if the employee has reached the retirement age or if the notice period ends on or after the retirement date.
               </span>
-              <span className="mt-2 block">Do you want to proceed with this termination letter or exit?</span>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="px-6 pb-6 pt-0">
@@ -3944,6 +3964,49 @@ const RetirementTerminationGenerator = ({
                   className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
                 >
                   Proceed
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={shortNoticeCaution.open} onOpenChange={(open) => (!open ? closeShortNoticeCaution() : undefined)}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <TriangleAlert className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80" onClick={closeShortNoticeCaution}>
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-5 pb-1">
+            <DialogDescription className="py-1 text-[11px] text-slate-600">
+              <span>
+                The retirement date is less than a month away. Are you sure enough notice is provided for termination of the employment contract?
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <div className="flex items-center gap-[42px]">
+                <Button
+                  type="button"
+                  onClick={exitShortNoticeCaution}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  No
+                </Button>
+                <Button
+                  type="button"
+                  onClick={confirmShortNoticeCaution}
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                >
+                  Yes
                 </Button>
               </div>
             </div>

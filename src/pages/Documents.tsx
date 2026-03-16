@@ -24,6 +24,7 @@ type DocumentKey =
   | "retrenchmentTermination"
   | "retirementTermination"
   | "poorPerformanceTermination"
+  | "mutualTermination"
   | "disciplinaryHearing";
 
 type DocumentItem = {
@@ -79,6 +80,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   retrenchmentTermination: lazy(() => import("./RetrenchmentTerminationGenerator")),
   retirementTermination: lazy(() => import("./RetirementTerminationGenerator")),
   poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
+  mutualTermination: lazy(() => import("./MutualTerminationGenerator")),
   disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
 
@@ -116,8 +118,7 @@ const documentCategories: DocumentCategory[] = [
       { id: "abscondmentTermination", label: "Abscondment/Desertion", active: true },
       { id: "retrenchmentTermination", label: "Retrenchment", active: true },
       { id: "retirementTermination", label: "Retirement", active: true },
-      { label: "End of Contract", active: false },
-      { label: "Mutual Separation Agreement", active: false },
+      { id: "mutualTermination", label: "Mutual Seperation Agreement", active: true },
     ],
   },
   {
@@ -163,6 +164,7 @@ const Documents = () => {
     | "retrenchmentTermination"
     | "retirementTermination"
     | "poorPerformanceTermination"
+    | "mutualTermination"
     | null
   >(null);
   const [stepMeta, setStepMeta] = useState<{
@@ -256,6 +258,8 @@ const Documents = () => {
     selectedDocument === "retirementTermination" ||
     selectedDocument === "poorPerformanceTermination"
       ? "Termination Letter"
+    : selectedDocument === "mutualTermination"
+      ? "Terminations"
       : activeCategoryTitle;
   const activeDocumentLabel =
     selectedDocument
@@ -278,6 +282,8 @@ const Documents = () => {
           ? "Retrenchment"
         : modalDocument === "retirementTermination"
           ? "Retirement"
+        : modalDocument === "mutualTermination"
+          ? "Mutual Seperation Agreement"
         : modalDocument === "noticeTermination"
           ? "Notice of Termination"
         : modalDocument === "permanentContract"
@@ -294,6 +300,7 @@ const Documents = () => {
     modalDocument === "retrenchmentTermination" ||
     modalDocument === "retirementTermination" ||
     modalDocument === "poorPerformanceTermination" ||
+    modalDocument === "mutualTermination" ||
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
       ? ([
@@ -308,7 +315,8 @@ const Documents = () => {
                 modalDocument === "abscondmentTermination" ||
                 modalDocument === "retrenchmentTermination" ||
                 modalDocument === "retirementTermination" ||
-                modalDocument === "poorPerformanceTermination"
+                modalDocument === "poorPerformanceTermination" ||
+                modalDocument === "mutualTermination"
                 ? "Termination Details"
               : modalDocument === "temporaryContract"
                 ? "Employment Details"
@@ -434,6 +442,23 @@ const Documents = () => {
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
     noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
+  const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
+    index === 0
+      ? [
+          "This step sets how your company details appear on the seperation agreement.",
+          "Company name and registration number are populated from Company Settings. You can still add a trading name if applicable.",
+        ]
+    : index === 1
+      ? [notes[0]]
+    : index === 2
+      ? [
+          "Complete all fields in this step carefully, as these selections determine how key parts of the seperation agreement are worded.",
+          ...notes.slice(1),
+          "Generally, you should indicate the reason for termination on the UI19 form as Contract Ended.",
+        ]
+      : notes,
+  );
+  const mutualTerminationActiveNotes = (mutualTerminationStepNotes[modalActiveStep] ?? mutualTerminationStepNotes[0]).filter((note) => !note.startsWith("NB! "));
   const temporaryEmployeeCount = stepMeta?.temporaryEmployeeCount ?? 0;
   const temporaryActiveNotes = (() => {
     const baseNotes: string[] = [...(temporaryStepNotes[modalActiveStep] ?? temporaryStepNotes[0])];
@@ -454,8 +479,11 @@ const Documents = () => {
         modalDocument === "abscondmentTermination" ||
         modalDocument === "retrenchmentTermination" ||
         modalDocument === "retirementTermination" ||
-        modalDocument === "poorPerformanceTermination"
-        ? noticeTerminationActiveNotes
+        modalDocument === "poorPerformanceTermination" ||
+        modalDocument === "mutualTermination"
+        ? modalDocument === "mutualTermination"
+          ? mutualTerminationActiveNotes
+          : noticeTerminationActiveNotes
       : modalDocument === "temporaryContract"
         ? temporaryActiveNotes
         : addendumActiveNotes;
@@ -468,6 +496,7 @@ const Documents = () => {
       selectedDocument !== "abscondmentTermination" &&
       selectedDocument !== "retrenchmentTermination" &&
       selectedDocument !== "retirementTermination" &&
+      selectedDocument !== "mutualTermination" &&
       selectedDocument !== "poorPerformanceTermination" &&
       selectedDocument !== "permanentContract" &&
       selectedDocument !== "temporaryContract",
@@ -533,6 +562,7 @@ const Documents = () => {
                                         item.id === "abscondmentTermination" ||
                                         item.id === "retrenchmentTermination" ||
                                         item.id === "retirementTermination" ||
+                                        item.id === "mutualTermination" ||
                                         item.id === "poorPerformanceTermination" ||
                                         item.id === "permanentContract" ||
                                         item.id === "temporaryContract"
@@ -549,6 +579,7 @@ const Documents = () => {
                                             | "abscondmentTermination"
                                             | "retrenchmentTermination"
                                             | "retirementTermination"
+                                            | "mutualTermination"
                                             | "poorPerformanceTermination"
                                             | "permanentContract"
                                             | "temporaryContract",
@@ -595,6 +626,7 @@ const Documents = () => {
             selectedDocument !== "abscondmentTermination" &&
             selectedDocument !== "retrenchmentTermination" &&
             selectedDocument !== "retirementTermination" &&
+            selectedDocument !== "mutualTermination" &&
             selectedDocument !== "poorPerformanceTermination" ? (
               <div className="pl-4 pr-2 pt-6 pb-0.5">
                 <div className="space-y-2">
@@ -790,6 +822,7 @@ const Documents = () => {
             || modalDocument === "abscondmentTermination"
             || modalDocument === "retrenchmentTermination"
             || modalDocument === "retirementTermination"
+            || modalDocument === "mutualTermination"
             || modalDocument === "poorPerformanceTermination"
             || modalDocument === "permanentContract"
             || modalDocument === "temporaryContract"
@@ -805,6 +838,7 @@ const Documents = () => {
           modalDocument === "abscondmentTermination" ||
           modalDocument === "retrenchmentTermination" ||
           modalDocument === "retirementTermination" ||
+          modalDocument === "mutualTermination" ||
           modalDocument === "poorPerformanceTermination" ||
           modalDocument === "permanentContract" ||
           modalDocument === "temporaryContract" ? (
@@ -821,8 +855,11 @@ const Documents = () => {
                           modalDocument === "abscondmentTermination" ||
                           modalDocument === "retrenchmentTermination" ||
                           modalDocument === "retirementTermination" ||
+                          modalDocument === "mutualTermination" ||
                           modalDocument === "poorPerformanceTermination"
-                          ? "Termination Letter"
+                          ? modalDocument === "mutualTermination"
+                            ? "Terminations"
+                            : "Termination Letter"
                           : "Contracts"
                     } / ${
                       modalDocument === "addendum"
@@ -835,6 +872,8 @@ const Documents = () => {
                           ? "Retrenchment"
                         : modalDocument === "retirementTermination"
                           ? "Retirement"
+                        : modalDocument === "mutualTermination"
+                          ? "Mutual Seperation Agreement"
                         : modalDocument === "poorPerformanceTermination"
                           ? "Poor Performance"
                         : modalDocument === "noticeTermination"

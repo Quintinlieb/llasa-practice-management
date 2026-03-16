@@ -26,6 +26,7 @@ import {
   southAfricanProvinces,
   type PermanentContractFormData,
 } from "@/lib/validation";
+import { addServiceDelayToDate } from "@/lib/terminationNotice";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ContractFormState = {
@@ -1246,7 +1247,7 @@ const MisconductTerminationGenerator = ({
       return;
     }
 
-    let nextDate = new Date(baseDate);
+    let nextDate = addServiceDelayToDate(baseDate, formData.transmissionMethods);
     if (noticePeriod !== "No notice") {
       const weeksMatch = noticePeriod.match(/^(\d+)\s+week/);
       const weeks = weeksMatch ? Number(weeksMatch[1]) : 0;
@@ -1260,7 +1261,7 @@ const MisconductTerminationGenerator = ({
     const day = String(nextDate.getDate()).padStart(2, "0");
     const computed = `${year}-${month}-${day}`;
     setFormData((prev) => (prev.effectiveDate !== computed ? { ...prev, effectiveDate: computed } : prev));
-  }, [formData.issueDate, formData.noticePeriod]);
+  }, [formData.issueDate, formData.noticePeriod, formData.transmissionMethods]);
 
   const isEmployerStepComplete = useMemo(
     () => Boolean(formData.employerContact && formData.employerEmail),

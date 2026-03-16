@@ -25,6 +25,7 @@ import {
   calculateAgeFromDob,
   type PermanentContractFormData,
 } from "@/lib/validation";
+import { getNoticeEndDateWithServiceDelay } from "@/lib/terminationNotice";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ContractFormState = {
@@ -421,32 +422,15 @@ const getNormalizedDate = (value: string) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const getNoticePeriodEndDate = (issueDateRaw: string, noticePeriodRaw: string) => {
-  const issueDate = getNormalizedDate(issueDateRaw);
-  if (!issueDate) return null;
+const getNoticePeriodEndDate = (issueDateRaw: string, noticePeriodRaw: string, transmissionMethodsRaw: string[]) =>
+  getNoticeEndDateWithServiceDelay(issueDateRaw, noticePeriodRaw, transmissionMethodsRaw);
 
-  const notice = (noticePeriodRaw || "").trim().toLowerCase();
-  const match = notice.match(/^(\d+)\s+(day|days|week|weeks|month|months)$/);
-  if (!match) return null;
-
-  const amount = Number.parseInt(match[1], 10);
-  const unit = match[2];
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-
-  const endDate = new Date(issueDate);
-  if (unit === "day" || unit === "days") {
-    endDate.setDate(endDate.getDate() + amount);
-    return endDate;
-  }
-  if (unit === "week" || unit === "weeks") {
-    endDate.setDate(endDate.getDate() + amount * 7);
-    return endDate;
-  }
-  endDate.setMonth(endDate.getMonth() + amount);
-  return endDate;
-};
-
-const shouldShowRetirementNoticeRuleCaution = (issueDateRaw: string, retirementDateRaw: string, noticePeriodRaw: string) => {
+const shouldShowRetirementNoticeRuleCaution = (
+  issueDateRaw: string,
+  retirementDateRaw: string,
+  noticePeriodRaw: string,
+  transmissionMethodsRaw: string[],
+) => {
   const retirementDate = getNormalizedDate(retirementDateRaw);
   if (!retirementDate) return false;
 
@@ -459,7 +443,7 @@ const shouldShowRetirementNoticeRuleCaution = (issueDateRaw: string, retirementD
   oneMonthFromToday.setMonth(oneMonthFromToday.getMonth() + 1);
   if (retirementDate <= oneMonthFromToday) return false;
 
-  const noticeEndDate = getNoticePeriodEndDate(issueDateRaw, noticePeriodRaw);
+  const noticeEndDate = getNoticePeriodEndDate(issueDateRaw, noticePeriodRaw, transmissionMethodsRaw);
   if (!noticeEndDate) return false;
   return noticeEndDate < retirementDate;
 };
@@ -1052,7 +1036,7 @@ const RetirementTerminationGenerator = ({
   useEffect(() => {
     setRetirementDateOverrideAccepted(false);
     setRetirementDateCautionDismissed(false);
-  }, [formData.issueDate, formData.effectiveDate, formData.noticePeriod]);
+  }, [formData.issueDate, formData.effectiveDate, formData.noticePeriod, formData.transmissionMethods]);
 
   useEffect(() => {
     setShortNoticeOverrideAccepted(false);
@@ -1408,7 +1392,7 @@ const RetirementTerminationGenerator = ({
       if (
         activeStep === 1 &&
         !retirementDateOverrideAccepted &&
-        shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod)
+        shouldShowRetirementNoticeRuleCaution(formData.issueDate, formData.effectiveDate, formData.noticePeriod, formData.transmissionMethods)
       ) {
         setRetirementDateCautionDismissed(false);
         setRetirementDateCaution({ open: true, pendingAction: "next" });
@@ -1946,7 +1930,7 @@ const RetirementTerminationGenerator = ({
     const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
     const issueDateForRule = getNormalizedDate(data.issueDate);
     const retirementDateForRule = getNormalizedDate(data.effectiveDate || "");
-    const noticeEndDateForRule = getNoticePeriodEndDate(data.issueDate, data.noticePeriod);
+    const noticeEndDateForRule = getNoticePeriodEndDate(data.issueDate, data.noticePeriod, data.transmissionMethods);
     const shouldUseNoticeEndTerminationDate = Boolean(
       issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
     );
@@ -3386,7 +3370,7 @@ const RetirementTerminationGenerator = ({
               const retirementAgeDisplay = retirementAgeInput || "[Retirement age]";
               const issueDateForRule = getNormalizedDate(validatedPreview.issueDate);
               const retirementDateForRule = getNormalizedDate(validatedPreview.effectiveDate || "");
-              const noticeEndDateForRule = getNoticePeriodEndDate(validatedPreview.issueDate, validatedPreview.noticePeriod);
+              const noticeEndDateForRule = getNoticePeriodEndDate(validatedPreview.issueDate, validatedPreview.noticePeriod, validatedPreview.transmissionMethods);
               const shouldUseNoticeEndTerminationDate = Boolean(
                 issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
               );

@@ -15,6 +15,7 @@ import { ArrowLeft, ArrowRight, Check, Menu, Undo2 } from "lucide-react";
 type DocumentKey =
   | "codeOfConduct"
   | "warnings"
+  | "disciplinaryHearingNotice"
   | "permanentContract"
   | "temporaryContract"
   | "addendum"
@@ -70,6 +71,7 @@ type DocumentComponentProps = {
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazy(() => import("./documents/discipline/CodeOfConductPreview")),
   warnings: lazy(() => import("./WarningGenerator")),
+  disciplinaryHearingNotice: lazy(() => import("./DisciplinaryHearingNoticeGenerator")),
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
@@ -117,11 +119,11 @@ const documentCategories: DocumentCategory[] = [
     title: "Notices",
     icon: BellAlertIcon,
     items: [
-      { label: "Hearing Notice - Misconduct", active: false },
-      { label: "Hearing Notice - Performance", active: false },
-      { label: "Hearing Notice - Ill health", active: false },
-      { label: "Suspension Notice", active: false },
-      { label: "S189 Consultation Notice", active: false },
+      { id: "disciplinaryHearingNotice", label: "Disciplinary Hearing", active: true },
+      { label: "Incapacity Hearing (Performance)", active: false },
+      { label: "Incapacity Hearing (Ill health)", active: false },
+      { label: "Precautionary Suspension", active: false },
+      { label: "Retrenchment Consultation (S189)", active: false },
     ],
   },
   {
@@ -150,6 +152,7 @@ const Documents = () => {
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
   const [modalDocument, setModalDocument] = useState<
     | "warnings"
+    | "disciplinaryHearingNotice"
     | "addendum"
     | "permanentContract"
     | "temporaryContract"
@@ -265,6 +268,8 @@ const Documents = () => {
   const modalTitle =
     modalDocument === "warnings"
       ? "Warnings"
+      : modalDocument === "disciplinaryHearingNotice"
+        ? "Disciplinary Hearing"
       : modalDocument === "addendum"
         ? "Addendum"
         : modalDocument === "poorPerformanceTermination"
@@ -288,6 +293,7 @@ const Documents = () => {
           : "";
   const modalSteps =
     modalDocument === "warnings" ||
+    modalDocument === "disciplinaryHearingNotice" ||
     modalDocument === "addendum" ||
     modalDocument === "noticeTermination" ||
     modalDocument === "illHealthTermination" ||
@@ -303,6 +309,8 @@ const Documents = () => {
           "Employee Details",
           modalDocument === "warnings"
             ? "Warning Details"
+              : modalDocument === "disciplinaryHearingNotice"
+                ? "Termination Details"
               : modalDocument === "addendum"
                 ? "Addendum Details"
               : modalDocument === "noticeTermination" ||
@@ -469,6 +477,8 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permanentContract"
       ? permanentActiveNotes
+      : modalDocument === "disciplinaryHearingNotice"
+      ? noticeTerminationActiveNotes
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
@@ -485,6 +495,7 @@ const Documents = () => {
   const shouldRenderInlineDocument = Boolean(
     SelectedComponent &&
       selectedDocument !== "warnings" &&
+      selectedDocument !== "disciplinaryHearingNotice" &&
       selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
@@ -551,6 +562,7 @@ const Documents = () => {
                                     onClick={() => {
                                       if (
                                         item.id === "warnings" ||
+                                        item.id === "disciplinaryHearingNotice" ||
                                         item.id === "addendum" ||
                                         item.id === "noticeTermination" ||
                                         item.id === "illHealthTermination" ||
@@ -568,6 +580,7 @@ const Documents = () => {
                                         setModalDocument(
                                           item.id as
                                             | "warnings"
+                                            | "disciplinaryHearingNotice"
                                             | "addendum"
                                             | "noticeTermination"
                                             | "illHealthTermination"
@@ -615,6 +628,7 @@ const Documents = () => {
             stepMeta?.steps?.length &&
             selectedDocument !== "codeOfConduct" &&
             selectedDocument !== "warnings" &&
+            selectedDocument !== "disciplinaryHearingNotice" &&
             selectedDocument !== "addendum" &&
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
@@ -811,6 +825,7 @@ const Documents = () => {
         className={cn(
           "p-0 [&>button]:right-5 [&>button]:top-4",
           modalDocument === "warnings"
+            || modalDocument === "disciplinaryHearingNotice"
             || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
@@ -827,6 +842,7 @@ const Documents = () => {
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
           {modalDocument === "warnings" ||
+          modalDocument === "disciplinaryHearingNotice" ||
           modalDocument === "addendum" ||
           modalDocument === "noticeTermination" ||
           modalDocument === "illHealthTermination" ||
@@ -845,6 +861,8 @@ const Documents = () => {
                     {`Documents / ${
                       modalDocument === "warnings"
                         ? "Discipline"
+                        : modalDocument === "disciplinaryHearingNotice"
+                          ? "Notices"
                         : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
@@ -859,6 +877,8 @@ const Documents = () => {
                     } / ${
                       modalDocument === "addendum"
                         ? "Addendum"
+                        : modalDocument === "disciplinaryHearingNotice"
+                          ? "Disciplinary Hearing"
                         : modalDocument === "illHealthTermination"
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"

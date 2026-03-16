@@ -426,6 +426,7 @@ const Documents = () => {
       "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
       "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
       "Review all text carefully before downloading the final termination letter.",
+      "NB! Issue the letter on the same day as the letter date. If it will only be issued later, update the letter date before finalizing.",
     ],
   ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
@@ -910,14 +911,20 @@ const Documents = () => {
                         {activeModalStepLabel}
                       </p>
                       <div className="mt-2 space-y-2">
-                        {modalActiveNotes.map((note, index) => (
-                          <p
-                            key={index}
-                            className={cn("text-[11px] leading-5 text-slate-600", note === "Example:" && "font-semibold")}
-                          >
-                            {note}
-                          </p>
-                        ))}
+                        {modalActiveNotes.map((note, index) => {
+                          const isExampleLabel = note === "Example:";
+                          const isNbNote = note.startsWith("NB! ");
+                          const noteBody = isNbNote ? note.slice(4) : note;
+                          return (
+                            <p
+                              key={index}
+                              className={cn("text-[11px] leading-5 text-slate-600", isExampleLabel && "font-semibold")}
+                            >
+                              {isNbNote ? <strong>NB! </strong> : null}
+                              {noteBody}
+                            </p>
+                          );
+                        })}
                       </div>
                     </div>
                   </aside>

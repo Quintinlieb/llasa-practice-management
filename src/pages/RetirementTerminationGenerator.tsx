@@ -1951,14 +1951,24 @@ const RetirementTerminationGenerator = ({
       issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
     );
     const hasReachedRetirementAge = Boolean(issueDateForRule && retirementDateForRule && issueDateForRule >= retirementDateForRule);
-    const terminationDateDisplay = shouldUseNoticeEndTerminationDate && noticeEndDateForRule
+    const shouldUseNoticeBasedTerminationDate = Boolean(
+      noticeEndDateForRule && (hasReachedRetirementAge || shouldUseNoticeEndTerminationDate),
+    );
+    const terminationDateDisplay = shouldUseNoticeBasedTerminationDate && noticeEndDateForRule
       ? formatDate(toLocalIsoDate(noticeEndDateForRule))
       : (retirementDateDisplay || "[retirement date]");
     const paragraphOneText = "We refer to the abovementioned matter.";
     const paragraphTwoIntro = hasReachedRetirementAge
-      ? `Kindly take note that you have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
-      : `Kindly take note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
-    const paragraphTwoText = `${paragraphTwoIntro} Your employment contract will therefore terminate on ${terminationDateDisplay}, and you are required to work up to and including the aforementioned date.`;
+      ? `You have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
+      : `Kindly note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
+    const noticeMethodSentence = data.noticeMethod === "required_to_work_notice_period"
+      ? " You are required to work during this notice period."
+      : data.noticeMethod === "not_required_to_work_notice_period"
+        ? " You are not required to work during this notice period and will be paid in lieu of notice."
+        : "";
+    const paragraphTwoText = hasReachedRetirementAge
+      ? `${paragraphTwoIntro} Kindly take note that your employment contract will terminate on ${terminationDateDisplay} due to retirement.${noticeMethodSentence}`
+      : `${paragraphTwoIntro} Accordingly, your employment contract will terminate on ${terminationDateDisplay} due to retirement.${noticeMethodSentence}`;
     const paragraphThreeText = "We commend you for the valuable contribution you have made to the company, and your commitment is sincerely appreciated.";
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
@@ -3381,14 +3391,24 @@ const RetirementTerminationGenerator = ({
                 issueDateForRule && retirementDateForRule && noticeEndDateForRule && issueDateForRule < retirementDateForRule && noticeEndDateForRule > retirementDateForRule,
               );
               const hasReachedRetirementAge = Boolean(issueDateForRule && retirementDateForRule && issueDateForRule >= retirementDateForRule);
-              const terminationDateDisplay = shouldUseNoticeEndTerminationDate && noticeEndDateForRule
+              const shouldUseNoticeBasedTerminationDate = Boolean(
+                noticeEndDateForRule && (hasReachedRetirementAge || shouldUseNoticeEndTerminationDate),
+              );
+              const terminationDateDisplay = shouldUseNoticeBasedTerminationDate && noticeEndDateForRule
                 ? formatDate(toLocalIsoDate(noticeEndDateForRule))
                 : (retirementDateDisplay || "[retirement date]");
               const paragraphOneText = "We refer to the abovementioned matter.";
               const paragraphTwoIntro = hasReachedRetirementAge
-                ? `Kindly take note that you have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
-                : `Kindly take note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
-              const paragraphTwoText = `${paragraphTwoIntro} Your employment contract will therefore terminate on ${terminationDateDisplay}, and you are required to work up to and including the aforementioned date.`;
+                ? `You have reached the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`
+                : `Kindly note that you will reach the agreed retirement age on ${retirementDateDisplay || "[retirement date]"}.`;
+              const noticeMethodSentence = validatedPreview.noticeMethod === "required_to_work_notice_period"
+                ? " You are required to work during this notice period."
+                : validatedPreview.noticeMethod === "not_required_to_work_notice_period"
+                  ? " You are not required to work during this notice period and will be paid in lieu of notice."
+                  : "";
+              const paragraphTwoText = hasReachedRetirementAge
+                ? `${paragraphTwoIntro} Kindly take note that your employment contract will terminate on ${terminationDateDisplay} due to retirement.${noticeMethodSentence}`
+                : `${paragraphTwoIntro} Accordingly, your employment contract will terminate on ${terminationDateDisplay} due to retirement.${noticeMethodSentence}`;
               const paragraphThreeText = "We commend you for the valuable contribution you have made to the company, and your commitment is sincerely appreciated.";
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {

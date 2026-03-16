@@ -10,7 +10,7 @@ import {
   BellAlertIcon,
   ChevronDownIcon,
 } from "@heroicons/react/24/outline";
-import { ArrowLeft, ArrowRight, Check, Gavel, Menu, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Menu, Undo2 } from "lucide-react";
 
 type DocumentKey =
   | "codeOfConduct"
@@ -24,8 +24,7 @@ type DocumentKey =
   | "retrenchmentTermination"
   | "retirementTermination"
   | "poorPerformanceTermination"
-  | "mutualTermination"
-  | "disciplinaryHearing";
+  | "mutualTermination";
 
 type DocumentItem = {
   id?: DocumentKey;
@@ -81,7 +80,6 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   retirementTermination: lazy(() => import("./RetirementTerminationGenerator")),
   poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
   mutualTermination: lazy(() => import("./MutualTerminationGenerator")),
-  disciplinaryHearing: lazy(() => import("./DisciplinaryOutcomeGenerator")),
 };
 
 const documentCategories: DocumentCategory[] = [
@@ -91,7 +89,6 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { id: "codeOfConduct", label: "Code of Conduct", active: true },
       { id: "warnings", label: "Warnings", active: true },
-      { label: "Counselling", active: false },
     ],
   },
   {
@@ -102,11 +99,6 @@ const documentCategories: DocumentCategory[] = [
       { id: "temporaryContract", label: "Temporary Contract", active: true },
       { id: "addendum", label: "Addendum", active: true },
     ],
-  },
-  {
-    title: "Performance",
-    icon: ChartBarIcon,
-    items: [{ label: "Performance Appraisal Form", active: false }],
   },
   {
     title: "Terminations",
@@ -122,25 +114,28 @@ const documentCategories: DocumentCategory[] = [
     ],
   },
   {
-    title: "Outcomes",
-    icon: (props) => <Gavel {...props} />,
-    items: [
-      { id: "disciplinaryHearing", label: "Disciplinary Hearing", active: true },
-      { label: "Incapacity Hearing", active: false },
-      { label: "Retrenchment Consultation", active: false },
-      { label: "Grievance", active: false },
-    ],
-  },
-  {
     title: "Notices",
     icon: BellAlertIcon,
     items: [
-      { label: "Notice of Hearing - Poor Performance", active: false },
-      { label: "Notice of Demotion", active: false },
-      { id: "noticeTermination", label: "Notice of Termination", active: true },
-      { label: "Notice of Counselling", active: false },
-      { label: "Notice of Contract Extension", active: false },
-      { label: "Notice of Contract Renewal", active: false },
+      { label: "Hearing Notice - Misconduct", active: false },
+      { label: "Hearing Notice - Performance", active: false },
+      { label: "Hearing Notice - Ill health", active: false },
+      { label: "Suspension Notice", active: false },
+      { label: "S189 Consultation Notice", active: false },
+    ],
+  },
+  {
+    title: "Other",
+    icon: ChartBarIcon,
+    items: [
+      { label: "Performance Appraisals", active: false },
+      { label: "Counselling", active: false },
+      { label: "Certificate of Service", active: false },
+      { label: "Leave Request", active: false },
+      { label: "Grievance", active: false },
+      { label: "Offer of Employment", active: false },
+      { label: "Interview Invitation", active: false },
+      { label: "Objection to Con/Arb", active: false },
     ],
   },
 ];

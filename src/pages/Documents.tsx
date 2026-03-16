@@ -310,7 +310,7 @@ const Documents = () => {
           modalDocument === "warnings"
             ? "Warning Details"
               : modalDocument === "disciplinaryHearingNotice"
-                ? "Termination Details"
+                ? "Notice Details"
               : modalDocument === "addendum"
                 ? "Addendum Details"
               : modalDocument === "noticeTermination" ||

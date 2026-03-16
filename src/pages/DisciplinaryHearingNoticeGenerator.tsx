@@ -25,7 +25,6 @@ import {
   calculateAgeFromDob,
   type PermanentContractFormData,
 } from "@/lib/validation";
-import { addServiceDelayToDate } from "@/lib/terminationNotice";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ContractFormState = {
@@ -35,14 +34,9 @@ type ContractFormState = {
   logoPlacement: "center" | "left";
   letterheadThemeColors: string[];
   issuer: string;
-  chairperson: string;
-  noticeMethod: string;
-  transmissionMethods: string[];
-  noticePeriod: string;
-  noticeOfAppeal: string;
-  appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   misconductTypes: string[];
+  misconductDescriptions: Record<string, string>;
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
@@ -70,14 +64,9 @@ type AddendumData = PermanentContractFormData & {
   logoPlacement: "center" | "left";
   letterheadThemeColors: string[];
   issuer: string;
-  chairperson: string;
-  noticeMethod: string;
-  transmissionMethods: string[];
-  noticePeriod: string;
-  noticeOfAppeal: string;
-  appliedProgressiveDisciplinaryAction: string;
   hearingDate: string;
   misconductTypes: string[];
+  misconductDescriptions: Record<string, string>;
 };
 
 type SlimProfile = Pick<
@@ -229,25 +218,6 @@ const getPdfDividerRgb = (hex: string): [number, number, number] => {
   return mixHexWithWhite(hex, 0.5);
 };
 
-const noticePeriodOptions = [
-  "1 week",
-  "2 weeks",
-  "4 weeks",
-  "No notice",
-] as const;
-
-const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
-const noticeMethodOptions = [
-  { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
-  { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
-] as const;
-const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
-const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
-const chairpersonOptions = [
-  { value: "external", label: "External" },
-  { value: "internal", label: "Internal" },
-] as const;
-
 const MISCONDUCT_TYPES = [
   "Unauthorised Absenteeism",
   "Poor Time Keeping",
@@ -332,15 +302,20 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
-const formatMisconductList = (types: string[]) => {
-  const normalized = types
-    .map((type) => type.trim().toLowerCase())
+const formatMisconductDetails = (
+  types: string[],
+  descriptions: Record<string, string>,
+) => {
+  const details = types
+    .map((type) => {
+      const description = (descriptions[type] || "").trim();
+      return description ? `${type}: ${description}` : type;
+    })
     .filter(Boolean);
 
-  if (normalized.length === 0) return "[forms of misconduct]";
-  if (normalized.length === 1) return normalized[0];
-  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
-  return `${normalized.slice(0, -1).join(", ")} and ${normalized[normalized.length - 1]}`;
+  if (details.length === 0) return "[misconduct details]";
+  if (details.length === 1) return details[0];
+  return details.join("; ");
 };
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
@@ -510,8 +485,6 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
   const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
   const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
-  const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
-  const employeeIdValue = data.idType === "id" ? displayValue(data.employeeIdNumber) : displayValue(data.passportNumber);
   const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
   const tradingNameDisplay = (data.tradingName || "").trim();
   const registrationNumberDisplay = (profile?.registration_number || "").trim();
@@ -599,11 +572,6 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             <span className="font-semibold uppercase">{employeeNameDisplay}</span>
           </p>
         </div>
-        <div className="mt-3 text-right font-semibold">
-          {data.transmissionMethods.map((method) => (
-            <p key={method}>{method.replace(/^By\s+/i, "Per ")}</p>
-          ))}
-        </div>
         <div className="mt-4 space-y-4">
           <p>{salutation}</p>
           <p className="pt-2 pb-2 font-bold underline">RE: TERMINATION OF EMPLOYMENT</p>
@@ -614,28 +582,6 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             {data.issuer?.trim() ? <p className="font-semibold">{data.issuer.trim()}</p> : null}
             <p>Management</p>
           </div>
-          {data.transmissionMethods.includes("By Hand") ? (
-            <div className="mt-6 border border-black p-2 space-y-4">
-              <p>
-                I, <span className="underline">{`${employeeNameDisplay} (${employeeIdLabel}: ${employeeIdValue})`}</span>, hereby acknowledge that I received this
-                letter and confirm that the content hereof was explained to me.
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Signature</p>
-                </div>
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Date</p>
-                </div>
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Witness</p>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
         {useCenteredLogoLayout ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
@@ -707,7 +653,7 @@ const MisconductTerminationGenerator = ({
   const [customClauses, setCustomClauses] = useState<CustomClause[]>([]);
   const [addingAfter, setAddingAfter] = useState<string | null | undefined>(undefined);
   const [newClauseBody, setNewClauseBody] = useState("");
-  const steps = ["Employer Details", "Employee Details", "Termination Details"] as const;
+  const steps = ["Employer Details", "Employee Details", "Notice Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showEmployeeHint, setShowEmployeeHint] = useState(false);
@@ -724,8 +670,6 @@ const MisconductTerminationGenerator = ({
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
-  const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
-  const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -780,14 +724,9 @@ const MisconductTerminationGenerator = ({
     logoPlacement: "center",
     letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
-    chairperson: "",
-    noticeMethod: "",
-    transmissionMethods: [],
-    noticePeriod: "No notice",
-    noticeOfAppeal: "",
-    appliedProgressiveDisciplinaryAction: "",
     hearingDate: "",
     misconductTypes: [],
+    misconductDescriptions: {},
     contractReference: "",
     addendumType: "general",
     effectiveDate: "",
@@ -875,11 +814,6 @@ const MisconductTerminationGenerator = ({
     }
     return MISCONDUCT_TYPES;
   }, [conductOffences]);
-  const dismissibleMisconductNames = useMemo(
-    () => new Set(conductOffences.filter((item) => item.category === "Dismissible").map((item) => item.name.trim().toLowerCase())),
-    [conductOffences],
-  );
-
   const filteredMisconductTypes = useMemo(() => {
     const query = misconductSearch.trim().toLowerCase();
     if (!query) return misconductOptions;
@@ -903,41 +837,6 @@ const MisconductTerminationGenerator = ({
     const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
   }, [misconductPickerOpen]);
-
-  useEffect(() => {
-    if (formData.noticePeriod !== "No notice") return;
-    if (!formData.noticeMethod) return;
-    setFormData((prev) => ({ ...prev, noticeMethod: "" }));
-  }, [formData.noticePeriod, formData.noticeMethod]);
-
-  useEffect(() => {
-    if (formData.misconductTypes.length === 0) {
-      if (!formData.appliedProgressiveDisciplinaryAction) return;
-      setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: "" }));
-      return;
-    }
-    // Auto-suggest based on selected misconduct, but allow user override afterwards.
-    if (formData.appliedProgressiveDisciplinaryAction) return;
-    const hasDismissibleMisconduct = formData.misconductTypes.some((type) =>
-      dismissibleMisconductNames.has(type.trim().toLowerCase()),
-    );
-    const expectedValue = hasDismissibleMisconduct ? "No PDA applied" : "Yes";
-    setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: expectedValue }));
-  }, [formData.misconductTypes, formData.appliedProgressiveDisciplinaryAction, dismissibleMisconductNames]);
-
-  useEffect(() => {
-    setSameDayOverrideAccepted(false);
-    setSameDayCautionDismissed(false);
-  }, [formData.issueDate, formData.hearingDate]);
-
-  useEffect(() => {
-    if (sameDayOverrideAccepted) return;
-    if (sameDayCautionDismissed) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate) || !/^\d{4}-\d{2}-\d{2}$/.test(formData.hearingDate)) return;
-    if (formData.issueDate !== formData.hearingDate) return;
-    if (sameDayCaution.open) return;
-    setSameDayCaution({ open: true, pendingAction: "" });
-  }, [formData.issueDate, formData.hearingDate, sameDayOverrideAccepted, sameDayCautionDismissed, sameDayCaution.open]);
 
   useEffect(() => {
     if (hasDismissedEmployeeHint || activeStep !== 1) {
@@ -1109,14 +1008,9 @@ const MisconductTerminationGenerator = ({
       logoPlacement: "center",
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
-      chairperson: "",
-      noticeMethod: "",
-      transmissionMethods: [],
-      noticePeriod: "No notice",
-      noticeOfAppeal: "",
-      appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
       misconductTypes: [],
+      misconductDescriptions: {},
       contractReference: "",
       addendumType: "general",
       effectiveDate: "",
@@ -1175,41 +1069,6 @@ const MisconductTerminationGenerator = ({
     }
   }, [formData.employeeIdNumber, formData.idType]);
 
-  useEffect(() => {
-    const noticeDate = formData.issueDate.trim();
-    const noticePeriod = formData.noticePeriod.trim();
-    if (!noticeDate || !noticePeriod) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(noticeDate)) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    const baseDate = new Date(`${noticeDate}T00:00:00`);
-    if (Number.isNaN(baseDate.getTime())) {
-      setFormData((prev) => (prev.effectiveDate ? { ...prev, effectiveDate: "" } : prev));
-      return;
-    }
-
-    let nextDate = addServiceDelayToDate(baseDate, formData.transmissionMethods);
-    if (noticePeriod !== "No notice") {
-      const weeksMatch = noticePeriod.match(/^(\d+)\s+week/);
-      const weeks = weeksMatch ? Number(weeksMatch[1]) : 0;
-      if (weeks > 0) {
-        nextDate.setDate(nextDate.getDate() + weeks * 7);
-      }
-    }
-
-    const year = nextDate.getFullYear();
-    const month = String(nextDate.getMonth() + 1).padStart(2, "0");
-    const day = String(nextDate.getDate()).padStart(2, "0");
-    const computed = `${year}-${month}-${day}`;
-    setFormData((prev) => (prev.effectiveDate !== computed ? { ...prev, effectiveDate: computed } : prev));
-  }, [formData.issueDate, formData.noticePeriod, formData.transmissionMethods]);
-
   const isEmployerStepComplete = useMemo(
     () => Boolean(formData.employerContact && formData.employerEmail),
     [formData.employerContact, formData.employerEmail],
@@ -1234,38 +1093,24 @@ const MisconductTerminationGenerator = ({
 
   const isEmploymentStepComplete = useMemo(
     () => {
-      const hasNoticePeriod = Boolean(formData.noticePeriod);
-      const hasNoticeOfAppeal = Boolean(formData.noticeOfAppeal);
-      const hasNoticeMethod = formData.noticePeriod === "No notice" ? true : Boolean(formData.noticeMethod);
-      const hasProgressiveDisciplinaryAction = Boolean(formData.appliedProgressiveDisciplinaryAction);
-      const hasChairperson = Boolean(formData.chairperson);
+      const hasIssueDate = Boolean(formData.issueDate);
       const hasHearingDate = Boolean(formData.hearingDate);
       const hasMisconductTypes = formData.misconductTypes.length > 0;
-      const hasTransmissionMethods = formData.transmissionMethods.length > 0;
+      const hasMisconductDescriptions = formData.misconductTypes.every(
+        (type) => Boolean((formData.misconductDescriptions[type] || "").trim()),
+      );
       return Boolean(
-        formData.effectiveDate &&
-          formData.issueDate &&
-          hasNoticePeriod &&
-          hasNoticeOfAppeal &&
-          hasNoticeMethod &&
-          hasProgressiveDisciplinaryAction &&
-          hasChairperson &&
+        hasIssueDate &&
           hasHearingDate &&
           hasMisconductTypes &&
-          hasTransmissionMethods,
+          hasMisconductDescriptions,
       );
     },
     [
-      formData.noticePeriod,
-      formData.noticeOfAppeal,
-      formData.noticeMethod,
-      formData.appliedProgressiveDisciplinaryAction,
-      formData.chairperson,
       formData.hearingDate,
-      formData.misconductTypes,
-      formData.transmissionMethods,
-      formData.effectiveDate,
       formData.issueDate,
+      formData.misconductTypes,
+      formData.misconductDescriptions,
     ],
   );
 
@@ -1442,14 +1287,9 @@ const MisconductTerminationGenerator = ({
     setFormData((prev) => ({
       ...prev,
       issuer: "",
-      chairperson: "",
-      noticeMethod: "",
-      transmissionMethods: [],
-      noticePeriod: "No notice",
-      noticeOfAppeal: "",
-      appliedProgressiveDisciplinaryAction: "",
       hearingDate: "",
       misconductTypes: [],
+      misconductDescriptions: {},
       addendumType: "general",
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
@@ -1536,25 +1376,19 @@ const MisconductTerminationGenerator = ({
   };
 
   const applyMisconductPicker = () => {
-    setFormData((prev) => ({ ...prev, misconductTypes: draftMisconductTypes }));
+    setFormData((prev) => {
+      const nextDescriptions: Record<string, string> = {};
+      draftMisconductTypes.forEach((type) => {
+        nextDescriptions[type] = prev.misconductDescriptions[type] || "";
+      });
+      return {
+        ...prev,
+        misconductTypes: draftMisconductTypes,
+        misconductDescriptions: nextDescriptions,
+      };
+    });
     setMisconductPickerOpen(false);
     setMisconductSearch("");
-  };
-
-  const openTransmissionPicker = () => {
-    setDraftTransmissionMethods(formData.transmissionMethods);
-    setTransmissionPickerOpen(true);
-  };
-
-  const cancelTransmissionPicker = () => {
-    setTransmissionPickerOpen(false);
-    setDraftTransmissionMethods([]);
-  };
-
-  const applyTransmissionPicker = () => {
-    setFormData((prev) => ({ ...prev, transmissionMethods: draftTransmissionMethods }));
-    setTransmissionPickerOpen(false);
-    setDraftTransmissionMethods([]);
   };
 
   const openColorThemePicker = () => {
@@ -1674,7 +1508,7 @@ const MisconductTerminationGenerator = ({
     }
   };
 
-  const validateData = (allowSameDayHearingNotice = false) => {
+  const validateData = () => {
     const missingFields: string[] = [];
     const checkRequired = (value: string | undefined | null, label: string) => {
       if (!value || !value.toString().trim()) {
@@ -1692,21 +1526,16 @@ const MisconductTerminationGenerator = ({
     } else {
       checkRequired(formData.passportNumber, "Passport number");
     }
-    checkRequired(formData.effectiveDate, "Effective date");
     checkRequired(formData.issueDate, "Date of notice");
-    checkRequired(formData.noticePeriod, "Notice period");
-    if (formData.noticePeriod !== "No notice") {
-      checkRequired(formData.noticeMethod, "Notice Method");
-    }
-    checkRequired(formData.appliedProgressiveDisciplinaryAction, "Progressive Disciplinary Action (PDA)");
-    checkRequired(formData.chairperson, "Chairperson");
     checkRequired(formData.hearingDate, "Date of hearing");
-    checkRequired(formData.noticeOfAppeal, "Notice of Appeal");
-    if (formData.transmissionMethods.length === 0) {
-      missingFields.push("Method of Issuing");
-    }
     if (formData.misconductTypes.length === 0) {
       missingFields.push("Type of misconduct");
+    }
+    const missingDescriptions = formData.misconductTypes.filter(
+      (type) => !(formData.misconductDescriptions[type] || "").trim(),
+    );
+    if (missingDescriptions.length > 0) {
+      missingFields.push("Misconduct description(s)");
     }
 
     if (missingFields.length) {
@@ -1717,11 +1546,8 @@ const MisconductTerminationGenerator = ({
       const hearingDate = new Date(`${formData.hearingDate}T00:00:00`);
       const noticeDate = new Date(`${formData.issueDate}T00:00:00`);
       if (!Number.isNaN(hearingDate.getTime()) && !Number.isNaN(noticeDate.getTime())) {
-        if (hearingDate > noticeDate) {
-          throw new Error("Date of hearing cannot be after Date of notice.");
-        }
-        if (!allowSameDayHearingNotice && formData.hearingDate === formData.issueDate) {
-          throw new Error(SAME_DAY_HEARING_NOTICE_CAUTION);
+        if (hearingDate <= noticeDate) {
+          throw new Error("Date of hearing must be after Date of notice.");
         }
       }
     }
@@ -1744,14 +1570,9 @@ const MisconductTerminationGenerator = ({
       logoPlacement: formData.logoPlacement,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
-      chairperson: formData.chairperson,
-      noticeMethod: formData.noticeMethod,
-      transmissionMethods: formData.transmissionMethods,
-      noticePeriod: formData.noticePeriod,
-      noticeOfAppeal: formData.noticeOfAppeal,
-      appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
       hearingDate: formData.hearingDate,
       misconductTypes: formData.misconductTypes,
+      misconductDescriptions: formData.misconductDescriptions,
     } as AddendumData;
   };
 
@@ -1915,37 +1736,9 @@ const MisconductTerminationGenerator = ({
 
     const issueDateDisplay = formatDate(data.issueDate);
     const hearingDateDisplay = formatDate(data.hearingDate);
-    const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
     const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
     const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
-    const misconductDisplay = formatMisconductList(data.misconductTypes);
-    const hasNoticePeriod = data.noticePeriod !== "No notice";
-    const findingLine =
-      data.chairperson === "internal"
-        ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
-        : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
-    const dismissalLead =
-      data.appliedProgressiveDisciplinaryAction === "Yes"
-        ? hasNoticePeriod
-          ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-          : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
-        : hasNoticePeriod
-          ? "Take notice that you are hereby dismissed"
-          : "Take notice that you are hereby summarily dismissed";
-    const noticeMethodLine =
-      hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
-        ? `You are required to work during your notice period of ${data.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
-        : hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
-          ? `You are not required to work during your notice period of ${data.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
-          : "";
-    const lastDateOfEmploymentDisplay =
-      hasNoticePeriod && data.noticeMethod === "not_required_to_work_notice_period"
-        ? issueDateDisplay || "[date of issue]"
-        : terminationDateDisplay || "[date of termination]";
-    const propertyReturnLine =
-      hasNoticePeriod && data.noticeMethod === "required_to_work_notice_period"
-        ? "You are required to return all company property in your possession to the employer on your last day of employment."
-        : "You are required to return all company property in your possession to the employer immediately.";
+    const misconductDetails = formatMisconductDetails(data.misconductTypes, data.misconductDescriptions);
 
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
@@ -1954,7 +1747,7 @@ const MisconductTerminationGenerator = ({
       },
       {
         title: "Paragraph 2",
-        body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
+        body: `You were found guilty of misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing. Take notice that you are hereby dismissed for misconduct relating to ${misconductDetails}. You are required to return all company property in your possession to the employer immediately.`,
       },
       {
         title: "Paragraph 3",
@@ -1973,7 +1766,6 @@ const MisconductTerminationGenerator = ({
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-    const transmissionLines = data.transmissionMethods.map((method) => method.replace(/^By\s+/i, "Per "));
     const hasUploadedLogo = Boolean(data.companyLogoDataUrl);
     const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
     const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
@@ -2201,12 +1993,6 @@ const MisconductTerminationGenerator = ({
     doc.setFont("helvetica", "bold");
     doc.text(valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")).toUpperCase(), margin + 14, y);
     y += 5;
-    if (transmissionLines.length > 0) {
-      transmissionLines.forEach((line) => {
-        doc.text(line, rightX, y, { align: "right" });
-        y += 5;
-      });
-    }
     y += 4;
 
     doc.setFont("helvetica", "normal");
@@ -2245,46 +2031,6 @@ const MisconductTerminationGenerator = ({
     doc.text("Management", margin, y);
     y += 10;
 
-    if (data.transmissionMethods.includes("By Hand")) {
-      const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
-      const employeeIdValue = data.idType === "id" ? valueOrLine(data.employeeIdNumber) : valueOrLine(data.passportNumber);
-      const employeeNameValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-      const boxHeight = 34;
-      ensureSpace(boxHeight + 6);
-      const boxTop = y;
-      doc.rect(margin, boxTop, contentWidth, boxHeight);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
-      const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this letter and confirm that the content hereof was explained to me.`;
-      const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      let ackCursorY = y;
-      ackLines.forEach((line, idx) => {
-        doc.text(line, margin + 2, ackCursorY + idx * 4.8);
-      });
-      const firstLine = ackLines[0] || "";
-      const segmentStart = firstLine.indexOf(underlinedSegment);
-      if (segmentStart >= 0) {
-        const before = firstLine.slice(0, segmentStart);
-        const lineX = margin + 2 + doc.getTextWidth(before);
-        const lineY = ackCursorY + 0.8;
-        doc.line(lineX, lineY, lineX + doc.getTextWidth(underlinedSegment), lineY);
-      }
-      y += ackLines.length * 4.8;
-      y = boxTop + boxHeight - 8;
-      const colWidth = 45;
-      const labels = ["Signature", "Date", "Witness"];
-      labels.forEach((label, idx) => {
-        const x = margin + 2 + idx * (colWidth + 10);
-        doc.line(x, y, x + colWidth, y);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text(label, x, y + 4.5);
-      });
-      y = boxTop + boxHeight + 6;
-    }
-
     if (useCenteredLogoLayout) {
       const totalPages = doc.getNumberOfPages();
       for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
@@ -2309,14 +2055,10 @@ const MisconductTerminationGenerator = ({
   function handleDownload() {
     try {
       setIsGenerating(true);
-      const validated = validateData(sameDayOverrideAccepted);
+      const validated = validateData();
       generatePDF(validated, true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
-      if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
-        setSameDayCaution({ open: true, pendingAction: "download" });
-        return;
-      }
       toast({
         title: "Validation error",
         description: message,
@@ -2329,16 +2071,12 @@ const MisconductTerminationGenerator = ({
 
   function handleFinish() {
     try {
-      const validated = validateData(sameDayOverrideAccepted);
+      const validated = validateData();
       setValidatedPreview(validated);
       setIsPreviewEditable(false);
       setShowFinalActions(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
-      if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
-        setSameDayCaution({ open: true, pendingAction: "finish" });
-        return;
-      }
       toast({
         title: "Validation error",
         description: message,
@@ -2862,7 +2600,7 @@ const MisconductTerminationGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="issueDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of letter <span className="text-red-500">*</span>
+                        Date of Notice <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -2910,118 +2648,6 @@ const MisconductTerminationGenerator = ({
                           className="sr-only"
                           aria-hidden="true"
                           tabIndex={-1}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="noticePeriod" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice period <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Notice period info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              In terms of the BCEA a notice period is generally not required for termination due to misconduct.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.noticePeriod}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            noticePeriod: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select notice period"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.noticePeriod ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {noticePeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {formData.noticePeriod !== "No notice" ? (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="noticeMethod" className={modalFieldLabelClass}>
-                          Notice method <span className="text-red-500">*</span>
-                        </Label>
-                        <Select
-                          value={formData.noticeMethod}
-                          onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeMethod: value }))}
-                        >
-                          <SelectTrigger
-                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${addendumModalDropdownToneClass}`}
-                          >
-                            <SelectValue
-                              placeholder="Select notice method"
-                              className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                              style={!formData.noticeMethod ? { color: "#94a3b8" } : undefined}
-                            />
-                          </SelectTrigger>
-                          <SelectContent className={addendumModalSelectContentClass}>
-                            {noticeMethodOptions.map((option) => (
-                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : null}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="effectiveDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Date of termination <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Date of termination info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This date is the last day that{" "}
-                              {formData.employeeName || formData.employeeSurname
-                                ? `${formData.employeeName} ${formData.employeeSurname}`.trim()
-                                : "the employee"}{" "}
-                              will be working for you.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="effectiveDate"
-                          type="text"
-                          readOnly
-                          placeholder="Auto-calculated from notice date and period"
-                          value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                       </div>
                     </div>
@@ -3112,181 +2738,55 @@ const MisconductTerminationGenerator = ({
                           )}
                         >
                           {formData.misconductTypes.length > 0
-                            ? `${formData.misconductTypes.length} type(s) selected`
+                            ? formData.misconductTypes.join(", ")
                             : "Select misconduct type(s)"}
                         </span>
                       </button>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="appliedProgressiveDisciplinaryAction" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Progressive disciplinary action (PDA) <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="PDA info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Progressive disciplinary action is implemented when an employee has a valid final written
-                              warning and commits the same type of misconduct within the validity period of that
-                              warning. Dismissible offences usually do not require a final warning to justify dismissal.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.appliedProgressiveDisciplinaryAction}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({ ...prev, appliedProgressiveDisciplinaryAction: value }))
-                        }
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.appliedProgressiveDisciplinaryAction))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select yes or no"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.appliedProgressiveDisciplinaryAction ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {progressiveDisciplinaryActionOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="noticeOfAppeal" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Notice of appeal <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Notice of appeal info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              This is the time allowed for an employee to lodge an appeal against the decision to dismiss.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.noticeOfAppeal}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeOfAppeal: value }))}
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select notice of appeal"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.noticeOfAppeal ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {noticeOfAppealOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="chairperson" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Chairperson <span className="text-red-500">*</span>
-                        <TooltipProvider delayDuration={0}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                tabIndex={-1}
-                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Chairperson info"
-                              >
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              It is advised that an external person chair the disciplinary hearing to ensure
-                              impartiality in the decision-making process. You are not prohibited from chairing your
-                              own hearing.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </Label>
-                      <Select
-                        value={formData.chairperson}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, chairperson: value }))}
-                      >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.chairperson))} ${addendumModalDropdownToneClass}`}
-                        >
-                          <SelectValue
-                            placeholder="Select chairperson type"
-                            className="data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] data-[placeholder]:font-normal"
-                            style={!formData.chairperson ? { color: "#94a3b8" } : undefined}
-                          />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {chairpersonOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="issuer" className={modalFieldLabelClass}>
-                        Issuer
-                      </Label>
-                      <Input
-                        id="issuer"
-                        value={formData.issuer}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, issuer: e.target.value }))}
-                        placeholder="Name and surname of person issuing this document."
-                        className={`${getAddendumModalInputClass(formData.issuer.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="transmissionMethods" className={modalFieldLabelClass}>
-                        Method of issuing <span className="text-red-500">*</span>
-                      </Label>
-                      <button
-                        id="transmissionMethods"
-                        type="button"
-                        onClick={openTransmissionPicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.transmissionMethods.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
-                      >
-                        <span
-                          className={cn(
-                            "block truncate text-[11px]",
-                            formData.transmissionMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
-                          )}
-                        >
-                          {formData.transmissionMethods.length > 0
-                            ? `${formData.transmissionMethods.length} method(s) selected`
-                            : "Select issuing method(s)"}
-                        </span>
-                      </button>
-                    </div>
                   </div>
+                  {formData.misconductTypes.length > 0 ? (
+                    <div className="grid gap-3">
+                      {formData.misconductTypes.map((type, index) => (
+                        <div key={type} className="space-y-1.5">
+                          <Label htmlFor={`misconductDescription-${type}`} className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                            {`Charge ${index + 1}: ${type}`} <span className="text-red-500">*</span>
+                            <TooltipProvider delayDuration={0}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                    aria-label={`Charge ${index + 1} guidance`}
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className={fixedTooltipContentClass}>
+                                  Include the date or date range when this misconduct occurred and clearly describe what happened.
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </Label>
+                          <Textarea
+                            id={`misconductDescription-${type}`}
+                            value={formData.misconductDescriptions[type] || ""}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                misconductDescriptions: {
+                                  ...prev.misconductDescriptions,
+                                  [type]: e.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Provide a full description of the charge here..."
+                            className={`${getAddendumModalInputClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[88px]`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -3391,37 +2891,11 @@ const MisconductTerminationGenerator = ({
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                   <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
             {validatedPreview ? (() => {
-              const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
-              const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const misconductDisplay = formatMisconductList(validatedPreview.misconductTypes);
-              const hasNoticePeriod = validatedPreview.noticePeriod !== "No notice";
-              const findingLine =
-                validatedPreview.chairperson === "internal"
-                  ? "You were found guilty of committing misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing."
-                  : "You were found guilty of committing misconduct after the chairperson considered the statement(s) and/or evidence presented during the disciplinary hearing.";
-              const dismissalLead =
-                validatedPreview.appliedProgressiveDisciplinaryAction === "Yes"
-                  ? hasNoticePeriod
-                    ? "Take notice that we are implementing progressive disciplinary action and you are hereby dismissed"
-                    : "Take notice that we are implementing progressive disciplinary action and you are hereby summarily dismissed"
-                  : hasNoticePeriod
-                    ? "Take notice that you are hereby dismissed"
-                    : "Take notice that you are hereby summarily dismissed";
-              const noticeMethodLine =
-                hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
-                  ? `You are required to work during your notice period of ${validatedPreview.noticePeriod} until ${terminationDateDisplay || "[date of termination]"}.`
-                  : hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                    ? `You are not required to work during your notice period of ${validatedPreview.noticePeriod} and will be paid in lieu of this notice up to ${terminationDateDisplay || "[date of termination]"}.`
-                    : "";
-              const lastDateOfEmploymentDisplay =
-                hasNoticePeriod && validatedPreview.noticeMethod === "not_required_to_work_notice_period"
-                  ? issueDateDisplay || "[date of issue]"
-                  : terminationDateDisplay || "[date of termination]";
-              const propertyReturnLine =
-                hasNoticePeriod && validatedPreview.noticeMethod === "required_to_work_notice_period"
-                  ? "You are required to return all company property in your possession to the employer on your last day of employment."
-                  : "You are required to return all company property in your possession to the employer immediately.";
+              const misconductDetails = formatMisconductDetails(
+                validatedPreview.misconductTypes,
+                validatedPreview.misconductDescriptions,
+              );
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
@@ -3429,7 +2903,7 @@ const MisconductTerminationGenerator = ({
                 },
                 {
                   title: "Paragraph 2",
-                  body: `${findingLine} ${dismissalLead} for misconduct relating to ${misconductDisplay}.${noticeMethodLine ? ` ${noticeMethodLine}` : ""} Your last date of employment with the company is ${lastDateOfEmploymentDisplay}. ${propertyReturnLine}`,
+                  body: `You were found guilty of misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing. Take notice that you are hereby dismissed for misconduct relating to ${misconductDetails}. You are required to return all company property in your possession to the employer immediately.`,
                 },
                 {
                   title: "Paragraph 3",
@@ -3963,101 +3437,6 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyMisconductPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
-                >
-                  Done
-                </Button>
-              </div>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={transmissionPickerOpen} onOpenChange={(open) => (open ? openTransmissionPicker() : cancelTransmissionPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Mail className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Method of Issuing</DialogTitle>
-            </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <DialogHeader className="px-6 pt-4 pb-0">
-            <DialogDescription className="text-[11px] text-slate-600">
-              Choose one or more methods. Use Done to apply or Cancel to discard changes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 px-6 pb-6 pt-4">
-            <ScrollArea className="max-h-44 rounded border border-slate-200 bg-white">
-              <div className="space-y-1 p-3">
-                {transmissionMethodOptions.map((method) => (
-                  <label
-                    key={method}
-                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
-                  >
-                    <Checkbox
-                      checked={draftTransmissionMethods.includes(method)}
-                      onCheckedChange={(checked) =>
-                        setDraftTransmissionMethods((prev) =>
-                          checked ? (prev.includes(method) ? prev : [...prev, method]) : prev.filter((item) => item !== method),
-                        )
-                      }
-                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
-                    />
-                    <span className="flex-1">{method}</span>
-                  </label>
-                ))}
-              </div>
-            </ScrollArea>
-            <div>
-              {draftTransmissionMethods.length === 0 ? (
-                <div className="text-xs text-slate-600">No method selected</div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {draftTransmissionMethods.map((method) => (
-                    <Badge
-                      key={method}
-                      variant="outline"
-                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
-                    >
-                      {method}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="px-6 pb-4 pt-0">
-            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
-              <div className="justify-self-start">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={cancelTransmissionPicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
-                >
-                  Cancel
-                </Button>
-              </div>
-              <div className="justify-self-center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setDraftTransmissionMethods([])}
-                  disabled={draftTransmissionMethods.length === 0}
-                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
-                >
-                  Clear
-                </Button>
-              </div>
-              <div className="justify-self-end">
-                <Button
-                  type="button"
-                  onClick={applyTransmissionPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done

@@ -36,6 +36,7 @@ type ContractFormState = {
   issuer: string;
   hearingDate: string;
   hearingTime: string;
+  hearingFormat: HearingFormat | "";
   hearingLocation: string;
   misconductTypes: string[];
   misconductDescriptions: Record<string, string>;
@@ -54,6 +55,7 @@ type ContractFormState = {
 
 type AmendmentType = "add" | "amend";
 type AddendumType = "general" | "renewal" | "extension";
+type HearingFormat = "in_person" | "virtual";
 
 type AddendumData = PermanentContractFormData & {
   contractReference: string;
@@ -68,6 +70,7 @@ type AddendumData = PermanentContractFormData & {
   issuer: string;
   hearingDate: string;
   hearingTime: string;
+  hearingFormat: HearingFormat;
   hearingLocation: string;
   misconductTypes: string[];
   misconductDescriptions: Record<string, string>;
@@ -242,6 +245,37 @@ const MISCONDUCT_TYPES = [
   "Breach of Procedure",
 ] as const;
 
+const HEARING_FORMAT_OPTIONS = [
+  { value: "in_person", label: "In person" },
+  { value: "virtual", label: "Virtual" },
+] as const;
+
+const HEARING_RIGHTS_INTRO = "Please note that your rights at the hearing are as follows:";
+
+const HEARING_RIGHTS_ITEMS = [
+  "The right to be given time to prepare your case.",
+  "The right to be given advance warning of the charges.",
+  "The right to be represented by a fellow employee / shop steward which must be an employee of the company. It is your responsibility to ensure the availability of your representative at the hearing. No external representation is permitted.",
+  "The right to ask questions of any evidence produced or of statements by witnesses.",
+  "The right to a fair and proper hearing.",
+  "The right to call witnesses. It is your responsibility to ensure the availability of your witness/es at the hearing.",
+  "The right to an interpreter. You may request another employee to perform this function.",
+  "The right to appeal against any disciplinary action in terms of the company appeal procedures.",
+  "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalization thereof it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to inform your employer that you cannot attend with valid reasons. If absence is due to invalid reasons, the hearing will continue in your absence.",
+] as const;
+
+const SIGNATURE_LABELS = [
+  "Employer/Issuer",
+  "Employee",
+  "Representative (optional)",
+  "Interpreter (optional)",
+  "Witness 1 (optional)",
+  "Witness 2 (optional)",
+] as const;
+
+const SIGNATURE_REFUSAL_NOTE =
+  "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
+
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
 
@@ -251,11 +285,22 @@ const formatDate = (value: string) => {
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 };
 
+const getTimeMeridiem = (value: string) => {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return "";
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+  return hour >= 12 ? "PM" : "AM";
+};
+
 const formatTime = (value: string) => {
   const match = value.match(/^(\d{2}):(\d{2})$/);
   if (!match) return value;
   const [, hourRaw, minute] = match;
-  return `${hourRaw}:${minute}`;
+  const meridiem = getTimeMeridiem(value);
+  return meridiem ? `${hourRaw}:${minute} ${meridiem}` : `${hourRaw}:${minute}`;
 };
 
 const hearingTimeOptions = Array.from({ length: 96 }, (_, index) => {
@@ -264,7 +309,7 @@ const hearingTimeOptions = Array.from({ length: 96 }, (_, index) => {
   const value = `${String(hour).padStart(2, "0")}:${minute}`;
   return {
     value,
-    label: value,
+    label: formatTime(value),
   };
 });
 
@@ -348,6 +393,13 @@ const formatMisconductDetails = (
   if (details.length === 0) return "[misconduct details]";
   if (details.length === 1) return details[0];
   return details.join("; ");
+};
+
+const formatHearingPlaceDisplay = (hearingFormat: HearingFormat | "", hearingLocation: string) => {
+  const value = hearingLocation.trim();
+  if (!value) return "";
+  if (hearingFormat === "virtual") return `Virtual - ${value}`;
+  return value;
 };
 
 const emptyDraftingAssistantAnswers = {
@@ -554,11 +606,6 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
     .map((value) => value.trim())
     .filter(Boolean);
   const companyAddressDisplay = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
-  const issueDateDisplay = (() => {
-    const date = new Date(`${data.issueDate}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return displayValue(data.issueDate);
-    return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  })();
 
   return (
     <div
@@ -617,7 +664,6 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
           </div>
         )}
         <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
-        <div className="mt-2 text-right">{issueDateDisplay}</div>
         <div className="mt-5 space-y-4">{children}</div>
         {useCenteredLogoLayout ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
@@ -715,6 +761,9 @@ const MisconductTerminationGenerator = ({
   const [draftingAssistantAnswers, setDraftingAssistantAnswers] = useState(emptyDraftingAssistantAnswers);
   const [draftingAssistantAccepted, setDraftingAssistantAccepted] = useState(false);
   const [aiGeneratedChargeTypes, setAiGeneratedChargeTypes] = useState<string[]>([]);
+  const [hearingTimeFocused, setHearingTimeFocused] = useState(false);
+  const [hearingTimeSelectOpen, setHearingTimeSelectOpen] = useState(false);
+  const [hearingTimeFieldVersion, setHearingTimeFieldVersion] = useState(0);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -725,6 +774,8 @@ const MisconductTerminationGenerator = ({
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const hearingTimeInputRef = useRef<HTMLInputElement | null>(null);
+  const skipHearingTimeBlurCommitRef = useRef(false);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const addClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -771,6 +822,7 @@ const MisconductTerminationGenerator = ({
     issuer: "",
     hearingDate: "",
     hearingTime: "",
+    hearingFormat: "",
     hearingLocation: "",
     misconductTypes: [],
     misconductDescriptions: {},
@@ -1057,6 +1109,7 @@ const MisconductTerminationGenerator = ({
       issuer: "",
       hearingDate: "",
       hearingTime: "",
+      hearingFormat: "",
       hearingLocation: "",
       misconductTypes: [],
       misconductDescriptions: {},
@@ -1145,6 +1198,7 @@ const MisconductTerminationGenerator = ({
       const hasIssueDate = Boolean(formData.issueDate);
       const hasHearingDate = Boolean(formData.hearingDate);
       const hasHearingTime = Boolean(formData.hearingTime.trim());
+      const hasHearingFormat = Boolean(formData.hearingFormat);
       const hasHearingLocation = Boolean(formData.hearingLocation.trim());
       const hasMisconductTypes = formData.misconductTypes.length > 0;
       const hasMisconductDescriptions = formData.misconductTypes.every(
@@ -1154,6 +1208,7 @@ const MisconductTerminationGenerator = ({
         hasIssueDate &&
           hasHearingDate &&
           hasHearingTime &&
+          hasHearingFormat &&
           hasHearingLocation &&
           hasMisconductTypes &&
           hasMisconductDescriptions,
@@ -1162,6 +1217,7 @@ const MisconductTerminationGenerator = ({
     [
       formData.hearingDate,
       formData.hearingTime,
+      formData.hearingFormat,
       formData.hearingLocation,
       formData.issueDate,
       formData.misconductTypes,
@@ -1339,11 +1395,18 @@ const MisconductTerminationGenerator = ({
   };
 
   const resetAddendumStepFields = () => {
+    if (hearingTimeFocused) {
+      skipHearingTimeBlurCommitRef.current = true;
+    }
+    setHearingTimeFocused(false);
+    setHearingTimeSelectOpen(false);
+    setHearingTimeFieldVersion((prev) => prev + 1);
     setFormData((prev) => ({
       ...prev,
       issuer: "",
       hearingDate: "",
       hearingTime: "",
+      hearingFormat: "",
       hearingLocation: "",
       misconductTypes: [],
       misconductDescriptions: {},
@@ -1370,6 +1433,125 @@ const MisconductTerminationGenerator = ({
       return;
     }
     resetForm();
+  };
+
+  const getSafeEditableHearingTime = (value: string) => {
+    const normalized = normalizeHearingTimeInput(value);
+    return /^\d{2}:\d{2}$/.test(normalized) ? normalized : "00:00";
+  };
+
+  const setHearingTimeValueWithCaret = (nextValue: string, caretPosition: number) => {
+    setFormData((prev) => ({ ...prev, hearingTime: nextValue }));
+    requestAnimationFrame(() => {
+      const input = hearingTimeInputRef.current;
+      if (!input) return;
+      const nextCaret = Math.max(0, Math.min(5, caretPosition));
+      input.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const handleHearingTimeEditorKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.currentTarget.blur();
+      return;
+    }
+
+    const navigationKeys = new Set(["Tab", "ArrowLeft", "ArrowRight", "Home", "End"]);
+    if (navigationKeys.has(event.key)) return;
+
+    const value = getSafeEditableHearingTime(formData.hearingTime);
+    const chars = value.split("");
+    const rawStart = event.currentTarget.selectionStart ?? 0;
+    const rawEnd = event.currentTarget.selectionEnd ?? rawStart;
+    const start = Math.max(0, Math.min(5, rawStart));
+    const end = Math.max(0, Math.min(5, rawEnd));
+    const hasSelection = end > start;
+    const clearRange = (from: number, to: number) => {
+      for (let index = from; index < to; index += 1) {
+        if (index === 2) continue;
+        chars[index] = "0";
+      }
+    };
+
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault();
+      if (hasSelection) clearRange(start, end);
+      let target = hasSelection ? start : start;
+      if (target === 2) target = 3;
+      if (target > 4) return;
+      chars[target] = event.key;
+      let nextCaret = target + 1;
+      if (nextCaret === 2) nextCaret = 3;
+      setHearingTimeValueWithCaret(chars.join(""), nextCaret);
+      return;
+    }
+
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      if (hasSelection) {
+        clearRange(start, end);
+        setHearingTimeValueWithCaret(chars.join(""), start === 2 ? 1 : start);
+        return;
+      }
+      let target = start - 1;
+      if (start >= 3 && target < 3) return;
+      if (target === 2) target = 1;
+      if (target < 0) return;
+      chars[target] = "0";
+      setHearingTimeValueWithCaret(chars.join(""), target);
+      return;
+    }
+
+    if (event.key === "Delete") {
+      event.preventDefault();
+      if (hasSelection) {
+        clearRange(start, end);
+        setHearingTimeValueWithCaret(chars.join(""), start);
+        return;
+      }
+      let target = start;
+      if (target === 2) target = 3;
+      if (start <= 1 && target > 1) return;
+      if (target > 4) return;
+      chars[target] = "0";
+      setHearingTimeValueWithCaret(chars.join(""), start);
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault();
+  };
+
+  const handleHearingTimeEditorPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/\D/g, "");
+    if (!digits) return;
+    const value = getSafeEditableHearingTime(formData.hearingTime);
+    const chars = value.split("");
+    const rawStart = event.currentTarget.selectionStart ?? 0;
+    const rawEnd = event.currentTarget.selectionEnd ?? rawStart;
+    const start = Math.max(0, Math.min(5, rawStart));
+    const end = Math.max(0, Math.min(5, rawEnd));
+    for (let index = start; index < end; index += 1) {
+      if (index === 2) continue;
+      chars[index] = "0";
+    }
+
+    let writeIndex = start === 2 ? 3 : start;
+    let digitIndex = 0;
+    while (writeIndex <= 4 && digitIndex < digits.length) {
+      if (writeIndex === 2) {
+        writeIndex += 1;
+        continue;
+      }
+      chars[writeIndex] = digits[digitIndex];
+      writeIndex += 1;
+      digitIndex += 1;
+    }
+
+    let nextCaret = writeIndex;
+    if (nextCaret === 2) nextCaret = 3;
+    setHearingTimeValueWithCaret(chars.join(""), nextCaret);
   };
 
   const getPreviewScrollElement = useCallback(
@@ -1828,7 +2010,11 @@ const MisconductTerminationGenerator = ({
     checkRequired(formData.issueDate, "Date of notice");
     checkRequired(formData.hearingDate, "Date of hearing");
     checkRequired(formData.hearingTime, "Time of hearing");
-    checkRequired(formData.hearingLocation, "Hearing location");
+    checkRequired(formData.hearingFormat, "Hearing format");
+    checkRequired(
+      formData.hearingLocation,
+      formData.hearingFormat === "virtual" ? "Platform used" : "Hearing address",
+    );
     if (formData.misconductTypes.length === 0) {
       missingFields.push("Type of misconduct");
     }
@@ -1873,6 +2059,7 @@ const MisconductTerminationGenerator = ({
       issuer: formData.issuer,
       hearingDate: formData.hearingDate,
       hearingTime: formData.hearingTime,
+      hearingFormat: formData.hearingFormat as HearingFormat,
       hearingLocation: formData.hearingLocation,
       misconductTypes: formData.misconductTypes,
       misconductDescriptions: formData.misconductDescriptions,
@@ -2036,8 +2223,6 @@ const MisconductTerminationGenerator = ({
     const pdfPhoneIconDataUrl = createPdfPhoneIconDataUrl(iconColor);
     const pdfMailIconDataUrl = createPdfMailIconDataUrl(iconColor);
     const [dividerR, dividerG, dividerB] = getPdfDividerRgb(dividerColor);
-
-    const issueDateDisplay = formatDate(data.issueDate);
 
     const companyAddressLines = (profile?.physical_address || "Address")
       .split(",")
@@ -2261,12 +2446,16 @@ const MisconductTerminationGenerator = ({
       doc.setLineWidth(0.2);
     };
 
-    const sectionBorderRgb: [number, number, number] = [203, 213, 225];
-    const sectionHeaderFillRgb: [number, number, number] = [248, 250, 252];
+    const sectionBorderRgb: [number, number, number] = [180, 188, 198];
+    const sectionHeaderFillRgb: [number, number, number] = [236, 240, 245];
     const sectionHeaderHeight = 7;
     const sectionPaddingX = 3;
     const sectionPaddingY = 2;
     const sectionLineGap = 4.6;
+    const sectionCornerRadius = 1;
+    const sectionBorderLineWidth = 0.1;
+    const leftColumnLabelWidth = 22;
+    const rightColumnLabelWidth = 33;
 
     const drawFieldSection = (title: string, rows: Array<{ label: string; value: string }>) => {
       const rowsWithLines = rows.map((row) => {
@@ -2282,15 +2471,15 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeight);
       doc.setFillColor(...sectionHeaderFillRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeaderHeight, "F");
+      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
       doc.setDrawColor(...sectionBorderRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setLineWidth(sectionBorderLineWidth);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
+      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text(title, margin + sectionPaddingX, startY + 4.7);
+      doc.text(title.toUpperCase(), margin + sectionPaddingX, startY + 4.7);
 
       let rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       rowsWithLines.forEach((row) => {
@@ -2302,6 +2491,126 @@ const MisconductTerminationGenerator = ({
           doc.text(line, textX, rowY + idx * sectionLineGap);
         });
         rowY += Math.max(1, row.valueLines.length) * sectionLineGap + 1;
+      });
+
+      y = startY + sectionHeight + 4;
+    };
+
+    const drawEmployeeDetailsSection = () => {
+      const leftLabel = "Employee:";
+      const leftValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
+      const rightLabel = data.idType === "passport" ? "Passport Number:" : "ID Number:";
+      const rightValue = valueOrLine(data.idType === "passport" ? data.passportNumber : data.employeeIdNumber);
+      const columnGap = 4;
+      const columnWidth = (contentWidth - sectionPaddingX * 2 - columnGap) / 2;
+      const measureValue = (value: string, labelWidth: number) => {
+        const valueLines = doc.splitTextToSize(value || "________________________", columnWidth - labelWidth);
+        return { valueLines };
+      };
+      const left = measureValue(leftValue, leftColumnLabelWidth);
+      const right = measureValue(rightValue, rightColumnLabelWidth);
+      const leftHeight = Math.max(1, left.valueLines.length) * sectionLineGap + 1;
+      const rightHeight = Math.max(1, right.valueLines.length) * sectionLineGap + 1;
+      const rowsHeight = Math.max(leftHeight, rightHeight);
+      const sectionHeight = sectionHeaderHeight + sectionPaddingY + rowsHeight + sectionPaddingY;
+
+      ensureSpace(sectionHeight + 4);
+
+      const startY = y;
+      doc.setFillColor(...sectionHeaderFillRgb);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.setLineWidth(sectionBorderLineWidth);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
+      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("EMPLOYEE DETAILS", margin + sectionPaddingX, startY + 4.7);
+
+      const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
+      const leftX = margin + sectionPaddingX;
+      const rightX = leftX + columnWidth + columnGap;
+
+      doc.setFont("helvetica", "bold");
+      doc.text(`${leftLabel} `, leftX, rowY);
+      doc.setFont("helvetica", "normal");
+      left.valueLines.forEach((line: string, idx: number) => {
+        doc.text(line, leftX + leftColumnLabelWidth, rowY + idx * sectionLineGap);
+      });
+
+      doc.setFont("helvetica", "bold");
+      doc.text(`${rightLabel} `, rightX, rowY);
+      doc.setFont("helvetica", "normal");
+      right.valueLines.forEach((line: string, idx: number) => {
+        doc.text(line, rightX + rightColumnLabelWidth, rowY + idx * sectionLineGap);
+      });
+
+      y = startY + sectionHeight + 4;
+    };
+
+    const drawHearingDetailsSection = () => {
+      const leftLabel = "Date:";
+      const leftValue = valueOrLine(formatDate(data.hearingDate));
+      const rightLabel = "Time:";
+      const rightValue = valueOrLine(formatTime(data.hearingTime));
+      const locationLabel = "Place:";
+      const locationValue = valueOrLine(formatHearingPlaceDisplay(data.hearingFormat, data.hearingLocation));
+      const columnGap = 4;
+      const columnWidth = (contentWidth - sectionPaddingX * 2 - columnGap) / 2;
+      const measureValue = (value: string, labelWidth: number) => {
+        const valueLines = doc.splitTextToSize(value || "________________________", columnWidth - labelWidth);
+        return { valueLines };
+      };
+      const measureFullWidthValue = (value: string, labelWidth: number) => {
+        const valueLines = doc.splitTextToSize(value || "________________________", contentWidth - sectionPaddingX * 2 - labelWidth);
+        return { valueLines };
+      };
+      const left = measureValue(leftValue, leftColumnLabelWidth);
+      const right = measureValue(rightValue, rightColumnLabelWidth);
+      const location = measureFullWidthValue(locationValue, leftColumnLabelWidth);
+      const leftHeight = Math.max(1, left.valueLines.length) * sectionLineGap + 1;
+      const rightHeight = Math.max(1, right.valueLines.length) * sectionLineGap + 1;
+      const locationHeight = Math.max(1, location.valueLines.length) * sectionLineGap + 1;
+      const rowsHeight = Math.max(leftHeight, rightHeight) + locationHeight;
+      const sectionHeight = sectionHeaderHeight + sectionPaddingY + rowsHeight + sectionPaddingY;
+
+      ensureSpace(sectionHeight + 4);
+
+      const startY = y;
+      doc.setFillColor(...sectionHeaderFillRgb);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.setLineWidth(sectionBorderLineWidth);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
+      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("HEARING DETAILS", margin + sectionPaddingX, startY + 4.7);
+
+      const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
+      const leftX = margin + sectionPaddingX;
+      const rightX = leftX + columnWidth + columnGap;
+
+      doc.setFont("helvetica", "bold");
+      doc.text(`${leftLabel} `, leftX, rowY);
+      doc.setFont("helvetica", "normal");
+      left.valueLines.forEach((line: string, idx: number) => {
+        doc.text(line, leftX + leftColumnLabelWidth, rowY + idx * sectionLineGap);
+      });
+
+      doc.setFont("helvetica", "bold");
+      doc.text(`${rightLabel} `, rightX, rowY);
+      doc.setFont("helvetica", "normal");
+      right.valueLines.forEach((line: string, idx: number) => {
+        doc.text(line, rightX + rightColumnLabelWidth, rowY + idx * sectionLineGap);
+      });
+
+      const locationY = rowY + Math.max(leftHeight, rightHeight);
+      doc.setFont("helvetica", "bold");
+      doc.text(`${locationLabel} `, leftX, locationY);
+      doc.setFont("helvetica", "normal");
+      location.valueLines.forEach((line: string, idx: number) => {
+        doc.text(line, leftX + leftColumnLabelWidth, locationY + idx * sectionLineGap);
       });
 
       y = startY + sectionHeight + 4;
@@ -2320,15 +2629,15 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeight);
       doc.setFillColor(...sectionHeaderFillRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeaderHeight, "F");
+      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
       doc.setDrawColor(...sectionBorderRgb);
-      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setLineWidth(sectionBorderLineWidth);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
+      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text(title, margin + sectionPaddingX, startY + 4.7);
+      doc.text(title.toUpperCase(), margin + sectionPaddingX, startY + 4.7);
 
       let blockY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       chargesWithLines.forEach((charge) => {
@@ -2347,35 +2656,104 @@ const MisconductTerminationGenerator = ({
       y = startY + sectionHeight + 4;
     };
 
+    const drawRightsSection = (intro: string, items: readonly string[]) => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      const rightsLineGap = 4.1;
+
+      const introLines = doc.splitTextToSize(intro, contentWidth - sectionPaddingX * 2);
+      const introHeight = introLines.length * rightsLineGap + 1.2;
+      ensureSpace(introHeight);
+      introLines.forEach((line: string, idx: number) => {
+        doc.text(line, margin + sectionPaddingX, y + idx * rightsLineGap);
+      });
+      y += introHeight;
+
+      const bulletX = margin + sectionPaddingX;
+      const textX = bulletX + 3;
+      const bulletTextWidth = contentWidth - sectionPaddingX * 2 - 3;
+
+      items.forEach((item) => {
+        const itemLines = doc.splitTextToSize(item, bulletTextWidth);
+        const itemHeight = itemLines.length * rightsLineGap + 1;
+        ensureSpace(itemHeight);
+        doc.text("\u2022", bulletX, y);
+        itemLines.forEach((line: string, idx: number) => {
+          doc.text(line, textX, y + idx * rightsLineGap);
+        });
+        y += itemHeight;
+      });
+
+      y += 2;
+    };
+
+    const drawSignatureSection = () => {
+      const sectionTitleHeight = sectionHeaderHeight + 8;
+      const signaturePairs: [string, string][] = [
+        ["Employer/Issuer", "Employee"],
+        ["Representative (optional)", "Interpreter (optional)"],
+        ["Witness 1 (optional)", "Witness 2 (optional)"],
+      ];
+      const colGap = 12;
+      const colWidth = (contentWidth - colGap) / 2;
+      const rowHeight = 12;
+      const sigLineLength = Math.min(38, colWidth - 18);
+      const dateLineLength = Math.min(20, colWidth - sigLineLength - 12);
+      const blockHeight = signaturePairs.length * rowHeight + 2;
+      const refusalPaddingX = 3;
+      const refusalPaddingY = 2;
+      const refusalLines = doc.splitTextToSize(SIGNATURE_REFUSAL_NOTE, contentWidth - refusalPaddingX * 2);
+      const refusalHeight = refusalLines.length * 4 + refusalPaddingY * 2;
+      const totalHeight = sectionTitleHeight + blockHeight + 3 + refusalHeight + 4;
+
+      ensureSpace(totalHeight);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("SIGNATURES", margin + sectionPaddingX, y + 4.7);
+      y += sectionTitleHeight;
+
+      signaturePairs.forEach((pair, row) => {
+        const rowY = y + row * rowHeight;
+
+        const drawSignatureCell = (label: string, x: number) => {
+          const dateX = x + sigLineLength + 8;
+          doc.setDrawColor(170, 170, 170);
+          doc.line(x, rowY, x + sigLineLength, rowY);
+          doc.line(dateX, rowY, dateX + dateLineLength, rowY);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.text(label, x, rowY + 3.2);
+          doc.text("Date", dateX, rowY + 3.2);
+        };
+
+        drawSignatureCell(pair[0], margin + sectionPaddingX);
+        drawSignatureCell(pair[1], margin + sectionPaddingX + colWidth + colGap);
+      });
+
+      y += blockHeight + 3;
+      doc.setFillColor(247, 249, 251);
+      doc.setDrawColor(200, 200, 200);
+      doc.roundedRect(margin, y, contentWidth, refusalHeight, 2, 2, "FD");
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8);
+      doc.setTextColor(70, 74, 78);
+      doc.text(refusalLines, margin + refusalPaddingX, y + refusalPaddingY + 3);
+      doc.setTextColor(0, 0, 0);
+      y += refusalHeight + 4;
+    };
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.text(issueDateDisplay, rightX, y, { align: "right" });
-    y += 8;
+    y += 5;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.text("NOTICE OF DISCIPLINARY HEARING", pageWidth / 2, y, { align: "center" });
     y += 7;
 
-    drawFieldSection("Employee Details", [
-      {
-        label: "Employee:",
-        value: valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")),
-      },
-      {
-        label: "ID / Passport:",
-        value: valueOrLine(data.idType === "passport" ? data.passportNumber : data.employeeIdNumber),
-      },
-      {
-        label: "Job Title:",
-        value: valueOrLine(data.jobTitle),
-      },
-    ]);
+    drawEmployeeDetailsSection();
 
-    drawFieldSection("Hearing Details", [
-      { label: "Date:", value: valueOrLine(formatDate(data.hearingDate)) },
-      { label: "Time:", value: valueOrLine(formatTime(data.hearingTime)) },
-      { label: "Place:", value: valueOrLine(data.hearingLocation) },
-    ]);
+    drawHearingDetailsSection();
 
     drawChargeSection(
       "Transgression(s) / Charge(s)",
@@ -2384,6 +2762,10 @@ const MisconductTerminationGenerator = ({
         body: valueOrLine(data.misconductDescriptions[type]),
       })),
     );
+
+    y += 2;
+    drawRightsSection(HEARING_RIGHTS_INTRO, HEARING_RIGHTS_ITEMS);
+    drawSignatureSection();
 
     if (useCenteredLogoLayout) {
       const totalPages = doc.getNumberOfPages();
@@ -2522,12 +2904,17 @@ const MisconductTerminationGenerator = ({
               ? "px-0 pt-0 pr-0 pb-0"
               : "px-0 pt-4 pr-4 pb-4"
             : "-ml-6 -mr-6 pl-3 pr-3",
-          useExternalShell && showFinalActions && "h-full min-h-0 space-y-0",
+          useExternalShell && "h-full min-h-0 space-y-0",
         )}
         style={{ scrollbarGutter: "stable" }}
       >
         {!showFinalActions ? (
-          <Card className={cn("rounded-sm mt-4 shadow-none border-0 bg-transparent", useExternalShell && "mt-0")}>
+          <Card
+            className={cn(
+              "rounded-sm mt-4 shadow-none border-0 bg-transparent",
+              useExternalShell && "mt-0 h-full min-h-0 flex flex-col overflow-hidden",
+            )}
+          >
             {!embedded && (
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-center gap-8 w-full">
@@ -2600,11 +2987,11 @@ const MisconductTerminationGenerator = ({
               className={cn(
                 "pt-1 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
-                !embedded && "flex-1 min-h-0 overflow-y-auto",
-                useExternalShell && showFinalActions && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
+                "flex-1 min-h-0 overflow-y-auto",
+                useExternalShell && "h-full min-h-0 flex flex-col pb-1",
               )}
             >
-              <div className={cn("space-y-4", useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1")}>
+              <div className={cn("space-y-4", useExternalShell && "min-h-0 flex-1 pr-1")}>
               {activeStep === 0 && (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
@@ -3055,6 +3442,137 @@ const MisconductTerminationGenerator = ({
                       </div>
                     </div>
                     <div className="space-y-1.5">
+                      <Label htmlFor="hearingTime" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Time of hearing <span className="text-red-500">*</span>
+                      </Label>
+                      <div key={hearingTimeFieldVersion} className="relative">
+                        <Select
+                          open={hearingTimeFocused ? false : hearingTimeSelectOpen}
+                          onOpenChange={setHearingTimeSelectOpen}
+                          value={formData.hearingTime}
+                          onValueChange={(value) => {
+                            setHearingTimeFocused(false);
+                            setHearingTimeSelectOpen(false);
+                            setFormData((prev) => ({ ...prev, hearingTime: value }));
+                          }}
+                        >
+                          <SelectTrigger
+                            id="hearingTime"
+                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.hearingTime.trim()) && !hearingTimeFocused)} ${addendumModalDropdownToneClass}`}
+                          >
+                            {formData.hearingTime.trim().length > 0 ? (
+                              <span
+                                className="block flex-1 truncate text-left text-[11px] font-medium text-slate-900 cursor-text"
+                                onPointerDown={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setHearingTimeSelectOpen(false);
+                                  setHearingTimeFocused(true);
+                                }}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setHearingTimeSelectOpen(false);
+                                  setHearingTimeFocused(true);
+                                }}
+                              >
+                                {formatTime(formData.hearingTime)}
+                              </span>
+                            ) : (
+                              <SelectValue placeholder="Select hearing time" />
+                            )}
+                          </SelectTrigger>
+                          <SelectContent hideScrollButtons className={addendumModalSelectContentClass}>
+                            {hearingTimeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {hearingTimeFocused ? (
+                          <div className="absolute inset-0 z-20">
+                            <Input
+                              ref={hearingTimeInputRef}
+                              type="text"
+                              inputMode="numeric"
+                              autoFocus
+                              value={formData.hearingTime}
+                              onChange={() => undefined}
+                              onBlur={(e) => {
+                                setHearingTimeFocused(false);
+                                if (skipHearingTimeBlurCommitRef.current) {
+                                  skipHearingTimeBlurCommitRef.current = false;
+                                  return;
+                                }
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  hearingTime: normalizeHearingTimeInput(e.target.value),
+                                }));
+                              }}
+                              onKeyDown={handleHearingTimeEditorKeyDown}
+                              onPaste={handleHearingTimeEditorPaste}
+                              className={`h-[34px] pr-11 ${getAddendumModalInputClass(Boolean(formData.hearingTime.trim()))}`}
+                            />
+                            {getTimeMeridiem(formData.hearingTime) ? (
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500">
+                                {getTimeMeridiem(formData.hearingTime)}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="hearingFormat" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Hearing format <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={formData.hearingFormat || undefined}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            hearingFormat: value as HearingFormat,
+                            hearingLocation: "",
+                          }))
+                        }
+                      >
+                        <SelectTrigger
+                          id="hearingFormat"
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.hearingFormat))} ${addendumModalDropdownToneClass}`}
+                        >
+                          <SelectValue placeholder="Select hearing format" />
+                        </SelectTrigger>
+                        <SelectContent className={addendumModalSelectContentClass}>
+                          {HEARING_FORMAT_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formData.hearingFormat ? (
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label htmlFor="hearingLocation" className={modalFieldLabelClass}>
+                          {formData.hearingFormat === "virtual" ? "Platform used" : "Hearing location"}{" "}
+                          <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="hearingLocation"
+                          type="text"
+                          value={formData.hearingLocation}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, hearingLocation: e.target.value }))}
+                          placeholder={
+                            formData.hearingFormat === "virtual"
+                              ? "Type platform used (e.g. Zoom, Teams)"
+                              : "Type the address (appartment, office, building, street, city, province, area code, etc.)"
+                          }
+                          className={`${getAddendumModalInputClass(Boolean(formData.hearingLocation.trim()))}`}
+                        />
+                      </div>
+                    ) : null}
+                    <div className="space-y-1.5">
                       <Label htmlFor="misconductType" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Type(s) of misconduct <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
@@ -3096,57 +3614,6 @@ const MisconductTerminationGenerator = ({
                             : "Select misconduct type(s)"}
                         </span>
                       </button>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="hearingTime" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Time of hearing <span className="text-red-500">*</span>
-                      </Label>
-                      <div className="relative">
-                        <Select
-                          value={formData.hearingTime || undefined}
-                          onValueChange={(value) => setFormData((prev) => ({ ...prev, hearingTime: value }))}
-                        >
-                          <SelectTrigger
-                            id="hearingTime"
-                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.hearingTime.trim()))} ${addendumModalDropdownToneClass}`}
-                          >
-                            <SelectValue placeholder="Select hearing time" />
-                          </SelectTrigger>
-                          <SelectContent hideScrollButtons className={addendumModalSelectContentClass}>
-                            {hearingTimeOptions.map((option) => (
-                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={formData.hearingTime}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, hearingTime: e.target.value }))}
-                          onBlur={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              hearingTime: normalizeHearingTimeInput(e.target.value),
-                            }))
-                          }
-                          className="absolute inset-y-[1.5px] left-[1.5px] right-8 z-10 h-[calc(100%-3px)] border-0 bg-white px-3 text-[11px] font-medium text-slate-900 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="hearingLocation" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Hearing location <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="hearingLocation"
-                        type="text"
-                        value={formData.hearingLocation}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, hearingLocation: e.target.value }))}
-                        placeholder="Type hearing location"
-                        className={`${getAddendumModalInputClass(Boolean(formData.hearingLocation.trim()))}`}
-                      />
                     </div>
                   </div>
                   {formData.misconductTypes.length > 0 ? (
@@ -3218,7 +3685,7 @@ const MisconductTerminationGenerator = ({
                               }))
                             }
                             placeholder="Type the charge description here or use the drafting assistant to generate a charge..."
-                            className={`${getAddendumModalInputClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[88px]`}
+                            className={`${getAddendumModalInputClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[88px] !outline-none !ring-0 !ring-offset-0 !focus:ring-0 !focus:ring-offset-0 !focus-visible:ring-0 !focus-visible:ring-offset-0`}
                           />
                           {aiGeneratedChargeTypes.includes(type) ? (
                             <p className="text-[10px] text-slate-500">AI-generated draft. Review before use.</p>
@@ -3230,9 +3697,8 @@ const MisconductTerminationGenerator = ({
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                {!(embedded && externalNavigation) ? (
-                  <>
+              {!(embedded && externalNavigation) ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 {activeStep === steps.length - 1 ? (
                   <div className="flex w-full items-center gap-3 flex-wrap justify-between">
                     <div className="flex-none">
@@ -3319,9 +3785,8 @@ const MisconductTerminationGenerator = ({
                     </div>
                   </div>
                 )}
-                  </>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           </CardContent>
           </Card>
@@ -3333,17 +3798,28 @@ const MisconductTerminationGenerator = ({
             {validatedPreview ? (
               <div className="space-y-8">
                 <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
-                  <div className="mx-auto w-full max-w-[680px] space-y-4 text-[11px] leading-relaxed text-black">
+                  <div className="mx-auto w-full max-w-[680px] space-y-4 pt-2 text-[11px] leading-relaxed text-black">
                     <h2 className="text-center text-[13px] font-bold uppercase">Notice of Disciplinary Hearing</h2>
 
                     <section className="rounded border border-slate-300">
                       <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
                         Employee Details
                       </div>
-                      <div className="space-y-1 px-3 py-2">
-                        <p><span className="font-semibold">Employee:</span> {[validatedPreview.employeeName, validatedPreview.employeeSurname].filter(Boolean).join(" ").trim() || "________________________"}</p>
-                        <p><span className="font-semibold">ID / Passport:</span> {validatedPreview.idType === "passport" ? (validatedPreview.passportNumber || "________________________") : (validatedPreview.employeeIdNumber || "________________________")}</p>
-                        <p><span className="font-semibold">Job Title:</span> {validatedPreview.jobTitle || "________________________"}</p>
+                      <div className="grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-2">
+                        <div className="grid grid-cols-[92px,1fr]">
+                          <span className="font-semibold">Employee:</span>
+                          <span>{[validatedPreview.employeeName, validatedPreview.employeeSurname].filter(Boolean).join(" ").trim() || "________________________"}</span>
+                        </div>
+                        <div className="grid grid-cols-[124px,1fr]">
+                          <span className="font-semibold">
+                            {validatedPreview.idType === "passport" ? "Passport Number:" : "ID Number:"}
+                          </span>
+                          <span>
+                            {validatedPreview.idType === "passport"
+                              ? (validatedPreview.passportNumber || "________________________")
+                              : (validatedPreview.employeeIdNumber || "________________________")}
+                          </span>
+                        </div>
                       </div>
                     </section>
 
@@ -3351,10 +3827,19 @@ const MisconductTerminationGenerator = ({
                       <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
                         Hearing Details
                       </div>
-                      <div className="space-y-1 px-3 py-2">
-                        <p><span className="font-semibold">Date:</span> {formatDate(validatedPreview.hearingDate) || "________________________"}</p>
-                        <p><span className="font-semibold">Time:</span> {formatTime(validatedPreview.hearingTime) || "________________________"}</p>
-                        <p><span className="font-semibold">Place:</span> {validatedPreview.hearingLocation || "________________________"}</p>
+                      <div className="grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-2">
+                        <div className="grid grid-cols-[92px,1fr]">
+                          <span className="font-semibold">Date:</span>
+                          <span>{formatDate(validatedPreview.hearingDate) || "________________________"}</span>
+                        </div>
+                        <div className="grid grid-cols-[124px,1fr]">
+                          <span className="font-semibold">Time:</span>
+                          <span>{formatTime(validatedPreview.hearingTime) || "________________________"}</span>
+                        </div>
+                        <div className="grid grid-cols-[92px,1fr] md:col-span-2">
+                          <span className="font-semibold">Place:</span>
+                          <span>{formatHearingPlaceDisplay(validatedPreview.hearingFormat, validatedPreview.hearingLocation) || "________________________"}</span>
+                        </div>
                       </div>
                     </section>
 
@@ -3369,6 +3854,38 @@ const MisconductTerminationGenerator = ({
                             <p>{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
                           </div>
                         ))}
+                      </div>
+                    </section>
+
+                    <section className="space-y-2 px-1 text-[10px]">
+                      <p>{HEARING_RIGHTS_INTRO}</p>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {HEARING_RIGHTS_ITEMS.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </section>
+
+                    <section className="space-y-4">
+                      <div className="w-full rounded border border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        Signatures
+                      </div>
+                      <div className="grid grid-cols-1 gap-x-12 gap-y-6 text-[11px] md:grid-cols-2">
+                        {SIGNATURE_LABELS.map((label) => (
+                          <div key={label} className="space-y-2">
+                            <div className="flex items-center gap-8">
+                              <span className="flex-1 border-b border-black" />
+                              <span className="w-24 border-b border-black" />
+                            </div>
+                            <div className="flex items-center gap-8 text-[11px]">
+                              <span className="flex-1">{label}</span>
+                              <span className="w-24">Date</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="rounded border border-slate-300 bg-slate-100 px-3 py-2 text-[10px] italic text-slate-700">
+                        {SIGNATURE_REFUSAL_NOTE}
                       </div>
                     </section>
                   </div>

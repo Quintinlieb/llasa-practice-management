@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
+import { Download, ArrowRight, Building2, User2, Briefcase, Bot, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -316,6 +316,29 @@ const formatMisconductDetails = (
   if (details.length === 0) return "[misconduct details]";
   if (details.length === 1) return details[0];
   return details.join("; ");
+};
+
+const emptyDraftingAssistantAnswers = {
+  misconductOccurredWhen: "",
+  whatHappened: "",
+  involvementSelection: "",
+  additionalDetails: "",
+};
+
+const draftingAssistantInvolvementOptions = [
+  { value: "directly_committed", label: "Directly committed the act" },
+  { value: "assisted_someone", label: "Assisted someone" },
+  { value: "failed_to_act", label: "Failed to act" },
+  { value: "not_sure", label: "Not sure" },
+] as const;
+
+const requiresInvolvementSelection = (chargeType: string | null) => {
+  if (!chargeType) return false;
+  const normalized = chargeType.toLowerCase();
+  if (normalized.includes("theft")) return true;
+  if (normalized.includes("fraud")) return true;
+  if (normalized.includes("dishonesty")) return true;
+  return normalized.includes("intentional") && normalized.includes("damage to property");
 };
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
@@ -670,6 +693,15 @@ const MisconductTerminationGenerator = ({
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
+  const [draftingAssistantOpen, setDraftingAssistantOpen] = useState(false);
+  const [draftingAssistantChargeType, setDraftingAssistantChargeType] = useState<string | null>(null);
+  const [isDraftingAssistantGenerating, setIsDraftingAssistantGenerating] = useState(false);
+  const [draftingAssistantFocusedField, setDraftingAssistantFocusedField] = useState<
+    "misconductOccurredWhen" | "whatHappened" | "additionalDetails" | null
+  >(null);
+  const [draftingAssistantAnswers, setDraftingAssistantAnswers] = useState(emptyDraftingAssistantAnswers);
+  const [draftingAssistantAccepted, setDraftingAssistantAccepted] = useState(false);
+  const [aiGeneratedChargeTypes, setAiGeneratedChargeTypes] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -1387,9 +1419,251 @@ const MisconductTerminationGenerator = ({
         misconductDescriptions: nextDescriptions,
       };
     });
+    setAiGeneratedChargeTypes((prev) => prev.filter((type) => draftMisconductTypes.includes(type)));
     setMisconductPickerOpen(false);
     setMisconductSearch("");
   };
+
+  const openDraftingAssistant = (chargeType: string) => {
+    setDraftingAssistantChargeType(chargeType);
+    setDraftingAssistantAnswers(emptyDraftingAssistantAnswers);
+    setDraftingAssistantFocusedField(null);
+    setDraftingAssistantAccepted(false);
+    setDraftingAssistantOpen(true);
+  };
+
+  const clearChargeDescription = (chargeType: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      misconductDescriptions: {
+        ...prev.misconductDescriptions,
+        [chargeType]: "",
+      },
+    }));
+    setAiGeneratedChargeTypes((prev) => prev.filter((type) => type !== chargeType));
+  };
+
+  const removeMisconductType = (chargeType: string) => {
+    const chargeNumber = formData.misconductTypes.indexOf(chargeType) + 1;
+    const label = chargeNumber > 0 ? `Charge ${chargeNumber}: ${chargeType}` : chargeType;
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(`Are you sure you want to remove ${label}?`);
+      if (!confirmed) return;
+    }
+
+    setFormData((prev) => {
+      const nextTypes = prev.misconductTypes.filter((type) => type !== chargeType);
+      const nextDescriptions = { ...prev.misconductDescriptions };
+      delete nextDescriptions[chargeType];
+      return {
+        ...prev,
+        misconductTypes: nextTypes,
+        misconductDescriptions: nextDescriptions,
+      };
+    });
+    setDraftMisconductTypes((prev) => prev.filter((type) => type !== chargeType));
+    setAiGeneratedChargeTypes((prev) => prev.filter((type) => type !== chargeType));
+    if (draftingAssistantChargeType === chargeType) {
+      closeDraftingAssistant();
+    }
+  };
+
+  const closeDraftingAssistant = () => {
+    setDraftingAssistantOpen(false);
+    setDraftingAssistantChargeType(null);
+    setDraftingAssistantAnswers(emptyDraftingAssistantAnswers);
+    setDraftingAssistantFocusedField(null);
+    setDraftingAssistantAccepted(false);
+  };
+  const draftingAssistantNeedsInvolvement = requiresInvolvementSelection(draftingAssistantChargeType);
+
+  const generateChargeDraft = async () => {
+    if (!draftingAssistantChargeType) return;
+    const missingAnswers: string[] = [];
+    if (!draftingAssistantAnswers.misconductOccurredWhen.trim()) {
+      missingAnswers.push("When did the misconduct occur?");
+    }
+    if (!draftingAssistantAnswers.whatHappened.trim()) {
+      missingAnswers.push("Describe what happened?");
+    }
+    if (draftingAssistantNeedsInvolvement && !draftingAssistantAnswers.involvementSelection) {
+      missingAnswers.push("What was the employee's involvement?");
+    }
+
+    if (missingAnswers.length > 0) {
+      toast({
+        title: "Missing details",
+        description: `Please answer: ${missingAnswers.join(" ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!draftingAssistantAccepted) {
+      toast({
+        title: "Confirmation required",
+        description: "Please confirm the disclaimer before generating a description.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const involvementLabel = draftingAssistantInvolvementOptions.find(
+      (option) => option.value === draftingAssistantAnswers.involvementSelection,
+    )?.label;
+
+    const prompt = [
+      "Draft a formal disciplinary charge description for South African labour law context.",
+      "Output requirements:",
+      "- Single paragraph only.",
+      "- Target maximum 350 characters.",
+      "- If needed to keep a complete sentence, you may go up to 400 characters.",
+      "- Formal legal style.",
+      "- No headings or bullet points.",
+      "- Use second-person wording: use 'you'/'your' instead of 'the employee'.",
+      "- Do not mention or refer to any Code of Conduct.",
+      "- Do not include advisory text like 'refer to' or mention any document/policy source.",
+      `Misconduct type: ${draftingAssistantChargeType}.`,
+      `When did the misconduct occur? ${draftingAssistantAnswers.misconductOccurredWhen.trim()}`,
+      `Describe what happened? ${draftingAssistantAnswers.whatHappened.trim()}`,
+      draftingAssistantNeedsInvolvement &&
+      draftingAssistantAnswers.involvementSelection !== "not_sure" &&
+      involvementLabel
+        ? `Employee involvement: ${involvementLabel}.`
+        : "",
+      draftingAssistantAnswers.additionalDetails.trim()
+        ? `Additional relevant details: ${draftingAssistantAnswers.additionalDetails.trim()}`
+        : "",
+    ].join("\n");
+
+    try {
+      setIsDraftingAssistantGenerating(true);
+      const { data, error } = await supabase.functions.invoke("assistant-chat", {
+        body: { message: prompt, history: [] },
+      });
+      if (error) {
+        let detail = "";
+        const context = (error as { context?: Response })?.context;
+        if (context instanceof Response) {
+          try {
+            detail = await context.text();
+          } catch {
+            detail = "";
+          }
+        }
+        const message = detail ? `${error.message}: ${detail}` : error.message;
+        throw new Error(message);
+      }
+      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
+      if (!reply) {
+        throw new Error("Empty reply from drafting assistant.");
+      }
+      const cleanedReply = reply.replace(/\s+/g, " ").trim();
+      const filteredSentences = cleanedReply
+        .split(/(?<=[.!?])\s+/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean)
+        .filter(
+          (sentence) =>
+            !/(code of conduct|refer to (your|the)|document|docume|policy source)/i.test(sentence),
+        );
+
+      let normalizedReply = filteredSentences.join(" ").trim();
+      if (!normalizedReply) {
+        normalizedReply = cleanedReply
+          .replace(/\b(code of conduct|document|docume|policy source)\b/gi, "")
+          .replace(/\brefer to (your|the)\b/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+      normalizedReply = normalizedReply
+        .replace(/\bthe employee's\b/gi, "your")
+        .replace(/\bthe employee\b/gi, "you")
+        .replace(/\ban employee\b/gi, "you");
+      if (!normalizedReply) {
+        throw new Error("Generated draft contained disallowed advisory wording. Please try again.");
+      }
+
+      const preferredMaxLength = 350;
+      const hardMaxLength = 400;
+      const getLastSentenceEndIndex = (value: string) => {
+        const regex = /[.!?](?=\s|$)/g;
+        let lastIndex: number | undefined;
+        let match: RegExpExecArray | null;
+        // Regex exec provides a typed index and avoids matchAll typing issues in some TS lib settings.
+        // eslint-disable-next-line no-cond-assign
+        while ((match = regex.exec(value)) !== null) {
+          lastIndex = match.index;
+        }
+        return lastIndex;
+      };
+      const trimToWordBoundary = (value: string) => {
+        const trimmed = value.trimEnd();
+        const safe = trimmed.replace(/\s+\S*$/, "").trimEnd();
+        return safe || trimmed;
+      };
+
+      const boundedReply = (() => {
+        if (normalizedReply.length <= preferredMaxLength) return normalizedReply;
+
+        const preferredSlice = normalizedReply.slice(0, preferredMaxLength).trimEnd();
+        const preferredSentenceEnd = getLastSentenceEndIndex(preferredSlice);
+        if (typeof preferredSentenceEnd === "number" && preferredSentenceEnd >= Math.floor(preferredMaxLength * 0.6)) {
+          return preferredSlice.slice(0, preferredSentenceEnd + 1).trim();
+        }
+
+        const extendedSlice = normalizedReply.slice(0, Math.min(hardMaxLength, normalizedReply.length)).trimEnd();
+        const extendedSentenceEnd = getLastSentenceEndIndex(extendedSlice);
+        if (typeof extendedSentenceEnd === "number" && extendedSentenceEnd >= Math.floor(preferredMaxLength * 0.6)) {
+          return extendedSlice.slice(0, extendedSentenceEnd + 1).trim();
+        }
+
+        return trimToWordBoundary(extendedSlice);
+      })();
+
+      setFormData((prev) => ({
+        ...prev,
+        misconductDescriptions: {
+          ...prev.misconductDescriptions,
+          [draftingAssistantChargeType]: boundedReply,
+        },
+      }));
+      setAiGeneratedChargeTypes((prev) =>
+        prev.includes(draftingAssistantChargeType) ? prev : [...prev, draftingAssistantChargeType],
+      );
+      toast({
+        title: "Draft ready",
+        description: "AI draft inserted. Review before use.",
+      });
+      closeDraftingAssistant();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        title: "Drafting assistant failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsDraftingAssistantGenerating(false);
+    }
+  };
+  const isDraftingAssistantRequiredFieldsComplete = Boolean(
+    draftingAssistantAnswers.misconductOccurredWhen.trim() &&
+      draftingAssistantAnswers.whatHappened.trim() &&
+      (!draftingAssistantNeedsInvolvement || Boolean(draftingAssistantAnswers.involvementSelection)),
+  );
+  const isDraftingAssistantComplete = Boolean(
+    isDraftingAssistantRequiredFieldsComplete &&
+      draftingAssistantAccepted,
+  );
+  const draftingAssistantChargeNumber =
+    draftingAssistantChargeType ? formData.misconductTypes.indexOf(draftingAssistantChargeType) + 1 : 0;
+
+  useEffect(() => {
+    if (isDraftingAssistantRequiredFieldsComplete) return;
+    if (draftingAssistantAccepted) {
+      setDraftingAssistantAccepted(false);
+    }
+  }, [isDraftingAssistantRequiredFieldsComplete, draftingAssistantAccepted]);
 
   const openColorThemePicker = () => {
     setDraftLetterheadThemeColors(sanitizeThemeColors(formData.letterheadThemeColors));
@@ -2748,26 +3022,58 @@ const MisconductTerminationGenerator = ({
                     <div className="grid gap-3">
                       {formData.misconductTypes.map((type, index) => (
                         <div key={type} className="space-y-1.5">
-                          <Label htmlFor={`misconductDescription-${type}`} className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                            {`Charge ${index + 1}: ${type}`} <span className="text-red-500">*</span>
-                            <TooltipProvider delayDuration={0}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    tabIndex={-1}
-                                    className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                    aria-label={`Charge ${index + 1} guidance`}
-                                  >
-                                    <Info className="h-3.5 w-3.5" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className={fixedTooltipContentClass}>
-                                  Include the date or date range when this misconduct occurred and clearly describe what happened.
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </Label>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor={`misconductDescription-${type}`} className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                                {`Charge ${index + 1}: ${type}`} <span className="text-red-500">*</span>
+                                <TooltipProvider delayDuration={0}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        tabIndex={-1}
+                                        className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                        aria-label={`Charge ${index + 1} guidance`}
+                                    >
+                                      <Info className="h-3.5 w-3.5" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className={fixedTooltipContentClass}>
+                                    A charge description is a brief statement of the alleged misconduct, describing what the employee did or failed to do in clear terms.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                              </Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => removeMisconductType(type)}
+                                className="h-6 rounded px-1.5 text-[10px] font-medium text-slate-500 hover:bg-transparent hover:text-red-600 hover:underline"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {Boolean((formData.misconductDescriptions[type] || "").trim()) ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => clearChargeDescription(type)}
+                                  className="h-7 rounded px-2 text-[10px] font-medium text-slate-500 hover:bg-transparent hover:text-blue-600 hover:underline"
+                                >
+                                  Clear
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => openDraftingAssistant(type)}
+                                className="h-7 rounded border-blue-600 px-2 text-[10px] font-medium text-blue-600 hover:bg-transparent hover:text-blue-700"
+                              >
+                                Drafting Assistant
+                              </Button>
+                            </div>
+                          </div>
                           <Textarea
                             id={`misconductDescription-${type}`}
                             value={formData.misconductDescriptions[type] || ""}
@@ -2780,9 +3086,12 @@ const MisconductTerminationGenerator = ({
                                 },
                               }))
                             }
-                            placeholder="Provide a full description of the charge here..."
+                            placeholder="Type the charge description here or use the drafting assistant to generate a charge..."
                             className={`${getAddendumModalInputClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[88px]`}
                           />
+                          {aiGeneratedChargeTypes.includes(type) ? (
+                            <p className="text-[10px] text-slate-500">AI-generated draft. Review before use.</p>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -3341,6 +3650,125 @@ const MisconductTerminationGenerator = ({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={draftingAssistantOpen} onOpenChange={(open) => (open ? undefined : closeDraftingAssistant())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Bot className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Drafting Assistant</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80" disabled={isDraftingAssistantGenerating}>
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-3 px-6 pb-4 pt-4">
+            {draftingAssistantChargeType && draftingAssistantChargeNumber > 0 ? (
+              <p className="text-[11px] font-semibold underline text-slate-700">{`Charge ${draftingAssistantChargeNumber}: ${draftingAssistantChargeType}`}</p>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label className={`${modalFieldLabelClass} text-slate-500`}>When did the misconduct occur? <span className="text-red-500">*</span></Label>
+              <Textarea
+                value={draftingAssistantAnswers.misconductOccurredWhen}
+                onChange={(e) =>
+                  setDraftingAssistantAnswers((prev) => ({ ...prev, misconductOccurredWhen: e.target.value }))
+                }
+                onFocus={() => setDraftingAssistantFocusedField("misconductOccurredWhen")}
+                onBlur={() => setDraftingAssistantFocusedField((prev) => (prev === "misconductOccurredWhen" ? null : prev))}
+                placeholder="Please select the date of the incident, or specify a date range or multiple dates if applicable (e.g. from 1 June 2025 to 10 June 2025, or on various occasions during June 2025)"
+                className={`${getAddendumModalInputClass(
+                  Boolean(draftingAssistantAnswers.misconductOccurredWhen.trim()) &&
+                    draftingAssistantFocusedField !== "misconductOccurredWhen",
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className={`${modalFieldLabelClass} text-slate-500`}>Describe what happened? <span className="text-red-500">*</span></Label>
+              <Textarea
+                value={draftingAssistantAnswers.whatHappened}
+                onChange={(e) =>
+                  setDraftingAssistantAnswers((prev) => ({ ...prev, whatHappened: e.target.value }))
+                }
+                onFocus={() => setDraftingAssistantFocusedField("whatHappened")}
+                onBlur={() => setDraftingAssistantFocusedField((prev) => (prev === "whatHappened" ? null : prev))}
+                placeholder="Please describe the incident clearly, including what the employee did or failed to do, where it occurred, and any relevant circumstances"
+                className={`${getAddendumModalInputClass(
+                  Boolean(draftingAssistantAnswers.whatHappened.trim()) &&
+                    draftingAssistantFocusedField !== "whatHappened",
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+              />
+            </div>
+            {draftingAssistantNeedsInvolvement ? (
+              <div className="space-y-1.5">
+                <Label className={`${modalFieldLabelClass} text-slate-500`}>What was the employee's involvement? <span className="text-red-500">*</span></Label>
+                <Select
+                  value={draftingAssistantAnswers.involvementSelection}
+                  onValueChange={(value) =>
+                    setDraftingAssistantAnswers((prev) => ({ ...prev, involvementSelection: value }))
+                  }
+                >
+                  <SelectTrigger
+                    className={`${getAddendumModalInputClass(Boolean(draftingAssistantAnswers.involvementSelection))} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !focus:border-slate-300 !focus-visible:border-slate-300 data-[state=open]:!border-slate-300 !outline-none !focus:outline-none !focus-visible:outline-none !ring-0 !focus:ring-0 !focus-visible:ring-0 !ring-offset-0 !focus:ring-offset-0 !focus-visible:ring-offset-0`}
+                  >
+                    <SelectValue placeholder="Select involvement" />
+                  </SelectTrigger>
+                  <SelectContent className={addendumModalSelectContentClass}>
+                    {draftingAssistantInvolvementOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label className={`${modalFieldLabelClass} text-slate-500`}>Any additional relevant details? (Optional)</Label>
+              <Textarea
+                value={draftingAssistantAnswers.additionalDetails}
+                onChange={(e) =>
+                  setDraftingAssistantAnswers((prev) => ({ ...prev, additionalDetails: e.target.value }))
+                }
+                onFocus={() => setDraftingAssistantFocusedField("additionalDetails")}
+                onBlur={() => setDraftingAssistantFocusedField((prev) => (prev === "additionalDetails" ? null : prev))}
+                placeholder="Please include any additional information such as instructions given, witnesses, company policies breached, or any impact on the business (if applicable)"
+                className={`${getAddendumModalInputClass(
+                  Boolean(draftingAssistantAnswers.additionalDetails.trim()) &&
+                    draftingAssistantFocusedField !== "additionalDetails",
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+              />
+            </div>
+            <div className="space-y-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] text-slate-600">
+              <DialogDescription className="m-0 text-[10px] text-slate-600">
+                You are about to generate content using artificial intelligence based on your input. This is a guideline only and not legal advice. You remain responsible for reviewing and confirming that the final charge is accurate, lawful, and appropriate before use, and may verify it with an independent labour law specialist if necessary.
+              </DialogDescription>
+              <label className="inline-flex items-center gap-2 text-[10px] text-slate-700">
+                <Checkbox
+                  checked={draftingAssistantAccepted}
+                  onCheckedChange={(checked) => setDraftingAssistantAccepted(Boolean(checked))}
+                  disabled={!isDraftingAssistantRequiredFieldsComplete}
+                  className="h-4 w-4 rounded-[2px] border-slate-400 data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600 [&>span]:flex [&>span]:h-full [&>span]:w-full [&>span]:items-center [&>span]:justify-center [&>span>svg]:h-3 [&>span>svg]:w-3"
+                />
+                <span>I confirm that I will review and accept responsibility for the generated charge.</span>
+              </label>
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+              <Button
+                type="button"
+                onClick={generateChargeDraft}
+                disabled={isDraftingAssistantGenerating || !isDraftingAssistantComplete}
+                className="h-[30px] w-[170px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-blue-300 disabled:text-white"
+              >
+                {isDraftingAssistantGenerating ? "Generating..." : "Generate Description"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
@@ -3403,7 +3831,17 @@ const MisconductTerminationGenerator = ({
                       variant="outline"
                       className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
                     >
-                      {type}
+                      <span>{type}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraftMisconductTypes((prev) => prev.filter((item) => item !== type))
+                        }
+                        className="inline-flex items-center text-blue-600 hover:text-blue-800"
+                        aria-label={`Remove ${type}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </Badge>
                   ))}
                 </div>

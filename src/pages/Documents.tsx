@@ -440,11 +440,35 @@ const Documents = () => {
       "NB! Issue the letter on the same day as the letter date. If it will only be issued later, update the letter date before finalizing.",
     ],
   ] as const;
+  const disciplinaryHearingStepNotes = [
+    [
+      "This step controls how your company details appear on the disciplinary hearing notice.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select an employee from your saved list or capture employee details manually.",
+      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Capture the notice date, hearing date, and the applicable misconduct type(s).",
+      "Each selected misconduct type requires a charge description before you can continue.",
+      "A proper charge description should answer when, what, and how.",
+      "You can type the charge description manually or use Drafting Assistant to generate a draft and then review it.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final disciplinary hearing notice.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
     noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
+  const disciplinaryHearingActiveNotes =
+    disciplinaryHearingStepNotes[modalActiveStep] ?? disciplinaryHearingStepNotes[0];
   const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
     index === 0
       ? [
@@ -478,7 +502,7 @@ const Documents = () => {
       : modalDocument === "permanentContract"
       ? permanentActiveNotes
       : modalDocument === "disciplinaryHearingNotice"
-      ? noticeTerminationActiveNotes
+      ? disciplinaryHearingActiveNotes
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||

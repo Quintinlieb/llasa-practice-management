@@ -35,6 +35,8 @@ type ContractFormState = {
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
+  hearingTime: string;
+  hearingLocation: string;
   misconductTypes: string[];
   misconductDescriptions: Record<string, string>;
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
@@ -65,6 +67,8 @@ type AddendumData = PermanentContractFormData & {
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
+  hearingTime: string;
+  hearingLocation: string;
   misconductTypes: string[];
   misconductDescriptions: Record<string, string>;
 };
@@ -245,6 +249,34 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+};
+
+const formatTime = (value: string) => {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return value;
+  const [, hourRaw, minute] = match;
+  return `${hourRaw}:${minute}`;
+};
+
+const hearingTimeOptions = Array.from({ length: 96 }, (_, index) => {
+  const hour = Math.floor(index / 4);
+  const minute = ["00", "15", "30", "45"][index % 4];
+  const value = `${String(hour).padStart(2, "0")}:${minute}`;
+  return {
+    value,
+    label: value,
+  };
+});
+
+const normalizeHearingTimeInput = (value: string) => {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!match) return trimmed;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return trimmed;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return trimmed;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 };
 
 const toDisplayDate = (value: string) => {
@@ -505,9 +537,6 @@ type FirstPagePreviewProps = {
 
 const FirstPagePreview = ({ data, compact = false, children, profile, logoPreviewUrl }: FirstPagePreviewProps) => {
   const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
-  const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-  const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
-  const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
   const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
   const tradingNameDisplay = (data.tradingName || "").trim();
   const registrationNumberDisplay = (profile?.registration_number || "").trim();
@@ -589,23 +618,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
         )}
         <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
         <div className="mt-2 text-right">{issueDateDisplay}</div>
-        <div className="mt-4">
-          <p className="flex items-baseline gap-4">
-            <span>TO:</span>
-            <span className="font-semibold uppercase">{employeeNameDisplay}</span>
-          </p>
-        </div>
-        <div className="mt-4 space-y-4">
-          <p>{salutation}</p>
-          <p className="pt-2 pb-2 font-bold underline">RE: TERMINATION OF EMPLOYMENT</p>
-          <div className="space-y-4">{children}</div>
-          <p>Yours faithfully</p>
-          <div className="pt-8">
-            <div className="w-36 border-t border-black" />
-            {data.issuer?.trim() ? <p className="font-semibold">{data.issuer.trim()}</p> : null}
-            <p>Management</p>
-          </div>
-        </div>
+        <div className="mt-5 space-y-4">{children}</div>
         {useCenteredLogoLayout ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
             <p className="font-semibold">{companyIdentityDisplay}</p>
@@ -757,6 +770,8 @@ const MisconductTerminationGenerator = ({
     letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
     hearingDate: "",
+    hearingTime: "",
+    hearingLocation: "",
     misconductTypes: [],
     misconductDescriptions: {},
     contractReference: "",
@@ -1041,6 +1056,8 @@ const MisconductTerminationGenerator = ({
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
       hearingDate: "",
+      hearingTime: "",
+      hearingLocation: "",
       misconductTypes: [],
       misconductDescriptions: {},
       contractReference: "",
@@ -1127,6 +1144,8 @@ const MisconductTerminationGenerator = ({
     () => {
       const hasIssueDate = Boolean(formData.issueDate);
       const hasHearingDate = Boolean(formData.hearingDate);
+      const hasHearingTime = Boolean(formData.hearingTime.trim());
+      const hasHearingLocation = Boolean(formData.hearingLocation.trim());
       const hasMisconductTypes = formData.misconductTypes.length > 0;
       const hasMisconductDescriptions = formData.misconductTypes.every(
         (type) => Boolean((formData.misconductDescriptions[type] || "").trim()),
@@ -1134,12 +1153,16 @@ const MisconductTerminationGenerator = ({
       return Boolean(
         hasIssueDate &&
           hasHearingDate &&
+          hasHearingTime &&
+          hasHearingLocation &&
           hasMisconductTypes &&
           hasMisconductDescriptions,
       );
     },
     [
       formData.hearingDate,
+      formData.hearingTime,
+      formData.hearingLocation,
       formData.issueDate,
       formData.misconductTypes,
       formData.misconductDescriptions,
@@ -1263,7 +1286,7 @@ const MisconductTerminationGenerator = ({
       addendumType: formData.addendumType,
       isFinished: showFinalActions,
       isPreviewEditable,
-      supportsPreviewEditToggle: true,
+      supportsPreviewEditToggle: false,
     });
   }, [
     activeStep,
@@ -1320,6 +1343,8 @@ const MisconductTerminationGenerator = ({
       ...prev,
       issuer: "",
       hearingDate: "",
+      hearingTime: "",
+      hearingLocation: "",
       misconductTypes: [],
       misconductDescriptions: {},
       addendumType: "general",
@@ -1802,6 +1827,8 @@ const MisconductTerminationGenerator = ({
     }
     checkRequired(formData.issueDate, "Date of notice");
     checkRequired(formData.hearingDate, "Date of hearing");
+    checkRequired(formData.hearingTime, "Time of hearing");
+    checkRequired(formData.hearingLocation, "Hearing location");
     if (formData.misconductTypes.length === 0) {
       missingFields.push("Type of misconduct");
     }
@@ -1845,6 +1872,8 @@ const MisconductTerminationGenerator = ({
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
       hearingDate: formData.hearingDate,
+      hearingTime: formData.hearingTime,
+      hearingLocation: formData.hearingLocation,
       misconductTypes: formData.misconductTypes,
       misconductDescriptions: formData.misconductDescriptions,
     } as AddendumData;
@@ -2009,32 +2038,6 @@ const MisconductTerminationGenerator = ({
     const [dividerR, dividerG, dividerB] = getPdfDividerRgb(dividerColor);
 
     const issueDateDisplay = formatDate(data.issueDate);
-    const hearingDateDisplay = formatDate(data.hearingDate);
-    const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
-    const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
-    const misconductDetails = formatMisconductDetails(data.misconductTypes, data.misconductDescriptions);
-
-    const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
-      {
-        title: "Paragraph 1",
-        body: `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay || "[date]"}.`,
-      },
-      {
-        title: "Paragraph 2",
-        body: `You were found guilty of misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing. Take notice that you are hereby dismissed for misconduct relating to ${misconductDetails}. You are required to return all company property in your possession to the employer immediately.`,
-      },
-      {
-        title: "Paragraph 3",
-        body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
-      },
-      {
-        title: "Paragraph 4",
-        body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
-      },
-    ];
-
-    const clauses = mergeClauses(withClauseIds(baseClauses));
-    const clausesWithEdits = applyClauseEdits(clauses);
 
     const companyAddressLines = (profile?.physical_address || "Address")
       .split(",")
@@ -2258,52 +2261,129 @@ const MisconductTerminationGenerator = ({
       doc.setLineWidth(0.2);
     };
 
+    const sectionBorderRgb: [number, number, number] = [203, 213, 225];
+    const sectionHeaderFillRgb: [number, number, number] = [248, 250, 252];
+    const sectionHeaderHeight = 7;
+    const sectionPaddingX = 3;
+    const sectionPaddingY = 2;
+    const sectionLineGap = 4.6;
+
+    const drawFieldSection = (title: string, rows: Array<{ label: string; value: string }>) => {
+      const rowsWithLines = rows.map((row) => {
+        const labelWidth = doc.getTextWidth(`${row.label} `);
+        const valueLines = doc.splitTextToSize(row.value || "________________________", contentWidth - sectionPaddingX * 2 - labelWidth);
+        return { ...row, labelWidth, valueLines };
+      });
+      const rowsHeight = rowsWithLines.reduce(
+        (acc, row) => acc + Math.max(1, row.valueLines.length) * sectionLineGap + 1,
+        0,
+      );
+      const sectionHeight = sectionHeaderHeight + sectionPaddingY + rowsHeight + sectionPaddingY;
+      ensureSpace(sectionHeight + 4);
+
+      const startY = y;
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setFillColor(...sectionHeaderFillRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeaderHeight, "F");
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(title, margin + sectionPaddingX, startY + 4.7);
+
+      let rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
+      rowsWithLines.forEach((row) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(`${row.label} `, margin + sectionPaddingX, rowY);
+        doc.setFont("helvetica", "normal");
+        row.valueLines.forEach((line: string, idx: number) => {
+          const textX = margin + sectionPaddingX + row.labelWidth;
+          doc.text(line, textX, rowY + idx * sectionLineGap);
+        });
+        rowY += Math.max(1, row.valueLines.length) * sectionLineGap + 1;
+      });
+
+      y = startY + sectionHeight + 4;
+    };
+
+    const drawChargeSection = (title: string, charges: Array<{ heading: string; body: string }>) => {
+      const chargesWithLines = charges.map((charge) => ({
+        headingLines: doc.splitTextToSize(charge.heading, contentWidth - sectionPaddingX * 2),
+        bodyLines: doc.splitTextToSize(charge.body || "________________________", contentWidth - sectionPaddingX * 2),
+      }));
+      const chargesHeight = chargesWithLines.reduce(
+        (acc, charge) => acc + charge.headingLines.length * sectionLineGap + charge.bodyLines.length * sectionLineGap + 2,
+        0,
+      );
+      const sectionHeight = sectionHeaderHeight + sectionPaddingY + chargesHeight + sectionPaddingY;
+      ensureSpace(sectionHeight + 4);
+
+      const startY = y;
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setFillColor(...sectionHeaderFillRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeaderHeight, "F");
+      doc.setDrawColor(...sectionBorderRgb);
+      doc.rect(margin, startY, contentWidth, sectionHeight);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(title, margin + sectionPaddingX, startY + 4.7);
+
+      let blockY = startY + sectionHeaderHeight + sectionPaddingY + 3;
+      chargesWithLines.forEach((charge) => {
+        doc.setFont("helvetica", "bold");
+        charge.headingLines.forEach((line: string, idx: number) => {
+          doc.text(line, margin + sectionPaddingX, blockY + idx * sectionLineGap);
+        });
+        blockY += charge.headingLines.length * sectionLineGap;
+        doc.setFont("helvetica", "normal");
+        charge.bodyLines.forEach((line: string, idx: number) => {
+          doc.text(line, margin + sectionPaddingX, blockY + idx * sectionLineGap);
+        });
+        blockY += charge.bodyLines.length * sectionLineGap + 2;
+      });
+
+      y = startY + sectionHeight + 4;
+    };
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.text(issueDateDisplay, rightX, y, { align: "right" });
-    y += 9;
-
-    doc.text("TO:", margin, y);
+    y += 8;
     doc.setFont("helvetica", "bold");
-    doc.text(valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")).toUpperCase(), margin + 14, y);
-    y += 5;
-    y += 4;
+    doc.setFontSize(12);
+    doc.text("NOTICE OF DISCIPLINARY HEARING", pageWidth / 2, y, { align: "center" });
+    y += 7;
 
-    doc.setFont("helvetica", "normal");
-    doc.text(salutation, margin, y);
-    y += 10;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    const subjectText = "RE: TERMINATION OF EMPLOYMENT";
-    doc.text(subjectText, margin, y);
-    const subjectWidth = doc.getTextWidth(subjectText);
-    doc.line(margin, y + 1, margin + subjectWidth + 1, y + 1);
-    y += 10;
+    drawFieldSection("Employee Details", [
+      {
+        label: "Employee:",
+        value: valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")),
+      },
+      {
+        label: "ID / Passport:",
+        value: valueOrLine(data.idType === "passport" ? data.passportNumber : data.employeeIdNumber),
+      },
+      {
+        label: "Job Title:",
+        value: valueOrLine(data.jobTitle),
+      },
+    ]);
 
-    doc.setFont("helvetica", "normal");
-    clausesWithEdits.forEach((clause) => {
-      const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
-      paragraphs.forEach((paragraph) => {
-        drawWrapped(paragraph, margin, contentWidth);
-        y += 4.5;
-      });
-    });
+    drawFieldSection("Hearing Details", [
+      { label: "Date:", value: valueOrLine(formatDate(data.hearingDate)) },
+      { label: "Time:", value: valueOrLine(formatTime(data.hearingTime)) },
+      { label: "Place:", value: valueOrLine(data.hearingLocation) },
+    ]);
 
-    doc.setFontSize(9);
-    doc.text("Yours faithfully", margin, y);
-    y += 12;
-    doc.line(margin, y, margin + 45, y);
-    y += 5;
-    doc.setFont("helvetica", "normal");
-    const issuerName = (data.issuer || "").trim();
-    if (issuerName) {
-      doc.setFont("helvetica", "bold");
-      doc.text(issuerName, margin, y);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-    }
-    doc.text("Management", margin, y);
-    y += 10;
+    drawChargeSection(
+      "Transgression(s) / Charge(s)",
+      data.misconductTypes.map((type, index) => ({
+        heading: `Charge ${index + 1}: ${type}`,
+        body: valueOrLine(data.misconductDescriptions[type]),
+      })),
+    );
 
     if (useCenteredLogoLayout) {
       const totalPages = doc.getNumberOfPages();
@@ -2314,10 +2394,10 @@ const MisconductTerminationGenerator = ({
     }
 
     if (download) {
-      doc.save(`Misconduct_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
+      doc.save(`Disciplinary_Hearing_Notice_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
       toast({
         title: "Download ready",
-        description: "Misconduct termination letter has been generated.",
+        description: "Disciplinary hearing notice has been generated.",
       });
       return;
     }
@@ -3017,6 +3097,57 @@ const MisconductTerminationGenerator = ({
                         </span>
                       </button>
                     </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="hearingTime" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Time of hearing <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="relative">
+                        <Select
+                          value={formData.hearingTime || undefined}
+                          onValueChange={(value) => setFormData((prev) => ({ ...prev, hearingTime: value }))}
+                        >
+                          <SelectTrigger
+                            id="hearingTime"
+                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.hearingTime.trim()))} ${addendumModalDropdownToneClass}`}
+                          >
+                            <SelectValue placeholder="Select hearing time" />
+                          </SelectTrigger>
+                          <SelectContent hideScrollButtons className={addendumModalSelectContentClass}>
+                            {hearingTimeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={formData.hearingTime}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, hearingTime: e.target.value }))}
+                          onBlur={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              hearingTime: normalizeHearingTimeInput(e.target.value),
+                            }))
+                          }
+                          className="absolute inset-y-[1.5px] left-[1.5px] right-8 z-10 h-[calc(100%-3px)] border-0 bg-white px-3 text-[11px] font-medium text-slate-900 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="hearingLocation" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Hearing location <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="hearingLocation"
+                        type="text"
+                        value={formData.hearingLocation}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, hearingLocation: e.target.value }))}
+                        placeholder="Type hearing location"
+                        className={`${getAddendumModalInputClass(Boolean(formData.hearingLocation.trim()))}`}
+                      />
+                    </div>
                   </div>
                   {formData.misconductTypes.length > 0 ? (
                     <div className="grid gap-3">
@@ -3199,370 +3330,53 @@ const MisconductTerminationGenerator = ({
               <CardHeader className="pt-4 pb-0" />
               <CardContent className={cn("space-y-6 pt-2", useExternalShell && "contents")}>
                   <ScrollArea className="h-[70vh] w-full rounded-sm bg-white px-6 pb-6" ref={previewScrollRef}>
-            {validatedPreview ? (() => {
-              const hearingDateDisplay = formatDate(validatedPreview.hearingDate);
-              const misconductDetails = formatMisconductDetails(
-                validatedPreview.misconductTypes,
-                validatedPreview.misconductDescriptions,
-              );
-              const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
-                {
-                  title: "Paragraph 1",
-                  body: `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay || "[date]"}.`,
-                },
-                {
-                  title: "Paragraph 2",
-                  body: `You were found guilty of misconduct after consideration of the statement(s) and/or evidence presented during the disciplinary hearing. Take notice that you are hereby dismissed for misconduct relating to ${misconductDetails}. You are required to return all company property in your possession to the employer immediately.`,
-                },
-                {
-                  title: "Paragraph 3",
-                  body: "You may appeal against this decision to terminate your employment within five (5) days from the date in this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to the CCMA or the applicable bargaining council within thirty (30) days from the date of termination.",
-                },
-                {
-                  title: "Paragraph 4",
-                  body: "We trust you find the above in order and we wish you good luck with your future endeavours.",
-                },
-              ];
+            {validatedPreview ? (
+              <div className="space-y-8">
+                <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
+                  <div className="mx-auto w-full max-w-[680px] space-y-4 text-[11px] leading-relaxed text-black">
+                    <h2 className="text-center text-[13px] font-bold uppercase">Notice of Disciplinary Hearing</h2>
 
-    const clauses: ClauseDefinition[] = mergeClauses(withClauseIds(baseClauses));
+                    <section className="rounded border border-slate-300">
+                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        Employee Details
+                      </div>
+                      <div className="space-y-1 px-3 py-2">
+                        <p><span className="font-semibold">Employee:</span> {[validatedPreview.employeeName, validatedPreview.employeeSurname].filter(Boolean).join(" ").trim() || "________________________"}</p>
+                        <p><span className="font-semibold">ID / Passport:</span> {validatedPreview.idType === "passport" ? (validatedPreview.passportNumber || "________________________") : (validatedPreview.employeeIdNumber || "________________________")}</p>
+                        <p><span className="font-semibold">Job Title:</span> {validatedPreview.jobTitle || "________________________"}</p>
+                      </div>
+                    </section>
 
-              const clausesWithEdits = applyClauseEdits(clauses);
+                    <section className="rounded border border-slate-300">
+                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        Hearing Details
+                      </div>
+                      <div className="space-y-1 px-3 py-2">
+                        <p><span className="font-semibold">Date:</span> {formatDate(validatedPreview.hearingDate) || "________________________"}</p>
+                        <p><span className="font-semibold">Time:</span> {formatTime(validatedPreview.hearingTime) || "________________________"}</p>
+                        <p><span className="font-semibold">Place:</span> {validatedPreview.hearingLocation || "________________________"}</p>
+                      </div>
+                    </section>
 
-              const startEditingClause = (clause: ClauseDefinition) => {
-                rememberPreviewScroll();
-                const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
-                setEditingClause(clause.id);
-                setClauseDraft(stripParagraphBreaks(clauseEdits[clause.id] ?? serializeClauseBody(clause.body)));
-                setCustomClauseTitleDraft(isCustomClause ? (customClauseTitleEdits[clause.id] ?? clause.title) : "");
-              };
-
-              const cancelClauseEdit = () => {
-                setEditingClause(null);
-                setClauseDraft("");
-                setCustomClauseTitleDraft("");
-              };
-
-              const saveClauseEdit = (id: string) => {
-                const trimmed = normalizeSingleParagraphText(clauseDraft);
-                const baseCustomClause = customClauses.find((clause) => clause.id === id);
-                if (baseCustomClause) {
-                  const titleTrimmed = customClauseTitleDraft.trim();
-                  setCustomClauseTitleEdits((prev) => {
-                    const next = { ...prev };
-                    if (!titleTrimmed || titleTrimmed === baseCustomClause.title) {
-                      delete next[id];
-                    } else {
-                      next[id] = titleTrimmed;
-                    }
-                    return next;
-                  });
-                }
-                setClauseEdits((prev) => {
-                  const next = { ...prev };
-                  if (trimmed) {
-                    next[id] = trimmed;
-                  } else {
-                    delete next[id];
-                  }
-                  return next;
-                });
-                setEditingClause(null);
-                setClauseDraft("");
-                setCustomClauseTitleDraft("");
-              };
-
-              const resetClauseEdit = (id: string) => {
-                setClauseEdits((prev) => {
-                  const next = { ...prev };
-                  delete next[id];
-                  return next;
-                });
-                setCustomClauseTitleEdits((prev) => {
-                  const next = { ...prev };
-                  delete next[id];
-                  return next;
-                });
-                setEditingClause(null);
-                setClauseDraft("");
-                setCustomClauseTitleDraft("");
-              };
-
-              const openAddClauseForm = (afterId: string | null) => {
-                rememberPreviewScroll();
-                setAddingAfter(afterId);
-                setNewClauseBody("");
-              };
-
-              const cancelAddClause = () => {
-                setAddingAfter(undefined);
-                setNewClauseBody("");
-              };
-
-              const saveNewClause = () => {
-                const body = normalizeSingleParagraphText(newClauseBody);
-                if (!body) {
-                  toast({
-                    title: "Add paragraph",
-                    description: "Please provide paragraph content.",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                setCustomClauses((prev) => [
-                  ...prev,
-                  {
-                    id: generateCustomClauseId(),
-                    title: "Paragraph",
-                    body,
-                    insertAfterId: addingAfter,
-                    amendmentType: "add",
-                  },
-                ]);
-                cancelAddClause();
-              };
-
-              const deleteCustomClause = (id: string) => {
-                if (typeof window !== "undefined") {
-                  const shouldDelete = window.confirm("Are you sure you want to delete this paragraph?");
-                  if (!shouldDelete) return;
-                }
-                setCustomClauses((prev) => prev.filter((clause) => clause.id !== id));
-                setClauseEdits((prev) => {
-                  const next = { ...prev };
-                  delete next[id];
-                  return next;
-                });
-                setCustomClauseTitleEdits((prev) => {
-                  const next = { ...prev };
-                  delete next[id];
-                  return next;
-                });
-                if (editingClause === id) {
-                  setEditingClause(null);
-                  setClauseDraft("");
-                  setCustomClauseTitleDraft("");
-                }
-              };
-              const activeEditingClause = editingClause
-                ? clausesWithEdits.find((clause) => clause.id === editingClause) ?? null
-                : null;
-              const isActiveEditingClauseCustom = activeEditingClause
-                ? customClauses.some((custom) => custom.id === activeEditingClause.id)
-                : false;
-
-              return (
-                <div className="space-y-8">
-                  <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
-                    <div className="text-xs leading-relaxed space-y-5">
-                          {(() => {
-                            const renderAddClauseControl = (afterId: string | null) => {
-                              if (!isPreviewEditable) return null;
-                              return (
-                                <div key={`add-${afterId ?? "start"}`} className="flex justify-center py-2 px-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => openAddClauseForm(afterId)}
-                                    className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                  >
-                                    <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
-                                      <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
-                                        <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
-                                      </span>
-                                      <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                                        Add
-                                      </span>
-                                    </span>
-                                    <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
-                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                      <span className="w-16" />
-                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
-                                    </span>
-                                  </button>
-                                </div>
-                              );
-                            };
-
-                            return [
-                              ...clausesWithEdits.flatMap((clause) => {
-                              const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
-                              const isEditing = editingClause === clause.id;
-                              const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
-                              return [
-                                <div key={clause.id} className="space-y-2 py-1">
-                                  <div className="flex items-center justify-end gap-2">
-                                    {isPreviewEditable ? (
-                                      <div className="flex items-center gap-2">
-                                        {isEditing ? (
-                                          <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
-                                        ) : (
-                                          <>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
-                                              onClick={() => startEditingClause(clause)}
-                                            >
-                                              Edit
-                                            </Button>
-                                            {isCustomClause ? (
-                                              <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-[28px] rounded px-3 text-xs !border-red-600 !bg-white !text-red-600 hover:!border-red-600 hover:!bg-red-600 hover:!text-white"
-                                                onClick={() => deleteCustomClause(clause.id)}
-                                              >
-                                                Delete
-                                              </Button>
-                                            ) : null}
-                                          </>
-                                        )}
-                                      </div>
-                                    ) : null}
-                                  </div>
-
-                                  <div className="space-y-4">
-                                    {paragraphs.map((text, paragraphIndex) => {
-                                      return (
-                                        <p key={`${clause.id}-${paragraphIndex}`} className="text-justify whitespace-pre-line text-black">
-                                          {text}
-                                        </p>
-                                      );
-                                    })}
-                                  </div>
-                                </div>,
-                                renderAddClauseControl(clause.id),
-                              ];
-                            }),
-                            ];
-                          })()}
-                          {isPreviewEditable && activeEditingClause ? (
-                                <div className="fixed inset-x-0 -top-16 bottom-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
-                                  <div
-                                    className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
-                                    role="dialog"
-                                    aria-modal="true"
-                                    aria-label="Edit paragraph"
-                                  >
-                                    <div className="space-y-3">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <h3 className="text-sm font-semibold text-black">Edit Paragraph</h3>
-                                        <span className="text-[11px] text-slate-500">Save or cancel to continue.</span>
-                                      </div>
-                                      {isActiveEditingClauseCustom ? (
-                                        <Input
-                                          value={customClauseTitleDraft}
-                                          onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
-                                          placeholder="Clause title"
-                                          className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
-                                        />
-                                      ) : null}
-                                      <Textarea
-                                        ref={editClauseTextareaRef}
-                                        value={clauseDraft}
-                                        onChange={(e) => setClauseDraft(stripParagraphBreaks(e.target.value))}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter") {
-                                            e.preventDefault();
-                                          }
-                                        }}
-                                        rows={3}
-                                        className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                        spellCheck={true}
-                                        lang="en"
-                                        autoCorrect="on"
-                                      />
-                                      <div className="flex items-center justify-end gap-2">
-                                        {Boolean(
-                                          clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
-                                        ) ? (
-                                          <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-[28px] px-3 text-xs rounded !border-0 !bg-white text-slate-500 shadow-none hover:!bg-white hover:text-black hover:underline underline-offset-2"
-                                            onClick={() => resetClauseEdit(activeEditingClause.id)}
-                                          >
-                                            Reset
-                                          </Button>
-                                        ) : null}
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
-                                          onClick={cancelClauseEdit}
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                          onClick={() => saveClauseEdit(activeEditingClause.id)}
-                                        >
-                                          Save
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                            ) : null}
-                          {isPreviewEditable && addingAfter !== undefined ? (
-                                <div className="fixed inset-x-0 -top-16 bottom-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
-                                  <div
-                                    className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
-                                    role="dialog"
-                                    aria-modal="true"
-                                    aria-label="Add paragraph"
-                                  >
-                                    <div className="space-y-3">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <h3 className="text-sm font-semibold text-black">Add Paragraph</h3>
-                                        <span className="text-[11px] text-slate-500">Complete and add, or cancel to continue.</span>
-                                      </div>
-                                      <Textarea
-                                        ref={addClauseTextareaRef}
-                                        value={newClauseBody}
-                                        onChange={(e) => setNewClauseBody(stripParagraphBreaks(e.target.value))}
-                                        onKeyDown={(e) => {
-                                          if (e.key === "Enter") {
-                                            e.preventDefault();
-                                          }
-                                        }}
-                                    rows={3}
-                                    className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
-                                    placeholder="Type your new paragraph here..."
-                                    spellCheck={true}
-                                    lang="en"
-                                    autoCorrect="on"
-                                  />
-                                      <div className="flex items-center justify-end gap-2">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
-                                          onClick={cancelAddClause}
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
-                                          onClick={saveNewClause}
-                                          disabled={!newClauseBody.trim()}
-                                        >
-                                          Add paragraph
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                            ) : null}
-
-                    </div>
+                    <section className="rounded border border-slate-300">
+                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        Transgression(s) / Charge(s)
+                      </div>
+                      <div className="space-y-3 px-3 py-2">
+                        {validatedPreview.misconductTypes.map((type, index) => (
+                          <div key={`${type}-${index}`} className="space-y-1">
+                            <p className="font-semibold">{`Charge ${index + 1}: ${type}`}</p>
+                            <p>{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
                 </FirstPagePreview>
               </div>
-            );
-          })() : (
+            ) : (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-muted-foreground">Complete the form to preview the contract.</p>
+                <p className="text-sm text-muted-foreground">Complete the form to preview the disciplinary hearing notice.</p>
               </div>
             )}
           </ScrollArea>

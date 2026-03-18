@@ -1346,13 +1346,13 @@ export default function CodeOfConductPreviewPage({
                 </TabsList>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   onClick={handleExportPdf}
                   disabled={isExporting || sections.length === 0}
-                  className="mb-1 h-8 gap-2 rounded-sm border border-transparent px-2 text-xs font-medium text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:text-slate-300"
+                  className="mb-1 h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center gap-1 border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:text-slate-300"
                 >
-                  {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  {isExporting ? "Exporting..." : "Export"}
+                  {isExporting ? <Download className="h-3.5 w-3.5 animate-pulse" /> : <Download className="h-3.5 w-3.5" />}
+                  {isExporting ? "Exporting" : "Export"}
                 </Button>
               </div>
               {selectedSection && (

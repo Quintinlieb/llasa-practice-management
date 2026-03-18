@@ -86,6 +86,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
+import jsPDF from "jspdf";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import {
   EMPLOYEE_NUMBER_MAX_LENGTH,
@@ -356,6 +357,7 @@ const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]
 
 const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
 const normalizeEmployeeNumber = (value?: string | null) => (value || "").trim().toLowerCase();
+const normalizeIdNumberValue = (value?: string | null) => (value || "").replace(/\s+/g, "").trim().toLowerCase();
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const retirementAgeOptions = ["55", "60", "65", "70"] as const;
@@ -582,6 +584,16 @@ const sanitizeSalaryInput = (value: string) => {
 };
 
 const removeWhitespace = (value: string) => value.replace(/\s+/g, "");
+
+const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
+  const name = (companyName || "").trim();
+  const type = (companyType || "").trim();
+  if (!name && !type) return "";
+  if (!name) return type;
+  if (!type) return name;
+  if (name.toLowerCase().includes(type.toLowerCase())) return name;
+  return `${name} ${type}`;
+};
 
 const normalizeSalaryForStorage = (value: string) => {
   const sanitized = sanitizeSalaryInput(value);
@@ -1010,6 +1022,8 @@ const Employees = () => {
    const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
    const [isLoading, setIsLoading] = useState(false);
   const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
+  const [isExportingEmployeesPdf, setIsExportingEmployeesPdf] = useState(false);
+  const [isExportingEmployeesExcel, setIsExportingEmployeesExcel] = useState(false);
   const [isAllEmployeesLoading, setIsAllEmployeesLoading] = useState(false);
    const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -4516,6 +4530,22 @@ const Employees = () => {
         });
         return;
       }
+      const normalizedIdNumber = normalizeIdNumberValue(validatedBasic.idNumber);
+      const duplicateIdEmployee = normalizedIdNumber
+        ? employees.find(
+            (emp) =>
+              normalizeIdNumberValue(emp.id_number) === normalizedIdNumber &&
+              (!rehireEmployeeId || emp.id !== rehireEmployeeId),
+          )
+        : undefined;
+      if (duplicateIdEmployee) {
+        toast({
+          title: "Duplicate ID/passport number",
+          description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Employee"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
+          variant: "destructive",
+        });
+        return;
+      }
       const endDateValue =
         validatedProfile.contractType === "Temporary" && validatedProfile.endDate
           ? validatedProfile.endDate
@@ -4651,6 +4681,23 @@ const Employees = () => {
          toast({
            title: "Duplicate employee number",
            description: `You already allocated that employee number to ${duplicate.employee_name ?? "Employee"} ${duplicate.employee_surname ?? ""}. Please choose a different employee number.`,
+           variant: "destructive",
+         });
+         setIsProfileSaving(false);
+         return;
+       }
+       const normalizedIdNumber = normalizeIdNumberValue(validated.idNumber);
+       const duplicateIdEmployee = normalizedIdNumber
+         ? employees.find(
+             (emp) =>
+               emp.id !== selectedEmployee.id &&
+               normalizeIdNumberValue(emp.id_number) === normalizedIdNumber,
+           )
+         : undefined;
+       if (duplicateIdEmployee) {
+         toast({
+           title: "Duplicate ID/passport number",
+           description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Employee"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
            variant: "destructive",
          });
          setIsProfileSaving(false);
@@ -4821,6 +4868,389 @@ const Employees = () => {
     await fetchEmployees();
   };
 
+  const handleExportEmployeesPdf = async () => {
+    if (!user) return;
+
+    setIsExportingEmployeesPdf(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("employees")
+        .select("employee_name, employee_surname, employee_number, id_number, contract_type, job_title, cell_number, gender, race, status")
+        .eq("company_id", user.id)
+        .ilike("status", "active")
+        .order("employee_surname", { ascending: true })
+        .order("employee_name", { ascending: true });
+
+      if (error) throw error;
+
+      type ExportEmployeeRow = Pick<
+        Employee,
+        "employee_name" | "employee_surname" | "employee_number" | "id_number" | "contract_type" | "job_title" | "cell_number" | "gender" | "race" | "status"
+      >;
+      const activeEmployees = (data ?? []) as ExportEmployeeRow[];
+
+      if (activeEmployees.length === 0) {
+        toast({
+          title: "No active employees",
+          description: "There are no active employees to export.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("company_name, company_type, registration_number, physical_address, company_contact, company_email")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const getGroupKey = (contractType?: string | null): "permanent" | "temporary" | "other" => {
+        const normalized = (contractType || "").trim().toLowerCase();
+        if (!normalized) return "other";
+        if (normalized.includes("permanent")) return "permanent";
+        if (normalized.includes("temporary")) return "temporary";
+        return "other";
+      };
+
+      const grouped = {
+        permanent: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "permanent"),
+        temporary: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "temporary"),
+        other: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "other"),
+      };
+
+      const groupsAll: Array<{ key: "permanent" | "temporary" | "other"; title: string; rows: ExportEmployeeRow[] }> = [
+        { key: "permanent", title: "Permanent Staff", rows: grouped.permanent },
+        { key: "temporary", title: "Temporary Staff", rows: grouped.temporary },
+        { key: "other", title: "Other Staff", rows: grouped.other },
+      ];
+      const groups = groupsAll.filter((group) => group.rows.length > 0);
+
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      const contentWidth = pageWidth - margin * 2;
+      const footerHeight = 20;
+      const contentBottom = pageHeight - footerHeight - 4;
+      const firstPageTopContentY = 19;
+      const continuationTopContentY = 12;
+      let y = firstPageTopContentY;
+
+      const columns = [
+        { key: "name", label: "Name", width: 64 },
+        { key: "employeeNo", label: "Employee #", width: 28 },
+        { key: "id", label: "ID Number", width: 34 },
+        { key: "job", label: "Job Title", width: 58 },
+        { key: "cell", label: "Cell Number", width: 36 },
+        { key: "gender", label: "Gender", width: 24 },
+        { key: "race", label: "Race", width: 29 },
+      ] as const;
+
+      const drawHeader = () => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(15, 23, 42);
+        doc.text("Employee Register", pageWidth / 2, 11, { align: "center" });
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, 14.5, margin + contentWidth, 14.5);
+      };
+
+      const drawSectionHeader = (title: string) => {
+        const sectionHeight = 7;
+        doc.setFillColor(51, 65, 85);
+        doc.setDrawColor(51, 65, 85);
+        doc.rect(margin, y, contentWidth, sectionHeight, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text(title, margin + 3, y + 4.8);
+        y += sectionHeight + 1.8;
+      };
+
+      const drawTableHeader = () => {
+        const headerHeight = 7;
+        let x = margin;
+        columns.forEach((col) => {
+          doc.setFillColor(241, 245, 249);
+          doc.rect(x, y, col.width, headerHeight, "F");
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.15);
+          doc.rect(x, y, col.width, headerHeight, "S");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(51, 65, 85);
+          doc.text(col.label, x + 2, y + 4.6);
+          x += col.width;
+        });
+        y += headerHeight;
+      };
+
+      const newPage = () => {
+        doc.addPage();
+        y = continuationTopContentY;
+      };
+
+      const ensureSpace = (height: number) => {
+        if (y + height > contentBottom) {
+          newPage();
+        }
+      };
+
+      drawHeader();
+
+      groups.forEach((group, groupIndex) => {
+        ensureSpace(16);
+        drawSectionHeader(group.title);
+        drawTableHeader();
+
+        group.rows.forEach((employee) => {
+          const rowValues = [
+            `${(employee.employee_name || "").trim()} ${(employee.employee_surname || "").trim()}`.trim() || "-",
+            (employee.employee_number || "").trim() || "-",
+            (employee.id_number || "").trim() || "-",
+            (employee.job_title || "").trim() || "-",
+            (employee.cell_number || "").trim() || "-",
+            (employee.gender || "").trim() || "-",
+            (employee.race || "").trim() || "-",
+          ];
+          const lineHeight = 3.6;
+          const paddingX = 2;
+          const paddingY = 2;
+          const rowLines = columns.map((col, idx) =>
+            doc.splitTextToSize(rowValues[idx], col.width - paddingX * 2),
+          );
+          const maxLines = Math.max(...rowLines.map((lines) => Math.max(lines.length, 1)));
+          const rowHeight = maxLines * lineHeight + paddingY * 2;
+
+          if (y + rowHeight > contentBottom) {
+            newPage();
+            drawTableHeader();
+          }
+
+          let x = margin;
+          columns.forEach((col, idx) => {
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.12);
+            doc.rect(x, y, col.width, rowHeight);
+            doc.setFont("helvetica", idx === 0 ? "bold" : "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(17, 24, 39);
+            rowLines[idx].forEach((line: string, lineIdx: number) => {
+              doc.text(line, x + paddingX, y + paddingY + 2.8 + lineIdx * lineHeight);
+            });
+            x += col.width;
+          });
+
+          y += rowHeight;
+        });
+
+        if (groupIndex < groups.length - 1) {
+          y += 3.5;
+        }
+      });
+
+      const companyName = formatCompanyDisplayName(profile?.company_name, profile?.company_type) || "Company";
+      const footerCenterText = "This document is confidential and for internal use only.";
+
+      const totalPages = doc.getNumberOfPages();
+      for (let page = 1; page <= totalPages; page += 1) {
+        doc.setPage(page);
+        const footerTop = pageHeight - footerHeight;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, footerTop, margin + contentWidth, footerTop);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(70, 74, 78);
+        doc.text(companyName, margin, footerTop + 6.2, { align: "left" });
+        doc.text(footerCenterText, pageWidth / 2, footerTop + 6.2, { align: "center" });
+        doc.text(`Page ${page} of ${totalPages}`, margin + contentWidth, footerTop + 6.2, { align: "right" });
+      }
+
+      doc.save("Company_Employees.pdf");
+      toast({
+        title: "Export ready",
+        description: "Employee list exported successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingEmployeesPdf(false);
+    }
+  };
+
+  const handleExportEmployeesExcel = async () => {
+    if (!user) return;
+
+    setIsExportingEmployeesExcel(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("employees")
+        .select(
+          "employee_number, employee_name, employee_surname, id_number, gender, race, nationality, cell_number, email, income_tax_number, contract_type, job_title, physical_address_line1, physical_address_line2, city, province, area_code, status",
+        )
+        .eq("company_id", user.id)
+        .ilike("status", "active")
+        .order("employee_surname", { ascending: true })
+        .order("employee_name", { ascending: true });
+
+      if (error) throw error;
+
+      type ExportExcelEmployeeRow = Pick<
+        Employee,
+        | "employee_number"
+        | "employee_name"
+        | "employee_surname"
+        | "id_number"
+        | "gender"
+        | "race"
+        | "nationality"
+        | "cell_number"
+        | "email"
+        | "income_tax_number"
+        | "contract_type"
+        | "job_title"
+        | "physical_address_line1"
+        | "physical_address_line2"
+        | "city"
+        | "province"
+        | "area_code"
+      >;
+
+      const activeEmployees = (data ?? []) as ExportExcelEmployeeRow[];
+
+      if (activeEmployees.length === 0) {
+        toast({
+          title: "No active employees",
+          description: "There are no active employees to export.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Employees");
+
+      worksheet.columns = [
+        { header: "Employee Number", key: "employeeNumber", width: 18 },
+        { header: "Name", key: "employeeName", width: 18 },
+        { header: "Surname", key: "employeeSurname", width: 18 },
+        { header: "ID Number", key: "idNumber", width: 18 },
+        { header: "Gender", key: "gender", width: 12 },
+        { header: "Race", key: "race", width: 14 },
+        { header: "Nationality", key: "nationality", width: 18 },
+        { header: "Cell Number", key: "cellNumber", width: 16 },
+        { header: "Email", key: "email", width: 26 },
+        { header: "Income Tax Number", key: "incomeTaxNumber", width: 20 },
+        { header: "Contract Type", key: "contractType", width: 16 },
+        { header: "Job Title", key: "jobTitle", width: 20 },
+        { header: "Address Line 1", key: "addressLine1", width: 24 },
+        { header: "Address Line 2", key: "addressLine2", width: 24 },
+        { header: "City", key: "city", width: 18 },
+        { header: "Province", key: "province", width: 20 },
+        { header: "Area Code", key: "areaCode", width: 12 },
+      ];
+      worksheet.getRow(1).font = { bold: true };
+
+      activeEmployees.forEach((employee) => {
+        worksheet.addRow({
+          employeeNumber: (employee.employee_number || "").trim(),
+          employeeName: (employee.employee_name || "").trim(),
+          employeeSurname: (employee.employee_surname || "").trim(),
+          idNumber: (employee.id_number || "").trim(),
+          gender: (employee.gender || "").trim(),
+          race: (employee.race || "").trim(),
+          nationality: (employee.nationality || "").trim(),
+          cellNumber: (employee.cell_number || "").trim(),
+          email: (employee.email || "").trim(),
+          incomeTaxNumber: (employee.income_tax_number || "").trim(),
+          contractType: (employee.contract_type || "").trim(),
+          jobTitle: (employee.job_title || "").trim(),
+          addressLine1: (employee.physical_address_line1 || "").trim(),
+          addressLine2: (employee.physical_address_line2 || "").trim(),
+          city: (employee.city || "").trim(),
+          province: (employee.province || "").trim(),
+          areaCode: (employee.area_code || "").trim(),
+        });
+      });
+
+      worksheet.getColumn(4).numFmt = "0";
+
+      const listSheet = workbook.addWorksheet("Lists");
+      listSheet.getColumn(1).values = ["", ...genderOptions];
+      listSheet.getColumn(2).values = ["", ...raceOptions];
+      listSheet.getColumn(3).values = ["", ...nationalityOptions];
+      listSheet.getColumn(4).values = ["", ...southAfricanProvinces];
+      listSheet.getColumn(5).values = ["", ...contractTypes];
+      listSheet.state = "veryHidden";
+
+      const validationStartRow = 2;
+      const validationEndRow = Math.max(500, activeEmployees.length + 50);
+      const genderFormula = `Lists!$A$2:$A$${genderOptions.length + 1}`;
+      const raceFormula = `Lists!$B$2:$B$${raceOptions.length + 1}`;
+      const nationalityFormula = `Lists!$C$2:$C$${nationalityOptions.length + 1}`;
+      const provinceFormula = `Lists!$D$2:$D$${southAfricanProvinces.length + 1}`;
+      const contractTypeFormula = `Lists!$E$2:$E$${contractTypes.length + 1}`;
+
+      for (let row = validationStartRow; row <= validationEndRow; row++) {
+        worksheet.getCell(row, 5).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [genderFormula],
+        };
+        worksheet.getCell(row, 6).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [raceFormula],
+        };
+        worksheet.getCell(row, 7).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [nationalityFormula],
+        };
+        worksheet.getCell(row, 16).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [provinceFormula],
+        };
+        worksheet.getCell(row, 11).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [contractTypeFormula],
+        };
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "Employee_Register.xlsx";
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export ready",
+        description: "Employee register exported successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsExportingEmployeesExcel(false);
+    }
+  };
+
   const handleStartRehire = (employee: Employee) => {
     setIsEditMode(false);
     setActiveEditSection(null);
@@ -4932,7 +5362,11 @@ const Employees = () => {
        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "yyyy-mm-dd", defval: "" });
 
-      const validatedEmployees: EmployeeInsert[] = [];
+      const validatedEmployees: Array<{
+        rowNumber: number;
+        normalizedIdNumber: string;
+        payload: EmployeeInsert;
+      }> = [];
       const errors: string[] = [];
 
       const getColumnValue = (row: Record<string, unknown>, ...possibleNames: string[]): string => {
@@ -4987,24 +5421,28 @@ const Employees = () => {
 
           const validated = employeeImportSchema.parse(rawData);
           validatedEmployees.push({
-            company_id: user.id,
-            employee_name: validated.employeeName,
-            employee_surname: validated.employeeSurname,
-            id_number: validated.idNumber || null,
-            employee_number: validated.employeeNumber || null,
-            contract_type: validated.contractType || null,
-            gender: validated.gender || null,
-            race: validated.race || null,
-            nationality: validated.nationality || null,
-            cell_number: validated.cellNumber || null,
-            email: validated.email || null,
-            income_tax_number: validated.incomeTaxNumber || null,
-            physical_address_line1: validated.addressLine1 || null,
-            physical_address_line2: validated.addressLine2 || null,
-            city: validated.city || null,
-            province: validated.province || null,
-            area_code: validated.areaCode || null,
-            job_title: validated.jobTitle || null,
+            rowNumber,
+            normalizedIdNumber: normalizeIdNumberValue(validated.idNumber),
+            payload: {
+              company_id: user.id,
+              employee_name: validated.employeeName,
+              employee_surname: validated.employeeSurname,
+              id_number: validated.idNumber || null,
+              employee_number: validated.employeeNumber || null,
+              contract_type: validated.contractType || null,
+              gender: validated.gender || null,
+              race: validated.race || null,
+              nationality: validated.nationality || null,
+              cell_number: validated.cellNumber || null,
+              email: validated.email || null,
+              income_tax_number: validated.incomeTaxNumber || null,
+              physical_address_line1: validated.addressLine1 || null,
+              physical_address_line2: validated.addressLine2 || null,
+              city: validated.city || null,
+              province: validated.province || null,
+              area_code: validated.areaCode || null,
+              job_title: validated.jobTitle || null,
+            },
           });
         } catch (err: unknown) {
           errors.push(`Row ${rowNumber}: ${getSafeErrorMessage(err)}`);
@@ -5016,20 +5454,86 @@ const Employees = () => {
         throw new Error(`No valid employee data found. ${firstError}`);
       }
 
+      const seenFileIdRows = new Map<string, number>();
+      const dedupedRows: typeof validatedEmployees = [];
+      for (const row of validatedEmployees) {
+        if (!row.normalizedIdNumber) {
+          dedupedRows.push(row);
+          continue;
+        }
+        const firstSeenRow = seenFileIdRows.get(row.normalizedIdNumber);
+        if (firstSeenRow) {
+          errors.push(`Row ${row.rowNumber}: duplicate ID/passport number already used in row ${firstSeenRow}.`);
+          continue;
+        }
+        seenFileIdRows.set(row.normalizedIdNumber, row.rowNumber);
+        dedupedRows.push(row);
+      }
+
       if (errors.length > 0) {
         toast({
           title: "Warning",
           description: `${errors.length} row(s) skipped due to validation errors. First error: ${errors[0]}`,
           variant: "destructive",
         });
-       }
+      }
 
-      const { error } = await supabase.from("employees").insert(validatedEmployees as TablesInsert<"employees">[]);
-      if (error) throw error;
+      if (dedupedRows.length === 0) {
+        throw new Error("No valid employee rows remain after duplicate ID/passport checks.");
+      }
+
+      const idNumbersInFile = dedupedRows
+        .map((row) => row.payload.id_number)
+        .filter((value): value is string => !!value && value.trim().length > 0);
+
+      const existingEmployeesById = new Map<string, { id: string }>();
+      if (idNumbersInFile.length > 0) {
+        const { data: existingWithIds, error: existingError } = await supabase
+          .from("employees")
+          .select("id, id_number")
+          .eq("company_id", user.id)
+          .in("id_number", idNumbersInFile);
+        if (existingError) throw existingError;
+        for (const employee of existingWithIds ?? []) {
+          const normalized = normalizeIdNumberValue(employee.id_number);
+          if (normalized) {
+            existingEmployeesById.set(normalized, { id: employee.id });
+          }
+        }
+      }
+
+      const employeesToInsert: EmployeeInsert[] = [];
+      const employeesToUpdate: Array<{ id: string; payload: EmployeeUpdate }> = [];
+      for (const row of dedupedRows) {
+        const existing = row.normalizedIdNumber ? existingEmployeesById.get(row.normalizedIdNumber) : undefined;
+        if (existing) {
+          const { company_id: _companyId, ...updatePayload } = row.payload;
+          employeesToUpdate.push({ id: existing.id, payload: updatePayload as EmployeeUpdate });
+        } else {
+          employeesToInsert.push(row.payload);
+        }
+      }
+
+      if (employeesToInsert.length > 0) {
+        const { error } = await supabase.from("employees").insert(employeesToInsert as TablesInsert<"employees">[]);
+        if (error) throw error;
+      }
+
+      for (const row of employeesToUpdate) {
+        const { error } = await supabase
+          .from("employees")
+          .update(row.payload as unknown as TablesInsert<"employees">)
+          .eq("id", row.id)
+          .eq("company_id", user.id);
+        if (error) throw error;
+      }
+
+      const importedCount = employeesToInsert.length;
+      const updatedCount = employeesToUpdate.length;
 
       toast({
         title: "Success",
-        description: `${validatedEmployees.length} employee(s) imported successfully!`,
+        description: `${importedCount} employee(s) imported and ${updatedCount} employee(s) updated.`,
       });
 
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -5394,6 +5898,25 @@ const Employees = () => {
           toast({
             title: "Duplicate employee number",
             description: `You already allocated that employee number to ${duplicate.employee_name ?? "Employee"} ${duplicate.employee_surname ?? ""}. Please choose a different employee number.`,
+            variant: "destructive",
+          });
+          setIsProfileSaving(false);
+          return;
+        }
+      }
+      if (section === "identity") {
+        const normalizedIdNumber = normalizeIdNumberValue(validated.idNumber);
+        const duplicateIdEmployee = normalizedIdNumber
+          ? employees.find(
+              (emp) =>
+                emp.id !== selectedEmployee.id &&
+                normalizeIdNumberValue(emp.id_number) === normalizedIdNumber,
+            )
+          : undefined;
+        if (duplicateIdEmployee) {
+          toast({
+            title: "Duplicate ID/passport number",
+            description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Employee"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
             variant: "destructive",
           });
           setIsProfileSaving(false);
@@ -8423,15 +8946,47 @@ const Employees = () => {
                 </p>
               </div>
               <div className="flex items-center gap-2 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void handleBulkDelete()}
-                  disabled={selectedEmployees.size === 0}
-                  className="h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-rose-600"
-                >
-                  Delete{selectedEmployees.size > 0 ? ` (${selectedEmployees.size})` : ""}
-                </Button>
+                {employeeStatusFilter === "active" && selectedEmployees.size > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleBulkDelete()}
+                    className="h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-rose-600"
+                  >
+                    Delete ({selectedEmployees.size})
+                  </Button>
+                ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
+                      className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:text-slate-300"
+                    >
+                      <span>{isExportingEmployeesPdf || isExportingEmployeesExcel ? "Exporting" : "Export"}</span>
+                      <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-36 text-[11px]">
+                    <DropdownMenuItem
+                      onClick={() => void handleExportEmployeesPdf()}
+                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
+                      className={employeeDropdownMenuItemWithGapClass}
+                    >
+                      <Download className={`h-3.5 w-3.5${isExportingEmployeesPdf ? " animate-pulse" : ""}`} />
+                      Export as PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => void handleExportEmployeesExcel()}
+                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
+                      className={employeeDropdownMenuItemWithGapClass}
+                    >
+                      <Download className={`h-3.5 w-3.5${isExportingEmployeesExcel ? " animate-pulse" : ""}`} />
+                      Export as Excel
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Popover
                   open={isFiltersPanelOpen}
                   onOpenChange={(open) => {

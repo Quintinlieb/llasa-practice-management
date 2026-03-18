@@ -1378,6 +1378,10 @@ const WarningGenerator = ({
   const canAdvance = activeStep === steps.length - 1 ? isWarningStepComplete : canGoNext;
 
   const handleNextOrFinish = () => {
+    if (showFinalActions) {
+      handleDownload();
+      return;
+    }
     if (activeStep === steps.length - 1) {
       if (isWarningStepComplete) {
         handleFinish();

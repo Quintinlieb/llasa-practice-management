@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
-import { Printer, Plus, Loader2, Trash2, X } from "lucide-react";
+import { Download, Plus, Loader2, Trash2, X } from "lucide-react";
+import jsPDF from "jspdf";
 
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
 
@@ -480,6 +482,16 @@ const createFixedSections = (): OffenceSection[] =>
     offences: defaultOffences[id].map((offence) => ({ ...offence })),
   }));
 
+const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
+  const name = (companyName || "").trim();
+  const type = (companyType || "").trim();
+  if (!name && !type) return "";
+  if (!name) return type;
+  if (!type) return name;
+  if (name.toLowerCase().includes(type.toLowerCase())) return name;
+  return `${name} ${type}`;
+};
+
 const initialSections: OffenceSection[] = createFixedSections();
 
 const resolveCategoryId = (section: Partial<OffenceSection>): FixedCategoryId | null => {
@@ -575,6 +587,8 @@ export default function CodeOfConductPreviewPage({
   const [undoState, setUndoState] = useState<UndoAction | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
   const [showScrollHint, setShowScrollHint] = useState(false);
+  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -710,6 +724,29 @@ export default function CodeOfConductPreviewPage({
 
     loadSections();
   }, [authLoading, user, toast, persistSections]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+
+    const loadProfile = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (error) {
+        console.warn("Unable to load company profile", error);
+        return;
+      }
+      setProfile(data ?? null);
+    };
+
+    loadProfile();
+  }, [authLoading, user]);
 
   useEffect(() => {
     const el = tableScrollRef.current;
@@ -898,8 +935,258 @@ export default function CodeOfConductPreviewPage({
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleExportPdf = () => {
+    if (sections.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: "No offences available to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      const contentWidth = pageWidth - margin * 2;
+      const footerHeight = 20;
+      const contentBottom = pageHeight - footerHeight - 3;
+      const disclaimerPrefix = "Disclaimer:";
+      const disclaimerText =
+        "This Code of Conduct serves as a guideline only and does not constitute a binding tariff of sanctions. The Employer retains full discretion to determine appropriate disciplinary action based on the specific circumstances of each case, including the nature and seriousness of the misconduct and any relevant mitigating or aggravating factors, and may deviate from the suggested sanctions where justified, subject always to the requirements of fairness in terms of applicable labour legislation.";
+      const companyName = formatCompanyDisplayName(profile?.company_name, profile?.company_type) || "Company";
+      const footerTopRowLeft = companyName;
+      const footerTopRowCenter = "This document is confidential and for internal use only.";
+      const firstPageTopContentY = 22;
+      const continuationTopContentY = 12;
+      let y = firstPageTopContentY;
+
+      const columns = [
+        { key: "name", label: "Misconduct", width: 85 },
+        { key: "first", label: "1st Offence", width: 47 },
+        { key: "second", label: "2nd Offence", width: 47 },
+        { key: "third", label: "3rd Offence", width: 47 },
+        { key: "fourth", label: "4th Offence", width: 47 },
+      ] as const;
+
+      const drawPageHeader = () => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(15, 23, 42);
+        doc.text("Code of Conduct", pageWidth / 2, 11, { align: "center" });
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, 14.5, margin + contentWidth, 14.5);
+      };
+
+      const drawSectionHeader = (title: string) => {
+        const sectionHeaderHeight = 7;
+        doc.setFillColor(51, 65, 85);
+        doc.setDrawColor(51, 65, 85);
+        doc.setLineWidth(0.16);
+        doc.rect(margin, y, contentWidth, sectionHeaderHeight, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        doc.text(title, margin + 3, y + 4.8);
+        y += sectionHeaderHeight + 1.8;
+      };
+
+      const drawTableHeader = () => {
+        const headerHeight = 7;
+        let x = margin;
+        columns.forEach((col) => {
+          doc.setFillColor(241, 245, 249);
+          doc.rect(x, y, col.width, headerHeight, "F");
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.15);
+          doc.rect(x, y, col.width, headerHeight, "S");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(51, 65, 85);
+          doc.text(col.label, x + 2, y + 4.6);
+          x += col.width;
+        });
+        y += headerHeight;
+      };
+
+      const startNewPage = () => {
+        doc.addPage();
+        y = continuationTopContentY;
+      };
+
+      const ensureSpace = (height: number) => {
+        if (y + height > contentBottom) {
+          startNewPage();
+        }
+      };
+
+      drawPageHeader();
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      const disclaimerLineHeight = 3.8;
+      const prefixWithSpace = `${disclaimerPrefix} `;
+      doc.setFont("helvetica", "bold");
+      const prefixWidth = doc.getTextWidth(prefixWithSpace);
+      doc.setFont("helvetica", "normal");
+
+      const drawJustifiedLine = (text: string, x: number, yPos: number, width: number, isLastLine: boolean) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        if (isLastLine || !trimmed.includes(" ")) {
+          doc.text(trimmed, x, yPos);
+          return;
+        }
+        const words = trimmed.split(/\s+/);
+        const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+        const gaps = Math.max(words.length - 1, 1);
+        const gapWidth = (width - wordsWidth) / gaps;
+        let cursorX = x;
+        words.forEach((word, idx) => {
+          doc.text(word, cursorX, yPos);
+          cursorX += doc.getTextWidth(word);
+          if (idx < words.length - 1) {
+            cursorX += gapWidth;
+          }
+        });
+      };
+
+      const bodyWords = disclaimerText.split(/\s+/).filter(Boolean);
+      const firstLineWidth = Math.max(contentWidth - prefixWidth, 20);
+      const wrappedBodyLines: string[] = [];
+      let currentLine = "";
+      let currentMaxWidth = firstLineWidth;
+
+      bodyWords.forEach((word) => {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (!currentLine || doc.getTextWidth(candidate) <= currentMaxWidth) {
+          currentLine = candidate;
+          return;
+        }
+        wrappedBodyLines.push(currentLine);
+        currentLine = word;
+        currentMaxWidth = contentWidth;
+      });
+      if (currentLine) {
+        wrappedBodyLines.push(currentLine);
+      }
+      if (wrappedBodyLines.length === 0) {
+        wrappedBodyLines.push("");
+      }
+
+      const disclaimerHeight = wrappedBodyLines.length * disclaimerLineHeight + 2;
+      ensureSpace(disclaimerHeight);
+
+      const firstLineY = y + 2.5;
+      doc.setFont("helvetica", "bold");
+      doc.text(prefixWithSpace, margin, firstLineY);
+      doc.setFont("helvetica", "normal");
+      drawJustifiedLine(
+        wrappedBodyLines[0] ?? "",
+        margin + prefixWidth,
+        firstLineY,
+        firstLineWidth,
+        wrappedBodyLines.length === 1,
+      );
+
+      for (let lineIndex = 1; lineIndex < wrappedBodyLines.length; lineIndex += 1) {
+        const lineY = firstLineY + lineIndex * disclaimerLineHeight;
+        const isLast = lineIndex === wrappedBodyLines.length - 1;
+        drawJustifiedLine(wrappedBodyLines[lineIndex] ?? "", margin, lineY, contentWidth, isLast);
+      }
+
+      y += disclaimerHeight + 1.5;
+
+      fixedCategoryOrder.forEach((categoryId, sectionIndex) => {
+        const section = sections.find((item) => item.id === categoryId);
+        if (!section) return;
+
+        ensureSpace(16);
+        drawSectionHeader(categoryMetadata[categoryId].title);
+        drawTableHeader();
+
+        section.offences.forEach((offence) => {
+          const rowValues = [
+            offence.name || "-",
+            offence.first || "-",
+            offence.second || "-",
+            offence.third || "-",
+            offence.fourth || "-",
+          ];
+          const lineHeight = 3.6;
+          const cellPaddingX = 2;
+          const cellPaddingY = 2;
+          const cellLines = columns.map((col, idx) =>
+            doc.splitTextToSize(rowValues[idx], col.width - cellPaddingX * 2),
+          );
+          const maxLines = Math.max(...cellLines.map((lines) => Math.max(lines.length, 1)));
+          const rowHeight = maxLines * lineHeight + cellPaddingY * 2;
+
+          if (y + rowHeight > contentBottom) {
+            startNewPage();
+            drawTableHeader();
+          }
+
+          let x = margin;
+          columns.forEach((col, idx) => {
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.12);
+            doc.rect(x, y, col.width, rowHeight);
+            doc.setFont("helvetica", idx === 0 ? "bold" : "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(17, 24, 39);
+            const lines = cellLines[idx];
+            lines.forEach((line: string, lineIdx: number) => {
+              doc.text(line, x + cellPaddingX, y + cellPaddingY + 2.8 + lineIdx * lineHeight);
+            });
+            x += col.width;
+          });
+
+          y += rowHeight;
+        });
+
+        if (sectionIndex < fixedCategoryOrder.length - 1) {
+          y += 3.5;
+        }
+      });
+
+      const totalPages = doc.getNumberOfPages();
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        const footerTop = pageHeight - footerHeight;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, footerTop, margin + contentWidth, footerTop);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(70, 74, 78);
+        doc.text(footerTopRowLeft, margin, footerTop + 6.2, { align: "left" });
+        doc.text(footerTopRowCenter, pageWidth / 2, footerTop + 6.2, { align: "center" });
+        doc.text(`Page ${pageNumber} of ${totalPages}`, margin + contentWidth, footerTop + 6.2, { align: "right" });
+      }
+
+      doc.setTextColor(0, 0, 0);
+
+      doc.save("Code_of_Conduct.pdf");
+      toast({
+        title: "Export ready",
+        description: "Code of Conduct exported successfully.",
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Export failed",
+        description: "Unable to export Code of Conduct right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const clearUndoState = useCallback(() => {
@@ -1057,6 +1344,16 @@ export default function CodeOfConductPreviewPage({
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleExportPdf}
+                  disabled={isExporting || sections.length === 0}
+                  className="mb-1 h-8 gap-2 rounded-sm border border-transparent px-2 text-xs font-medium text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 disabled:text-slate-300"
+                >
+                  {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {isExporting ? "Exporting..." : "Export"}
+                </Button>
               </div>
               {selectedSection && (
                 <div className="rounded-sm bg-white px-0 print-section">

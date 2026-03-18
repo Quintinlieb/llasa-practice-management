@@ -2492,8 +2492,19 @@ const MisconductTerminationGenerator = ({
 
     const drawChargeSection = (title: string, charges: Array<{ heading: string; body: string }>) => {
       const chargesWithLines = charges.map((charge) => ({
-        headingLines: doc.splitTextToSize(charge.heading, contentWidth - sectionPaddingX * 2),
-        bodyLines: doc.splitTextToSize(charge.body || "________________________", contentWidth - sectionPaddingX * 2),
+        ...(() => {
+          const headingMatch = charge.heading.match(/^(\d+\.\s+)(.*)$/);
+          const headingPrefix = headingMatch ? headingMatch[1] : "";
+          const headingText = headingMatch ? headingMatch[2] : charge.heading;
+          const headingPrefixWidth = headingPrefix ? doc.getTextWidth(headingPrefix) : 0;
+          const usableWidth = contentWidth - sectionPaddingX * 2 - headingPrefixWidth;
+          return {
+            headingPrefix,
+            headingPrefixWidth,
+            headingLines: doc.splitTextToSize(headingText, usableWidth),
+            bodyLines: doc.splitTextToSize(charge.body || "________________________", usableWidth),
+          };
+        })(),
       }));
       const chargesHeight = chargesWithLines.reduce(
         (acc, charge) => acc + charge.headingLines.length * sectionLineGap + charge.bodyLines.length * sectionLineGap + 2,
@@ -2513,14 +2524,19 @@ const MisconductTerminationGenerator = ({
 
       let blockY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       chargesWithLines.forEach((charge) => {
+        const chargeTextLeftInset = 1.8;
+        const textBaseX = margin + sectionPaddingX + charge.headingPrefixWidth + chargeTextLeftInset;
         doc.setFont("helvetica", "bold");
+        if (charge.headingPrefix) {
+          doc.text(charge.headingPrefix, margin + sectionPaddingX, blockY);
+        }
         charge.headingLines.forEach((line: string, idx: number) => {
-          doc.text(line, margin + sectionPaddingX, blockY + idx * sectionLineGap);
+          doc.text(line, textBaseX, blockY + idx * sectionLineGap);
         });
         blockY += charge.headingLines.length * sectionLineGap;
         doc.setFont("helvetica", "normal");
         charge.bodyLines.forEach((line: string, idx: number) => {
-          doc.text(line, margin + sectionPaddingX, blockY + idx * sectionLineGap);
+          doc.text(line, textBaseX, blockY + idx * sectionLineGap);
         });
         blockY += charge.bodyLines.length * sectionLineGap + 2;
       });
@@ -3713,8 +3729,11 @@ const MisconductTerminationGenerator = ({
                         <div className="space-y-3">
                           {validatedPreview.misconductTypes.map((type, index) => (
                             <div key={`${type}-${index}`} className="space-y-1">
-                              <p className="font-semibold">{`${index + 1}. ${type}`}</p>
-                              <p>{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
+                              <p className="font-semibold">
+                                <span className="inline-block w-5 align-top">{`${index + 1}.`}</span>
+                                <span>{type}</span>
+                              </p>
+                              <p className="pl-5">{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
                             </div>
                           ))}
                         </div>
@@ -3875,7 +3894,7 @@ const MisconductTerminationGenerator = ({
                 className={`${getAddendumModalInputClass(
                   Boolean(draftingAssistantAnswers.misconductOccurredWhen.trim()) &&
                     draftingAssistantFocusedField !== "misconductOccurredWhen",
-                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!text-slate-400 focus:placeholder:transparent`}
               />
             </div>
             <div className="space-y-1.5">
@@ -3891,7 +3910,7 @@ const MisconductTerminationGenerator = ({
                 className={`${getAddendumModalInputClass(
                   Boolean(draftingAssistantAnswers.whatHappened.trim()) &&
                     draftingAssistantFocusedField !== "whatHappened",
-                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!text-slate-400 focus:placeholder:transparent`}
               />
             </div>
             {draftingAssistantNeedsInvolvement ? (
@@ -3931,7 +3950,7 @@ const MisconductTerminationGenerator = ({
                 className={`${getAddendumModalInputClass(
                   Boolean(draftingAssistantAnswers.additionalDetails.trim()) &&
                     draftingAssistantFocusedField !== "additionalDetails",
-                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!italic placeholder:!text-slate-400 focus:placeholder:transparent`}
+                )} min-h-[64px] rounded !focus:border-blue-600 !focus-visible:border-blue-600 placeholder:text-[10px] placeholder:!text-slate-400 focus:placeholder:transparent`}
               />
             </div>
             <div className="space-y-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] text-slate-600">

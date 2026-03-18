@@ -31,7 +31,7 @@ type ContractFormState = {
   employeeId: string;
   age: string;
   companyLogoDataUrl: string;
-  logoPlacement: "center" | "left";
+  logoPlacement: "center";
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
@@ -65,7 +65,7 @@ type AddendumData = PermanentContractFormData & {
   newEndDate: string;
   idType: "id" | "passport";
   companyLogoDataUrl: string;
-  logoPlacement: "center" | "left";
+  logoPlacement: "center";
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
@@ -139,7 +139,6 @@ const addendumTypeLabels: Record<AddendumType, string> = {
 
 const logoPlacementOptions = [
   { value: "center", label: "Header and footer" },
-  { value: "left", label: "Header only" },
 ] as const;
 
 const letterheadColorOptions = [
@@ -274,7 +273,7 @@ const SIGNATURE_LABELS = [
 ] as const;
 
 const SIGNATURE_REFUSAL_NOTE =
-  "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
+  "If the employee refuses to sign this notice, the witness's signature will confirm that the employee did receive the notice and that the contents were explained to him/her.";
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
@@ -593,8 +592,8 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   const tradingNameDisplay = (data.tradingName || "").trim();
   const registrationNumberDisplay = (profile?.registration_number || "").trim();
   const hasUploadedLogo = Boolean(logoPreviewUrl);
-  const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
-  const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
+  const useCenteredLogoLayout = hasUploadedLogo;
+  const useFooterCompanyDetails = useCenteredLogoLayout || !hasUploadedLogo;
   const { dividerColor, iconColor } = getThemeColors(data.letterheadThemeColors);
   const previewDividerColor = getPreviewDividerColor(dividerColor);
   const previewDividerStyle = previewDividerColor ? { borderColor: previewDividerColor } : undefined;
@@ -624,48 +623,12 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
               className="max-h-[25mm] w-auto max-w-[220px] object-contain"
             />
           </div>
-        ) : (
-          <div className={cn("flex", useLeftLogoLayout ? "items-start justify-between gap-4" : "justify-end")}>
-            {useLeftLogoLayout ? (
-              <img
-                src={logoPreviewUrl}
-                alt="Company logo"
-                className="max-h-[25mm] w-auto max-w-[220px] object-contain"
-              />
-            ) : null}
-            <div className="text-right leading-[1.1] text-[10px]">
-              <p className="font-semibold">{companyNameDisplay}</p>
-              {tradingNameDisplay ? <p>t/a {tradingNameDisplay}</p> : null}
-              {companyAddressLines.length > 0 ? companyAddressLines.map((line) => <p key={`co-${line}`}>{line}</p>) : <p>Address</p>}
-              {useLeftLogoLayout ? (
-                <>
-                  <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Mail className="h-2.5 w-2.5" style={{ color: iconColor }} />
-                    {displayValue(data.employerEmail)}
-                  </p>
-                  <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Phone className="h-2.5 w-2.5" style={{ color: iconColor }} />
-                    {displayValue(data.employerContact)}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Mail className="h-2.5 w-2.5" style={{ color: iconColor }} />
-                    {displayValue(data.employerEmail)}
-                  </p>
-                  <p className="inline-flex w-full items-center justify-end gap-1">
-                    <Phone className="h-2.5 w-2.5" style={{ color: iconColor }} />
-                    {displayValue(data.employerContact)}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-        <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
+        ) : null}
+        {hasUploadedLogo ? (
+          <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
+        ) : null}
         <div className="mt-5 space-y-4">{children}</div>
-        {useCenteredLogoLayout ? (
+        {useFooterCompanyDetails ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
             <p className="font-semibold">{companyIdentityDisplay}</p>
             {registrationNumberDisplay ? <p className="mt-0.5">Reg No: {registrationNumberDisplay}</p> : null}
@@ -1964,7 +1927,7 @@ const MisconductTerminationGenerator = ({
       if (!result) return;
       const trimmedResult = await trimLogoWhitespace(result);
       setCompanyLogoPreview(trimmedResult);
-      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult }));
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult, logoPlacement: "center" }));
     };
     reader.onerror = () => {
       toast({
@@ -2229,19 +2192,10 @@ const MisconductTerminationGenerator = ({
       .map((value) => value.trim())
       .filter(Boolean);
     const hasUploadedLogo = Boolean(data.companyLogoDataUrl);
-    const useLeftLogoLayout = hasUploadedLogo && data.logoPlacement === "left";
-    const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
+    const useCenteredLogoLayout = hasUploadedLogo;
+    const useFooterCompanyDetails = useCenteredLogoLayout || !hasUploadedLogo;
 
     const headerTop = y;
-    const rightX = margin + contentWidth;
-    const headerLineHeight = 3.5;
-    const employerEmailText = valueOrLine(data.employerEmail);
-    const employerPhoneText = valueOrLine(data.employerContact);
-    const headerInfoLines = [
-      valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)),
-      ...(data.tradingName?.trim() ? [`t/a ${data.tradingName.trim()}`] : []),
-      ...(companyAddressLines.length > 0 ? companyAddressLines : ["Address"]),
-    ];
 
     let logoTopForBalance = margin;
     if (useCenteredLogoLayout) {
@@ -2249,14 +2203,20 @@ const MisconductTerminationGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = 25;
-        const maxLogoWidth = 60;
+        const stackedLogoMaxHeight = 24;
+        const targetLogoHeight = imageRatio < 1 ? stackedLogoMaxHeight : 20;
+        const maxLogoWidth = imageRatio < 1 ? 52 : 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
         if (logoWidth > maxLogoWidth) {
           const scale = maxLogoWidth / logoWidth;
           logoWidth = maxLogoWidth;
           logoHeight *= scale;
+        }
+        if (imageRatio < 1 && logoHeight > stackedLogoMaxHeight) {
+          const scale = stackedLogoMaxHeight / logoHeight;
+          logoHeight = stackedLogoMaxHeight;
+          logoWidth *= scale;
         }
         const logoTop = Math.max(6, headerTop - 10);
         logoTopForBalance = logoTop;
@@ -2266,113 +2226,14 @@ const MisconductTerminationGenerator = ({
       } catch {
         // Keep generating even if logo rendering fails.
       }
-    } else if (useLeftLogoLayout) {
-      let logoBottomY = headerTop;
-      try {
-        const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
-        const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
-        const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = 25;
-        const maxLogoWidth = 60;
-        let logoHeight = targetLogoHeight;
-        let logoWidth = logoHeight * imageRatio;
-        if (logoWidth > maxLogoWidth) {
-          const scale = maxLogoWidth / logoWidth;
-          logoWidth = maxLogoWidth;
-          logoHeight *= scale;
-        }
-        const logoTop = Math.max(6, headerTop);
-        const logoX = margin;
-        doc.addImage(data.companyLogoDataUrl, imageType, logoX, logoTop, logoWidth, logoHeight, undefined, "FAST");
-        logoBottomY = logoTop + logoHeight;
-      } catch {
-        // Keep generating even if logo rendering fails.
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.text(headerInfoLines[0], rightX, headerTop, { align: "right" });
-      let detailsY = headerTop + headerLineHeight;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      headerInfoLines.slice(1).forEach((line) => {
-        doc.text(line, rightX, detailsY, { align: "right" });
-        detailsY += headerLineHeight;
-      });
-      const iconTextGap = 0.9;
-      const iconSize = 2.7;
-      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
-      const hasMailIcon = Boolean(pdfMailIconDataUrl);
-      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
-      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
-      const phoneTextWidth = doc.getTextWidth(employerPhoneText);
-      const emailTextWidth = doc.getTextWidth(employerEmailText);
-      const emailRowWidth = mailIconWidth + iconTextGap + emailTextWidth;
-      const emailStartX = rightX - emailRowWidth;
-      if (hasMailIcon) {
-        doc.addImage(pdfMailIconDataUrl as string, "PNG", emailStartX, detailsY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Email:", emailStartX, detailsY);
-      }
-      const emailTextX = emailStartX + mailIconWidth + iconTextGap;
-      doc.text(employerEmailText, emailTextX, detailsY);
-      detailsY += headerLineHeight;
-      const phoneRowWidth = phoneIconWidth + iconTextGap + phoneTextWidth;
-      const phoneStartX = rightX - phoneRowWidth;
-      if (hasPhoneIcon) {
-        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", phoneStartX, detailsY - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Tel:", phoneStartX, detailsY);
-      }
-      const phoneTextX = phoneStartX + phoneIconWidth + iconTextGap;
-      doc.text(employerPhoneText, phoneTextX, detailsY);
-      detailsY += headerLineHeight;
-      y = Math.max(logoBottomY + 6, detailsY + 2);
-    } else {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.text(headerInfoLines[0], rightX, headerTop, { align: "right" });
-      y = headerTop + headerLineHeight;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      headerInfoLines.slice(1).forEach((line) => {
-        doc.text(line, rightX, y, { align: "right" });
-        y += headerLineHeight;
-      });
-      const iconTextGap = 0.9;
-      const iconSize = 2.7;
-      const hasPhoneIcon = Boolean(pdfPhoneIconDataUrl);
-      const hasMailIcon = Boolean(pdfMailIconDataUrl);
-      const phoneIconWidth = hasPhoneIcon ? iconSize : doc.getTextWidth("Tel:");
-      const mailIconWidth = hasMailIcon ? iconSize : doc.getTextWidth("Email:");
-      const phoneTextWidth = doc.getTextWidth(employerPhoneText);
-      const emailTextWidth = doc.getTextWidth(employerEmailText);
-      const emailRowWidth = mailIconWidth + iconTextGap + emailTextWidth;
-      const emailStartX = rightX - emailRowWidth;
-      if (hasMailIcon) {
-        doc.addImage(pdfMailIconDataUrl as string, "PNG", emailStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Email:", emailStartX, y);
-      }
-      const emailTextX = emailStartX + mailIconWidth + iconTextGap;
-      doc.text(employerEmailText, emailTextX, y);
-      y += headerLineHeight;
-      const phoneRowWidth = phoneIconWidth + iconTextGap + phoneTextWidth;
-      const phoneStartX = rightX - phoneRowWidth;
-      if (hasPhoneIcon) {
-        doc.addImage(pdfPhoneIconDataUrl as string, "PNG", phoneStartX, y - iconSize + 0.55, iconSize, iconSize, undefined, "FAST");
-      } else {
-        doc.text("Tel:", phoneStartX, y);
-      }
-      const phoneTextX = phoneStartX + phoneIconWidth + iconTextGap;
-      doc.text(employerPhoneText, phoneTextX, y);
-      y += headerLineHeight;
     }
 
-    doc.setDrawColor(dividerR, dividerG, dividerB);
-    doc.line(margin, y, margin + contentWidth, y);
-    doc.setDrawColor(0, 0, 0);
-    y += 4.6;
+    if (hasUploadedLogo) {
+      doc.setDrawColor(dividerR, dividerG, dividerB);
+      doc.line(margin, y, margin + contentWidth, y);
+      doc.setDrawColor(0, 0, 0);
+      y += 4.6;
+    }
 
     const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
     const companyIdentity = data.tradingName?.trim()
@@ -2382,13 +2243,13 @@ const MisconductTerminationGenerator = ({
     const hasRegistrationNumber = registrationNumber.length > 0;
     const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
     const centeredFooterHeight = hasRegistrationNumber ? 15.5 : 12;
-    const centeredFooterBottomGap = logoTopForBalance;
-    if (useCenteredLogoLayout) {
+    const centeredFooterBottomGap = useCenteredLogoLayout ? logoTopForBalance : 7;
+    if (useFooterCompanyDetails) {
       pageContentBottom = pageHeight - centeredFooterBottomGap - centeredFooterHeight - 2;
     }
 
     const drawCenteredFooter = (pageNumber: number) => {
-      if (!useCenteredLogoLayout) return;
+      if (!useFooterCompanyDetails) return;
       doc.setPage(pageNumber);
       const footerStartY = pageHeight - centeredFooterBottomGap - centeredFooterHeight;
       doc.setDrawColor(dividerR, dividerG, dividerB);
@@ -2446,16 +2307,35 @@ const MisconductTerminationGenerator = ({
       doc.setLineWidth(0.2);
     };
 
-    const sectionBorderRgb: [number, number, number] = [180, 188, 198];
     const sectionHeaderFillRgb: [number, number, number] = [236, 240, 245];
     const sectionHeaderHeight = 7;
     const sectionPaddingX = 3;
     const sectionPaddingY = 2;
     const sectionLineGap = 4.6;
     const sectionCornerRadius = 1;
-    const sectionBorderLineWidth = 0.1;
+    const chargeSectionBorderRgb: [number, number, number] = [180, 188, 198];
+    const chargeSectionBorderLineWidth = 0.12;
     const leftColumnLabelWidth = 22;
     const rightColumnLabelWidth = 33;
+    const drawSectionHeaderFill = (startY: number) => {
+      doc.setFillColor(...sectionHeaderFillRgb);
+      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
+      if (sectionCornerRadius > 0) {
+        // Keep top corners rounded while forcing bottom corners square.
+        // Slight overlap avoids renderer-specific anti-alias seams (browser vs desktop PDF viewers).
+        const squareOverlap = 0.25;
+        const squareSize = sectionCornerRadius + squareOverlap;
+        const squareY = startY + sectionHeaderHeight - sectionCornerRadius - squareOverlap;
+        doc.rect(margin, squareY, squareSize, squareSize, "F");
+        doc.rect(
+          margin + contentWidth - squareSize,
+          squareY,
+          squareSize,
+          squareSize,
+          "F",
+        );
+      }
+    };
 
     const drawFieldSection = (title: string, rows: Array<{ label: string; value: string }>) => {
       const rowsWithLines = rows.map((row) => {
@@ -2471,12 +2351,10 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setFillColor(...sectionHeaderFillRgb);
-      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.setLineWidth(sectionBorderLineWidth);
+      drawSectionHeaderFill(startY);
+      doc.setDrawColor(...chargeSectionBorderRgb);
+      doc.setLineWidth(chargeSectionBorderLineWidth);
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
-      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.text(title.toUpperCase(), margin + sectionPaddingX, startY + 4.7);
@@ -2517,15 +2395,13 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setFillColor(...sectionHeaderFillRgb);
-      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.setLineWidth(sectionBorderLineWidth);
+      drawSectionHeaderFill(startY);
+      doc.setDrawColor(...chargeSectionBorderRgb);
+      doc.setLineWidth(chargeSectionBorderLineWidth);
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
-      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text("EMPLOYEE DETAILS", margin + sectionPaddingX, startY + 4.7);
+      doc.text("A. EMPLOYEE DETAILS", margin + sectionPaddingX, startY + 4.7);
 
       const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       const leftX = margin + sectionPaddingX;
@@ -2577,15 +2453,13 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setFillColor(...sectionHeaderFillRgb);
-      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.setLineWidth(sectionBorderLineWidth);
+      drawSectionHeaderFill(startY);
+      doc.setDrawColor(...chargeSectionBorderRgb);
+      doc.setLineWidth(chargeSectionBorderLineWidth);
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
-      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text("HEARING DETAILS", margin + sectionPaddingX, startY + 4.7);
+      doc.text("B. HEARING DETAILS", margin + sectionPaddingX, startY + 4.7);
 
       const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       const leftX = margin + sectionPaddingX;
@@ -2629,12 +2503,10 @@ const MisconductTerminationGenerator = ({
       ensureSpace(sectionHeight + 4);
 
       const startY = y;
-      doc.setFillColor(...sectionHeaderFillRgb);
-      doc.roundedRect(margin, startY, contentWidth, sectionHeaderHeight, sectionCornerRadius, sectionCornerRadius, "F");
-      doc.setDrawColor(...sectionBorderRgb);
-      doc.setLineWidth(sectionBorderLineWidth);
+      drawSectionHeaderFill(startY);
+      doc.setDrawColor(...chargeSectionBorderRgb);
+      doc.setLineWidth(chargeSectionBorderLineWidth);
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
-      doc.line(margin, startY + sectionHeaderHeight, margin + contentWidth, startY + sectionHeaderHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.text(title.toUpperCase(), margin + sectionPaddingX, startY + 4.7);
@@ -2697,25 +2569,26 @@ const MisconductTerminationGenerator = ({
       const colGap = 12;
       const colWidth = (contentWidth - colGap) / 2;
       const rowHeight = 12;
+      const gapBeforeRepresentativeRow = 2;
+      const gapBeforeWitnessRow = 2;
+      const gapBeforeRefusalNote = 2;
       const sigLineLength = Math.min(38, colWidth - 18);
-      const dateLineLength = Math.min(20, colWidth - sigLineLength - 12);
-      const blockHeight = signaturePairs.length * rowHeight + 2;
+      const dateLineLength = Math.min(24, colWidth - sigLineLength - 12);
       const refusalPaddingX = 3;
       const refusalPaddingY = 2;
       const refusalLines = doc.splitTextToSize(SIGNATURE_REFUSAL_NOTE, contentWidth - refusalPaddingX * 2);
       const refusalHeight = refusalLines.length * 4 + refusalPaddingY * 2;
-      const totalHeight = sectionTitleHeight + blockHeight + 3 + refusalHeight + 4;
+      const rowWithBottomNoteHeight = gapBeforeWitnessRow + rowHeight + gapBeforeRefusalNote + refusalHeight + 4;
+      const firstRowWithTitleHeight = sectionTitleHeight + rowHeight;
 
-      ensureSpace(totalHeight);
-
+      ensureSpace(firstRowWithTitleHeight);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.text("SIGNATURES", margin + sectionPaddingX, y + 4.7);
       y += sectionTitleHeight;
 
-      signaturePairs.forEach((pair, row) => {
-        const rowY = y + row * rowHeight;
-
+      const drawSignatureRow = (pair: [string, string]) => {
+        const rowY = y;
         const drawSignatureCell = (label: string, x: number) => {
           const dateX = x + sigLineLength + 8;
           doc.setDrawColor(170, 170, 170);
@@ -2729,9 +2602,21 @@ const MisconductTerminationGenerator = ({
 
         drawSignatureCell(pair[0], margin + sectionPaddingX);
         drawSignatureCell(pair[1], margin + sectionPaddingX + colWidth + colGap);
-      });
+        y += rowHeight;
+      };
 
-      y += blockHeight + 3;
+      ensureSpace(rowHeight);
+      drawSignatureRow(signaturePairs[0]);
+
+      ensureSpace(gapBeforeRepresentativeRow + rowHeight);
+      y += gapBeforeRepresentativeRow;
+      drawSignatureRow(signaturePairs[1]);
+
+      ensureSpace(rowWithBottomNoteHeight);
+      y += gapBeforeWitnessRow;
+      drawSignatureRow(signaturePairs[2]);
+      y += gapBeforeRefusalNote;
+
       doc.setFillColor(247, 249, 251);
       doc.setDrawColor(200, 200, 200);
       doc.roundedRect(margin, y, contentWidth, refusalHeight, 2, 2, "FD");
@@ -2756,9 +2641,9 @@ const MisconductTerminationGenerator = ({
     drawHearingDetailsSection();
 
     drawChargeSection(
-      "Transgression(s) / Charge(s)",
+      "C. Transgression(s) / Charge(s)",
       data.misconductTypes.map((type, index) => ({
-        heading: `Charge ${index + 1}: ${type}`,
+        heading: `${index + 1}. ${type}`,
         body: valueOrLine(data.misconductDescriptions[type]),
       })),
     );
@@ -2767,13 +2652,25 @@ const MisconductTerminationGenerator = ({
     drawRightsSection(HEARING_RIGHTS_INTRO, HEARING_RIGHTS_ITEMS);
     drawSignatureSection();
 
-    if (useCenteredLogoLayout) {
-      const totalPages = doc.getNumberOfPages();
+    const totalPages = doc.getNumberOfPages();
+    if (useFooterCompanyDetails) {
       for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
         drawCenteredFooter(pageNumber);
       }
-      doc.setPage(totalPages);
     }
+
+    if (totalPages > 1) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(70, 74, 78);
+      const pageNumberY = 8;
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        doc.text(`Page ${pageNumber} of ${totalPages}`, margin + contentWidth, pageNumberY, { align: "right" });
+      }
+      doc.setTextColor(0, 0, 0);
+    }
+    doc.setPage(totalPages);
 
     if (download) {
       doc.save(`Disciplinary_Hearing_Notice_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
@@ -3106,8 +3003,8 @@ const MisconductTerminationGenerator = ({
                     </div>
                     {companyLogoPreview || formData.companyLogoDataUrl ? (
                       <div className="space-y-1.5">
-                        <Label className={modalFieldLabelClass}>Letterhead options</Label>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <Label className={modalFieldLabelClass}>Layout preview</Label>
+                        <div className="grid grid-cols-1 gap-2">
                           <button
                             type="button"
                             onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "center" }))}
@@ -3139,41 +3036,6 @@ const MisconductTerminationGenerator = ({
                               </div>
                             </div>
                             <p className="mt-2 text-[11px] font-semibold text-slate-700">{logoPlacementOptions[0].label}</p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "left" }))}
-                            className={`rounded border p-2 text-left transition ${
-                              formData.logoPlacement === "left"
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-slate-300 bg-white hover:border-blue-500"
-                            }`}
-                          >
-                            <div className="h-[99px] rounded border border-slate-200 bg-white p-2">
-                              <div className="flex items-start justify-between gap-2">
-                                {companyLogoPreview || formData.companyLogoDataUrl ? (
-                                  <img
-                                    src={companyLogoPreview || formData.companyLogoDataUrl}
-                                    alt="Left-aligned letterhead logo preview"
-                                    className="h-4 w-10 object-contain"
-                                  />
-                                ) : (
-                                  <div className="h-4 w-10 rounded bg-slate-300" />
-                                )}
-                                <div className="w-[74px] text-right text-[5px] leading-[1.05] text-slate-600">
-                                  <div className="ml-auto h-px w-10 rounded bg-slate-300" />
-                                  <div className="mt-1 ml-auto h-px w-8 rounded bg-slate-300" />
-                                  <div className="mt-1 ml-auto h-px w-6 rounded bg-slate-300" />
-                                </div>
-                              </div>
-                              <div className="mt-2 h-px w-full bg-slate-300" />
-                              <div className="mt-2 w-16 space-y-1">
-                                <div className="h-1 w-full rounded bg-slate-300" />
-                                <div className="h-1 w-4/5 rounded bg-slate-300" />
-                                <div className="h-1 w-3/4 rounded bg-slate-300" />
-                              </div>
-                            </div>
-                            <p className="mt-2 text-[11px] font-semibold text-slate-700">{logoPlacementOptions[1].label}</p>
                           </button>
                         </div>
                       </div>
@@ -3798,12 +3660,12 @@ const MisconductTerminationGenerator = ({
             {validatedPreview ? (
               <div className="space-y-8">
                 <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
-                  <div className="mx-auto w-full max-w-[680px] space-y-4 pt-2 text-[11px] leading-relaxed text-black">
-                    <h2 className="text-center text-[13px] font-bold uppercase">Notice of Disciplinary Hearing</h2>
+                  <div className="w-full space-y-4 pt-2 text-[11px] leading-relaxed text-black">
+                    <h2 className="text-center text-[14px] font-bold uppercase">Notice of Disciplinary Hearing</h2>
 
-                    <section className="rounded border border-slate-300">
-                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                        Employee Details
+                    <section className="overflow-hidden rounded border border-slate-300">
+                      <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        A. Employee Details
                       </div>
                       <div className="grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-2">
                         <div className="grid grid-cols-[92px,1fr]">
@@ -3823,9 +3685,9 @@ const MisconductTerminationGenerator = ({
                       </div>
                     </section>
 
-                    <section className="rounded border border-slate-300">
-                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                        Hearing Details
+                    <section className="overflow-hidden rounded border border-slate-300">
+                      <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        B. Hearing Details
                       </div>
                       <div className="grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-2">
                         <div className="grid grid-cols-[92px,1fr]">
@@ -3843,17 +3705,19 @@ const MisconductTerminationGenerator = ({
                       </div>
                     </section>
 
-                    <section className="rounded border border-slate-300">
-                      <div className="border-b border-slate-300 bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                        Transgression(s) / Charge(s)
+                    <section className="overflow-hidden rounded border border-slate-300">
+                      <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
+                        C. Transgression(s) / Charge(s)
                       </div>
-                      <div className="space-y-3 px-3 py-2">
-                        {validatedPreview.misconductTypes.map((type, index) => (
-                          <div key={`${type}-${index}`} className="space-y-1">
-                            <p className="font-semibold">{`Charge ${index + 1}: ${type}`}</p>
-                            <p>{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
-                          </div>
-                        ))}
+                      <div className="px-3 py-2">
+                        <div className="space-y-3">
+                          {validatedPreview.misconductTypes.map((type, index) => (
+                            <div key={`${type}-${index}`} className="space-y-1">
+                              <p className="font-semibold">{`${index + 1}. ${type}`}</p>
+                              <p>{validatedPreview.misconductDescriptions[type] || "________________________"}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </section>
 

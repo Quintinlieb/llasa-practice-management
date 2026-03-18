@@ -38,8 +38,8 @@ type ContractFormState = {
   hearingTime: string;
   hearingFormat: HearingFormat | "";
   hearingLocation: string;
-  performanceConcernTypes: string[];
-  performanceConcernDescriptions: Record<string, string>;
+  illHealthConcernTypes: string[];
+  illHealthConcernDescriptions: Record<string, string>;
 } & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
@@ -72,8 +72,8 @@ type HearingNoticeData = PermanentContractFormData & {
   hearingTime: string;
   hearingFormat: HearingFormat;
   hearingLocation: string;
-  performanceConcernTypes: string[];
-  performanceConcernDescriptions: Record<string, string>;
+  illHealthConcernTypes: string[];
+  illHealthConcernDescriptions: Record<string, string>;
 };
 
 type SlimProfile = Pick<
@@ -224,15 +224,16 @@ const getPdfDividerRgb = (hex: string): [number, number, number] => {
   return mixHexWithWhite(hex, 0.5);
 };
 
-const PERFORMANCE_CONCERN_TYPES = [
-  "Not meeting required productivity levels",
-  "Not achieving expected work output",
-  "Work not meeting required quality standards",
-  "Inability to meet deadlines or required turnaround times",
-  "Not achieving agreed performance targets or KPIs",
-  "Inconsistent work performance",
-  "Errors affecting accuracy of work output",
-  "Difficulty performing key duties of the position",
+const ILL_HEALTH_CONCERN_TYPES = [
+  "Prolonged or repeated absence from work due to ill health",
+  "Medical condition affecting ability to perform core duties",
+  "Medical report of permanent incapacity",
+  "Medical report of temporary incapacity",
+  "Reduced physical capacity affecting required tasks",
+  "Reduced ability to perform duties effectively due to ill health",
+  "Inability to perform duties safely due to health condition",
+  "Ongoing medical restrictions limiting role requirements",
+  "Limited capacity despite reasonable support provided",
 ] as const;
 
 const HEARING_FORMAT_OPTIONS = [
@@ -244,7 +245,7 @@ const HEARING_RIGHTS_INTRO = "Please note that your rights at the hearing are as
 
 const HEARING_RIGHTS_ITEMS = [
   "The right to be given time to prepare your case.",
-  "The right to be given advance warning of the performance concerns.",
+  "The right to be given advance warning of the ill-health concerns.",
   "The right to be represented by a fellow employee / shop steward which must be an employee of the company. It is your responsibility to ensure the availability of your representative at the hearing. No external representation is permitted.",
   "The right to ask questions of any evidence produced or of statements by witnesses.",
   "The right to a fair and proper hearing.",
@@ -369,7 +370,7 @@ const deriveAgeFromId = (id: string) => {
   return String(calculateAgeFromDob(dob));
 };
 
-const formatPerformanceConcernDetails = (
+const formatIllHealthConcernDetails = (
   types: string[],
   descriptions: Record<string, string>,
 ) => {
@@ -380,7 +381,7 @@ const formatPerformanceConcernDetails = (
     })
     .filter(Boolean);
 
-  if (details.length === 0) return "[performance concern details]";
+  if (details.length === 0) return "[ill-health concern details]";
   if (details.length === 1) return details[0];
   return details.join("; ");
 };
@@ -618,7 +619,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
   );
 };
 
-const IncapacityPerformanceHearingNoticeGenerator = ({
+const IncapacityIllHealthHearingNoticeGenerator = ({
   embedded = false,
   externalNavigation = false,
   onStepChange,
@@ -678,8 +679,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
   const [sameDayOverrideAccepted, setSameDayOverrideAccepted] = useState(false);
   const [sameDayCautionDismissed, setSameDayCautionDismissed] = useState(false);
   const [customConcernInput, setCustomConcernInput] = useState("");
-  const [performanceConcernPickerOpen, setPerformanceConcernPickerOpen] = useState(false);
-  const [draftPerformanceConcernTypes, setDraftPerformanceConcernTypes] = useState<string[]>([]);
+  const [illHealthConcernPickerOpen, setIllHealthConcernPickerOpen] = useState(false);
+  const [draftIllHealthConcernTypes, setDraftIllHealthConcernTypes] = useState<string[]>([]);
   const [hearingTimeFocused, setHearingTimeFocused] = useState(false);
   const [hearingTimeSelectOpen, setHearingTimeSelectOpen] = useState(false);
   const [hearingTimeFieldVersion, setHearingTimeFieldVersion] = useState(0);
@@ -743,8 +744,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     hearingTime: "",
     hearingFormat: "",
     hearingLocation: "",
-    performanceConcernTypes: [],
-    performanceConcernDescriptions: {},
+    illHealthConcernTypes: [],
+    illHealthConcernDescriptions: {},
     contractReference: "",
     hearingNoticeType: "general",
     effectiveDate: "",
@@ -826,13 +827,13 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       .map((item) => item.employee);
   }, [employeeSearchQuery, sortedEmployees]);
 
-  const performanceConcernOptions = useMemo(() => [...PERFORMANCE_CONCERN_TYPES], []);
-  const filteredPerformanceConcernTypes = useMemo(() => {
-    const selectedCustomTypes = draftPerformanceConcernTypes.filter(
-      (type) => !performanceConcernOptions.some((option) => option.toLowerCase() === type.toLowerCase()),
+  const illHealthConcernOptions = useMemo(() => [...ILL_HEALTH_CONCERN_TYPES], []);
+  const filteredIllHealthConcernTypes = useMemo(() => {
+    const selectedCustomTypes = draftIllHealthConcernTypes.filter(
+      (type) => !illHealthConcernOptions.some((option) => option.toLowerCase() === type.toLowerCase()),
     );
-    return [...performanceConcernOptions, ...selectedCustomTypes];
-  }, [draftPerformanceConcernTypes, performanceConcernOptions]);
+    return [...illHealthConcernOptions, ...selectedCustomTypes];
+  }, [draftIllHealthConcernTypes, illHealthConcernOptions]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -847,10 +848,10 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
   }, [employeeSearchOpen]);
 
   useEffect(() => {
-    if (!performanceConcernPickerOpen) return;
+    if (!illHealthConcernPickerOpen) return;
     const timer = setTimeout(() => customConcernInputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
-  }, [performanceConcernPickerOpen]);
+  }, [illHealthConcernPickerOpen]);
 
   useEffect(() => {
     if (hasDismissedEmployeeHint || activeStep !== 1) {
@@ -975,8 +976,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       hearingTime: "",
       hearingFormat: "",
       hearingLocation: "",
-      performanceConcernTypes: [],
-      performanceConcernDescriptions: {},
+      illHealthConcernTypes: [],
+      illHealthConcernDescriptions: {},
       contractReference: "",
       hearingNoticeType: "general",
       effectiveDate: "",
@@ -1064,9 +1065,9 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       const hasHearingTime = Boolean(formData.hearingTime.trim());
       const hasHearingFormat = Boolean(formData.hearingFormat);
       const hasHearingLocation = Boolean(formData.hearingLocation.trim());
-      const hasPerformanceConcernTypes = formData.performanceConcernTypes.length > 0;
-      const hasPerformanceConcernDescriptions = formData.performanceConcernTypes.every(
-        (type) => Boolean((formData.performanceConcernDescriptions[type] || "").trim()),
+      const hasIllHealthConcernTypes = formData.illHealthConcernTypes.length > 0;
+      const hasIllHealthConcernDescriptions = formData.illHealthConcernTypes.every(
+        (type) => Boolean((formData.illHealthConcernDescriptions[type] || "").trim()),
       );
       return Boolean(
         hasIssueDate &&
@@ -1074,8 +1075,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
           hasHearingTime &&
           hasHearingFormat &&
           hasHearingLocation &&
-          hasPerformanceConcernTypes &&
-          hasPerformanceConcernDescriptions,
+          hasIllHealthConcernTypes &&
+          hasIllHealthConcernDescriptions,
       );
     },
     [
@@ -1084,8 +1085,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       formData.hearingFormat,
       formData.hearingLocation,
       formData.issueDate,
-      formData.performanceConcernTypes,
-      formData.performanceConcernDescriptions,
+      formData.illHealthConcernTypes,
+      formData.illHealthConcernDescriptions,
     ],
   );
 
@@ -1272,8 +1273,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       hearingTime: "",
       hearingFormat: "",
       hearingLocation: "",
-      performanceConcernTypes: [],
-      performanceConcernDescriptions: {},
+      illHealthConcernTypes: [],
+      illHealthConcernDescriptions: {},
       hearingNoticeType: "general",
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
@@ -1466,46 +1467,46 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     }
   };
 
-  const openPerformanceConcernPicker = () => {
-    setDraftPerformanceConcernTypes(formData.performanceConcernTypes);
+  const openIllHealthConcernPicker = () => {
+    setDraftIllHealthConcernTypes(formData.illHealthConcernTypes);
     setCustomConcernInput("");
-    setPerformanceConcernPickerOpen(true);
+    setIllHealthConcernPickerOpen(true);
   };
 
-  const cancelPerformanceConcernPicker = () => {
-    setPerformanceConcernPickerOpen(false);
+  const cancelIllHealthConcernPicker = () => {
+    setIllHealthConcernPickerOpen(false);
     setCustomConcernInput("");
-    setDraftPerformanceConcernTypes([]);
+    setDraftIllHealthConcernTypes([]);
   };
 
-  const applyPerformanceConcernPicker = () => {
+  const applyIllHealthConcernPicker = () => {
     setFormData((prev) => {
       const nextDescriptions: Record<string, string> = {};
-      draftPerformanceConcernTypes.forEach((type) => {
-        nextDescriptions[type] = prev.performanceConcernDescriptions[type] || "";
+      draftIllHealthConcernTypes.forEach((type) => {
+        nextDescriptions[type] = prev.illHealthConcernDescriptions[type] || "";
       });
       return {
         ...prev,
-        performanceConcernTypes: draftPerformanceConcernTypes,
-        performanceConcernDescriptions: nextDescriptions,
+        illHealthConcernTypes: draftIllHealthConcernTypes,
+        illHealthConcernDescriptions: nextDescriptions,
       };
     });
-    setPerformanceConcernPickerOpen(false);
+    setIllHealthConcernPickerOpen(false);
     setCustomConcernInput("");
   };
 
   const addCustomConcern = () => {
     const customConcern = customConcernInput.trim();
     if (!customConcern) return;
-    const matchedListedConcern = performanceConcernOptions.find(
+    const matchedListedConcern = illHealthConcernOptions.find(
       (option) => option.toLowerCase() === customConcern.toLowerCase(),
     );
     const concernToAdd = matchedListedConcern ?? customConcern;
-    const exists = draftPerformanceConcernTypes.some(
+    const exists = draftIllHealthConcernTypes.some(
       (type) => type.toLowerCase() === concernToAdd.toLowerCase(),
     );
     if (!exists) {
-      setDraftPerformanceConcernTypes((prev) => [...prev, concernToAdd]);
+      setDraftIllHealthConcernTypes((prev) => [...prev, concernToAdd]);
     }
     setCustomConcernInput("");
   };
@@ -1513,15 +1514,15 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
   const clearConcernDescription = (concernType: string) => {
     setFormData((prev) => ({
       ...prev,
-      performanceConcernDescriptions: {
-        ...prev.performanceConcernDescriptions,
+      illHealthConcernDescriptions: {
+        ...prev.illHealthConcernDescriptions,
         [concernType]: "",
       },
     }));
   };
 
-  const removePerformanceConcernType = (concernType: string) => {
-    const concernNumber = formData.performanceConcernTypes.indexOf(concernType) + 1;
+  const removeIllHealthConcernType = (concernType: string) => {
+    const concernNumber = formData.illHealthConcernTypes.indexOf(concernType) + 1;
     const label = concernNumber > 0 ? `Concern ${concernNumber}: ${concernType}` : concernType;
     if (typeof window !== "undefined") {
       const confirmed = window.confirm(`Are you sure you want to remove ${label}?`);
@@ -1529,16 +1530,16 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     }
 
     setFormData((prev) => {
-      const nextTypes = prev.performanceConcernTypes.filter((type) => type !== concernType);
-      const nextDescriptions = { ...prev.performanceConcernDescriptions };
+      const nextTypes = prev.illHealthConcernTypes.filter((type) => type !== concernType);
+      const nextDescriptions = { ...prev.illHealthConcernDescriptions };
       delete nextDescriptions[concernType];
       return {
         ...prev,
-        performanceConcernTypes: nextTypes,
-        performanceConcernDescriptions: nextDescriptions,
+        illHealthConcernTypes: nextTypes,
+        illHealthConcernDescriptions: nextDescriptions,
       };
     });
-    setDraftPerformanceConcernTypes((prev) => prev.filter((type) => type !== concernType));
+    setDraftIllHealthConcernTypes((prev) => prev.filter((type) => type !== concernType));
   };
 
   const openColorThemePicker = () => {
@@ -1684,14 +1685,14 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       formData.hearingLocation,
       formData.hearingFormat === "virtual" ? "Platform used" : "Hearing address",
     );
-    if (formData.performanceConcernTypes.length === 0) {
-      missingFields.push("Performance concern type");
+    if (formData.illHealthConcernTypes.length === 0) {
+      missingFields.push("Ill-health concern type");
     }
-    const missingDescriptions = formData.performanceConcernTypes.filter(
-      (type) => !(formData.performanceConcernDescriptions[type] || "").trim(),
+    const missingDescriptions = formData.illHealthConcernTypes.filter(
+      (type) => !(formData.illHealthConcernDescriptions[type] || "").trim(),
     );
     if (missingDescriptions.length > 0) {
-      missingFields.push("Performance concern description(s)");
+      missingFields.push("Ill-health concern description(s)");
     }
 
     if (missingFields.length) {
@@ -1730,8 +1731,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       hearingTime: formData.hearingTime,
       hearingFormat: formData.hearingFormat as HearingFormat,
       hearingLocation: formData.hearingLocation,
-      performanceConcernTypes: formData.performanceConcernTypes,
-      performanceConcernDescriptions: formData.performanceConcernDescriptions,
+      illHealthConcernTypes: formData.illHealthConcernTypes,
+      illHealthConcernDescriptions: formData.illHealthConcernDescriptions,
     } as HearingNoticeData;
   };
 
@@ -2355,7 +2356,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     y += 5;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
-    doc.text("NOTICE OF INCAPACITY HEARING (PERFORMANCE)", pageWidth / 2, y, { align: "center" });
+    doc.text("NOTICE OF INCAPACITY HEARING (ILL HEALTH)", pageWidth / 2, y, { align: "center" });
     y += 7;
 
     drawEmployeeDetailsSection();
@@ -2363,10 +2364,10 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     drawHearingDetailsSection();
 
     drawConcernSection(
-      "C. Performance concerns",
-      data.performanceConcernTypes.map((type, index) => ({
+      "C. Ill-health concerns",
+      data.illHealthConcernTypes.map((type, index) => ({
         heading: `${index + 1}. ${type}`,
-        body: valueOrLine(data.performanceConcernDescriptions[type]),
+        body: valueOrLine(data.illHealthConcernDescriptions[type]),
       })),
     );
 
@@ -2395,10 +2396,10 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
     doc.setPage(totalPages);
 
     if (download) {
-      doc.save(`Incapacity_Performance_Hearing_Notice_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
+      doc.save(`Incapacity_Ill_Health_Hearing_Notice_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
       toast({
         title: "Download ready",
-        description: "Incapacity performance hearing notice has been generated.",
+        description: "Incapacity ill-health hearing notice has been generated.",
       });
       return;
     }
@@ -3157,8 +3158,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                       </div>
                     ) : null}
                     <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="performanceConcernType" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Performance concerns <span className="text-red-500">*</span>
+                      <Label htmlFor="illHealthConcernType" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Ill-health concerns <span className="text-red-500">*</span>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3166,43 +3167,43 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                                 type="button"
                                 tabIndex={-1}
                                 className="inline-flex items-center text-slate-400 hover:text-slate-600"
-                                aria-label="Performance concern types info"
+                                aria-label="Ill-health concern types info"
                               >
                                 <Info className="h-3.5 w-3.5" />
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Select any of the listed performance concerns or add a custom concern.
+                              Select any of the listed ill-health concerns or add a custom concern.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </Label>
                       <button
-                        id="performanceConcernType"
+                        id="illHealthConcernType"
                         type="button"
-                        onClick={openPerformanceConcernPicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.performanceConcernTypes.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                        onClick={openIllHealthConcernPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.illHealthConcernTypes.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
                         <span
                           className={cn(
                             "block truncate text-[11px]",
-                            formData.performanceConcernTypes.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                            formData.illHealthConcernTypes.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
-                          {formData.performanceConcernTypes.length > 0
-                            ? formData.performanceConcernTypes.join(", ")
-                            : "Select performance concern type(s)"}
+                          {formData.illHealthConcernTypes.length > 0
+                            ? formData.illHealthConcernTypes.join(", ")
+                            : "Select ill-health concern type(s)"}
                         </span>
                       </button>
                     </div>
                   </div>
-                  {formData.performanceConcernTypes.length > 0 ? (
+                  {formData.illHealthConcernTypes.length > 0 ? (
                     <div className="grid gap-3">
-                      {formData.performanceConcernTypes.map((type, index) => (
+                      {formData.illHealthConcernTypes.map((type, index) => (
                         <div key={type} className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5">
-                              <Label htmlFor={`performanceConcernDescription-${type}`} className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                              <Label htmlFor={`illHealthConcernDescription-${type}`} className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                                 {`Concern ${index + 1}: ${type}`} <span className="text-red-500">*</span>
                                 <TooltipProvider delayDuration={0}>
                                   <Tooltip>
@@ -3217,7 +3218,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                                     </button>
                                   </TooltipTrigger>
                                   <TooltipContent side="top" className={fixedTooltipContentClass}>
-                                    A concern description is a brief statement describing where the employee failed to meet required performance standards, in clear terms.
+                                    A concern description is a brief statement describing how the employee's health or medical condition affects the ability to perform required duties, in clear terms.
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
@@ -3225,14 +3226,14 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                               <Button
                                 type="button"
                                 variant="ghost"
-                                onClick={() => removePerformanceConcernType(type)}
+                                onClick={() => removeIllHealthConcernType(type)}
                                 className="h-6 rounded px-1.5 text-[10px] font-medium text-slate-500 hover:bg-transparent hover:text-red-600 hover:underline"
                               >
                                 Remove
                               </Button>
                             </div>
                             <div className="flex items-center gap-1">
-                              {Boolean((formData.performanceConcernDescriptions[type] || "").trim()) ? (
+                              {Boolean((formData.illHealthConcernDescriptions[type] || "").trim()) ? (
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -3245,19 +3246,19 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                             </div>
                           </div>
                           <Textarea
-                            id={`performanceConcernDescription-${type}`}
-                            value={formData.performanceConcernDescriptions[type] || ""}
+                            id={`illHealthConcernDescription-${type}`}
+                            value={formData.illHealthConcernDescriptions[type] || ""}
                             onChange={(e) =>
                               setFormData((prev) => ({
                                 ...prev,
-                                performanceConcernDescriptions: {
-                                  ...prev.performanceConcernDescriptions,
+                                illHealthConcernDescriptions: {
+                                  ...prev.illHealthConcernDescriptions,
                                   [type]: e.target.value,
                                 },
                               }))
                             }
-                            placeholder="Describe how performance fell below the required standard, including examples, time periods, and the expected vs actual performance."
-                            className={`${getNoticeModalInputClass(Boolean((formData.performanceConcernDescriptions[type] || "").trim()))} min-h-[88px] !outline-none !ring-0 !ring-offset-0 !focus:ring-0 !focus:ring-offset-0 !focus-visible:ring-0 !focus-visible:ring-offset-0`}
+                            placeholder="Describe how the employee’s health condition impacts his work, including examples, duties affected, and relevant time periods."
+                            className={`${getNoticeModalInputClass(Boolean((formData.illHealthConcernDescriptions[type] || "").trim()))} min-h-[88px] !outline-none !ring-0 !ring-offset-0 !focus:ring-0 !focus:ring-offset-0 !focus-visible:ring-0 !focus-visible:ring-offset-0`}
                           />
                         </div>
                       ))}
@@ -3368,7 +3369,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               <div className="space-y-8">
                 <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
                   <div className="w-full space-y-4 pt-2 text-[11px] leading-relaxed text-black">
-                    <h2 className="text-center text-[14px] font-bold uppercase">Notice of Incapacity Hearing (Performance)</h2>
+                    <h2 className="text-center text-[14px] font-bold uppercase">Notice of Incapacity Hearing (Ill Health)</h2>
 
                     <section className="overflow-hidden rounded border border-slate-300">
                       <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
@@ -3414,17 +3415,17 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
 
                     <section className="overflow-hidden rounded border border-slate-300">
                       <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                        C. Performance concerns
+                        C. Ill-health concerns
                       </div>
                       <div className="px-3 py-2">
                         <div className="space-y-3">
-                          {validatedPreview.performanceConcernTypes.map((type, index) => (
+                          {validatedPreview.illHealthConcernTypes.map((type, index) => (
                             <div key={`${type}-${index}`} className="space-y-1">
                               <p className="font-semibold">
                                 <span className="inline-block w-5 align-top">{`${index + 1}.`}</span>
                                 <span>{type}</span>
                               </p>
-                              <p className="pl-5">{validatedPreview.performanceConcernDescriptions[type] || "________________________"}</p>
+                              <p className="pl-5">{validatedPreview.illHealthConcernDescriptions[type] || "________________________"}</p>
                             </div>
                           ))}
                         </div>
@@ -3467,7 +3468,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               </div>
             ) : (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-muted-foreground">Complete the form to preview the incapacity hearing (performance) notice.</p>
+                <p className="text-sm text-muted-foreground">Complete the form to preview the incapacity hearing (ill health) notice.</p>
               </div>
             )}
           </ScrollArea>
@@ -3555,12 +3556,12 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={performanceConcernPickerOpen} onOpenChange={(open) => (open ? openPerformanceConcernPicker() : cancelPerformanceConcernPicker())}>
+      <Dialog open={illHealthConcernPickerOpen} onOpenChange={(open) => (open ? openIllHealthConcernPicker() : cancelIllHealthConcernPicker())}>
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
             <div className="flex items-center gap-2 pl-2">
               <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select performance concerns</DialogTitle>
+              <DialogTitle className="text-sm font-semibold text-white">Select ill-health concerns</DialogTitle>
             </div>
             <DialogClose asChild>
               <button type="button" className="text-white hover:text-white/80">
@@ -3599,15 +3600,15 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
             </div>
             <ScrollArea className="max-h-72 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
-                {filteredPerformanceConcernTypes.map((type) => (
+                {filteredIllHealthConcernTypes.map((type) => (
                   <label
                     key={type}
                     className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${noticeModalSelectItemClass}`}
                   >
                     <Checkbox
-                      checked={draftPerformanceConcernTypes.includes(type)}
+                      checked={draftIllHealthConcernTypes.includes(type)}
                       onCheckedChange={(checked) =>
-                        setDraftPerformanceConcernTypes((prev) =>
+                        setDraftIllHealthConcernTypes((prev) =>
                           checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
                         )
                       }
@@ -3619,11 +3620,11 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               </div>
             </ScrollArea>
             <div>
-              {draftPerformanceConcernTypes.length === 0 ? (
+              {draftIllHealthConcernTypes.length === 0 ? (
                 <div className="text-xs text-slate-600">No concern selected</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {draftPerformanceConcernTypes.map((type) => (
+                  {draftIllHealthConcernTypes.map((type) => (
                     <Badge
                       key={type}
                       variant="outline"
@@ -3633,7 +3634,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                       <button
                         type="button"
                         onClick={() =>
-                          setDraftPerformanceConcernTypes((prev) => prev.filter((item) => item !== type))
+                          setDraftIllHealthConcernTypes((prev) => prev.filter((item) => item !== type))
                         }
                         className="inline-flex items-center text-blue-600 hover:text-blue-800"
                         aria-label={`Remove ${type}`}
@@ -3652,7 +3653,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={cancelPerformanceConcernPicker}
+                  onClick={cancelIllHealthConcernPicker}
                   className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                 >
                   Cancel
@@ -3662,8 +3663,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => setDraftPerformanceConcernTypes([])}
-                  disabled={draftPerformanceConcernTypes.length === 0}
+                  onClick={() => setDraftIllHealthConcernTypes([])}
+                  disabled={draftIllHealthConcernTypes.length === 0}
                   className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
                 >
                   Clear
@@ -3672,7 +3673,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               <div className="justify-self-end">
                 <Button
                   type="button"
-                  onClick={applyPerformanceConcernPicker}
+                  onClick={applyIllHealthConcernPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done
@@ -3785,7 +3786,10 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
   return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 };
 
-export default IncapacityPerformanceHearingNoticeGenerator;
+export default IncapacityIllHealthHearingNoticeGenerator;
+
+
+
 
 
 

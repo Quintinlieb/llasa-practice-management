@@ -17,6 +17,7 @@ type DocumentKey =
   | "warnings"
   | "disciplinaryHearingNotice"
   | "incapacityPerformanceHearingNotice"
+  | "incapacityIllHealthHearingNotice"
   | "permanentContract"
   | "temporaryContract"
   | "addendum"
@@ -74,6 +75,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   warnings: lazy(() => import("./WarningGenerator")),
   disciplinaryHearingNotice: lazy(() => import("./DisciplinaryHearingNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazy(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
+  incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
@@ -123,7 +125,7 @@ const documentCategories: DocumentCategory[] = [
     items: [
       { id: "disciplinaryHearingNotice", label: "Disciplinary Hearing", active: true },
       { id: "incapacityPerformanceHearingNotice", label: "Incapacity Hearing (Performance)", active: true },
-      { label: "Incapacity Hearing (Ill health)", active: false },
+      { id: "incapacityIllHealthHearingNotice", label: "Incapacity Hearing (Ill health)", active: true },
       { label: "Precautionary Suspension", active: false },
       { label: "Retrenchment Consultation (S189)", active: false },
     ],
@@ -156,6 +158,7 @@ const Documents = () => {
     | "warnings"
     | "disciplinaryHearingNotice"
     | "incapacityPerformanceHearingNotice"
+    | "incapacityIllHealthHearingNotice"
     | "addendum"
     | "permanentContract"
     | "temporaryContract"
@@ -275,6 +278,8 @@ const Documents = () => {
         ? "Disciplinary Hearing"
       : modalDocument === "incapacityPerformanceHearingNotice"
         ? "Incapacity Hearing (Performance)"
+      : modalDocument === "incapacityIllHealthHearingNotice"
+        ? "Incapacity Hearing (Ill health)"
       : modalDocument === "addendum"
         ? "Addendum"
         : modalDocument === "poorPerformanceTermination"
@@ -300,6 +305,7 @@ const Documents = () => {
     modalDocument === "warnings" ||
     modalDocument === "disciplinaryHearingNotice" ||
     modalDocument === "incapacityPerformanceHearingNotice" ||
+    modalDocument === "incapacityIllHealthHearingNotice" ||
     modalDocument === "addendum" ||
     modalDocument === "noticeTermination" ||
     modalDocument === "illHealthTermination" ||
@@ -318,6 +324,8 @@ const Documents = () => {
               : modalDocument === "disciplinaryHearingNotice"
                 ? "Notice Details"
               : modalDocument === "incapacityPerformanceHearingNotice"
+                ? "Notice Details"
+              : modalDocument === "incapacityIllHealthHearingNotice"
                 ? "Notice Details"
               : modalDocument === "addendum"
                 ? "Addendum Details"
@@ -492,6 +500,28 @@ const Documents = () => {
       "Review all wording carefully before downloading the final incapacity hearing notice.",
     ],
   ] as const;
+  const incapacityIllHealthHearingStepNotes = [
+    [
+      "This step controls how your company details appear on the incapacity hearing notice.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select an employee from your saved list or capture employee details manually.",
+      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Capture the notice date, hearing date, hearing time, hearing location, and the applicable ill-health concern type(s).",
+      "Each selected ill-health concern type requires a concern description before you can continue.",
+      "A proper concern description should explain how the employee's health condition affects the ability to perform required duties.",
+      "Use an incapacity (ill health) procedure. Do not treat ill health as misconduct or follow a disciplinary misconduct process.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final incapacity hearing notice.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
@@ -501,6 +531,8 @@ const Documents = () => {
     disciplinaryHearingStepNotes[modalActiveStep] ?? disciplinaryHearingStepNotes[0];
   const incapacityPerformanceHearingActiveNotes =
     incapacityPerformanceHearingStepNotes[modalActiveStep] ?? incapacityPerformanceHearingStepNotes[0];
+  const incapacityIllHealthHearingActiveNotes =
+    incapacityIllHealthHearingStepNotes[modalActiveStep] ?? incapacityIllHealthHearingStepNotes[0];
   const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
     index === 0
       ? [
@@ -537,6 +569,8 @@ const Documents = () => {
       ? disciplinaryHearingActiveNotes
       : modalDocument === "incapacityPerformanceHearingNotice"
       ? incapacityPerformanceHearingActiveNotes
+      : modalDocument === "incapacityIllHealthHearingNotice"
+      ? incapacityIllHealthHearingActiveNotes
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
@@ -555,6 +589,7 @@ const Documents = () => {
       selectedDocument !== "warnings" &&
       selectedDocument !== "disciplinaryHearingNotice" &&
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
+      selectedDocument !== "incapacityIllHealthHearingNotice" &&
       selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
@@ -623,6 +658,7 @@ const Documents = () => {
                                         item.id === "warnings" ||
                                         item.id === "disciplinaryHearingNotice" ||
                                         item.id === "incapacityPerformanceHearingNotice" ||
+                                        item.id === "incapacityIllHealthHearingNotice" ||
                                         item.id === "addendum" ||
                                         item.id === "noticeTermination" ||
                                         item.id === "illHealthTermination" ||
@@ -642,6 +678,7 @@ const Documents = () => {
                                             | "warnings"
                                             | "disciplinaryHearingNotice"
                                             | "incapacityPerformanceHearingNotice"
+                                            | "incapacityIllHealthHearingNotice"
                                             | "addendum"
                                             | "noticeTermination"
                                             | "illHealthTermination"
@@ -691,6 +728,7 @@ const Documents = () => {
             selectedDocument !== "warnings" &&
             selectedDocument !== "disciplinaryHearingNotice" &&
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
+            selectedDocument !== "incapacityIllHealthHearingNotice" &&
             selectedDocument !== "addendum" &&
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
@@ -889,6 +927,7 @@ const Documents = () => {
           modalDocument === "warnings"
             || modalDocument === "disciplinaryHearingNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
+            || modalDocument === "incapacityIllHealthHearingNotice"
             || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
@@ -907,6 +946,7 @@ const Documents = () => {
           {modalDocument === "warnings" ||
           modalDocument === "disciplinaryHearingNotice" ||
           modalDocument === "incapacityPerformanceHearingNotice" ||
+          modalDocument === "incapacityIllHealthHearingNotice" ||
           modalDocument === "addendum" ||
           modalDocument === "noticeTermination" ||
           modalDocument === "illHealthTermination" ||
@@ -929,6 +969,8 @@ const Documents = () => {
                           ? "Notices"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Notices"
+                        : modalDocument === "incapacityIllHealthHearingNotice"
+                          ? "Notices"
                         : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
@@ -947,6 +989,8 @@ const Documents = () => {
                           ? "Disciplinary Hearing"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Incapacity Hearing (Performance)"
+                        : modalDocument === "incapacityIllHealthHearingNotice"
+                          ? "Incapacity Hearing (Ill health)"
                         : modalDocument === "illHealthTermination"
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"

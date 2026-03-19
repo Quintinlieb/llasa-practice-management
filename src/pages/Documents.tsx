@@ -16,6 +16,7 @@ type DocumentKey =
   | "codeOfConduct"
   | "warnings"
   | "disciplinaryHearingNotice"
+  | "precautionarySuspensionNotice"
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
   | "permanentContract"
@@ -74,6 +75,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   codeOfConduct: lazy(() => import("./documents/discipline/CodeOfConductPreview")),
   warnings: lazy(() => import("./WarningGenerator")),
   disciplinaryHearingNotice: lazy(() => import("./DisciplinaryHearingNoticeGenerator")),
+  precautionarySuspensionNotice: lazy(() => import("./PrecautionarySuspensionNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazy(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
   incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
@@ -126,7 +128,7 @@ const documentCategories: DocumentCategory[] = [
       { id: "disciplinaryHearingNotice", label: "Disciplinary Hearing", active: true },
       { id: "incapacityPerformanceHearingNotice", label: "Incapacity Hearing (Performance)", active: true },
       { id: "incapacityIllHealthHearingNotice", label: "Incapacity Hearing (Ill health)", active: true },
-      { label: "Precautionary Suspension", active: false },
+      { id: "precautionarySuspensionNotice", label: "Precautionary Suspension", active: true },
       { label: "Retrenchment Consultation (S189)", active: false },
     ],
   },
@@ -157,6 +159,7 @@ const Documents = () => {
   const [modalDocument, setModalDocument] = useState<
     | "warnings"
     | "disciplinaryHearingNotice"
+    | "precautionarySuspensionNotice"
     | "incapacityPerformanceHearingNotice"
     | "incapacityIllHealthHearingNotice"
     | "addendum"
@@ -276,6 +279,8 @@ const Documents = () => {
       ? "Warnings"
       : modalDocument === "disciplinaryHearingNotice"
         ? "Disciplinary Hearing"
+      : modalDocument === "precautionarySuspensionNotice"
+        ? "Precautionary Suspension"
       : modalDocument === "incapacityPerformanceHearingNotice"
         ? "Incapacity Hearing (Performance)"
       : modalDocument === "incapacityIllHealthHearingNotice"
@@ -304,6 +309,7 @@ const Documents = () => {
   const modalSteps =
     modalDocument === "warnings" ||
     modalDocument === "disciplinaryHearingNotice" ||
+    modalDocument === "precautionarySuspensionNotice" ||
     modalDocument === "incapacityPerformanceHearingNotice" ||
     modalDocument === "incapacityIllHealthHearingNotice" ||
     modalDocument === "addendum" ||
@@ -322,6 +328,8 @@ const Documents = () => {
           modalDocument === "warnings"
             ? "Warning Details"
               : modalDocument === "disciplinaryHearingNotice"
+                ? "Notice Details"
+              : modalDocument === "precautionarySuspensionNotice"
                 ? "Notice Details"
               : modalDocument === "incapacityPerformanceHearingNotice"
                 ? "Notice Details"
@@ -478,6 +486,28 @@ const Documents = () => {
       "Review all wording carefully before downloading the final disciplinary hearing notice.",
     ],
   ] as const;
+  const precautionarySuspensionStepNotes = [
+    [
+      "This step controls how your company details appear on the precautionary suspension notice.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select an employee from your saved list or capture employee details manually.",
+      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Capture the notice date, hearing date, hearing time, hearing format, hearing location, and the applicable charge type(s).",
+      "Each selected charge type requires a clear charge description before you can continue.",
+      "A proper charge description should answer when, what, and how.",
+      "You can type the charge description manually or use Drafting Assistant to generate a draft and then review it.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final precautionary suspension notice.",
+    ],
+  ] as const;
   const incapacityPerformanceHearingStepNotes = [
     [
       "This step controls how your company details appear on the incapacity hearing notice.",
@@ -529,6 +559,8 @@ const Documents = () => {
     noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
   const disciplinaryHearingActiveNotes =
     disciplinaryHearingStepNotes[modalActiveStep] ?? disciplinaryHearingStepNotes[0];
+  const precautionarySuspensionActiveNotes =
+    precautionarySuspensionStepNotes[modalActiveStep] ?? precautionarySuspensionStepNotes[0];
   const incapacityPerformanceHearingActiveNotes =
     incapacityPerformanceHearingStepNotes[modalActiveStep] ?? incapacityPerformanceHearingStepNotes[0];
   const incapacityIllHealthHearingActiveNotes =
@@ -567,6 +599,8 @@ const Documents = () => {
       ? permanentActiveNotes
       : modalDocument === "disciplinaryHearingNotice"
       ? disciplinaryHearingActiveNotes
+      : modalDocument === "precautionarySuspensionNotice"
+      ? precautionarySuspensionActiveNotes
       : modalDocument === "incapacityPerformanceHearingNotice"
       ? incapacityPerformanceHearingActiveNotes
       : modalDocument === "incapacityIllHealthHearingNotice"
@@ -588,6 +622,7 @@ const Documents = () => {
     SelectedComponent &&
       selectedDocument !== "warnings" &&
       selectedDocument !== "disciplinaryHearingNotice" &&
+      selectedDocument !== "precautionarySuspensionNotice" &&
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
       selectedDocument !== "incapacityIllHealthHearingNotice" &&
       selectedDocument !== "addendum" &&
@@ -657,6 +692,7 @@ const Documents = () => {
                                       if (
                                         item.id === "warnings" ||
                                         item.id === "disciplinaryHearingNotice" ||
+                                        item.id === "precautionarySuspensionNotice" ||
                                         item.id === "incapacityPerformanceHearingNotice" ||
                                         item.id === "incapacityIllHealthHearingNotice" ||
                                         item.id === "addendum" ||
@@ -677,6 +713,7 @@ const Documents = () => {
                                           item.id as
                                             | "warnings"
                                             | "disciplinaryHearingNotice"
+                                            | "precautionarySuspensionNotice"
                                             | "incapacityPerformanceHearingNotice"
                                             | "incapacityIllHealthHearingNotice"
                                             | "addendum"
@@ -727,6 +764,7 @@ const Documents = () => {
             selectedDocument !== "codeOfConduct" &&
             selectedDocument !== "warnings" &&
             selectedDocument !== "disciplinaryHearingNotice" &&
+            selectedDocument !== "precautionarySuspensionNotice" &&
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
             selectedDocument !== "incapacityIllHealthHearingNotice" &&
             selectedDocument !== "addendum" &&
@@ -926,6 +964,7 @@ const Documents = () => {
           "p-0 [&>button]:right-5 [&>button]:top-4",
           modalDocument === "warnings"
             || modalDocument === "disciplinaryHearingNotice"
+            || modalDocument === "precautionarySuspensionNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
             || modalDocument === "incapacityIllHealthHearingNotice"
             || modalDocument === "addendum"
@@ -945,6 +984,7 @@ const Documents = () => {
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
           {modalDocument === "warnings" ||
           modalDocument === "disciplinaryHearingNotice" ||
+          modalDocument === "precautionarySuspensionNotice" ||
           modalDocument === "incapacityPerformanceHearingNotice" ||
           modalDocument === "incapacityIllHealthHearingNotice" ||
           modalDocument === "addendum" ||
@@ -967,6 +1007,8 @@ const Documents = () => {
                         ? "Discipline"
                         : modalDocument === "disciplinaryHearingNotice"
                           ? "Notices"
+                        : modalDocument === "precautionarySuspensionNotice"
+                          ? "Notices"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Notices"
                         : modalDocument === "incapacityIllHealthHearingNotice"
@@ -987,6 +1029,8 @@ const Documents = () => {
                         ? "Addendum"
                         : modalDocument === "disciplinaryHearingNotice"
                           ? "Disciplinary Hearing"
+                        : modalDocument === "precautionarySuspensionNotice"
+                          ? "Precautionary Suspension"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Incapacity Hearing (Performance)"
                         : modalDocument === "incapacityIllHealthHearingNotice"

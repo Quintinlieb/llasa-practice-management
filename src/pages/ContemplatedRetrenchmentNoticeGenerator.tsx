@@ -51,13 +51,15 @@ type ContractFormState = {
   affectedEmployees: string;
   jobCategories: string;
   selectionCriteria: string[];
-  alternativesConsidered: string;
-  rejectionReasons: string;
+  alternativesConsidered: string[];
+  rejectionReasons: string[];
   proposedTerminationDate: string;
+  consultationFormat: ConsultationFormat | "";
+  consultationLocation: string;
   consultationDate: string;
   consultationTime: string;
   severanceMethod: string;
-  assistanceOffered: string;
+  assistanceOffered: string[];
   totalEmployees: string;
   priorRetrenchments: string;
   misconductTypes: string[];
@@ -81,6 +83,7 @@ type ContractFormState = {
 
 type AmendmentType = "add" | "amend";
 type AddendumType = "general" | "renewal" | "extension";
+type ConsultationFormat = "in_person" | "virtual";
 
 type AddendumData = PermanentContractFormData & {
   contractReference: string;
@@ -110,13 +113,15 @@ type AddendumData = PermanentContractFormData & {
   affectedEmployees: string;
   jobCategories: string;
   selectionCriteria: string[];
-  alternativesConsidered: string;
-  rejectionReasons: string;
+  alternativesConsidered: string[];
+  rejectionReasons: string[];
   proposedTerminationDate: string;
+  consultationFormat: ConsultationFormat;
+  consultationLocation: string;
   consultationDate: string;
   consultationTime: string;
   severanceMethod: string;
-  assistanceOffered: string;
+  assistanceOffered: string[];
   totalEmployees: string;
   priorRetrenchments: string;
   misconductTypes: string[];
@@ -133,6 +138,7 @@ type SlimProfile = Pick<
 >;
 type SlimEmployee = {
   id: string;
+  status: string | null;
   id_number: string | null;
   employee_name: string;
   employee_surname: string;
@@ -378,11 +384,59 @@ const selectionCriteriaOptions = [
   "Skills and qualifications",
   "Affirmative action / Employment Equity considerations",
 ] as const;
+const LIFO_OPTION = "Last In, First Out (LIFO)";
+const LIFO_WITH_SKILLS_OPTION = "LIFO subject to skills retention";
+const SKILLS_AND_QUALIFICATIONS_OPTION = "Skills and qualifications";
+const ALTERNATIVES_CONSIDERED_OPTIONS = [
+  "No alternatives at this stage",
+  "Reduction of overtime",
+  "Short time / reduced hours",
+  "Temporary layoff",
+  "Salary reduction",
+  "Freeze on recruitment",
+  "Natural attrition",
+  "Voluntary retrenchment",
+  "Redeployment",
+  "Alternative positions",
+  "Training / reskilling",
+  "Early retirement",
+  "Reduced benefits",
+  "Business cost reduction",
+] as const;
+const NO_ALTERNATIVES_OPTION = "No alternatives at this stage";
+const REJECTION_REASON_OPTIONS = [
+  "Not financially viable",
+  "Insufficient cost saving",
+  "Operational impracticality",
+  "Temporary solution only",
+  "No suitable vacancies",
+  "Skills mismatch",
+  "Business sustainability risk",
+  "Negative operational impact",
+  "Does not address redundancy",
+  "Disproportionate cost impact",
+] as const;
+const ASSISTANCE_OFFERED_OPTIONS = [
+  "Redeployment support",
+  "Assistance in applying for alternative positions",
+  "Skills training / reskilling support",
+  "CV preparation support",
+  "Interview preparation support",
+  "Counselling / employee wellness support",
+  "Financial planning guidance",
+  "Time off to attend interviews",
+  "Reference letters",
+  "No additional assistance offered",
+] as const;
+const NO_ADDITIONAL_ASSISTANCE_OPTION = "No additional assistance offered";
+const CONSULTATION_FORMAT_OPTIONS = [
+  { value: "in_person", label: "In person" },
+  { value: "virtual", label: "Virtual" },
+] as const;
 const severanceMethodOptions = [
-  "Statutory severance pay",
-  "Enhanced severance pay",
-  "No severance pay",
-  "To be determined in consultation",
+  "BCEA",
+  "Bargaining Council provisions",
+  "No severance payment",
 ] as const;
 const priorRetrenchmentsOptions = ["Yes", "No"] as const;
 const chairpersonOptions = [
@@ -406,6 +460,45 @@ const formatDate = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+};
+
+const getTimeMeridiem = (value: string) => {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return "";
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+  return hour >= 12 ? "PM" : "AM";
+};
+
+const formatTime = (value: string) => {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return value;
+  const [, hourRaw, minute] = match;
+  const meridiem = getTimeMeridiem(value);
+  return meridiem ? `${hourRaw}:${minute} ${meridiem}` : `${hourRaw}:${minute}`;
+};
+
+const consultationTimeOptions = Array.from({ length: 96 }, (_, index) => {
+  const hour = Math.floor(index / 4);
+  const minute = ["00", "15", "30", "45"][index % 4];
+  const value = `${String(hour).padStart(2, "0")}:${minute}`;
+  return {
+    value,
+    label: formatTime(value),
+  };
+});
+
+const normalizeConsultationTimeInput = (value: string) => {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!match) return trimmed;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return trimmed;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return trimmed;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 };
 
 const toDisplayDate = (value: string) => {
@@ -498,6 +591,52 @@ const formatSelectionCriteriaItem = (item: string) =>
     .replace(/\blifo\b/g, "LIFO");
 
 const formatRetrenchmentReasonItem = (item: string) => item.toLowerCase();
+const formatAlternativesConsideredItem = (item: string) => item.toLowerCase();
+const normalizeAlternativesConsideredSelection = (items: string[]) => {
+  const uniqueItems = Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+  if (uniqueItems.includes(NO_ALTERNATIVES_OPTION)) {
+    return [NO_ALTERNATIVES_OPTION];
+  }
+  return uniqueItems.filter((item) => item !== NO_ALTERNATIVES_OPTION);
+};
+const normalizeSelectionCriteriaSelection = (items: string[]) => {
+  const uniqueItems = Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+  if (uniqueItems.includes(LIFO_OPTION) && uniqueItems.includes(LIFO_WITH_SKILLS_OPTION)) {
+    return uniqueItems.filter((item) => item !== LIFO_OPTION);
+  }
+  if (uniqueItems.includes(LIFO_WITH_SKILLS_OPTION) && uniqueItems.includes(SKILLS_AND_QUALIFICATIONS_OPTION)) {
+    return uniqueItems.filter((item) => item !== SKILLS_AND_QUALIFICATIONS_OPTION);
+  }
+  return uniqueItems;
+};
+const normalizeAssistanceOfferedSelection = (items: string[]) => {
+  const uniqueItems = Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+  if (uniqueItems.includes(NO_ADDITIONAL_ASSISTANCE_OPTION)) {
+    return [NO_ADDITIONAL_ASSISTANCE_OPTION];
+  }
+  return uniqueItems.filter((item) => item !== NO_ADDITIONAL_ASSISTANCE_OPTION);
+};
+const shouldResetRejectionReasons = (alternatives: string[]) =>
+  alternatives.length === 0 ||
+  (alternatives.length === 1 && alternatives[0] === NO_ALTERNATIVES_OPTION);
+const LOCKED_HEADER_CLAUSE_TITLES = new Set([
+  "Paragraph 4",
+  "Paragraph 5",
+  "Paragraph 6",
+  "Paragraph 7",
+  "Paragraph 8",
+  "Paragraph 9",
+  "Paragraph 10",
+  "Paragraph 11",
+  "Paragraph 12",
+  "Paragraph 13",
+]);
+const formatConsultationPlaceDisplay = (consultationFormat: ConsultationFormat | "", consultationLocation: string) => {
+  const value = consultationLocation.trim();
+  if (!value) return "";
+  if (consultationFormat === "virtual") return `Virtual - ${value}`;
+  return value;
+};
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
   new Promise((resolve) => {
@@ -654,8 +793,7 @@ type FirstPagePreviewProps = {
 const FirstPagePreview = ({ data, compact = false, children, profile, logoPreviewUrl }: FirstPagePreviewProps) => {
   const displayValue = (value?: string | number | null) => (value && value.toString().trim() ? value.toString() : "________________________");
   const employeeNameDisplay = displayValue([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-  const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
-  const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
+  const salutation = "Dear Sir / Madam";
   const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
   const employeeIdValue = data.idType === "id" ? displayValue(data.employeeIdNumber) : displayValue(data.passportNumber);
   const companyNameDisplay = displayValue(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
@@ -740,10 +878,14 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
         <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} style={previewDividerStyle} aria-hidden="true" />
         <div className="mt-2 text-right">{issueDateDisplay}</div>
         <div className="mt-4">
-          <p className="flex items-baseline gap-4">
+          <div className="grid grid-cols-[32px_1fr] items-start gap-x-3">
             <span>TO:</span>
-            <span className="font-semibold uppercase">{employeeNameDisplay}</span>
-          </p>
+            <div className="space-y-0.5 font-semibold uppercase">
+              <p>{employeeNameDisplay}</p>
+              <p>Affected Employee</p>
+              <p>{companyNameDisplay}</p>
+            </div>
+          </div>
         </div>
         <div className="mt-3 text-right font-semibold">
           {data.transmissionMethods.map((method) => (
@@ -752,7 +894,7 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
         </div>
         <div className="mt-4 space-y-4">
           <p>{salutation}</p>
-          <p className="pt-2 pb-2 font-bold underline">RE: CONTEMPLATED RETRENCHMENT (SECTION 189)</p>
+          <p className="pt-2 pb-2 font-bold underline">RE: NOTICE OF CONTEMPLATED RETRENCHMENT</p>
           <div className="space-y-4">{children}</div>
           <p>Yours faithfully</p>
           <div className="pt-8">
@@ -760,28 +902,26 @@ const FirstPagePreview = ({ data, compact = false, children, profile, logoPrevie
             {data.issuer?.trim() ? <p className="font-semibold">{data.issuer.trim()}</p> : null}
             <p>Management</p>
           </div>
-          {data.transmissionMethods.includes("By Hand") ? (
-            <div className="mt-6 border border-black p-2 space-y-4">
-              <p>
-                I, <span className="underline">{`${employeeNameDisplay} (${employeeIdLabel}: ${employeeIdValue})`}</span>, hereby acknowledge that I received this
-                notice and confirm that the content hereof was explained to me.
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Signature</p>
-                </div>
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Date</p>
-                </div>
-                <div>
-                  <div className="w-36 border-t border-black" />
-                  <p className="font-semibold">Witness</p>
-                </div>
+          <div className="mt-6 border border-black p-2 space-y-4">
+            <p>
+              I, <span className="underline">{`${employeeNameDisplay} (${employeeIdLabel}: ${employeeIdValue})`}</span>, hereby acknowledge that I received this
+              notice and confirm that the content hereof was explained to me.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="w-36 border-t border-black" />
+                <p className="font-semibold">Signature</p>
+              </div>
+              <div>
+                <div className="w-36 border-t border-black" />
+                <p className="font-semibold">Date</p>
+              </div>
+              <div>
+                <div className="w-36 border-t border-black" />
+                <p className="font-semibold">Witness</p>
               </div>
             </div>
-          ) : null}
+          </div>
         </div>
         {useCenteredLogoLayout ? (
           <div className="mt-auto border-t border-slate-300 pt-2 text-center leading-[1.2] text-[9px]" style={previewDividerStyle}>
@@ -883,26 +1023,34 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   });
   const [sameDayOverrideAccepted, setSameDayOverrideAccepted] = useState(false);
   const [sameDayCautionDismissed, setSameDayCautionDismissed] = useState(false);
-  const [misconductSearch, setMisconductSearch] = useState("");
+  const [consultationTimeFocused, setConsultationTimeFocused] = useState(false);
+  const [consultationTimeSelectOpen, setConsultationTimeSelectOpen] = useState(false);
+  const [consultationTimeFieldVersion, setConsultationTimeFieldVersion] = useState(0);
+  const skipConsultationTimeBlurCommitRef = useRef(false);
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
   const [selectionCriteriaPickerOpen, setSelectionCriteriaPickerOpen] = useState(false);
   const [draftSelectionCriteria, setDraftSelectionCriteria] = useState<string[]>([]);
+  const [alternativesPickerOpen, setAlternativesPickerOpen] = useState(false);
+  const [draftAlternativesConsidered, setDraftAlternativesConsidered] = useState<string[]>([]);
+  const [rejectionReasonsPickerOpen, setRejectionReasonsPickerOpen] = useState(false);
+  const [draftRejectionReasons, setDraftRejectionReasons] = useState<string[]>([]);
+  const [assistanceOfferedPickerOpen, setAssistanceOfferedPickerOpen] = useState(false);
+  const [draftAssistanceOffered, setDraftAssistanceOffered] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const abscondmentNoticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const proposedTerminationDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const consultationTimeInputRef = useRef<HTMLInputElement | null>(null);
   const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
   const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const addClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -910,7 +1058,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   const previewScrollTop = useRef(0);
   const [companyLogoPreview, setCompanyLogoPreview] = useState<string>("");
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[11px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const addendumModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const addendumModalSelectContentClass = "!rounded";
@@ -919,7 +1067,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   const getAddendumModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-[11px] !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
   const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
   const snippetPaddingTopMm = 2;
@@ -964,13 +1112,15 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     affectedEmployees: "",
     jobCategories: "",
     selectionCriteria: [],
-    alternativesConsidered: "",
-    rejectionReasons: "",
+    alternativesConsidered: [],
+    rejectionReasons: [],
     proposedTerminationDate: "",
+    consultationFormat: "",
+    consultationLocation: "",
     consultationDate: "",
     consultationTime: "",
     severanceMethod: "",
-    assistanceOffered: "",
+    assistanceOffered: [],
     totalEmployees: "",
     priorRetrenchments: "",
     misconductTypes: [],
@@ -1074,17 +1224,10 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       .map((item) => item.employee);
   }, [employeeSearchQuery, sortedEmployees]);
 
-  const misconductOptions = useMemo(() => [...RETRENCHMENT_REASON_OPTIONS], []);
   const dismissibleMisconductNames = useMemo(
     () => new Set(conductOffences.filter((item) => item.category === "Dismissible").map((item) => item.name.trim().toLowerCase())),
     [conductOffences],
   );
-
-  const filteredMisconductTypes = useMemo(() => {
-    const query = misconductSearch.trim().toLowerCase();
-    if (!query) return misconductOptions;
-    return misconductOptions.filter((type) => type.toLowerCase().includes(query));
-  }, [misconductSearch, misconductOptions]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -1097,12 +1240,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
   }, [employeePickerOpen]);
-
-  useEffect(() => {
-    if (!misconductPickerOpen) return;
-    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [misconductPickerOpen]);
 
   useEffect(() => {
     setSameDayOverrideAccepted(false);
@@ -1158,7 +1295,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     const { data, error } = await (supabase as any)
       .from("employees")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
+        "id, status, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
       )
       .eq("company_id", user.id);
     if (error) {
@@ -1236,6 +1373,26 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       }));
     }
   }, [profile]);
+
+  useEffect(() => {
+    if (!shouldResetRejectionReasons(formData.alternativesConsidered)) return;
+    if (formData.rejectionReasons.length === 0) return;
+    setFormData((prev) => ({ ...prev, rejectionReasons: [] }));
+  }, [formData.alternativesConsidered, formData.rejectionReasons.length]);
+
+  const activeEmployeeTotal = useMemo(
+    () =>
+      employees.filter((employee) => {
+        const status = (employee.status ?? "").trim().toLowerCase();
+        return status === "" || status === "active";
+      }).length,
+    [employees],
+  );
+
+  useEffect(() => {
+    const nextTotal = String(activeEmployeeTotal);
+    setFormData((prev) => (prev.totalEmployees === nextTotal ? prev : { ...prev, totalEmployees: nextTotal }));
+  }, [activeEmployeeTotal]);
 
   const manualEmployeeCount = manualEmployees.length;
 
@@ -1359,13 +1516,15 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       affectedEmployees: "",
       jobCategories: "",
       selectionCriteria: [],
-      alternativesConsidered: "",
-      rejectionReasons: "",
+      alternativesConsidered: [],
+      rejectionReasons: [],
       proposedTerminationDate: "",
+      consultationFormat: "",
+      consultationLocation: "",
       consultationDate: "",
       consultationTime: "",
       severanceMethod: "",
-      assistanceOffered: "",
+      assistanceOffered: [],
       totalEmployees: "",
       priorRetrenchments: "",
       misconductTypes: [],
@@ -1448,13 +1607,13 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       const hasAffectedEmployees = Boolean(formData.affectedEmployees);
       const hasJobCategories = Boolean(formData.jobCategories);
       const hasSelectionCriteria = formData.selectionCriteria.length > 0;
-      const hasAlternativesConsidered = Boolean(formData.alternativesConsidered);
-      const hasRejectionReasons = Boolean(formData.rejectionReasons);
+      const hasAlternativesConsidered = formData.alternativesConsidered.length > 0;
       const hasProposedTerminationDate = Boolean(formData.proposedTerminationDate);
+      const hasConsultationFormat = Boolean(formData.consultationFormat);
+      const hasConsultationLocation = Boolean(formData.consultationLocation.trim());
       const hasConsultationDate = Boolean(formData.consultationDate);
       const hasConsultationTime = Boolean(formData.consultationTime);
-      const hasSeveranceMethod = Boolean(formData.severanceMethod);
-      const hasAssistanceOffered = Boolean(formData.assistanceOffered);
+      const hasAssistanceOffered = formData.assistanceOffered.length > 0;
       const hasTotalEmployees = Boolean(formData.totalEmployees);
       const hasPriorRetrenchments = Boolean(formData.priorRetrenchments);
       return Boolean(
@@ -1464,11 +1623,11 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
           hasJobCategories &&
           hasSelectionCriteria &&
           hasAlternativesConsidered &&
-          hasRejectionReasons &&
           hasProposedTerminationDate &&
+          hasConsultationFormat &&
+          hasConsultationLocation &&
           hasConsultationDate &&
           hasConsultationTime &&
-          hasSeveranceMethod &&
           hasAssistanceOffered &&
           hasTotalEmployees &&
           hasPriorRetrenchments,
@@ -1480,11 +1639,11 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       formData.jobCategories,
       formData.selectionCriteria,
       formData.alternativesConsidered,
-      formData.rejectionReasons,
       formData.proposedTerminationDate,
+      formData.consultationFormat,
+      formData.consultationLocation,
       formData.consultationDate,
       formData.consultationTime,
-      formData.severanceMethod,
       formData.assistanceOffered,
       formData.totalEmployees,
       formData.priorRetrenchments,
@@ -1655,6 +1814,12 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   };
 
   const resetAddendumStepFields = () => {
+    if (consultationTimeFocused) {
+      skipConsultationTimeBlurCommitRef.current = true;
+    }
+    setConsultationTimeFocused(false);
+    setConsultationTimeSelectOpen(false);
+    setConsultationTimeFieldVersion((prev) => prev + 1);
     setFormData((prev) => ({
       ...prev,
       issuer: "",
@@ -1675,13 +1840,15 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       selectionCriteria: [],
       affectedEmployees: "",
       jobCategories: "",
-      alternativesConsidered: "",
-      rejectionReasons: "",
+      alternativesConsidered: [],
+      rejectionReasons: [],
       proposedTerminationDate: "",
+      consultationFormat: "",
+      consultationLocation: "",
       consultationDate: "",
       consultationTime: "",
       severanceMethod: "",
-      assistanceOffered: "",
+      assistanceOffered: [],
       totalEmployees: "",
       priorRetrenchments: "",
       misconductTypes: [],
@@ -1738,18 +1905,127 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     }
   }, [addingAfter, editingClause, getPreviewScrollElement]);
 
-  const openNoticeDatePicker = () => {
-    const picker = noticeDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
+  const getSafeEditableConsultationTime = (value: string) => {
+    const normalized = normalizeConsultationTimeInput(value);
+    return /^\d{2}:\d{2}$/.test(normalized) ? normalized : "00:00";
   };
 
-  const openAbscondmentNoticeDatePicker = () => {
-    const picker = abscondmentNoticeDatePickerRef.current;
+  const setConsultationTimeValueWithCaret = (nextValue: string, caretPosition: number) => {
+    setFormData((prev) => ({ ...prev, consultationTime: nextValue }));
+    requestAnimationFrame(() => {
+      const input = consultationTimeInputRef.current;
+      if (!input) return;
+      const nextCaret = Math.max(0, Math.min(5, caretPosition));
+      input.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const handleConsultationTimeEditorKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.currentTarget.blur();
+      return;
+    }
+
+    const navigationKeys = new Set(["Tab", "ArrowLeft", "ArrowRight", "Home", "End"]);
+    if (navigationKeys.has(event.key)) return;
+
+    const value = getSafeEditableConsultationTime(formData.consultationTime);
+    const chars = value.split("");
+    const rawStart = event.currentTarget.selectionStart ?? 0;
+    const rawEnd = event.currentTarget.selectionEnd ?? rawStart;
+    const start = Math.max(0, Math.min(5, rawStart));
+    const end = Math.max(0, Math.min(5, rawEnd));
+    const hasSelection = end > start;
+    const clearRange = (from: number, to: number) => {
+      for (let index = from; index < to; index += 1) {
+        if (index === 2) continue;
+        chars[index] = "0";
+      }
+    };
+
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault();
+      if (hasSelection) clearRange(start, end);
+      let target = start;
+      if (target === 2) target = 3;
+      if (target > 4) return;
+      chars[target] = event.key;
+      let nextCaret = target + 1;
+      if (nextCaret === 2) nextCaret = 3;
+      setConsultationTimeValueWithCaret(chars.join(""), nextCaret);
+      return;
+    }
+
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      if (hasSelection) {
+        clearRange(start, end);
+        setConsultationTimeValueWithCaret(chars.join(""), start === 2 ? 1 : start);
+        return;
+      }
+      let target = start - 1;
+      if (start >= 3 && target < 3) return;
+      if (target === 2) target = 1;
+      if (target < 0) return;
+      chars[target] = "0";
+      setConsultationTimeValueWithCaret(chars.join(""), target);
+      return;
+    }
+
+    if (event.key === "Delete") {
+      event.preventDefault();
+      if (hasSelection) {
+        clearRange(start, end);
+        setConsultationTimeValueWithCaret(chars.join(""), start);
+        return;
+      }
+      let target = start;
+      if (target === 2) target = 3;
+      if (start <= 1 && target > 1) return;
+      if (target > 4) return;
+      chars[target] = "0";
+      setConsultationTimeValueWithCaret(chars.join(""), start);
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    event.preventDefault();
+  };
+
+  const handleConsultationTimeEditorPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/\D/g, "");
+    if (!digits) return;
+    const value = getSafeEditableConsultationTime(formData.consultationTime);
+    const chars = value.split("");
+    const rawStart = event.currentTarget.selectionStart ?? 0;
+    const rawEnd = event.currentTarget.selectionEnd ?? rawStart;
+    const start = Math.max(0, Math.min(5, rawStart));
+    const end = Math.max(0, Math.min(5, rawEnd));
+    for (let index = start; index < end; index += 1) {
+      if (index === 2) continue;
+      chars[index] = "0";
+    }
+
+    let writeIndex = start === 2 ? 3 : start;
+    let digitIndex = 0;
+    while (writeIndex <= 4 && digitIndex < digits.length) {
+      if (writeIndex === 2) {
+        writeIndex += 1;
+        continue;
+      }
+      chars[writeIndex] = digits[digitIndex];
+      writeIndex += 1;
+      digitIndex += 1;
+    }
+
+    let nextCaret = writeIndex;
+    if (nextCaret === 2) nextCaret = 3;
+    setConsultationTimeValueWithCaret(chars.join(""), nextCaret);
+  };
+
+  const openNoticeDatePicker = () => {
+    const picker = noticeDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1790,13 +2066,11 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 
   const openMisconductPicker = () => {
     setDraftMisconductTypes(formData.retrenchmentReasons);
-    setMisconductSearch("");
     setMisconductPickerOpen(true);
   };
 
   const cancelMisconductPicker = () => {
     setMisconductPickerOpen(false);
-    setMisconductSearch("");
     setDraftMisconductTypes([]);
   };
 
@@ -1807,11 +2081,10 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       misconductTypes: draftMisconductTypes,
     }));
     setMisconductPickerOpen(false);
-    setMisconductSearch("");
   };
 
   const openSelectionCriteriaPicker = () => {
-    setDraftSelectionCriteria(formData.selectionCriteria);
+    setDraftSelectionCriteria(normalizeSelectionCriteriaSelection(formData.selectionCriteria));
     setSelectionCriteriaPickerOpen(true);
   };
 
@@ -1821,9 +2094,76 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   };
 
   const applySelectionCriteriaPicker = () => {
-    setFormData((prev) => ({ ...prev, selectionCriteria: draftSelectionCriteria }));
+    setFormData((prev) => ({
+      ...prev,
+      selectionCriteria: normalizeSelectionCriteriaSelection(draftSelectionCriteria),
+    }));
     setSelectionCriteriaPickerOpen(false);
     setDraftSelectionCriteria([]);
+  };
+
+  const openAlternativesPicker = () => {
+    setDraftAlternativesConsidered(normalizeAlternativesConsideredSelection(formData.alternativesConsidered));
+    setAlternativesPickerOpen(true);
+  };
+
+  const cancelAlternativesPicker = () => {
+    setAlternativesPickerOpen(false);
+    setDraftAlternativesConsidered([]);
+  };
+
+  const applyAlternativesPicker = () => {
+    const normalizedAlternatives = normalizeAlternativesConsideredSelection(draftAlternativesConsidered);
+    setFormData((prev) => ({
+      ...prev,
+      alternativesConsidered: normalizedAlternatives,
+      rejectionReasons: shouldResetRejectionReasons(normalizedAlternatives) ? [] : prev.rejectionReasons,
+    }));
+    setAlternativesPickerOpen(false);
+    setDraftAlternativesConsidered([]);
+  };
+
+  const openRejectionReasonsPicker = () => {
+    if (shouldResetRejectionReasons(formData.alternativesConsidered)) {
+      toast({
+        title: "Cannot open rejection reasons",
+        description: "Cannot open reasons for rejection if no alternatives are considered.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setDraftRejectionReasons(formData.rejectionReasons);
+    setRejectionReasonsPickerOpen(true);
+  };
+
+  const cancelRejectionReasonsPicker = () => {
+    setRejectionReasonsPickerOpen(false);
+    setDraftRejectionReasons([]);
+  };
+
+  const applyRejectionReasonsPicker = () => {
+    setFormData((prev) => ({ ...prev, rejectionReasons: draftRejectionReasons }));
+    setRejectionReasonsPickerOpen(false);
+    setDraftRejectionReasons([]);
+  };
+
+  const openAssistanceOfferedPicker = () => {
+    setDraftAssistanceOffered(normalizeAssistanceOfferedSelection(formData.assistanceOffered));
+    setAssistanceOfferedPickerOpen(true);
+  };
+
+  const cancelAssistanceOfferedPicker = () => {
+    setAssistanceOfferedPickerOpen(false);
+    setDraftAssistanceOffered([]);
+  };
+
+  const applyAssistanceOfferedPicker = () => {
+    setFormData((prev) => ({
+      ...prev,
+      assistanceOffered: normalizeAssistanceOfferedSelection(draftAssistanceOffered),
+    }));
+    setAssistanceOfferedPickerOpen(false);
+    setDraftAssistanceOffered([]);
   };
 
   const openTransmissionPicker = () => {
@@ -1976,18 +2316,25 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     if (formData.retrenchmentReasons.length === 0) {
       missingFields.push("Retrenchment reasons");
     }
-    checkRequired(formData.affectedEmployees, "Affected employees");
-    checkRequired(formData.jobCategories, "Job categories");
+    checkRequired(formData.affectedEmployees, "Total affected");
+    checkRequired(formData.jobCategories, "Category affected");
     if (formData.selectionCriteria.length === 0) {
       missingFields.push("Selection criteria");
     }
-    checkRequired(formData.alternativesConsidered, "Alternatives considered");
-    checkRequired(formData.rejectionReasons, "Rejection reasons");
-    checkRequired(formData.proposedTerminationDate, "Proposed termination date");
+    if (formData.alternativesConsidered.length === 0) {
+      missingFields.push("Alternatives considered");
+    }
+    checkRequired(formData.proposedTerminationDate, "Proposed retrenchment date");
+    checkRequired(formData.consultationFormat, "Consultation format");
+    checkRequired(
+      formData.consultationLocation,
+      formData.consultationFormat === "virtual" ? "Platform used" : "Consultation location",
+    );
     checkRequired(formData.consultationDate, "Consultation date");
     checkRequired(formData.consultationTime, "Consultation time");
-    checkRequired(formData.severanceMethod, "Severance method");
-    checkRequired(formData.assistanceOffered, "Assistance offered");
+    if (formData.assistanceOffered.length === 0) {
+      missingFields.push("Assistance offered");
+    }
     checkRequired(formData.totalEmployees, "Total employees");
     checkRequired(formData.priorRetrenchments, "Prior retrenchments");
 
@@ -2018,6 +2365,8 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       alternativesConsidered: formData.alternativesConsidered,
       rejectionReasons: formData.rejectionReasons,
       proposedTerminationDate: formData.proposedTerminationDate,
+      consultationFormat: formData.consultationFormat as ConsultationFormat,
+      consultationLocation: formData.consultationLocation,
       consultationDate: formData.consultationDate,
       consultationTime: formData.consultationTime,
       severanceMethod: formData.severanceMethod,
@@ -2129,6 +2478,11 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       const nextTitle = editedTitle ?? clause.title;
       if (!edited) {
         return nextTitle === clause.title ? clause : { ...clause, title: nextTitle };
+      }
+      if (LOCKED_HEADER_CLAUSE_TITLES.has(clause.title)) {
+        const existingBody = Array.isArray(clause.body) ? clause.body : [clause.body];
+        const lockedHeader = existingBody[0] ?? "";
+        return { ...clause, title: nextTitle, body: [lockedHeader, normalizeSingleParagraphText(edited)] };
       }
       return { ...clause, title: nextTitle, body: normalizeSingleParagraphText(edited) };
     });
@@ -2244,41 +2598,158 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 
     const issueDateDisplay = formatDate(data.issueDate);
     const consultationDateDisplay = formatDate(data.consultationDate || "");
+    const consultationTimeDisplay = formatTime(data.consultationTime || "");
     const proposedTerminationDateDisplay = formatDate(data.proposedTerminationDate || "");
+    const retrenchmentReasonItems = data.retrenchmentReasons.map(formatRetrenchmentReasonItem);
     const retrenchmentReasonsDisplay = formatListWithAnd(
-      data.retrenchmentReasons.map(formatRetrenchmentReasonItem),
+      retrenchmentReasonItems,
       "[reason(s) for retrenchment]",
     );
+    const retrenchmentReasonsSentence =
+      retrenchmentReasonItems.length <= 1
+        ? `The reason for the contemplated retrenchment is ${retrenchmentReasonsDisplay}.`
+        : `The reasons for the contemplated retrenchment are ${retrenchmentReasonsDisplay}.`;
     const selectionCriteriaDisplay = formatListWithAnd(
       data.selectionCriteria.map(formatSelectionCriteriaItem),
       "[selection criteria]",
     );
-    const paragraphOneText = `This notice records that the company is contemplating possible retrenchments in terms of section 189 of the Labour Relations Act. Consultation is set for ${consultationDateDisplay || "[consultation date]"} at ${data.consultationTime || "[consultation time]"}.`;
-    const paragraphTwoText = `The contemplated retrenchment is driven by operational requirements, including ${retrenchmentReasonsDisplay}. Affected employees: ${data.affectedEmployees || "[affected employees]"}, job categories: ${data.jobCategories || "[job categories]"}, and total employees in the business: ${data.totalEmployees || "[total employees]"}.`;
-    const paragraphThreeText = `Selection criteria to be applied: ${selectionCriteriaDisplay}. Alternatives considered: ${data.alternativesConsidered || "[alternatives considered]"}. Reasons alternatives were rejected: ${data.rejectionReasons || "[rejection reasons]"}. Proposed termination date: ${proposedTerminationDateDisplay || "[proposed termination date]"}. Severance method: ${data.severanceMethod || "[severance method]"}. Assistance offered: ${data.assistanceOffered || "[assistance offered]"}. Prior retrenchments: ${data.priorRetrenchments || "[prior retrenchments]"}.`;
-    const employeeFullName = [data.employeeName, data.employeeSurname].filter(Boolean).join(" ").trim();
-    const salutation = employeeFullName ? `Dear ${employeeFullName}` : "Dear Sir / Madam";
+    const selectionCriteriaVerb = data.selectionCriteria.length > 1 ? "are" : "is";
+    const alternativesConsideredDisplay = formatListWithAnd(
+      data.alternativesConsidered.map(formatAlternativesConsideredItem),
+      "[alternatives considered]",
+    );
+    const hasNoAlternativesOnlySelection =
+      data.alternativesConsidered.length === 1 &&
+      data.alternativesConsidered[0] === "No alternatives at this stage";
+    const selectedAlternativeCount = data.alternativesConsidered.filter(
+      (item) => item !== "No alternatives at this stage",
+    ).length;
+    const rejectionReasonCount = data.rejectionReasons.length;
+    const alternativesSentence = hasNoAlternativesOnlySelection
+      ? "At this stage the company has not considered any alternatives to retrenchments."
+      : data.alternativesConsidered.length <= 1
+        ? `The alternative we considered is ${alternativesConsideredDisplay}.`
+        : `The alternatives we considered are ${alternativesConsideredDisplay}.`;
+    const assistanceOfferedDisplay = formatListWithAnd(
+      data.assistanceOffered,
+      "[assistance offered]",
+    );
+    const hasNoAdditionalAssistanceOnlySelection =
+      data.assistanceOffered.length === 1 &&
+      data.assistanceOffered[0] === NO_ADDITIONAL_ASSISTANCE_OPTION;
+    const assistanceSentence = hasNoAdditionalAssistanceOnlySelection
+      ? "At this stage the company has no additional assistance to offer. However, we are open to additional suggestions presented by you or any other affected employee."
+      : `The company will endeavor to further assist with ${assistanceOfferedDisplay}. However, we are open to additional suggestions presented by you or any other affected employee.`;
+    const priorRetrenchmentsSentence =
+      data.priorRetrenchments === "Yes"
+        ? "The company has embarked on retrenhcment procedures during the preceeding twelve (12) months."
+        : data.priorRetrenchments === "No"
+          ? "The company has not embarked on any retrenhcment procedures during the preceeding twelve (12) months."
+          : "[prior retrenchments]";
+    const rejectionReasonsDisplay = data.rejectionReasons.length > 0
+      ? `However, ${selectedAlternativeCount <= 1 ? "this alternative is" : "these alternatives are"} currently rejected for the following ${rejectionReasonCount <= 1 ? "reason" : "reasons"}: ${formatListWithAnd(data.rejectionReasons.map((item) => item.toLowerCase()), "[rejection reasons]")}. The company will consider additional suggestions presented by you or any of the other affected employees.`
+      : "The company will consider additional suggestions presented by you or any of the other affected employees.";
+    const affectedEmployeeCount = Number.parseInt((data.affectedEmployees || "").trim(), 10);
+    const affectedEmployeeNoun = Number.isFinite(affectedEmployeeCount) && affectedEmployeeCount > 1
+      ? "employees"
+      : "employee";
+    const companyNameForBody = formatCompanyDisplayName(profile?.company_name, profile?.company_type) || "[company name]";
+    const salutation = "Dear Sir / Madam";
 
     const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
       {
         title: "Paragraph 1",
-        body: paragraphOneText,
+        body: `We refer to the above matter and herewith regrettably inform you that ${companyNameForBody} contemplates dismissing one or more employees, based on the employer's operational requirements in terms of the LRA.`,
       },
       {
         title: "Paragraph 2",
-        body: paragraphTwoText,
+        body: `You are hereby invited, along with other affected employees, to a consultation on ${consultationDateDisplay || "[date]"} at ${consultationTimeDisplay || "[time]"} ${
+          data.consultationFormat === "virtual"
+            ? `to be held virtually via ${data.consultationLocation.trim() || "[platform]"}`
+            : `to be held at ${data.consultationLocation.trim() || "[location]"}`
+        }, in an attempt to reach consensus regarding appropriate measures to avoid dismissals, minimize the number of dismissals, change the timing of dismissals, and mitigate the adverse effects of dismissal.`,
       },
       {
         title: "Paragraph 3",
-        body: paragraphThreeText,
+        body: "During this consultation process further items/issues, as listed in seciton 189(3) of the LRA, will be discussed in more detail and are listed hereunder for your reference:",
       },
       {
         title: "Paragraph 4",
-        body: "You may make written or verbal representations during the consultation process and may be assisted by a representative. Any feedback received will be considered in good faith before any final decision is made.",
+        body: [
+          "1. Reason for retrenchment",
+          retrenchmentReasonsSentence,
+        ],
       },
       {
         title: "Paragraph 5",
-        body: "Please treat this notice as formal communication of a contemplated retrenchment process and attend the consultation sessions as arranged.",
+        body: [
+          "2. Alternatives considered",
+          `${alternativesSentence}${rejectionReasonsDisplay ? ` ${rejectionReasonsDisplay}` : ""}`,
+        ],
+      },
+      {
+        title: "Paragraph 6",
+        body: [
+          "3. Number of employees considered for retrenchment",
+          `The company contemplates to retrench a total of ${data.affectedEmployees || "[total affected]"} ${affectedEmployeeNoun} from ${data.jobCategories || "[category affected]"}.`,
+        ],
+      },
+      {
+        title: "Paragraph 7",
+        body: [
+          "4. Method of selection",
+          `The selection criteria considered ${selectionCriteriaVerb} ${selectionCriteriaDisplay}.`,
+        ],
+      },
+      {
+        title: "Paragraph 8",
+        body: [
+          "5. Timing of retrenchment",
+          `The employer aims to complete the process by ${proposedTerminationDateDisplay || "[proposed retrenchment date]"}.`,
+        ],
+      },
+      {
+        title: "Paragraph 9",
+        body: [
+          "6. Severance pay",
+          `You will be entitled to 1 week's remuneration for every completed year of service with ${companyNameForBody} in terms of the Basic Conditions of Employment Act. Alternatively, your severance package calculation will be subject to any applicable bargaining council's collective agreement provisions.`,
+        ],
+      },
+      {
+        title: "Paragraph 10",
+        body: [
+          "7. Further assistance by employer",
+          assistanceSentence,
+        ],
+      },
+      {
+        title: "Paragraph 11",
+        body: [
+          "8. Future re-employment",
+          "Should you be selected for retrenhcment and your position becomes available wihtin the following nine (9) months, you may be contacted to apply for this position. It is your responsibility to ensure that the company is in possession of your current contanct details during this period. All applicants applying for that position will be assessed equaly.",
+        ],
+      },
+      {
+        title: "Paragraph 12",
+        body: [
+          "9. Total employees at employer",
+          `There are currently ${data.totalEmployees || "[total employees]"} employees employed at ${companyNameForBody}.`,
+        ],
+      },
+      {
+        title: "Paragraph 13",
+        body: [
+          "10. Total retrenchments in the preceding 12 months",
+          priorRetrenchmentsSentence,
+        ],
+      },
+      {
+        title: "Paragraph 14",
+        body: "You are hereby informed that you may make verbal or written representations during this consultation, or alternatively you may make submissions within 48 hours from conclusion of the consultation.",
+      },
+      {
+        title: "Paragraph 15",
+        body: "We trust that an amicable solution/outcome can be reached during the above consultation.",
       },
     ];
 
@@ -2508,6 +2979,20 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       doc.setLineWidth(0.2);
     };
 
+    const drawPageNumbers = () => {
+      const totalPages = doc.getNumberOfPages();
+      const pageLabelY = useCenteredLogoLayout
+        ? (pageHeight - centeredFooterBottomGap - centeredFooterHeight + 3.5)
+        : pageHeight - 8;
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.text(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, pageLabelY, { align: "right" });
+      }
+      doc.setLineWidth(0.2);
+    };
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.text(issueDateDisplay, rightX, y, { align: "right" });
@@ -2517,6 +3002,11 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     doc.setFont("helvetica", "bold");
     doc.text(valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" ")).toUpperCase(), margin + 14, y);
     y += 5;
+    doc.text("AFFECTED EMPLOYEE", margin + 14, y);
+    y += 5;
+    doc.text(valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)).toUpperCase(), margin + 14, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
     if (transmissionLines.length > 0) {
       transmissionLines.forEach((line) => {
         doc.text(line, rightX, y, { align: "right" });
@@ -2530,7 +3020,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     y += 10;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    const subjectText = "RE: CONTEMPLATED RETRENCHMENT (SECTION 189)";
+    const subjectText = "RE: NOTICE OF CONTEMPLATED RETRENCHMENT";
     doc.text(subjectText, margin, y);
     const subjectWidth = doc.getTextWidth(subjectText);
     doc.line(margin, y + 1, margin + subjectWidth + 1, y + 1);
@@ -2539,11 +3029,36 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     doc.setFont("helvetica", "normal");
     clausesWithEdits.forEach((clause) => {
       const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
-      paragraphs.forEach((paragraph) => {
-        drawWrapped(paragraph, margin, contentWidth);
-        y += 4.5;
+      const hasItemHeader = LOCKED_HEADER_CLAUSE_TITLES.has(clause.title);
+      const headerLineMatch = hasItemHeader ? paragraphs[0]?.match(/^(\d+\.)\s*(.*)$/) : null;
+      const headerNumberPrefix = headerLineMatch?.[1] ?? "";
+      const headerLabelText = headerLineMatch?.[2] ?? (paragraphs[0] ?? "");
+      const itemHeaderNumberSlotWidth = doc.getTextWidth("10.");
+      const itemHeaderGapWidth = doc.getTextWidth("   ");
+      const itemHeaderTextOffset = itemHeaderNumberSlotWidth + itemHeaderGapWidth;
+      const itemBodyIndent = hasItemHeader ? itemHeaderTextOffset : 0;
+      paragraphs.forEach((paragraph, paragraphIndex) => {
+        const isHeaderLine = hasItemHeader && paragraphIndex === 0;
+        const paragraphX = hasItemHeader && paragraphIndex > 0 ? margin + itemBodyIndent : margin;
+        const paragraphWidth = hasItemHeader && paragraphIndex > 0 ? contentWidth - itemBodyIndent : contentWidth;
+        doc.setFont("helvetica", isHeaderLine ? "bold" : "normal");
+        if (isHeaderLine && headerNumberPrefix) {
+          const lineHeight = 5.5;
+          const headerLines = doc.splitTextToSize(headerLabelText, contentWidth - itemHeaderTextOffset);
+          ensureSpace(headerLines.length * lineHeight + 1);
+          doc.text(headerNumberPrefix, margin, y);
+          headerLines.forEach((line, idx) => {
+            doc.text(line, margin + itemHeaderTextOffset, y + idx * lineHeight);
+          });
+          y += headerLines.length * lineHeight;
+          y += 2.5;
+          return;
+        }
+        drawWrapped(paragraph, paragraphX, paragraphWidth);
+        y += isHeaderLine ? 2.5 : 4.5;
       });
     });
+    doc.setFont("helvetica", "normal");
 
     doc.setFontSize(9);
     doc.text("Yours faithfully", margin, y);
@@ -2561,45 +3076,43 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     doc.text("Management", margin, y);
     y += 10;
 
-    if (data.transmissionMethods.includes("By Hand")) {
-      const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
-      const employeeIdValue = data.idType === "id" ? valueOrLine(data.employeeIdNumber) : valueOrLine(data.passportNumber);
-      const employeeNameValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
-      const boxHeight = 34;
-      ensureSpace(boxHeight + 6);
-      const boxTop = y;
-      doc.rect(margin, boxTop, contentWidth, boxHeight);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
-      const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this notice and confirm that the content hereof was explained to me.`;
-      const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      let ackCursorY = y;
-      ackLines.forEach((line, idx) => {
-        doc.text(line, margin + 2, ackCursorY + idx * 4.8);
-      });
-      const firstLine = ackLines[0] || "";
-      const segmentStart = firstLine.indexOf(underlinedSegment);
-      if (segmentStart >= 0) {
-        const before = firstLine.slice(0, segmentStart);
-        const lineX = margin + 2 + doc.getTextWidth(before);
-        const lineY = ackCursorY + 0.8;
-        doc.line(lineX, lineY, lineX + doc.getTextWidth(underlinedSegment), lineY);
-      }
-      y += ackLines.length * 4.8;
-      y = boxTop + boxHeight - 10;
-      const colWidth = 45;
-      const labels = ["Signature", "Date", "Witness"];
-      labels.forEach((label, idx) => {
-        const x = margin + 2 + idx * (colWidth + 10);
-        doc.line(x, y, x + colWidth, y);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text(label, x, y + 4.5);
-      });
-      y = boxTop + boxHeight + 6;
+    const employeeIdLabel = data.idType === "id" ? "ID" : "Passport";
+    const employeeIdValue = data.idType === "id" ? valueOrLine(data.employeeIdNumber) : valueOrLine(data.passportNumber);
+    const employeeNameValue = valueOrLine([data.employeeName, data.employeeSurname].filter(Boolean).join(" "));
+    const boxHeight = 34;
+    ensureSpace(boxHeight + 6);
+    const boxTop = y;
+    doc.rect(margin, boxTop, contentWidth, boxHeight);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
+    const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this notice and confirm that the content hereof was explained to me.`;
+    const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
+    let ackCursorY = y;
+    ackLines.forEach((line, idx) => {
+      doc.text(line, margin + 2, ackCursorY + idx * 4.8);
+    });
+    const firstLine = ackLines[0] || "";
+    const segmentStart = firstLine.indexOf(underlinedSegment);
+    if (segmentStart >= 0) {
+      const before = firstLine.slice(0, segmentStart);
+      const lineX = margin + 2 + doc.getTextWidth(before);
+      const lineY = ackCursorY + 0.8;
+      doc.line(lineX, lineY, lineX + doc.getTextWidth(underlinedSegment), lineY);
     }
+    y += ackLines.length * 4.8;
+    y = boxTop + boxHeight - 10;
+    const colWidth = 45;
+    const labels = ["Signature", "Date", "Witness"];
+    labels.forEach((label, idx) => {
+      const x = margin + 2 + idx * (colWidth + 10);
+      doc.line(x, y, x + colWidth, y);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(label, x, y + 4.5);
+    });
+    y = boxTop + boxHeight + 6;
 
     if (useCenteredLogoLayout) {
       const totalPages = doc.getNumberOfPages();
@@ -2608,6 +3121,8 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       }
       doc.setPage(totalPages);
     }
+
+    drawPageNumbers();
 
     if (download) {
       doc.save(`Contemplated_Retrenchment_Notice_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
@@ -2845,11 +3360,16 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               className={cn(
                 "pt-1 [&_input]:h-9 [&_input]:py-2 [&_button[role=combobox]]:h-9 [&_textarea]:py-2 [&_textarea]:text-sm",
                 embedded && "px-0",
-                !embedded && "flex-1 min-h-0 overflow-y-auto",
+                !embedded && "flex-1 min-h-0 overflow-hidden",
                 useExternalShell && showFinalActions && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
               )}
             >
-              <div className={cn("space-y-4", useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1")}>
+              <div
+                className={cn(
+                  activeStep === 2 ? "space-y-0" : "space-y-4",
+                  useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1",
+                )}
+              >
               {activeStep === 0 && (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
@@ -3074,10 +3594,10 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                           type="button"
                           variant="outline"
                           onClick={openAddEmployeeDialog}
-                          className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          className="h-[28px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-blue-600 hover:text-white"
                         >
-                          <Plus className="mr-1 h-3.5 w-3.5" />
-                          Add employee
+                          <Plus className="mr-0.5 h-3.5 w-3.5" />
+                          Add custom
                         </Button>
                       </div>
                       <button
@@ -3152,8 +3672,203 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               )}
 
               {activeStep === 2 && (
-                <div className="space-y-3">
+                <div className="space-y-3 h-[72vh] overflow-y-auto overscroll-none pr-1">
                   <div className="grid md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="issueDate" className={modalFieldLabelClass}>
+                        Notice date <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="issueDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.issueDate ? toDisplayDate(formData.issueDate) : ""}
+                          onClick={openNoticeDatePicker}
+                          onFocus={openNoticeDatePicker}
+                          className={`${getAddendumModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={noticeDatePickerRef}
+                          type="date"
+                          value={formData.issueDate}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, issueDate: e.target.value }))}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="consultationDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Consultation date <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Consultation date info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              This is the date on which the first consultation with the affected employees will be held.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <div className="flex items-start gap-2">
+                        <Input
+                          id="consultationDate"
+                          type="text"
+                          readOnly
+                          placeholder="Please select a date"
+                          value={formData.consultationDate ? toDisplayDate(formData.consultationDate) : ""}
+                          onClick={openConsultationDatePicker}
+                          onFocus={openConsultationDatePicker}
+                          className={`${getAddendumModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={consultationDatePickerRef}
+                          type="date"
+                          value={formData.consultationDate}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, consultationDate: e.target.value }))}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="consultationTime" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Consultation time <span className="text-red-500">*</span>
+                      </Label>
+                      <div key={consultationTimeFieldVersion} className="relative">
+                        <Select
+                          open={consultationTimeFocused ? false : consultationTimeSelectOpen}
+                          onOpenChange={setConsultationTimeSelectOpen}
+                          value={formData.consultationTime}
+                          onValueChange={(value) => {
+                            setConsultationTimeFocused(false);
+                            setConsultationTimeSelectOpen(false);
+                            setFormData((prev) => ({ ...prev, consultationTime: value }));
+                          }}
+                        >
+                          <SelectTrigger
+                            id="consultationTime"
+                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.consultationTime.trim()) && !consultationTimeFocused)} ${addendumModalDropdownToneClass}`}
+                          >
+                            {formData.consultationTime.trim().length > 0 ? (
+                              <span
+                                className="block flex-1 truncate text-left text-[11px] font-medium text-slate-900 cursor-text"
+                                onPointerDown={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setConsultationTimeSelectOpen(false);
+                                  setConsultationTimeFocused(true);
+                                }}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setConsultationTimeSelectOpen(false);
+                                  setConsultationTimeFocused(true);
+                                }}
+                              >
+                                {formatTime(formData.consultationTime)}
+                              </span>
+                            ) : (
+                              <SelectValue placeholder="Select consultation time" />
+                            )}
+                          </SelectTrigger>
+                          <SelectContent hideScrollButtons className={addendumModalSelectContentClass}>
+                            {consultationTimeOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {consultationTimeFocused ? (
+                          <div className="absolute inset-0 z-20">
+                            <Input
+                              ref={consultationTimeInputRef}
+                              type="text"
+                              inputMode="numeric"
+                              autoFocus
+                              value={formData.consultationTime}
+                              onChange={() => undefined}
+                              onBlur={(e) => {
+                                setConsultationTimeFocused(false);
+                                if (skipConsultationTimeBlurCommitRef.current) {
+                                  skipConsultationTimeBlurCommitRef.current = false;
+                                  return;
+                                }
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  consultationTime: normalizeConsultationTimeInput(e.target.value),
+                                }));
+                              }}
+                              onKeyDown={handleConsultationTimeEditorKeyDown}
+                              onPaste={handleConsultationTimeEditorPaste}
+                              className={`h-[34px] pr-11 ${getAddendumModalInputClass(Boolean(formData.consultationTime.trim()))}`}
+                            />
+                            {getTimeMeridiem(formData.consultationTime) ? (
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500">
+                                {getTimeMeridiem(formData.consultationTime)}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="consultationFormat" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Consultation format <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={formData.consultationFormat || undefined}
+                        onValueChange={(value) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            consultationFormat: value as ConsultationFormat,
+                            consultationLocation: "",
+                          }))
+                        }
+                      >
+                        <SelectTrigger
+                          id="consultationFormat"
+                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.consultationFormat))} ${addendumModalDropdownToneClass}`}
+                        >
+                          <SelectValue placeholder="Select consultation format" />
+                        </SelectTrigger>
+                        <SelectContent className={addendumModalSelectContentClass}>
+                          {CONSULTATION_FORMAT_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formData.consultationFormat ? (
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label htmlFor="consultationLocation" className={modalFieldLabelClass}>
+                          {formData.consultationFormat === "virtual" ? "Platform used" : "Consultation location"}{" "}
+                          <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="consultationLocation"
+                          type="text"
+                          value={formData.consultationLocation}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, consultationLocation: e.target.value }))}
+                          placeholder={
+                            formData.consultationFormat === "virtual"
+                              ? "Insert link or platform details (e.g. Microsoft Teams, Zoom)"
+                              : "Insert physical address or venue"
+                          }
+                          className={getAddendumModalInputClass(Boolean(formData.consultationLocation.trim()))}
+                        />
+                      </div>
+                    ) : null}
                     <div className="space-y-1.5">
                       <Label htmlFor="retrenchmentReasons" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Retrenchment reasons <span className="text-red-500">*</span>
@@ -3190,22 +3905,131 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                       ) : null}
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="affectedEmployees" className={modalFieldLabelClass}>
-                        Affected employees <span className="text-red-500">*</span>
+                      <Label htmlFor="alternativesConsidered" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Alternatives considered <span className="text-red-500">*</span>
+                      </Label>
+                      <button
+                        id="alternativesConsidered"
+                        type="button"
+                        onClick={openAlternativesPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.alternativesConsidered.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                      >
+                        <span
+                          className={cn(
+                            "block truncate text-[11px]",
+                            formData.alternativesConsidered.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                          )}
+                        >
+                          {formData.alternativesConsidered.length > 0
+                            ? `${formData.alternativesConsidered.length} alternative(s) selected`
+                            : "Select alternatives considered"}
+                        </span>
+                      </button>
+                      {formData.alternativesConsidered.length > 0 ? (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {formData.alternativesConsidered.map((alternative) => (
+                            <Badge
+                              key={alternative}
+                              variant="outline"
+                              className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                            >
+                              {alternative}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="rejectionReasons" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Rejection reasons (optional)
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Rejection reasons info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              It is not mandatory to select any rejection reasons at this stage.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </Label>
+                      <button
+                        id="rejectionReasons"
+                        type="button"
+                        onClick={openRejectionReasonsPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.rejectionReasons.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                      >
+                        <span
+                          className={cn(
+                            "block truncate text-[11px]",
+                            formData.rejectionReasons.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                          )}
+                        >
+                          {formData.rejectionReasons.length > 0
+                            ? `${formData.rejectionReasons.length} reason(s) selected`
+                            : "Select rejection reason(s)"}
+                        </span>
+                      </button>
+                      {formData.rejectionReasons.length > 0 ? (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {formData.rejectionReasons.map((reason) => (
+                            <Badge
+                              key={reason}
+                              variant="outline"
+                              className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                            >
+                              {reason}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="affectedEmployees" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Total affected <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Total affected info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              This is the total number of employees you intend to retrench.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <Input
                         id="affectedEmployees"
+                        inputMode="numeric"
+                        placeholder="Insert total number of affected employees"
                         value={formData.affectedEmployees}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, affectedEmployees: e.target.value }))}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, affectedEmployees: e.target.value.replace(/\D/g, "") }))}
                         className={getAddendumModalInputClass(formData.affectedEmployees.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="jobCategories" className={modalFieldLabelClass}>
-                        Job categories <span className="text-red-500">*</span>
+                      <Label htmlFor="jobCategories" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Category affected <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Category affected info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              This is the position category (cashiers, mechanics, etc.) or specific department(s) from which employees are selected for retrenchment.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <Input
                         id="jobCategories"
+                        placeholder="List the position(s) or department(s) affected"
                         value={formData.jobCategories}
                         onChange={(e) => setFormData((prev) => ({ ...prev, jobCategories: e.target.value }))}
                         className={getAddendumModalInputClass(formData.jobCategories.trim().length > 0)}
@@ -3247,8 +4071,20 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                         ) : null}
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="proposedTerminationDate" className={modalFieldLabelClass}>
-                        Proposed termination date <span className="text-red-500">*</span>
+                      <Label htmlFor="proposedTerminationDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Proposed retrenchment date <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Proposed retrenchment date info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              This is the date that you intend to have completed the contemplated retrenchment consultation procedure.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <div className="flex items-start gap-2">
                         <Input
@@ -3273,79 +4109,91 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="consultationDate" className={modalFieldLabelClass}>
-                        Consultation date <span className="text-red-500">*</span>
+                      <Label htmlFor="assistanceOffered" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
+                        Assistance offered <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Assistance offered info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              It is not compulsory that an employer provide assistance. However, you may provide any of the listed options.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="consultationDate"
-                          type="text"
-                          readOnly
-                          placeholder="Please select a date"
-                          value={formData.consultationDate ? toDisplayDate(formData.consultationDate) : ""}
-                          onClick={openAbscondmentNoticeDatePicker}
-                          onFocus={openAbscondmentNoticeDatePicker}
-                          className={`${getAddendumModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                        />
-                        <input
-                          ref={abscondmentNoticeDatePickerRef}
-                          type="date"
-                          value={formData.consultationDate}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, consultationDate: e.target.value }))}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="consultationTime" className={modalFieldLabelClass}>
-                        Consultation time <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="consultationTime"
-                        type="time"
-                        value={formData.consultationTime}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, consultationTime: e.target.value }))}
-                        className={getAddendumModalInputClass(formData.consultationTime.trim().length > 0)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="severanceMethod" className={modalFieldLabelClass}>
-                        Severance method <span className="text-red-500">*</span>
-                      </Label>
-                      <Select
-                        value={formData.severanceMethod}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, severanceMethod: value }))}
+                      <button
+                        id="assistanceOffered"
+                        type="button"
+                        onClick={openAssistanceOfferedPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.assistanceOffered.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
-                        <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.severanceMethod))} ${addendumModalDropdownToneClass}`}
+                        <span
+                          className={cn(
+                            "block truncate text-[11px]",
+                            formData.assistanceOffered.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                          )}
                         >
-                          <SelectValue placeholder="Select severance method" />
-                        </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
-                          {severanceMethodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                          {formData.assistanceOffered.length > 0
+                            ? `${formData.assistanceOffered.length} option(s) selected`
+                            : "Select assistance offered"}
+                        </span>
+                      </button>
+                      {formData.assistanceOffered.length > 0 ? (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {formData.assistanceOffered.map((option) => (
+                            <Badge
+                              key={option}
+                              variant="outline"
+                              className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                            >
                               {option}
-                            </SelectItem>
+                            </Badge>
                           ))}
-                        </SelectContent>
-                      </Select>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="totalEmployees" className={modalFieldLabelClass}>
+                      <Label htmlFor="totalEmployees" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Total employees <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Total employees info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              This is the total number of employees currently in your employment.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <Input
                         id="totalEmployees"
+                        placeholder="Insert total number of employees"
                         value={formData.totalEmployees}
                         onChange={(e) => setFormData((prev) => ({ ...prev, totalEmployees: e.target.value.replace(/\D/g, "") }))}
-                        className={getAddendumModalInputClass(formData.totalEmployees.trim().length > 0)}
+                        className={`${getAddendumModalInputClass(formData.totalEmployees.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="priorRetrenchments" className={modalFieldLabelClass}>
+                      <Label htmlFor="priorRetrenchments" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Prior retrenchments <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button type="button" aria-label="Prior retrenchments info" className="text-slate-400 hover:text-blue-600">
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent className={fixedTooltipContentClass}>
+                              Has anyone been retrenched within the preceding 12 months from the date of this notice?
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <Select
                         value={formData.priorRetrenchments}
@@ -3364,39 +4212,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="alternativesConsidered" className={modalFieldLabelClass}>
-                        Alternatives considered <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="alternativesConsidered"
-                        value={formData.alternativesConsidered}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, alternativesConsidered: e.target.value }))}
-                        className={getAddendumModalInputClass(formData.alternativesConsidered.trim().length > 0)}
-                      />
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="rejectionReasons" className={modalFieldLabelClass}>
-                        Rejection reasons <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="rejectionReasons"
-                        value={formData.rejectionReasons}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, rejectionReasons: e.target.value }))}
-                        className={getAddendumModalInputClass(formData.rejectionReasons.trim().length > 0)}
-                      />
-                    </div>
-                    <div className="space-y-1.5 md:col-span-2">
-                      <Label htmlFor="assistanceOffered" className={modalFieldLabelClass}>
-                        Assistance offered <span className="text-red-500">*</span>
-                      </Label>
-                      <Textarea
-                        id="assistanceOffered"
-                        value={formData.assistanceOffered}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, assistanceOffered: e.target.value }))}
-                        className={getAddendumModalInputClass(formData.assistanceOffered.trim().length > 0)}
-                      />
                     </div>
                   </div>
                 </div>
@@ -3505,38 +4320,156 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
             {validatedPreview ? (() => {
               const issueDateDisplay = formatDate(validatedPreview.issueDate);
               const consultationDateDisplay = formatDate(validatedPreview.consultationDate || "");
+              const consultationTimeDisplay = formatTime(validatedPreview.consultationTime || "");
               const proposedTerminationDateDisplay = formatDate(validatedPreview.proposedTerminationDate || "");
+              const retrenchmentReasonItems = validatedPreview.retrenchmentReasons.map(formatRetrenchmentReasonItem);
               const retrenchmentReasonsDisplay = formatListWithAnd(
-                validatedPreview.retrenchmentReasons.map(formatRetrenchmentReasonItem),
+                retrenchmentReasonItems,
                 "[reason(s) for retrenchment]",
               );
+              const retrenchmentReasonsSentence =
+                retrenchmentReasonItems.length <= 1
+                  ? `The reason for the contemplated retrenchment is ${retrenchmentReasonsDisplay}.`
+                  : `The reasons for the contemplated retrenchment are ${retrenchmentReasonsDisplay}.`;
               const selectionCriteriaDisplay = formatListWithAnd(
                 validatedPreview.selectionCriteria.map(formatSelectionCriteriaItem),
                 "[selection criteria]",
               );
-              const paragraphOneText = `This notice records that the company is contemplating possible retrenchments in terms of section 189 of the Labour Relations Act. Consultation is set for ${consultationDateDisplay || "[consultation date]"} at ${validatedPreview.consultationTime || "[consultation time]"}.`;
-              const paragraphTwoText = `The contemplated retrenchment is driven by operational requirements, including ${retrenchmentReasonsDisplay}. Affected employees: ${validatedPreview.affectedEmployees || "[affected employees]"}, job categories: ${validatedPreview.jobCategories || "[job categories]"}, and total employees in the business: ${validatedPreview.totalEmployees || "[total employees]"}.`;
-              const paragraphThreeText = `Selection criteria to be applied: ${selectionCriteriaDisplay}. Alternatives considered: ${validatedPreview.alternativesConsidered || "[alternatives considered]"}. Reasons alternatives were rejected: ${validatedPreview.rejectionReasons || "[rejection reasons]"}. Proposed termination date: ${proposedTerminationDateDisplay || "[proposed termination date]"}. Severance method: ${validatedPreview.severanceMethod || "[severance method]"}. Assistance offered: ${validatedPreview.assistanceOffered || "[assistance offered]"}. Prior retrenchments: ${validatedPreview.priorRetrenchments || "[prior retrenchments]"}.`;
+              const selectionCriteriaVerb = validatedPreview.selectionCriteria.length > 1 ? "are" : "is";
+              const alternativesConsideredDisplay = formatListWithAnd(
+                validatedPreview.alternativesConsidered.map(formatAlternativesConsideredItem),
+                "[alternatives considered]",
+              );
+              const hasNoAlternativesOnlySelection =
+                validatedPreview.alternativesConsidered.length === 1 &&
+                validatedPreview.alternativesConsidered[0] === "No alternatives at this stage";
+              const selectedAlternativeCount = validatedPreview.alternativesConsidered.filter(
+                (item) => item !== "No alternatives at this stage",
+              ).length;
+              const rejectionReasonCount = validatedPreview.rejectionReasons.length;
+              const alternativesSentence = hasNoAlternativesOnlySelection
+                ? "At this stage the company has not considered any alternatives to retrenchments."
+                : validatedPreview.alternativesConsidered.length <= 1
+                  ? `The alternative we considered is ${alternativesConsideredDisplay}.`
+                  : `The alternatives we considered are ${alternativesConsideredDisplay}.`;
+              const assistanceOfferedDisplay = formatListWithAnd(
+                validatedPreview.assistanceOffered,
+                "[assistance offered]",
+              );
+              const hasNoAdditionalAssistanceOnlySelection =
+                validatedPreview.assistanceOffered.length === 1 &&
+                validatedPreview.assistanceOffered[0] === NO_ADDITIONAL_ASSISTANCE_OPTION;
+              const assistanceSentence = hasNoAdditionalAssistanceOnlySelection
+                ? "At this stage the company has no additional assistance to offer. However, we are open to additional suggestions presented by you or any other affected employee."
+                : `The company will endeavor to further assist with ${assistanceOfferedDisplay}. However, we are open to additional suggestions presented by you or any other affected employee.`;
+              const priorRetrenchmentsSentence =
+                validatedPreview.priorRetrenchments === "Yes"
+                  ? "The company has embarked on retrenhcment procedures during the preceeding twelve (12) months."
+                  : validatedPreview.priorRetrenchments === "No"
+                    ? "The company has not embarked on any retrenhcment procedures during the preceeding twelve (12) months."
+                    : "[prior retrenchments]";
+              const rejectionReasonsDisplay = validatedPreview.rejectionReasons.length > 0
+                ? `However, ${selectedAlternativeCount <= 1 ? "this alternative is" : "these alternatives are"} currently rejected for the following ${rejectionReasonCount <= 1 ? "reason" : "reasons"}: ${formatListWithAnd(validatedPreview.rejectionReasons.map((item) => item.toLowerCase()), "[rejection reasons]")}. The company will consider additional suggestions presented by you or any of the other affected employees.`
+                : "The company will consider additional suggestions presented by you or any of the other affected employees.";
+              const affectedEmployeeCount = Number.parseInt((validatedPreview.affectedEmployees || "").trim(), 10);
+              const affectedEmployeeNoun = Number.isFinite(affectedEmployeeCount) && affectedEmployeeCount > 1
+                ? "employees"
+                : "employee";
+              const companyNameForBody = formatCompanyDisplayName(profile?.company_name, profile?.company_type) || "[company name]";
               const baseClauses: Array<Omit<ClauseDefinition, "id">> = [
                 {
                   title: "Paragraph 1",
-                  body: paragraphOneText,
+                  body: `We refer to the above matter and herewith regrettably inform you that ${companyNameForBody} contemplates dismissing one or more employees, based on the employer's operational requirements in terms of the LRA.`,
                 },
                 {
                   title: "Paragraph 2",
-                  body: paragraphTwoText,
+                  body: `You are hereby invited, along with other affected employees, to a consultation on ${consultationDateDisplay || "[date]"} at ${consultationTimeDisplay || "[time]"} ${
+                    validatedPreview.consultationFormat === "virtual"
+                      ? `to be held virtually via ${validatedPreview.consultationLocation.trim() || "[platform]"}`
+                      : `to be held at ${validatedPreview.consultationLocation.trim() || "[location]"}`
+                  }, in an attempt to reach consensus regarding appropriate measures to avoid dismissals, minimize the number of dismissals, change the timing of dismissals, and mitigate the adverse effects of dismissal.`,
                 },
                 {
                   title: "Paragraph 3",
-                  body: paragraphThreeText,
+                  body: "During this consultation process further items/issues, as listed in seciton 189(3) of the LRA, will be discussed in more detail and are listed hereunder for your reference:",
                 },
                 {
                   title: "Paragraph 4",
-                  body: "You may make written or verbal representations during the consultation process and may be assisted by a representative. Any feedback received will be considered in good faith before any final decision is made.",
+                  body: [
+                    "1. Reason for retrenchment",
+                    retrenchmentReasonsSentence,
+                  ],
                 },
                 {
                   title: "Paragraph 5",
-                  body: "Please treat this notice as formal communication of a contemplated retrenchment process and attend the consultation sessions as arranged.",
+                  body: [
+                    "2. Alternatives considered",
+                    `${alternativesSentence}${rejectionReasonsDisplay ? ` ${rejectionReasonsDisplay}` : ""}`,
+                  ],
+                },
+                {
+                  title: "Paragraph 6",
+                  body: [
+                    "3. Number of employees considered for retrenchment",
+                    `The company contemplates to retrench a total of ${validatedPreview.affectedEmployees || "[total affected]"} ${affectedEmployeeNoun} from ${validatedPreview.jobCategories || "[category affected]"}.`,
+                  ],
+                },
+                {
+                  title: "Paragraph 7",
+                  body: [
+                    "4. Method of selection",
+                    `The selection criteria considered ${selectionCriteriaVerb} ${selectionCriteriaDisplay}.`,
+                  ],
+                },
+                {
+                  title: "Paragraph 8",
+                  body: [
+                    "5. Timing of retrenchment",
+                    `The employer aims to complete the process by ${proposedTerminationDateDisplay || "[proposed retrenchment date]"}.`,
+                  ],
+                },
+                {
+                  title: "Paragraph 9",
+                  body: [
+                    "6. Severance pay",
+                    `You will be entitled to 1 week's remuneration for every completed year of service with ${companyNameForBody} in terms of the Basic Conditions of Employment Act. Alternatively, your severance package calculation will be subject to any applicable bargaining council's collective agreement provisions.`,
+                  ],
+                },
+                {
+                  title: "Paragraph 10",
+                  body: [
+                    "7. Further assistance by employer",
+                    assistanceSentence,
+                  ],
+                },
+                {
+                  title: "Paragraph 11",
+                  body: [
+                    "8. Future re-employment",
+                    "Should you be selected for retrenhcment and your position becomes available wihtin the following nine (9) months, you may be contacted to apply for this position. It is your responsibility to ensure that the company is in possession of your current contanct details during this period. All applicants applying for that position will be assessed equaly.",
+                  ],
+                },
+                {
+                  title: "Paragraph 12",
+                  body: [
+                    "9. Total employees at employer",
+                    `There are currently ${validatedPreview.totalEmployees || "[total employees]"} employees employed at ${companyNameForBody}.`,
+                  ],
+                },
+                {
+                  title: "Paragraph 13",
+                  body: [
+                    "10. Total retrenchments in the preceding 12 months",
+                    priorRetrenchmentsSentence,
+                  ],
+                },
+                {
+                  title: "Paragraph 14",
+                  body: "You are hereby informed that you may make verbal or written representations during this consultation, or alternatively you may make submissions within 48 hours from conclusion of the consultation.",
+                },
+                {
+                  title: "Paragraph 15",
+                  body: "We trust that an amicable solution/outcome can be reached during the above consultation.",
                 },
               ];
 
@@ -3547,8 +4480,13 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               const startEditingClause = (clause: ClauseDefinition) => {
                 rememberPreviewScroll();
                 const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
+                const hasLockedHeader = LOCKED_HEADER_CLAUSE_TITLES.has(clause.title);
+                const existingBody = Array.isArray(clause.body) ? clause.body : [clause.body];
+                const defaultEditableText = hasLockedHeader
+                  ? existingBody.slice(1).join("\n\n")
+                  : serializeClauseBody(clause.body);
                 setEditingClause(clause.id);
-                setClauseDraft(stripParagraphBreaks(clauseEdits[clause.id] ?? serializeClauseBody(clause.body)));
+                setClauseDraft(stripParagraphBreaks(clauseEdits[clause.id] ?? defaultEditableText));
                 setCustomClauseTitleDraft(isCustomClause ? (customClauseTitleEdits[clause.id] ?? clause.title) : "");
               };
 
@@ -3703,6 +4641,13 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                               const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
                               const isEditing = editingClause === clause.id;
                               const isCustomClause = customClauses.some((custom) => custom.id === clause.id);
+                              const hasItemHeader = LOCKED_HEADER_CLAUSE_TITLES.has(clause.title);
+                              const headerLineMatch = hasItemHeader ? paragraphs[0]?.match(/^(\d+\.)\s*(.*)$/) : null;
+                              const headerNumberPrefix = headerLineMatch?.[1] ?? "";
+                              const itemHeaderTextOffsetPx = 32;
+                              const headerTextIndentStyle = hasItemHeader
+                                ? { paddingLeft: `${itemHeaderTextOffsetPx}px` }
+                                : undefined;
                               return [
                                 <div key={clause.id} className="space-y-2 py-1">
                                   <div className="flex items-center justify-end gap-2">
@@ -3736,11 +4681,31 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                                     ) : null}
                                   </div>
 
-                                  <div className="space-y-4">
+                                  <div className={cn(hasItemHeader ? "space-y-1.5" : "space-y-4")}>
                                     {paragraphs.map((text, paragraphIndex) => {
+                                      const isHeaderLine = hasItemHeader && paragraphIndex === 0;
+                                      const headerLabelText = isHeaderLine && headerLineMatch ? headerLineMatch[2] : text;
                                       return (
-                                        <p key={`${clause.id}-${paragraphIndex}`} className="text-justify whitespace-pre-line text-black">
-                                          {text}
+                                        <p
+                                          key={`${clause.id}-${paragraphIndex}`}
+                                          className={cn(
+                                            "whitespace-pre-line text-black",
+                                            isHeaderLine
+                                              ? "font-bold text-left mb-0.5"
+                                              : "text-justify",
+                                          )}
+                                          style={!isHeaderLine && hasItemHeader ? headerTextIndentStyle : undefined}
+                                        >
+                                          {isHeaderLine && headerNumberPrefix ? (
+                                            <>
+                                              <span className="inline-block" style={{ width: `${itemHeaderTextOffsetPx}px` }}>
+                                                {headerNumberPrefix}
+                                              </span>
+                                              <span>{headerLabelText}</span>
+                                            </>
+                                          ) : (
+                                            text
+                                          )}
                                         </p>
                                       );
                                     })}
@@ -4231,40 +5196,29 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
           </div>
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
-              Choose one or more retrenchment reasons. Use Done to apply or Cancel to discard changes.
+              Choose one or more retrenchment reason(s).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 px-6 pb-6 pt-4">
-            <Input
-              ref={misconductSearchInputRef}
-              placeholder="Search retrenchment reasons"
-              value={misconductSearch}
-              onChange={(e) => setMisconductSearch(e.target.value)}
-              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
-            />
-            <ScrollArea className="max-h-72 rounded border border-slate-200 bg-white">
+            <ScrollArea className="max-h-[40vh] md:max-h-72 rounded border border-slate-300 bg-white">
               <div className="space-y-1 p-3">
-                {filteredMisconductTypes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No retrenchment reasons match your search.</p>
-                ) : (
-                  filteredMisconductTypes.map((type) => (
-                    <label
-                      key={type}
-                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
-                    >
-                      <Checkbox
-                        checked={draftMisconductTypes.includes(type)}
-                        onCheckedChange={(checked) =>
-                          setDraftMisconductTypes((prev) =>
-                            checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
-                          )
-                        }
-                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
-                      />
-                      <span className="flex-1">{type}</span>
-                    </label>
-                  ))
-                )}
+                {RETRENCHMENT_REASON_OPTIONS.map((type) => (
+                  <label
+                    key={type}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                  >
+                    <Checkbox
+                      checked={draftMisconductTypes.includes(type)}
+                      onCheckedChange={(checked) =>
+                        setDraftMisconductTypes((prev) =>
+                          checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
+                        )
+                      }
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                    />
+                    <span className="flex-1">{type}</span>
+                  </label>
+                ))}
               </div>
             </ScrollArea>
             <div>
@@ -4446,9 +5400,32 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                     <Checkbox
                       checked={draftSelectionCriteria.includes(criteria)}
                       onCheckedChange={(checked) =>
-                        setDraftSelectionCriteria((prev) =>
-                          checked ? (prev.includes(criteria) ? prev : [...prev, criteria]) : prev.filter((item) => item !== criteria),
-                        )
+                        setDraftSelectionCriteria((prev) => {
+                          if (!checked) {
+                            return prev.filter((item) => item !== criteria);
+                          }
+
+                          if (criteria === LIFO_OPTION) {
+                            const next = prev.filter((item) => item !== LIFO_WITH_SKILLS_OPTION);
+                            return next.includes(LIFO_OPTION) ? next : [...next, LIFO_OPTION];
+                          }
+
+                          if (criteria === LIFO_WITH_SKILLS_OPTION) {
+                            const next = prev.filter(
+                              (item) => item !== LIFO_OPTION && item !== SKILLS_AND_QUALIFICATIONS_OPTION,
+                            );
+                            return next.includes(LIFO_WITH_SKILLS_OPTION) ? next : [...next, LIFO_WITH_SKILLS_OPTION];
+                          }
+
+                          if (criteria === SKILLS_AND_QUALIFICATIONS_OPTION) {
+                            const next = prev.filter((item) => item !== LIFO_WITH_SKILLS_OPTION);
+                            return next.includes(SKILLS_AND_QUALIFICATIONS_OPTION)
+                              ? next
+                              : [...next, SKILLS_AND_QUALIFICATIONS_OPTION];
+                          }
+
+                          return prev.includes(criteria) ? prev : [...prev, criteria];
+                        })
                       }
                       className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
                     />
@@ -4502,6 +5479,307 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
                 <Button
                   type="button"
                   onClick={applySelectionCriteriaPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={alternativesPickerOpen} onOpenChange={(open) => (open ? openAlternativesPicker() : cancelAlternativesPicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Briefcase className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Alternatives Considered</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose one or more alternatives considered. Use Done to apply or Cancel to discard changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <div className="max-h-72 overflow-y-auto rounded border border-slate-200 bg-white">
+              <div className="space-y-1 p-3">
+                {ALTERNATIVES_CONSIDERED_OPTIONS.map((alternative) => (
+                  <label
+                    key={alternative}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                  >
+                    <Checkbox
+                      checked={draftAlternativesConsidered.includes(alternative)}
+                      onCheckedChange={(checked) =>
+                        setDraftAlternativesConsidered((prev) => {
+                          if (!checked) {
+                            return prev.filter((item) => item !== alternative);
+                          }
+                          if (alternative === NO_ALTERNATIVES_OPTION) {
+                            return [NO_ALTERNATIVES_OPTION];
+                          }
+                          const next = prev.filter((item) => item !== NO_ALTERNATIVES_OPTION);
+                          return next.includes(alternative) ? next : [...next, alternative];
+                        })
+                      }
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                    />
+                    <span className="flex-1">{alternative}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              {draftAlternativesConsidered.length === 0 ? (
+                <div className="text-xs text-slate-600">No alternatives selected</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {draftAlternativesConsidered.map((alternative) => (
+                    <Badge
+                      key={alternative}
+                      variant="outline"
+                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                    >
+                      {alternative}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelAlternativesPicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftAlternativesConsidered([])}
+                  disabled={draftAlternativesConsidered.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyAlternativesPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectionReasonsPickerOpen} onOpenChange={(open) => (open ? openRejectionReasonsPicker() : cancelRejectionReasonsPicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Briefcase className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Rejection Reasons</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose one or more rejection reasons. This field is optional.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <div className="max-h-72 overflow-y-auto rounded border border-slate-200 bg-white">
+              <div className="space-y-1 p-3">
+                {REJECTION_REASON_OPTIONS.map((reason) => (
+                  <label
+                    key={reason}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                  >
+                    <Checkbox
+                      checked={draftRejectionReasons.includes(reason)}
+                      onCheckedChange={(checked) =>
+                        setDraftRejectionReasons((prev) =>
+                          checked
+                            ? (prev.includes(reason) ? prev : [...prev, reason])
+                            : prev.filter((item) => item !== reason),
+                        )
+                      }
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                    />
+                    <span className="flex-1">{reason}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              {draftRejectionReasons.length === 0 ? (
+                <div className="text-xs text-slate-600">No rejection reasons selected</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {draftRejectionReasons.map((reason) => (
+                    <Badge
+                      key={reason}
+                      variant="outline"
+                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                    >
+                      {reason}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelRejectionReasonsPicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftRejectionReasons([])}
+                  disabled={draftRejectionReasons.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyRejectionReasonsPicker}
+                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assistanceOfferedPickerOpen} onOpenChange={(open) => (open ? openAssistanceOfferedPicker() : cancelAssistanceOfferedPicker())}>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white sm:max-h-[92vh] [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <Briefcase className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Select Assistance Offered</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <DialogHeader className="px-6 pt-4 pb-0">
+            <DialogDescription className="text-[11px] text-slate-600">
+              Choose one or more assistance options.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 px-6 pb-6 pt-4">
+            <div className="rounded border border-slate-200 bg-white">
+              <div className="space-y-1 p-3">
+                {ASSISTANCE_OFFERED_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                  >
+                    <Checkbox
+                      checked={draftAssistanceOffered.includes(option)}
+                      onCheckedChange={(checked) =>
+                        setDraftAssistanceOffered((prev) => {
+                          if (!checked) {
+                            return prev.filter((item) => item !== option);
+                          }
+                          if (option === NO_ADDITIONAL_ASSISTANCE_OPTION) {
+                            return [NO_ADDITIONAL_ASSISTANCE_OPTION];
+                          }
+                          const next = prev.filter((item) => item !== NO_ADDITIONAL_ASSISTANCE_OPTION);
+                          return next.includes(option) ? next : [...next, option];
+                        })
+                      }
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                    />
+                    <span className="flex-1">{option}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              {draftAssistanceOffered.length === 0 ? (
+                <div className="text-xs text-slate-600">No assistance selected</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {draftAssistanceOffered.map((option) => (
+                    <Badge
+                      key={option}
+                      variant="outline"
+                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                    >
+                      {option}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-4 pt-0">
+            <div className="grid w-full grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
+              <div className="justify-self-start">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelAssistanceOfferedPicker}
+                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="justify-self-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDraftAssistanceOffered([])}
+                  disabled={draftAssistanceOffered.length === 0}
+                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="justify-self-end">
+                <Button
+                  type="button"
+                  onClick={applyAssistanceOfferedPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done

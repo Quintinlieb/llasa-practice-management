@@ -17,6 +17,7 @@ type DocumentKey =
   | "warnings"
   | "disciplinaryHearingNotice"
   | "precautionarySuspensionNotice"
+  | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
   | "permanentContract"
@@ -76,6 +77,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   warnings: lazy(() => import("./WarningGenerator")),
   disciplinaryHearingNotice: lazy(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazy(() => import("./PrecautionarySuspensionNoticeGenerator")),
+  contemplatedRetrenchmentNotice: lazy(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazy(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
   incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   permanentContract: lazy(() => import("./PermanentContractGenerator")),
@@ -129,7 +131,7 @@ const documentCategories: DocumentCategory[] = [
       { id: "incapacityPerformanceHearingNotice", label: "Incapacity Hearing (Performance)", active: true },
       { id: "incapacityIllHealthHearingNotice", label: "Incapacity Hearing (Ill health)", active: true },
       { id: "precautionarySuspensionNotice", label: "Precautionary Suspension", active: true },
-      { label: "Retrenchment Consultation (S189)", active: false },
+      { id: "contemplatedRetrenchmentNotice", label: "Contemplated Retrenchment (S189)", active: true },
     ],
   },
   {
@@ -160,6 +162,7 @@ const Documents = () => {
     | "warnings"
     | "disciplinaryHearingNotice"
     | "precautionarySuspensionNotice"
+    | "contemplatedRetrenchmentNotice"
     | "incapacityPerformanceHearingNotice"
     | "incapacityIllHealthHearingNotice"
     | "addendum"
@@ -281,6 +284,8 @@ const Documents = () => {
         ? "Disciplinary Hearing"
       : modalDocument === "precautionarySuspensionNotice"
         ? "Precautionary Suspension"
+      : modalDocument === "contemplatedRetrenchmentNotice"
+        ? "Contemplated Retrenchment (S189)"
       : modalDocument === "incapacityPerformanceHearingNotice"
         ? "Incapacity Hearing (Performance)"
       : modalDocument === "incapacityIllHealthHearingNotice"
@@ -310,6 +315,7 @@ const Documents = () => {
     modalDocument === "warnings" ||
     modalDocument === "disciplinaryHearingNotice" ||
     modalDocument === "precautionarySuspensionNotice" ||
+    modalDocument === "contemplatedRetrenchmentNotice" ||
     modalDocument === "incapacityPerformanceHearingNotice" ||
     modalDocument === "incapacityIllHealthHearingNotice" ||
     modalDocument === "addendum" ||
@@ -330,6 +336,8 @@ const Documents = () => {
               : modalDocument === "disciplinaryHearingNotice"
                 ? "Notice Details"
               : modalDocument === "precautionarySuspensionNotice"
+                ? "Notice Details"
+              : modalDocument === "contemplatedRetrenchmentNotice"
                 ? "Notice Details"
               : modalDocument === "incapacityPerformanceHearingNotice"
                 ? "Notice Details"
@@ -552,6 +560,26 @@ const Documents = () => {
       "Review all wording carefully before downloading the final incapacity hearing notice.",
     ],
   ] as const;
+  const contemplatedRetrenchmentNoticeStepNotes = [
+    [
+      "This step controls how your company details appear on the contemplated retrenchment notice.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select one or more employees from your saved list or capture one employee manually.",
+      "Address details are not required for this notice.",
+    ],
+    [
+      "Capture all section 189 consultation details carefully so the notice reflects the contemplated process correctly.",
+      "Use the info tips next to each field if you are unsure what to select.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final contemplated retrenchment notice.",
+    ],
+  ] as const;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
@@ -565,6 +593,8 @@ const Documents = () => {
     incapacityPerformanceHearingStepNotes[modalActiveStep] ?? incapacityPerformanceHearingStepNotes[0];
   const incapacityIllHealthHearingActiveNotes =
     incapacityIllHealthHearingStepNotes[modalActiveStep] ?? incapacityIllHealthHearingStepNotes[0];
+  const contemplatedRetrenchmentNoticeActiveNotes =
+    contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];
   const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
     index === 0
       ? [
@@ -601,6 +631,8 @@ const Documents = () => {
       ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
       ? precautionarySuspensionActiveNotes
+      : modalDocument === "contemplatedRetrenchmentNotice"
+      ? contemplatedRetrenchmentNoticeActiveNotes
       : modalDocument === "incapacityPerformanceHearingNotice"
       ? incapacityPerformanceHearingActiveNotes
       : modalDocument === "incapacityIllHealthHearingNotice"
@@ -623,6 +655,7 @@ const Documents = () => {
       selectedDocument !== "warnings" &&
       selectedDocument !== "disciplinaryHearingNotice" &&
       selectedDocument !== "precautionarySuspensionNotice" &&
+      selectedDocument !== "contemplatedRetrenchmentNotice" &&
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
       selectedDocument !== "incapacityIllHealthHearingNotice" &&
       selectedDocument !== "addendum" &&
@@ -693,6 +726,7 @@ const Documents = () => {
                                         item.id === "warnings" ||
                                         item.id === "disciplinaryHearingNotice" ||
                                         item.id === "precautionarySuspensionNotice" ||
+                                        item.id === "contemplatedRetrenchmentNotice" ||
                                         item.id === "incapacityPerformanceHearingNotice" ||
                                         item.id === "incapacityIllHealthHearingNotice" ||
                                         item.id === "addendum" ||
@@ -714,6 +748,7 @@ const Documents = () => {
                                             | "warnings"
                                             | "disciplinaryHearingNotice"
                                             | "precautionarySuspensionNotice"
+                                            | "contemplatedRetrenchmentNotice"
                                             | "incapacityPerformanceHearingNotice"
                                             | "incapacityIllHealthHearingNotice"
                                             | "addendum"
@@ -765,6 +800,7 @@ const Documents = () => {
             selectedDocument !== "warnings" &&
             selectedDocument !== "disciplinaryHearingNotice" &&
             selectedDocument !== "precautionarySuspensionNotice" &&
+            selectedDocument !== "contemplatedRetrenchmentNotice" &&
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
             selectedDocument !== "incapacityIllHealthHearingNotice" &&
             selectedDocument !== "addendum" &&
@@ -965,6 +1001,7 @@ const Documents = () => {
           modalDocument === "warnings"
             || modalDocument === "disciplinaryHearingNotice"
             || modalDocument === "precautionarySuspensionNotice"
+            || modalDocument === "contemplatedRetrenchmentNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
             || modalDocument === "incapacityIllHealthHearingNotice"
             || modalDocument === "addendum"
@@ -985,6 +1022,7 @@ const Documents = () => {
           {modalDocument === "warnings" ||
           modalDocument === "disciplinaryHearingNotice" ||
           modalDocument === "precautionarySuspensionNotice" ||
+          modalDocument === "contemplatedRetrenchmentNotice" ||
           modalDocument === "incapacityPerformanceHearingNotice" ||
           modalDocument === "incapacityIllHealthHearingNotice" ||
           modalDocument === "addendum" ||
@@ -1009,6 +1047,8 @@ const Documents = () => {
                           ? "Notices"
                         : modalDocument === "precautionarySuspensionNotice"
                           ? "Notices"
+                        : modalDocument === "contemplatedRetrenchmentNotice"
+                          ? "Notices"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Notices"
                         : modalDocument === "incapacityIllHealthHearingNotice"
@@ -1031,6 +1071,8 @@ const Documents = () => {
                           ? "Disciplinary Hearing"
                         : modalDocument === "precautionarySuspensionNotice"
                           ? "Precautionary Suspension"
+                        : modalDocument === "contemplatedRetrenchmentNotice"
+                          ? "Contemplated Retrenchment (S189)"
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Incapacity Hearing (Performance)"
                         : modalDocument === "incapacityIllHealthHearingNotice"

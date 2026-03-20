@@ -1181,4 +1181,6 @@ export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;
 export type EmployeeProfileFormData = z.infer<typeof employeeProfileSchema>;
 export type WarningGeneratorFormData = z.infer<typeof warningGeneratorSchema>;
 export type PermanentContractFormData = z.infer<typeof permanentContractSchema>;
+export type EmploymentFormData = PermanentContractFormData;
 export type TemporaryContractFormData = z.infer<typeof temporaryContractSchema>;
+

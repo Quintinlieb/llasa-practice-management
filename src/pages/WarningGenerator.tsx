@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ComponentType, type SVGProps } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, X, Info, ArrowRight, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
+import { Download, X, Info, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -301,9 +300,6 @@ const WarningGenerator = ({
   const stepIcons = [Building2, User2, TriangleAlert] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showFinalActions, setShowFinalActions] = useState(false);
-  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
-  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const baseModalFieldClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const warningModalDropdownToneClass =
@@ -315,49 +311,6 @@ const WarningGenerator = ({
   const getWarningModalSelectTriggerClass = (isComplete: boolean) =>
     `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
-
-  useEffect(() => {
-    if (!embedded) return;
-    onStepChange?.(showFinalActions ? "Preview / Download" : (steps[activeStep] ?? null));
-  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
-
-
-  useEffect(() => {
-    if (formData.misconductTypes.length === 0) {
-      setFormData((prev) => {
-        if (!prev.warningType && !prev.validityMonths) return prev;
-        return { ...prev, warningType: "", validityMonths: "" };
-      });
-      setWarningSelectOpen(false);
-    }
-  }, [formData.misconductTypes.length]);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
-  }, [user, loading, navigate]);
-
-  useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
-      setShowEmployeeHint(false);
-      return;
-    }
-    if (hasShownEmployeeHint) return;
-    const timer = setTimeout(() => {
-      setShowEmployeeHint(true);
-      setHasShownEmployeeHint(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
-
-  useEffect(() => {
-    if (!showEmployeeHint) return;
-    const autoDismissTimer = setTimeout(() => {
-      setShowEmployeeHint(false);
-    }, 10000);
-    return () => clearTimeout(autoDismissTimer);
-  }, [showEmployeeHint]);
 
   useEffect(() => {
     if (isEmployeePrefillState(location.state)) {
@@ -1344,9 +1297,6 @@ const WarningGenerator = ({
     if (showFinalActions) {
       setShowFinalActions(false);
     }
-    if (index > 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep(index);
   };
 
@@ -1369,9 +1319,6 @@ const WarningGenerator = ({
   const handleNext = () => {
     if (activeStep >= steps.length - 1) return;
     if (!canGoNext) return;
-    if (activeStep === 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep((prev) => Math.min(prev + 1, steps.length - 1));
   };
 
@@ -1633,50 +1580,6 @@ const WarningGenerator = ({
   const content = (
     <>
       <style>{pulseShadowStyles}</style>
-      {showEmployeeHint && typeof document !== "undefined"
-        ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
-                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
-                  aria-hidden="true"
-                ></span>
-                <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-blue-400">
-                    TIP!{" "}
-                    <span className="text-white inline-flex items-center gap-1 ml-2">
-                      Add the employee to your Employee List before generating a warning
-                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                      navigate("/employees");
-                    }}
-                  >
-                    Employees page
-                  </button>
-                  <button
-                    type="button"
-                    className="text-white hover:text-white focus-visible:text-white"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                    }}
-                    aria-label="Dismiss employee guidance message"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
           <div
             className={cn(
               "space-y-6",
@@ -2600,6 +2503,7 @@ const WarningGenerator = ({
 };
 
 export default WarningGenerator;
+
 
 
 

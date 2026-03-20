@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
+import { Download, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -996,9 +995,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   const steps = ["Employer Details", "Employee Details", "Notice Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
-  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
-  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const [draftSelectedEmployeeIds, setDraftSelectedEmployeeIds] = useState<string[]>([]);
@@ -1016,6 +1012,83 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     idType: "id",
     employeeIdNumber: "",
     passportNumber: "",
+  });
+  const [formData, setFormData] = useState<ContractFormState>({
+    employeeId: "",
+    age: "",
+    companyLogoDataUrl: "",
+    logoPlacement: "center",
+    letterheadThemeColors: [defaultDividerColor, defaultIconColor],
+    issuer: "",
+    chairperson: "",
+    noticeMethod: "",
+    severancePackage: "",
+    voluntaryRetrenchment: "no",
+    transmissionMethods: [],
+    abscondmentNoticeDate: "",
+    absentFromDate: "",
+    noticePeriod: "",
+    noticeOfAppeal: "",
+    appliedProgressiveDisciplinaryAction: "",
+    hearingDate: "",
+    performanceConsultationDate: "",
+    improvementPeriod: "",
+    retrenchmentReasons: [],
+    affectedEmployees: "",
+    jobCategories: "",
+    selectionCriteria: [],
+    alternativesConsidered: [],
+    rejectionReasons: [],
+    proposedTerminationDate: "",
+    consultationFormat: "",
+    consultationLocation: "",
+    consultationDate: "",
+    consultationTime: "",
+    severanceMethod: "",
+    assistanceOffered: [],
+    totalEmployees: "",
+    priorRetrenchments: "",
+    misconductTypes: [],
+    contractReference: "",
+    addendumType: "general",
+    effectiveDate: "",
+    contractEndDate: "",
+    newEndDate: "",
+    idType: "id",
+    startDate: new Date().toISOString().split("T")[0],
+    issueDate: new Date().toISOString().split("T")[0],
+    employeeName: "",
+    employeeSurname: "",
+    employeeIdNumber: "",
+    passportNumber: "",
+    employeeAddress: "",
+    employeePostalAddress: "",
+    homeAddressLine: "",
+    homeAddressLine2: "",
+    homeCity: "",
+    homeProvince: "",
+    homeAreaCode: "",
+    employeeNumber: "",
+    nationality: "South African",
+    gender: "",
+    race: "",
+    employeeCell: "",
+    alternativeContact: "",
+    employeeEmail: "",
+    tradingName: "",
+    employerContact: profile?.company_contact || "",
+    employerEmail: profile?.company_email || "",
+    jobTitle: "",
+    salaryAmount: "",
+    annualLeaveDays: "15",
+    salaryFrequency: "month",
+    probationPeriod: "3",
+    department: "",
+    retirementAge: "65",
+    workplace: profile?.physical_address || "",
+    interpreter: "no",
+    reportsTo: "",
+    additionalNotes: "",
   });
   const [sameDayCaution, setSameDayCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
     open: false,
@@ -1081,200 +1154,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       ),
     [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
-
-  useEffect(() => {
-    if (!embedded) return;
-    onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
-  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
-
-
-  const [formData, setFormData] = useState<ContractFormState>({
-    employeeId: "",
-    age: "",
-    companyLogoDataUrl: "",
-    logoPlacement: "center",
-    letterheadThemeColors: [defaultDividerColor, defaultIconColor],
-    issuer: "",
-    chairperson: "",
-    noticeMethod: "",
-    severancePackage: "",
-    voluntaryRetrenchment: "no",
-    transmissionMethods: [],
-    abscondmentNoticeDate: "",
-    absentFromDate: "",
-    noticePeriod: "",
-    noticeOfAppeal: "",
-    appliedProgressiveDisciplinaryAction: "",
-    hearingDate: "",
-    performanceConsultationDate: "",
-    improvementPeriod: "",
-    retrenchmentReasons: [],
-    affectedEmployees: "",
-    jobCategories: "",
-    selectionCriteria: [],
-    alternativesConsidered: [],
-    rejectionReasons: [],
-    proposedTerminationDate: "",
-    consultationFormat: "",
-    consultationLocation: "",
-    consultationDate: "",
-    consultationTime: "",
-    severanceMethod: "",
-    assistanceOffered: [],
-    totalEmployees: "",
-    priorRetrenchments: "",
-    misconductTypes: [],
-    contractReference: "",
-    addendumType: "general",
-    effectiveDate: "",
-    contractEndDate: "",
-    newEndDate: "",
-    idType: "id",
-    startDate: new Date().toISOString().split("T")[0],
-    issueDate: new Date().toISOString().split("T")[0],
-    employeeName: "",
-    employeeSurname: "",
-    employeeIdNumber: "",
-    passportNumber: "",
-    employeeAddress: "",
-    employeePostalAddress: "",
-    homeAddressLine: "",
-    homeAddressLine2: "",
-    homeCity: "",
-    homeProvince: "",
-    homeAreaCode: "",
-    employeeNumber: "",
-    nationality: "South African",
-    gender: "",
-    race: "",
-    employeeCell: "",
-    alternativeContact: "",
-    employeeEmail: "",
-    tradingName: "",
-    employerContact: "",
-    employerEmail: "",
-    jobTitle: "",
-    salaryAmount: "",
-    annualLeaveDays: "15",
-    salaryFrequency: "month",
-    probationPeriod: "3",
-    department: "",
-    retirementAge: "65",
-    workplace: "",
-    interpreter: "no",
-    reportsTo: "",
-    additionalNotes: "",
-  });
-  const selectedLetterheadThemeColors = sanitizeThemeColors(formData.letterheadThemeColors);
-
-  const sortedEmployees = useMemo(
-    () =>
-      [...employees].sort((a, b) => {
-        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
-        if (nameOrder !== 0) return nameOrder;
-        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
-      }),
-    [employees],
-  );
-
-  const searchedEmployees = useMemo(() => {
-    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
-    if (!query) return sortedEmployees;
-    const tokens = query.split(" ").filter(Boolean);
-    return sortedEmployees
-      .map((employee) => {
-        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
-        const fullNameLower = fullName.toLowerCase();
-        const firstNameLower = employee.employee_name.toLowerCase();
-        const surnameLower = employee.employee_surname.toLowerCase();
-        const idNumberLower = (employee.id_number ?? "").toLowerCase();
-        const employeeNumberLower = (employee.employee_number ?? "").toLowerCase();
-        let score = 0;
-
-        if (fullNameLower === query) score += 1000;
-        if (idNumberLower === query) score += 1000;
-        if (fullNameLower.startsWith(query)) score += 800;
-        if (idNumberLower.startsWith(query)) score += 800;
-        if (fullNameLower.includes(query)) score += 500;
-        if (idNumberLower.includes(query)) score += 500;
-        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
-        if (
-          tokens.length > 0 &&
-          tokens.every((token) =>
-            fullNameLower.includes(token) ||
-            firstNameLower.includes(token) ||
-            surnameLower.includes(token) ||
-            idNumberLower.includes(token),
-          )
-        ) {
-          score += 300;
-        }
-        if (query.length >= 2 && employeeNumberLower.includes(query)) score += 120;
-
-        return { employee, score, fullName };
-      })
-      .filter((item) => item.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          a.fullName.localeCompare(b.fullName, undefined, {
-            sensitivity: "base",
-          }),
-      )
-      .map((item) => item.employee);
-  }, [employeeSearchQuery, sortedEmployees]);
-
-  const dismissibleMisconductNames = useMemo(
-    () => new Set(conductOffences.filter((item) => item.category === "Dismissible").map((item) => item.name.trim().toLowerCase())),
-    [conductOffences],
-  );
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
-  }, [loading, navigate, user]);
-
-  useEffect(() => {
-    if (!employeePickerOpen) return;
-    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [employeePickerOpen]);
-
-  useEffect(() => {
-    setSameDayOverrideAccepted(false);
-    setSameDayCautionDismissed(false);
-  }, [formData.issueDate, formData.hearingDate]);
-
-  useEffect(() => {
-    if (sameDayOverrideAccepted) return;
-    if (sameDayCautionDismissed) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate) || !/^\d{4}-\d{2}-\d{2}$/.test(formData.hearingDate)) return;
-    if (formData.issueDate !== formData.hearingDate) return;
-    if (sameDayCaution.open) return;
-    setSameDayCaution({ open: true, pendingAction: "" });
-  }, [formData.issueDate, formData.hearingDate, sameDayOverrideAccepted, sameDayCautionDismissed, sameDayCaution.open]);
-
-  useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
-      setShowEmployeeHint(false);
-      return;
-    }
-    if (hasShownEmployeeHint) return;
-    const timer = setTimeout(() => {
-      setShowEmployeeHint(true);
-      setHasShownEmployeeHint(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
-
-  useEffect(() => {
-    if (!showEmployeeHint) return;
-    const autoDismissTimer = setTimeout(() => {
-      setShowEmployeeHint(false);
-    }, 10000);
-    return () => clearTimeout(autoDismissTimer);
-  }, [showEmployeeHint]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -1410,6 +1289,28 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
         .map((id) => selectedEmployeeMap.get(id))
         .filter((employee): employee is SlimEmployee => Boolean(employee)),
     [selectedEmployeeIds, selectedEmployeeMap],
+  );
+  const searchedEmployees = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase();
+    return employees.filter((employee) => {
+      const status = (employee.status ?? "").trim().toLowerCase();
+      if (!(status === "" || status === "active")) return false;
+      if (!query) return true;
+      const haystack = [
+        employee.employee_name,
+        employee.employee_surname,
+        employee.employee_number,
+        employee.id_number,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [employees, employeeSearchQuery]);
+  const selectedLetterheadThemeColors = useMemo(
+    () => sanitizeThemeColors(formData.letterheadThemeColors),
+    [formData.letterheadThemeColors],
   );
 
   const openAddEmployeeDialog = () => {
@@ -1673,9 +1574,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     if (showFinalActions) {
       setShowFinalActions(false);
     }
-    if (index > 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep(index);
   };
 
@@ -1697,11 +1595,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
-      if (activeStep === 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
-      }
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -3230,50 +3123,6 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 
   const content = (
     <>
-      {showEmployeeHint && typeof document !== "undefined"
-        ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
-                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
-                  aria-hidden="true"
-                ></span>
-                <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-blue-400">
-                    TIP!{" "}
-                    <span className="text-white inline-flex items-center gap-1 ml-2">
-                      Add the employee to your Employee List before generating a notice
-                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                      navigate("/employees");
-                    }}
-                  >
-                    Employees page
-                  </button>
-                  <button
-                    type="button"
-                    className="text-white hover:text-white focus-visible:text-white"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                    }}
-                    aria-label="Dismiss employee guidance message"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
       <div
         className={cn(
           "space-y-6",
@@ -5893,6 +5742,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 };
 
 export default ContemplatedRetrenchmentNoticeGenerator;
+
 
 
 

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar } from "lucide-react";
+import { Download, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,23 +19,23 @@ import {
   salaryFrequencyOptions,
   extractDobFromId,
   calculateAgeFromDob,
-  type PermanentContractFormData,
+  type EmploymentFormData as MutualTerminationBaseFormData,
 } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
 
-type ContractFormState = {
+type MutualTerminationFormState = {
   employeeId: string;
   age: string;
-} & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
+} & Omit<MutualTerminationBaseFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
-  gender: PermanentContractFormData["gender"] | "";
-  race: PermanentContractFormData["race"] | "";
-  contractReference: string;
-  addendumType: AddendumType | "";
+  gender: MutualTerminationBaseFormData["gender"] | "";
+  race: MutualTerminationBaseFormData["race"] | "";
+  referenceDate: string;
+  caseType: MutualTerminationCaseType | "";
   effectiveDate: string;
-  contractEndDate: string;
-  newEndDate: string;
+  previousEndDate: string;
+  updatedEndDate: string;
   idType: "id" | "passport";
   consultationDate: string;
   terminationDate: string;
@@ -51,14 +50,14 @@ type ContractFormState = {
 };
 
 type AmendmentType = "add" | "amend";
-type AddendumType = "general" | "renewal" | "extension";
+type MutualTerminationCaseType = 'mutual_termination';
 
-type AddendumData = PermanentContractFormData & {
-  contractReference: string;
-  addendumType: AddendumType;
+type MutualTerminationData = MutualTerminationBaseFormData & {
+  referenceDate: string;
+  caseType: MutualTerminationCaseType;
   effectiveDate: string;
-  contractEndDate: string;
-  newEndDate: string;
+  previousEndDate: string;
+  updatedEndDate: string;
   idType: "id" | "passport";
   consultationDate: string;
   terminationDate: string;
@@ -101,61 +100,25 @@ type ClauseDefinition = {
 
 type CustomClause = ClauseDefinition & { insertAfterId: string | null; amendmentType: AmendmentType };
 
-const salaryFrequencyLabels: Record<PermanentContractFormData["salaryFrequency"], string> = {
+const salaryFrequencyLabels: Record<MutualTerminationBaseFormData["salaryFrequency"], string> = {
   month: "per month",
   week: "per week",
   day: "per day",
   hour: "per hour",
 };
 
-const probationOptions: PermanentContractFormData["probationPeriod"][] = ["1", "3", "6"];
-const probationLabels: Record<PermanentContractFormData["probationPeriod"], string> = {
+const probationOptions: MutualTerminationBaseFormData["probationPeriod"][] = ["1", "3", "6"];
+const probationLabels: Record<MutualTerminationBaseFormData["probationPeriod"], string> = {
   "1": "1 Month",
   "3": "3 Months",
   "6": "6 Months",
 };
 
-const retirementAgeOptions: PermanentContractFormData["retirementAge"][] = ["55", "60", "65"];
+const retirementAgeOptions: MutualTerminationBaseFormData["retirementAge"][] = ["55", "60", "65"];
 
-const addendumTypeOptions: Array<{ value: AddendumType; label: string }> = [
-  { value: "general", label: "General Addendum" },
-  { value: "renewal", label: "Contract Renewal" },
-  { value: "extension", label: "Contract Extension" },
-];
-
-const addendumTypeLabels: Record<AddendumType, string> = {
-  general: "General Addendum",
-  renewal: "Contract Renewal",
-  extension: "Contract Extension",
-};
-const paymentOptionLabels: Record<PaymentKey, string> = {
-  notice: "Notice in lieu (If applicable)",
-  annual_leave: "Annual leave (If applicable)",
-  gratuity: "Gratuity (Optional)",
-  severance: "Severance (Optional)",
-  outstanding_salary: "Outstanding salary (Full / pro rata)",
-};
-const paymentOptionDocumentLabels: Record<PaymentKey, string> = {
-  notice: "Notice in lieu",
-  annual_leave: "Annual leave",
-  gratuity: "Gratuity",
-  severance: "Severance",
-  outstanding_salary: "Outstanding salary",
-};
-const paymentOptions: PaymentKey[] = ["outstanding_salary", "notice", "annual_leave", "gratuity", "severance"];
-const isAgreedPaymentSubParagraph = (text: string) =>
-  isTotalPaymentSummary(text) ||
-  [...Object.values(paymentOptionLabels), ...Object.values(paymentOptionDocumentLabels)].some((label) =>
-    text.trim().toLowerCase().startsWith(`${label.toLowerCase()}:`),
-  );
-const isTotalPaymentSummary = (text: string) => text.trim().toLowerCase().startsWith("total:");
-const parseAmountValue = (raw: string) => {
-  const cleaned = (raw || "").replace(/,/g, "").replace(/\s+/g, "").replace(/[^0-9.]/g, "");
-  const value = Number.parseFloat(cleaned);
-  return Number.isFinite(value) ? value : 0;
-};
-
-const noticePeriodOptions = ["1 week", "2 weeks", "4 weeks", "5 weeks", "6 weeks", "7 weeks", "8 weeks", "9 weeks", "10 weeks", "11 weeks", "12 weeks"] as const;
+const caseTypeOptions = [
+  { value: 'mutual_termination', label: 'Mutual Termination Letter' },
+] as const;
 const noticeMethodOptions = [
   { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
@@ -215,12 +178,12 @@ const toIsoDate = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? null : iso;
 };
 
-const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string, newEndDate = "") => {
+const fillClausePlaceholders = (body: string | string[], referenceDateValue: string, effectiveDate: string, updatedEndDate = "") => {
   const replaceText = (text: string) =>
     text
-      .replace("[contract reference]", contractRef)
+      .replace("[reference date]", referenceDateValue)
       .replace("[effective date]", effectiveDate)
-      .replace("[new end date]", newEndDate || "________________________");
+      .replace("[new end date]", updatedEndDate || "________________________");
   return Array.isArray(body) ? body.map(replaceText) : replaceText(body);
 };
 
@@ -250,7 +213,7 @@ const deriveAgeFromId = (id: string) => {
 };
 
 type FirstPagePreviewProps = {
-  data: AddendumData;
+  data: MutualTerminationData;
   compact?: boolean;
   children?: ReactNode;
   profile: SlimProfile | null;
@@ -326,7 +289,7 @@ const MutualTerminationGenerator = ({
     onBack?: () => void;
     onStepSelect?: (index: number) => void;
     onClear?: () => void;
-    addendumType?: AddendumType | "";
+    caseType?: MutualTerminationCaseType | "";
     isFinished?: boolean;
     isPreviewEditable?: boolean;
     supportsPreviewEditToggle?: boolean;
@@ -342,7 +305,7 @@ const MutualTerminationGenerator = ({
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(false);
-  const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
+  const [validatedPreview, setValidatedPreview] = useState<MutualTerminationData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [customClauseTitleEdits, setCustomClauseTitleEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
@@ -357,58 +320,16 @@ const MutualTerminationGenerator = ({
   const steps = ["Employer Details", "Employee Details", "Mutual Termination Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
-  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
-  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
-  const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const newClauseTitleInputRef = useRef<HTMLInputElement | null>(null);
-  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
-  const previewScrollRef = useRef<HTMLDivElement | null>(null);
-  const previewScrollTop = useRef(0);
-  const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
-  const addendumModalDropdownToneClass =
-    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
-  const addendumModalSelectItemClass =
-    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
-  const getAddendumModalInputClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
-  const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
-  const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
-  const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
-  const snippetPaddingTopMm = 2;
-  const snippetVisibleHeightMm = 297 / 2; // show top half of the page
-  const snippetContainerWidthMm = 150;
-  const snippetScale = useMemo(
-    () =>
-      Math.min(
-        (snippetContainerWidthMm - 4) / 210, // small horizontal gutter so full width fits
-        (160 - snippetPaddingTopMm) / snippetVisibleHeightMm,
-      ),
-    [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
-  );
-
-  useEffect(() => {
-    if (!embedded) return;
-    onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
-  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
-
-
-  const [formData, setFormData] = useState<ContractFormState>({
+  const [formData, setFormData] = useState<MutualTerminationFormState>({
     employeeId: "",
     age: "",
-    contractReference: "",
-    addendumType: "general",
+    referenceDate: "",
+    caseType: 'mutual_termination',
     effectiveDate: "",
-    contractEndDate: "",
-    newEndDate: "",
+    previousEndDate: "",
+    updatedEndDate: "",
     idType: "id",
     consultationDate: "",
     terminationDate: "",
@@ -436,8 +357,8 @@ const MutualTerminationGenerator = ({
     alternativeContact: "",
     employeeEmail: "",
     tradingName: "",
-    employerContact: "",
-    employerEmail: "",
+    employerContact: profile?.company_contact || "",
+    employerEmail: profile?.company_email || "",
     jobTitle: "",
     salaryAmount: "",
     annualLeaveDays: "15",
@@ -445,87 +366,54 @@ const MutualTerminationGenerator = ({
     probationPeriod: "3",
     department: "",
     retirementAge: "65",
-    workplace: "",
+    workplace: profile?.physical_address || "",
     interpreter: "no",
     reportsTo: "",
     additionalNotes: "",
   });
-
-  const sortedEmployees = useMemo(
+  const effectiveDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const referenceDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const previousEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const updatedEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const newClauseTitleInputRef = useRef<HTMLInputElement | null>(null);
+  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
+  const previewScrollRef = useRef<HTMLDivElement | null>(null);
+  const previewScrollTop = useRef(0);
+  const baseModalFieldClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+  const terminationModalDropdownToneClass =
+    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+  const terminationModalSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+  const getTerminationModalInputClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+  const getTerminationModalSelectTriggerClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+  const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
+  const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
+  const snippetPaddingTopMm = 2;
+  const snippetVisibleHeightMm = 297 / 2; // show top half of the page
+  const snippetContainerWidthMm = 150;
+  const snippetScale = useMemo(
     () =>
-      [...employees].sort((a, b) => {
-        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
-        if (nameOrder !== 0) return nameOrder;
-        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
-      }),
-    [employees],
+      Math.min(
+        (snippetContainerWidthMm - 4) / 210, // small horizontal gutter so full width fits
+        (160 - snippetPaddingTopMm) / snippetVisibleHeightMm,
+      ),
+    [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
-
   const searchedEmployees = useMemo(() => {
-    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
-    if (!query) return sortedEmployees;
-    const tokens = query.split(" ").filter(Boolean);
-    return sortedEmployees
-      .map((employee) => {
-        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
-        const fullNameLower = fullName.toLowerCase();
-        const firstNameLower = employee.employee_name.toLowerCase();
-        const surnameLower = employee.employee_surname.toLowerCase();
-        const employeeNumberLower = (employee.employee_number ?? "").toLowerCase();
-        let score = 0;
-
-        if (fullNameLower === query) score += 1000;
-        if (fullNameLower.startsWith(query)) score += 800;
-        if (fullNameLower.includes(query)) score += 500;
-        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
-        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
-        if (query.length >= 2 && employeeNumberLower.includes(query)) score += 120;
-
-        return { employee, score, fullName };
-      })
-      .filter((item) => item.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          a.fullName.localeCompare(b.fullName, undefined, {
-            sensitivity: "base",
-          }),
-      )
-      .map((item) => item.employee);
-  }, [employeeSearchQuery, sortedEmployees]);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
-  }, [loading, navigate, user]);
-
-  useEffect(() => {
-    if (!employeeSearchOpen) return;
-    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [employeeSearchOpen]);
-
-  useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
-      setShowEmployeeHint(false);
-      return;
-    }
-    if (hasShownEmployeeHint) return;
-    const timer = setTimeout(() => {
-      setShowEmployeeHint(true);
-      setHasShownEmployeeHint(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
-
-  useEffect(() => {
-    if (!showEmployeeHint) return;
-    const autoDismissTimer = setTimeout(() => {
-      setShowEmployeeHint(false);
-    }, 10000);
-    return () => clearTimeout(autoDismissTimer);
-  }, [showEmployeeHint]);
+    const query = employeeSearchQuery.trim().toLowerCase();
+    return employees.filter((employee) => {
+      if (!query) return true;
+      const haystack = [employee.employee_name, employee.employee_surname, employee.employee_number, employee.id_number]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [employees, employeeSearchQuery]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -579,14 +467,14 @@ const MutualTerminationGenerator = ({
     const employee = employees.find((emp) => emp.id === employeeId);
     if (!employee) return;
     const employeeNationality =
-      (employee as Partial<Tables<"employees">> & { nationality?: PermanentContractFormData["nationality"] })
+      (employee as Partial<Tables<"employees">> & { nationality?: MutualTerminationBaseFormData["nationality"] })
         .nationality || "South African";
     const hasIdNumber = Boolean(employee.id_number);
     const passportNumber = !hasIdNumber ? employee.id_number ?? "" : "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PermanentContractFormData["race"] }).race || "";
+    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: MutualTerminationBaseFormData["gender"] }).gender || "";
+    const raceValue = (employee as Partial<Tables<"employees">> & { race?: MutualTerminationBaseFormData["race"] }).race || "";
     const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
     const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
@@ -621,11 +509,11 @@ const MutualTerminationGenerator = ({
     setFormData({
       employeeId: "",
       age: "",
-      contractReference: "",
-      addendumType: "general",
+      referenceDate: "",
+      caseType: 'mutual_termination',
       effectiveDate: "",
-      contractEndDate: "",
-      newEndDate: "",
+      previousEndDate: "",
+      updatedEndDate: "",
       idType: "id",
       consultationDate: "",
       terminationDate: "",
@@ -784,9 +672,6 @@ const MutualTerminationGenerator = ({
       setIsPreviewEditable(false);
       setShowFinalActions(false);
     }
-    if (index > 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep(index);
   };
 
@@ -809,11 +694,6 @@ const MutualTerminationGenerator = ({
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
-      if (activeStep === 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
-      }
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -872,7 +752,7 @@ const MutualTerminationGenerator = ({
       onBack: handleBack,
       onStepSelect: handleStepSelect,
       onClear: showFinalActions ? togglePreviewEditMode : clearCurrentStepFields,
-      addendumType: formData.addendumType,
+      caseType: formData.caseType,
       isFinished: showFinalActions,
       isPreviewEditable,
       supportsPreviewEditToggle: true,
@@ -894,7 +774,7 @@ const MutualTerminationGenerator = ({
     isFormComplete,
     showFinalActions,
     isPreviewEditable,
-    formData.addendumType,
+    formData.caseType,
   ]);
 
   const resetEmployeeStepFields = () => {
@@ -920,14 +800,14 @@ const MutualTerminationGenerator = ({
     }));
   };
 
-  const resetAddendumStepFields = () => {
+  const resetTerminationStepFields = () => {
     setFormData((prev) => ({
       ...prev,
-      addendumType: "general",
+      caseType: 'mutual_termination',
       effectiveDate: "",
-      contractEndDate: "",
-      newEndDate: "",
-      contractReference: "",
+      previousEndDate: "",
+      updatedEndDate: "",
+      referenceDate: "",
       consultationDate: "",
       terminationDate: "",
       noticePeriod: "",
@@ -951,7 +831,7 @@ const MutualTerminationGenerator = ({
       return;
     }
     if (activeStep === 2) {
-      resetAddendumStepFields();
+      resetTerminationStepFields();
       return;
     }
     resetForm();
@@ -995,8 +875,8 @@ const MutualTerminationGenerator = ({
     }
   };
 
-  const openContractReferencePicker = () => {
-    const picker = contractReferencePickerRef.current;
+  const openReferenceDatePicker = () => {
+    const picker = referenceDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1005,8 +885,8 @@ const MutualTerminationGenerator = ({
     }
   };
 
-  const openContractEndDatePicker = () => {
-    const picker = contractEndDatePickerRef.current;
+  const openEffectiveDatePicker = () => {
+    const picker = previousEndDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1016,7 +896,7 @@ const MutualTerminationGenerator = ({
   };
 
   const openNewEndDatePicker = () => {
-    const picker = newEndDatePickerRef.current;
+    const picker = updatedEndDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1067,13 +947,13 @@ const MutualTerminationGenerator = ({
       issueDate,
       salaryAmount: Number(formData.salaryAmount) || 0,
       annualLeaveDays: Number(formData.annualLeaveDays) || 0,
-      addendumType: formData.addendumType as AddendumType,
-      gender: formData.gender as PermanentContractFormData["gender"],
-      race: formData.race as PermanentContractFormData["race"],
+      caseType: formData.caseType as MutualTerminationCaseType,
+      gender: formData.gender as MutualTerminationBaseFormData["gender"],
+      race: formData.race as MutualTerminationBaseFormData["race"],
       idType: formData.idType,
-      contractEndDate: formData.contractEndDate,
-      newEndDate: formData.newEndDate,
-    } as AddendumData;
+      previousEndDate: formData.previousEndDate,
+      updatedEndDate: formData.updatedEndDate,
+    } as MutualTerminationData;
   };
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
@@ -1155,17 +1035,16 @@ const MutualTerminationGenerator = ({
     return cursorY;
   };
 
-  const generatePDF = (data: AddendumData, download = false) => {
+  const generatePDF = (data: MutualTerminationData, download = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 18;
     const contentWidth = pageWidth - margin * 2;
     const formattedSalary = `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`;
-    const addendumTypeDisplay = addendumTypeLabels[data.addendumType] || data.addendumType;
     const effectiveDateDisplay = data.effectiveDate || data.issueDate;
     const issueYear = extractYear(data.issueDate);
-    const newEndDateDisplay = formatDate(data.newEndDate || data.contractEndDate);
+    const updatedEndDateDisplay = formatDate(data.updatedEndDate || data.previousEndDate);
     let y = margin;
 
     const ensureSpace = (space: number) => {
@@ -1578,7 +1457,7 @@ const MutualTerminationGenerator = ({
       const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
       const preface =
         clause.amendmentType === "add"
-          ? "The following term(s) will be added to the employment contract:"
+          ? "The following term(s) will be included in the termination letter:"
           : clause.amendmentType === "amend"
             ? "The terms of the clause is hereby amended as follows:"
             : null;
@@ -1717,50 +1596,6 @@ const MutualTerminationGenerator = ({
 
   const content = (
     <>
-      {showEmployeeHint && typeof document !== "undefined"
-        ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
-                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
-                  aria-hidden="true"
-                ></span>
-                <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-blue-400">
-                    TIP!{" "}
-                    <span className="text-white inline-flex items-center gap-1 ml-2">
-                      Add the employee to your Employee List before generating a contract
-                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                      navigate("/employees");
-                    }}
-                  >
-                    Employees page
-                  </button>
-                  <button
-                    type="button"
-                    className="text-white hover:text-white focus-visible:text-white"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                    }}
-                    aria-label="Dismiss employee guidance message"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
       <div
         className={cn(
           "space-y-6",
@@ -1857,7 +1692,7 @@ const MutualTerminationGenerator = ({
                         id="companyName"
                         value={profile?.company_name || ""}
                         readOnly
-                        className={getAddendumModalInputClass(Boolean(profile?.company_name))}
+                        className={getTerminationModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1866,7 +1701,7 @@ const MutualTerminationGenerator = ({
                         id="registrationNumber"
                         value={profile?.registration_number || ""}
                         readOnly
-                        className={getAddendumModalInputClass(Boolean(profile?.registration_number))}
+                        className={getTerminationModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1876,7 +1711,7 @@ const MutualTerminationGenerator = ({
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
                         placeholder="If different from registered name"
-                        className={getAddendumModalInputClass(formData.tradingName.trim().length > 0)}
+                        className={getTerminationModalInputClass(formData.tradingName.trim().length > 0)}
                       />
                     </div>
                   </div>
@@ -1897,7 +1732,7 @@ const MutualTerminationGenerator = ({
                           if (open) setEmployeeSearchQuery("");
                         }}
                       >
-                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${addendumModalDropdownToneClass}`}>
+                        <SelectTrigger className={`${getTerminationModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${terminationModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
                         <SelectContent
@@ -1916,7 +1751,7 @@ const MutualTerminationGenerator = ({
                           </div>
                           {searchedEmployees.length > 0 ? (
                             searchedEmployees.map((employee) => (
-                              <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
+                              <SelectItem key={employee.id} value={employee.id} className={terminationModalSelectItemClass}>
                                 {employee.employee_name} {employee.employee_surname}
                               </SelectItem>
                             ))
@@ -1935,7 +1770,7 @@ const MutualTerminationGenerator = ({
                           id="employeeName"
                           value={formData.employeeName}
                           onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
-                          className={getAddendumModalInputClass(formData.employeeName.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.employeeName.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1946,7 +1781,7 @@ const MutualTerminationGenerator = ({
                           id="employeeSurname"
                           value={formData.employeeSurname}
                           onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
-                          className={getAddendumModalInputClass(formData.employeeSurname.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.employeeSurname.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -1962,12 +1797,12 @@ const MutualTerminationGenerator = ({
                             }));
                           }}
                         >
-                          <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.idType))} ${addendumModalDropdownToneClass}`}>
+                          <SelectTrigger className={`${getTerminationModalSelectTriggerClass(Boolean(formData.idType))} ${terminationModalDropdownToneClass}`}>
                             <SelectValue placeholder="Choose document type" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="id" className={addendumModalSelectItemClass}>ID Number</SelectItem>
-                            <SelectItem value="passport" className={addendumModalSelectItemClass}>Passport Number</SelectItem>
+                            <SelectItem value="id" className={terminationModalSelectItemClass}>ID Number</SelectItem>
+                            <SelectItem value="passport" className={terminationModalSelectItemClass}>Passport Number</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1996,7 +1831,7 @@ const MutualTerminationGenerator = ({
                               }));
                             }
                           }}
-                          className={`${getAddendumModalInputClass(
+                          className={`${getTerminationModalInputClass(
                             formData.idType === "id"
                               ? formData.employeeIdNumber.trim().length > 0
                               : formData.passportNumber.trim().length > 0,
@@ -2032,7 +1867,7 @@ const MutualTerminationGenerator = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="top" className={fixedTooltipContentClass}>
-                              Select the date on which you consulted with the employee and both parties agreed to terminate the employment contract by mutual consent.
+                              Select the date on which you consulted with the employee and both parties agreed to terminate employment by mutual consent.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -2052,7 +1887,7 @@ const MutualTerminationGenerator = ({
                               openEffectiveDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
+                          className={`${getTerminationModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                         />
                         <input
                           ref={effectiveDatePickerRef}
@@ -2093,18 +1928,18 @@ const MutualTerminationGenerator = ({
                           readOnly
                           placeholder="Please select a date"
                           value={formData.terminationDate ? toDisplayDate(formData.terminationDate) : ""}
-                          onClick={openContractEndDatePicker}
-                          onFocus={openContractEndDatePicker}
+                          onClick={openEffectiveDatePicker}
+                          onFocus={openEffectiveDatePicker}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              openContractEndDatePicker();
+                              openEffectiveDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.terminationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
+                          className={`${getTerminationModalInputClass(formData.terminationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
                         />
                         <input
-                          ref={contractEndDatePickerRef}
+                          ref={previousEndDatePickerRef}
                           type="date"
                           value={formData.terminationDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.terminationDate) ? formData.terminationDate : ""}
                           onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })}
@@ -2139,12 +1974,12 @@ const MutualTerminationGenerator = ({
                         value={formData.noticePeriod}
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, noticePeriod: value }))}
                       >
-                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${addendumModalDropdownToneClass}`}>
+                        <SelectTrigger className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${terminationModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select notice period" style={!formData.noticePeriod ? { color: "#94a3b8" } : undefined} />
                         </SelectTrigger>
                         <SelectContent>
                           {noticePeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option} value={option} className={terminationModalSelectItemClass}>
                               {option}
                             </SelectItem>
                           ))}
@@ -2159,12 +1994,12 @@ const MutualTerminationGenerator = ({
                         value={formData.noticeMethod}
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeMethod: value }))}
                       >
-                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${addendumModalDropdownToneClass}`}>
+                        <SelectTrigger className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${terminationModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select notice method" style={!formData.noticeMethod ? { color: "#94a3b8" } : undefined} />
                         </SelectTrigger>
                         <SelectContent>
                           {noticeMethodOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option.value} value={option.value} className={terminationModalSelectItemClass}>
                               {option.label}
                             </SelectItem>
                           ))}
@@ -2245,7 +2080,7 @@ const MutualTerminationGenerator = ({
                                       }));
                                     }}
                                     placeholder="e.g. 12,500.00"
-                                    className={getAddendumModalInputClass(Boolean(amountValue.trim()))}
+                                    className={getTerminationModalInputClass(Boolean(amountValue.trim()))}
                                   />
                                 </div>
                               ) : null}
@@ -2368,10 +2203,10 @@ const MutualTerminationGenerator = ({
               const derivedAge = usesId ? deriveAgeFromId(validatedPreview.employeeIdNumber) : "";
               const idDisplay = usesId ? validatedPreview.employeeIdNumber : "--";
               const passportDisplay = usesId ? "--" : validatedPreview.passportNumber || "--";
-              const contractRefDisplay = formatDate(validatedPreview.contractReference);
+              const referenceDateDisplay = formatDate(validatedPreview.referenceDate);
               const effectiveDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
-              const newEndDateDisplay = formatDate(validatedPreview.newEndDate || validatedPreview.contractEndDate);
-              const previousEndDateDisplay = formatDate(validatedPreview.contractEndDate || validatedPreview.contractReference);
+              const updatedEndDateDisplay = formatDate(validatedPreview.updatedEndDate || validatedPreview.previousEndDate);
+              const previousEndDateDisplay = formatDate(validatedPreview.previousEndDate || validatedPreview.referenceDate);
               const annualLeaveText = `The Employee is entitled to ${validatedPreview.annualLeaveDays} days' annual leave per leave cycle. Leave shall be taken at times determined by the Employer, subject to operational requirements. Unused leave will be forfeited if not taken within the applicable cycle.`;
 
               const DualRow = ({
@@ -2641,7 +2476,7 @@ const MutualTerminationGenerator = ({
                               const paragraphs = Array.isArray(clause.body) ? clause.body : [clause.body];
                               const preface =
         clause.amendmentType === "add"
-          ? "The following term(s) will be added to the employment contract:"
+          ? "The following term(s) will be included in the termination letter:"
           : clause.amendmentType === "amend"
             ? "The terms of the clause is hereby amended as follows:"
             : null;
@@ -2793,7 +2628,7 @@ const MutualTerminationGenerator = ({
                                       value={customClauseTitleDraft}
                                       onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
                                       placeholder="Clause title"
-                                      className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
+                                      className={getTerminationModalInputClass(customClauseTitleDraft.trim().length > 0)}
                                     />
                                   ) : null}
                                   <p className="flex items-center gap-1 text-[11px] text-orange-600">
@@ -2868,15 +2703,15 @@ const MutualTerminationGenerator = ({
                                       }}
                                     >
                                       <SelectTrigger
-                                        className={`${getAddendumModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${addendumModalDropdownToneClass}`}
+                                        className={`${getTerminationModalSelectTriggerClass(Boolean(newClauseAmendmentType))} ${terminationModalDropdownToneClass}`}
                                       >
                                         <SelectValue placeholder="Please Select amendment type" />
                                       </SelectTrigger>
                                       <SelectContent className="z-[1001] w-[var(--radix-select-trigger-width)] text-xs">
-                                        <SelectItem className={addendumModalSelectItemClass} value="add">
+                                        <SelectItem className={terminationModalSelectItemClass} value="add">
                                           Add new term(s)
                                         </SelectItem>
-                                        <SelectItem className={addendumModalSelectItemClass} value="amend">
+                                        <SelectItem className={terminationModalSelectItemClass} value="amend">
                                           Amend existing term(s)
                                         </SelectItem>
                                       </SelectContent>
@@ -2890,7 +2725,7 @@ const MutualTerminationGenerator = ({
                                         onChange={(e) => setNewClauseTitle(e.target.value)}
                                         onMouseDown={() => setNewClauseAmendmentOpen(false)}
                                         placeholder="Clause title"
-                                        className={getAddendumModalInputClass(newClauseTitle.trim().length > 0)}
+                                        className={getTerminationModalInputClass(newClauseTitle.trim().length > 0)}
                                       />
                                       <p className="flex items-center gap-1 text-[11px] text-orange-600">
                                         <Info className="h-3.5 w-3.5" aria-hidden="true" />
@@ -2966,7 +2801,7 @@ const MutualTerminationGenerator = ({
             );
           })() : (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-muted-foreground">Complete the form to preview the contract.</p>
+                <p className="text-sm text-muted-foreground">Complete the form to preview the termination letter.</p>
               </div>
             )}
           </ScrollArea>
@@ -3006,6 +2841,14 @@ const MutualTerminationGenerator = ({
 };
 
 export default MutualTerminationGenerator;
+
+
+
+
+
+
+
+
 
 
 

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, ArrowRight, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
+import { Download, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,12 +23,12 @@ import {
   extractDobFromId,
   calculateAgeFromDob,
   southAfricanProvinces,
-  type PermanentContractFormData,
+  type EmploymentFormData as PoorPerformanceBaseFormData,
 } from "@/lib/validation";
 import { addServiceDelayToDate } from "@/lib/terminationNotice";
 import type { Tables } from "@/integrations/supabase/types";
 
-type ContractFormState = {
+type PoorPerformanceFormState = {
   employeeId: string;
   age: string;
   companyLogoDataUrl: string;
@@ -46,16 +45,16 @@ type ContractFormState = {
   performanceConsultationDate: string;
   improvementPeriod: string;
   misconductTypes: string[];
-} & Omit<PermanentContractFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
+} & Omit<PoorPerformanceBaseFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
-  gender: PermanentContractFormData["gender"] | "";
-  race: PermanentContractFormData["race"] | "";
-  contractReference: string;
-  addendumType: AddendumType | "";
+  gender: PoorPerformanceBaseFormData["gender"] | "";
+  race: PoorPerformanceBaseFormData["race"] | "";
+  referenceDate: string;
+  caseType: PoorPerformanceCaseType | "";
   effectiveDate: string;
-  contractEndDate: string;
-  newEndDate: string;
+  previousEndDate: string;
+  updatedEndDate: string;
   idType: "id" | "passport";
   homeAddressLine: string;
   homeAddressLine2: string;
@@ -65,14 +64,14 @@ type ContractFormState = {
 };
 
 type AmendmentType = "add" | "amend";
-type AddendumType = "general" | "renewal" | "extension";
+type PoorPerformanceCaseType = 'poor_performance';
 
-type AddendumData = PermanentContractFormData & {
-  contractReference: string;
-  addendumType: AddendumType;
+type PoorPerformanceData = PoorPerformanceBaseFormData & {
+  referenceDate: string;
+  caseType: PoorPerformanceCaseType;
   effectiveDate: string;
-  contractEndDate: string;
-  newEndDate: string;
+  previousEndDate: string;
+  updatedEndDate: string;
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
@@ -128,37 +127,24 @@ type ClauseDefinition = {
 
 type CustomClause = ClauseDefinition & { insertAfterId: string | null; amendmentType: AmendmentType };
 
-const salaryFrequencyLabels: Record<PermanentContractFormData["salaryFrequency"], string> = {
+const salaryFrequencyLabels: Record<PoorPerformanceBaseFormData["salaryFrequency"], string> = {
   month: "per month",
   week: "per week",
   day: "per day",
   hour: "per hour",
 };
 
-const probationOptions: PermanentContractFormData["probationPeriod"][] = ["1", "3", "6"];
-const probationLabels: Record<PermanentContractFormData["probationPeriod"], string> = {
+const probationOptions: PoorPerformanceBaseFormData["probationPeriod"][] = ["1", "3", "6"];
+const probationLabels: Record<PoorPerformanceBaseFormData["probationPeriod"], string> = {
   "1": "1 Month",
   "3": "3 Months",
   "6": "6 Months",
 };
 
-const retirementAgeOptions: PermanentContractFormData["retirementAge"][] = ["55", "60", "65"];
+const retirementAgeOptions: PoorPerformanceBaseFormData["retirementAge"][] = ["55", "60", "65"];
 
-const addendumTypeOptions: Array<{ value: AddendumType; label: string }> = [
-  { value: "general", label: "General Addendum" },
-  { value: "renewal", label: "Contract Renewal" },
-  { value: "extension", label: "Contract Extension" },
-];
-
-const addendumTypeLabels: Record<AddendumType, string> = {
-  general: "General Addendum",
-  renewal: "Contract Renewal",
-  extension: "Contract Extension",
-};
-
-const logoPlacementOptions = [
-  { value: "center", label: "Header and footer" },
-  { value: "left", label: "Header only" },
+const caseTypeOptions = [
+  { value: 'poor_performance', label: 'Poor Performance Termination Letter' },
 ] as const;
 
 const letterheadColorOptions = [
@@ -351,12 +337,12 @@ const toIsoDate = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? null : iso;
 };
 
-const fillClausePlaceholders = (body: string | string[], contractRef: string, effectiveDate: string, newEndDate = "") => {
+const fillClausePlaceholders = (body: string | string[], referenceDateValue: string, effectiveDate: string, updatedEndDate = "") => {
   const replaceText = (text: string) =>
     text
-      .replace("[contract reference]", contractRef)
+      .replace("[reference date]", referenceDateValue)
       .replace("[effective date]", effectiveDate)
-      .replace("[new end date]", newEndDate || "________________________");
+      .replace("[new end date]", updatedEndDate || "________________________");
   return Array.isArray(body) ? body.map(replaceText) : replaceText(body);
 };
 
@@ -553,7 +539,7 @@ const createPdfMailIconDataUrl = (strokeColor = "#000") =>
   }, { strokeColor });
 
 type FirstPagePreviewProps = {
-  data: AddendumData;
+  data: PoorPerformanceData;
   compact?: boolean;
   children?: ReactNode;
   profile: SlimProfile | null;
@@ -754,7 +740,7 @@ const PoorPerformanceTerminationGenerator = ({
     onBack?: () => void;
     onStepSelect?: (index: number) => void;
     onClear?: () => void;
-    addendumType?: AddendumType | "";
+    caseType?: PoorPerformanceCaseType | "";
     isFinished?: boolean;
     isPreviewEditable?: boolean;
     supportsPreviewEditToggle?: boolean;
@@ -773,7 +759,7 @@ const PoorPerformanceTerminationGenerator = ({
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [validatedPreview, setValidatedPreview] = useState<AddendumData | null>(null);
+  const [validatedPreview, setValidatedPreview] = useState<PoorPerformanceData | null>(null);
   const [clauseEdits, setClauseEdits] = useState<Record<string, string>>({});
   const [customClauseTitleEdits, setCustomClauseTitleEdits] = useState<Record<string, string>>({});
   const [editingClause, setEditingClause] = useState<string | null>(null);
@@ -785,9 +771,6 @@ const PoorPerformanceTerminationGenerator = ({
   const steps = ["Employer Details", "Employee Details", "Termination Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
-  const [showEmployeeHint, setShowEmployeeHint] = useState(false);
-  const [hasDismissedEmployeeHint, setHasDismissedEmployeeHint] = useState(false);
-  const [hasShownEmployeeHint, setHasShownEmployeeHint] = useState(false);
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const [sameDayCaution, setSameDayCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
@@ -806,9 +789,9 @@ const PoorPerformanceTerminationGenerator = ({
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractReferencePickerRef = useRef<HTMLInputElement | null>(null);
-  const contractEndDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const newEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const referenceDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const previousEndDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const updatedEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -820,14 +803,14 @@ const PoorPerformanceTerminationGenerator = ({
   const [companyLogoPreview, setCompanyLogoPreview] = useState<string>("");
   const baseModalFieldClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
-  const addendumModalDropdownToneClass =
+  const terminationModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
-  const addendumModalSelectContentClass = "!rounded";
-  const addendumModalSelectItemClass =
+  const terminationModalSelectContentClass = "!rounded";
+  const terminationModalSelectItemClass =
     "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
-  const getAddendumModalInputClass = (isComplete: boolean) =>
+  const getTerminationModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
-  const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
+  const getTerminationModalSelectTriggerClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
   const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
@@ -842,14 +825,7 @@ const PoorPerformanceTerminationGenerator = ({
       ),
     [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
-
-  useEffect(() => {
-    if (!embedded) return;
-    onStepChange?.(showFinalActions ? "Preview / Edit" : (steps[activeStep] ?? null));
-  }, [activeStep, embedded, onStepChange, showFinalActions, steps]);
-
-
-  const [formData, setFormData] = useState<ContractFormState>({
+  const [formData, setFormData] = useState<PoorPerformanceFormState>({
     employeeId: "",
     age: "",
     companyLogoDataUrl: "",
@@ -866,11 +842,11 @@ const PoorPerformanceTerminationGenerator = ({
     performanceConsultationDate: "",
     improvementPeriod: "",
     misconductTypes: [],
-    contractReference: "",
-    addendumType: "general",
+    referenceDate: "",
+    caseType: 'poor_performance',
     effectiveDate: "",
-    contractEndDate: "",
-    newEndDate: "",
+    previousEndDate: "",
+    updatedEndDate: "",
     idType: "id",
     startDate: new Date().toISOString().split("T")[0],
     issueDate: new Date().toISOString().split("T")[0],
@@ -893,8 +869,8 @@ const PoorPerformanceTerminationGenerator = ({
     alternativeContact: "",
     employeeEmail: "",
     tradingName: "",
-    employerContact: "",
-    employerEmail: "",
+    employerContact: profile?.company_contact || "",
+    employerEmail: profile?.company_email || "",
     jobTitle: "",
     salaryAmount: "",
     annualLeaveDays: "15",
@@ -902,131 +878,47 @@ const PoorPerformanceTerminationGenerator = ({
     probationPeriod: "3",
     department: "",
     retirementAge: "65",
-    workplace: "",
+    workplace: profile?.physical_address || "",
     interpreter: "no",
     reportsTo: "",
     additionalNotes: "",
   });
-  const selectedLetterheadThemeColors = sanitizeThemeColors(formData.letterheadThemeColors);
-
-  const sortedEmployees = useMemo(
-    () =>
-      [...employees].sort((a, b) => {
-        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
-        if (nameOrder !== 0) return nameOrder;
-        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
-      }),
-    [employees],
-  );
-
   const searchedEmployees = useMemo(() => {
-    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
-    if (!query) return sortedEmployees;
-    const tokens = query.split(" ").filter(Boolean);
-    return sortedEmployees
-      .map((employee) => {
-        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
-        const fullNameLower = fullName.toLowerCase();
-        const firstNameLower = employee.employee_name.toLowerCase();
-        const surnameLower = employee.employee_surname.toLowerCase();
-        const employeeNumberLower = (employee.employee_number ?? "").toLowerCase();
-        let score = 0;
-
-        if (fullNameLower === query) score += 1000;
-        if (fullNameLower.startsWith(query)) score += 800;
-        if (fullNameLower.includes(query)) score += 500;
-        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
-        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
-        if (query.length >= 2 && employeeNumberLower.includes(query)) score += 120;
-
-        return { employee, score, fullName };
-      })
-      .filter((item) => item.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          a.fullName.localeCompare(b.fullName, undefined, {
-            sensitivity: "base",
-          }),
-      )
-      .map((item) => item.employee);
-  }, [employeeSearchQuery, sortedEmployees]);
-
-  const misconductOptions = useMemo(() => {
-    if (conductOffences.length > 0) {
-      return Array.from(new Set(conductOffences.map((item) => item.name)));
-    }
-    return MISCONDUCT_TYPES;
-  }, [conductOffences]);
-  const dismissibleMisconductNames = useMemo(
-    () => new Set(conductOffences.filter((item) => item.category === "Dismissible").map((item) => item.name.trim().toLowerCase())),
-    [conductOffences],
+    const query = employeeSearchQuery.trim().toLowerCase();
+    return employees.filter((employee) => {
+      if (!query) return true;
+      const haystack = [
+        employee.employee_name,
+        employee.employee_surname,
+        employee.employee_number,
+        employee.id_number,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [employees, employeeSearchQuery]);
+  const selectedLetterheadThemeColors = useMemo(
+    () => sanitizeThemeColors(formData.letterheadThemeColors),
+    [formData.letterheadThemeColors],
   );
-
+  const misconductOptions = useMemo(() => {
+    const fromConduct = conductOffences.map((offence) => offence.name);
+    const merged = [...MISCONDUCT_TYPES, ...fromConduct, ...formData.misconductTypes];
+    return Array.from(
+      new Set(
+        merged
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+  }, [conductOffences, formData.misconductTypes]);
   const filteredMisconductTypes = useMemo(() => {
     const query = misconductSearch.trim().toLowerCase();
     if (!query) return misconductOptions;
     return misconductOptions.filter((type) => type.toLowerCase().includes(query));
-  }, [misconductSearch, misconductOptions]);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
-  }, [loading, navigate, user]);
-
-  useEffect(() => {
-    if (!employeeSearchOpen) return;
-    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [employeeSearchOpen]);
-
-  useEffect(() => {
-    if (!misconductPickerOpen) return;
-    const timer = setTimeout(() => misconductSearchInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [misconductPickerOpen]);
-
-  useEffect(() => {
-    if (formData.noticePeriod) return;
-    if (!formData.noticeMethod) return;
-    setFormData((prev) => ({ ...prev, noticeMethod: "" }));
-  }, [formData.noticePeriod, formData.noticeMethod]);
-
-  useEffect(() => {
-    setSameDayOverrideAccepted(false);
-    setSameDayCautionDismissed(false);
-  }, [formData.issueDate, formData.hearingDate]);
-
-  useEffect(() => {
-    if (sameDayOverrideAccepted) return;
-    if (sameDayCautionDismissed) return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(formData.issueDate) || !/^\d{4}-\d{2}-\d{2}$/.test(formData.hearingDate)) return;
-    if (formData.issueDate !== formData.hearingDate) return;
-    if (sameDayCaution.open) return;
-    setSameDayCaution({ open: true, pendingAction: "" });
-  }, [formData.issueDate, formData.hearingDate, sameDayOverrideAccepted, sameDayCautionDismissed, sameDayCaution.open]);
-
-  useEffect(() => {
-    if (hasDismissedEmployeeHint || activeStep !== 1) {
-      setShowEmployeeHint(false);
-      return;
-    }
-    if (hasShownEmployeeHint) return;
-    const timer = setTimeout(() => {
-      setShowEmployeeHint(true);
-      setHasShownEmployeeHint(true);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [activeStep, hasDismissedEmployeeHint, hasShownEmployeeHint]);
-
-  useEffect(() => {
-    if (!showEmployeeHint) return;
-    const autoDismissTimer = setTimeout(() => {
-      setShowEmployeeHint(false);
-    }, 10000);
-    return () => clearTimeout(autoDismissTimer);
-  }, [showEmployeeHint]);
+  }, [misconductOptions, misconductSearch]);
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -1131,14 +1023,14 @@ const PoorPerformanceTerminationGenerator = ({
     const employee = employees.find((emp) => emp.id === employeeId);
     if (!employee) return;
     const employeeNationality =
-      (employee as Partial<Tables<"employees">> & { nationality?: PermanentContractFormData["nationality"] })
+      (employee as Partial<Tables<"employees">> & { nationality?: PoorPerformanceBaseFormData["nationality"] })
         .nationality || "South African";
     const hasIdNumber = Boolean(employee.id_number);
     const passportNumber = !hasIdNumber ? employee.id_number ?? "" : "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PermanentContractFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PermanentContractFormData["race"] }).race || "";
+    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: PoorPerformanceBaseFormData["gender"] }).gender || "";
+    const raceValue = (employee as Partial<Tables<"employees">> & { race?: PoorPerformanceBaseFormData["race"] }).race || "";
     const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
     const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
@@ -1201,11 +1093,11 @@ const PoorPerformanceTerminationGenerator = ({
       performanceConsultationDate: "",
       improvementPeriod: "",
       misconductTypes: [],
-      contractReference: "",
-      addendumType: "general",
+      referenceDate: "",
+      caseType: 'poor_performance',
       effectiveDate: "",
-      contractEndDate: "",
-      newEndDate: "",
+      previousEndDate: "",
+      updatedEndDate: "",
       idType: "id",
       startDate: new Date().toISOString().split("T")[0],
       issueDate: new Date().toISOString().split("T")[0],
@@ -1388,9 +1280,6 @@ const PoorPerformanceTerminationGenerator = ({
     if (showFinalActions) {
       setShowFinalActions(false);
     }
-    if (index > 0 && showEmployeeHint) {
-      setShowEmployeeHint(false);
-    }
     setActiveStep(index);
   };
 
@@ -1412,11 +1301,6 @@ const PoorPerformanceTerminationGenerator = ({
 
   const handleNext = () => {
     if (activeStep < steps.length - 1 && canGoNext) {
-      if (activeStep === 0) {
-        if (showEmployeeHint) {
-          setShowEmployeeHint(false);
-        }
-      }
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -1472,7 +1356,7 @@ const PoorPerformanceTerminationGenerator = ({
       onBack: handleBack,
       onStepSelect: handleStepSelect,
       onClear: showFinalActions ? togglePreviewEditMode : clearCurrentStepFields,
-      addendumType: formData.addendumType,
+      caseType: formData.caseType,
       isFinished: showFinalActions,
       isPreviewEditable,
       supportsPreviewEditToggle: true,
@@ -1494,7 +1378,7 @@ const PoorPerformanceTerminationGenerator = ({
     isFormComplete,
     showFinalActions,
     isPreviewEditable,
-    formData.addendumType,
+    formData.caseType,
   ]);
 
   const resetEmployeeStepFields = () => {
@@ -1532,7 +1416,7 @@ const PoorPerformanceTerminationGenerator = ({
     }
   };
 
-  const resetAddendumStepFields = () => {
+  const resetTerminationStepFields = () => {
     setFormData((prev) => ({
       ...prev,
       issuer: "",
@@ -1546,12 +1430,12 @@ const PoorPerformanceTerminationGenerator = ({
       performanceConsultationDate: "",
       improvementPeriod: "",
       misconductTypes: [],
-      addendumType: "general",
+      caseType: 'poor_performance',
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
-      contractEndDate: "",
-      newEndDate: "",
-      contractReference: "",
+      previousEndDate: "",
+      updatedEndDate: "",
+      referenceDate: "",
     }));
   };
 
@@ -1565,7 +1449,7 @@ const PoorPerformanceTerminationGenerator = ({
       return;
     }
     if (activeStep === 2) {
-      resetAddendumStepFields();
+      resetTerminationStepFields();
       return;
     }
     resetForm();
@@ -1707,8 +1591,8 @@ const PoorPerformanceTerminationGenerator = ({
     setDraftLetterheadThemeColors([]);
   };
 
-  const openContractReferencePicker = () => {
-    const picker = contractReferencePickerRef.current;
+  const openReferenceDatePicker = () => {
+    const picker = referenceDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1717,8 +1601,8 @@ const PoorPerformanceTerminationGenerator = ({
     }
   };
 
-  const openContractEndDatePicker = () => {
-    const picker = contractEndDatePickerRef.current;
+  const openEffectiveDatePicker = () => {
+    const picker = previousEndDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1728,7 +1612,7 @@ const PoorPerformanceTerminationGenerator = ({
   };
 
   const openNewEndDatePicker = () => {
-    const picker = newEndDatePickerRef.current;
+    const picker = updatedEndDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
       (picker as any).showPicker();
@@ -1836,13 +1720,13 @@ const PoorPerformanceTerminationGenerator = ({
       issueDate,
       salaryAmount: Number(formData.salaryAmount) || 0,
       annualLeaveDays: Number(formData.annualLeaveDays) || 0,
-      gender: formData.gender as PermanentContractFormData["gender"],
-      race: formData.race as PermanentContractFormData["race"],
+      gender: formData.gender as PoorPerformanceBaseFormData["gender"],
+      race: formData.race as PoorPerformanceBaseFormData["race"],
       idType: formData.idType,
-      addendumType: "general",
-      contractReference: "",
-      contractEndDate: "",
-      newEndDate: "",
+      caseType: 'poor_performance',
+      referenceDate: "",
+      previousEndDate: "",
+      updatedEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
@@ -1862,7 +1746,7 @@ const PoorPerformanceTerminationGenerator = ({
       homeCity: formData.homeCity,
       homeProvince: formData.homeProvince,
       homeAreaCode: formData.homeAreaCode,
-    } as AddendumData;
+    } as PoorPerformanceData;
   };
 
   const serializeClauseBody = (body: string | string[]) => (Array.isArray(body) ? body.join("\n\n") : body);
@@ -1974,7 +1858,7 @@ const PoorPerformanceTerminationGenerator = ({
     return cursorY;
   };
 
-  const generatePDF = (data: AddendumData, download = false) => {
+  const generatePDF = (data: PoorPerformanceData, download = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -2487,50 +2371,6 @@ const PoorPerformanceTerminationGenerator = ({
 
   const content = (
     <>
-      {showEmployeeHint && typeof document !== "undefined"
-        ? createPortal(
-              <div className="pointer-events-none fixed inset-x-0 top-[54px] z-50 flex justify-center px-4">
-                <div className="relative flex translate-x-[60px] items-center gap-3 rounded-sm border border-blue-200 bg-[#2D4256] px-4 py-3 text-[13px] font-medium text-white shadow-[0_6px_18px_rgba(37,99,235,0.28)]">
-                <span
-                  className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_0_25px_rgba(37,99,235,0.32)] animate-pulse"
-                  aria-hidden="true"
-                ></span>
-                <div className="pointer-events-auto flex items-center gap-2">
-                  <span className="text-blue-400">
-                    TIP!{" "}
-                    <span className="text-white inline-flex items-center gap-1 ml-2">
-                      Add the employee to your Employee List before generating a contract
-                      <ArrowRight className="h-4 w-4 text-white" aria-hidden="true" />
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                      navigate("/employees");
-                    }}
-                  >
-                    Employees page
-                  </button>
-                  <button
-                    type="button"
-                    className="text-white hover:text-white focus-visible:text-white"
-                    onClick={() => {
-                      setHasDismissedEmployeeHint(true);
-                      setShowEmployeeHint(false);
-                    }}
-                    aria-label="Dismiss employee guidance message"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
       <div
         className={cn(
           "space-y-6",
@@ -2631,7 +2471,7 @@ const PoorPerformanceTerminationGenerator = ({
                         id="companyName"
                         value={profile?.company_name || ""}
                         readOnly
-                        className={getAddendumModalInputClass(Boolean(profile?.company_name))}
+                        className={getTerminationModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2640,7 +2480,7 @@ const PoorPerformanceTerminationGenerator = ({
                         id="registrationNumber"
                         value={profile?.registration_number || ""}
                         readOnly
-                        className={getAddendumModalInputClass(Boolean(profile?.registration_number))}
+                        className={getTerminationModalInputClass(Boolean(profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2649,7 +2489,7 @@ const PoorPerformanceTerminationGenerator = ({
                         id="physicalAddress"
                         value={profile?.physical_address || ""}
                         readOnly
-                        className={getAddendumModalInputClass(Boolean(profile?.physical_address))}
+                        className={getTerminationModalInputClass(Boolean(profile?.physical_address))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2659,7 +2499,7 @@ const PoorPerformanceTerminationGenerator = ({
                         value={formData.tradingName}
                         onChange={(e) => setFormData({ ...formData, tradingName: e.target.value })}
                         placeholder="If different from registered name"
-                        className={getAddendumModalInputClass(formData.tradingName.trim().length > 0)}
+                        className={getTerminationModalInputClass(formData.tradingName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2674,7 +2514,7 @@ const PoorPerformanceTerminationGenerator = ({
                           setFormData({ ...formData, employerContact: digitsOnly });
                         }}
                         placeholder="10-digit contact number"
-                        className={getAddendumModalInputClass(formData.employerContact.trim().length > 0)}
+                        className={getTerminationModalInputClass(formData.employerContact.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2686,7 +2526,7 @@ const PoorPerformanceTerminationGenerator = ({
                         type="email"
                         value={formData.employerEmail}
                         onChange={(e) => setFormData({ ...formData, employerEmail: e.target.value })}
-                        className={getAddendumModalInputClass(formData.employerEmail.trim().length > 0)}
+                        className={getTerminationModalInputClass(formData.employerEmail.trim().length > 0)}
                       />
                     </div>
                     <div className="md:col-span-2 pt-1" aria-hidden="true">
@@ -2850,12 +2690,12 @@ const PoorPerformanceTerminationGenerator = ({
                           if (open) setEmployeeSearchQuery("");
                         }}
                       >
-                        <SelectTrigger className={`${getAddendumModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${addendumModalDropdownToneClass}`}>
+                        <SelectTrigger className={`${getTerminationModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${terminationModalDropdownToneClass}`}>
                           <SelectValue placeholder="Select from saved employees or fill manually" />
                         </SelectTrigger>
                         <SelectContent
                           hideScrollButtons
-                          className={`${addendumModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
+                          className={`${terminationModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
                         >
                           <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
                             <Input
@@ -2869,7 +2709,7 @@ const PoorPerformanceTerminationGenerator = ({
                           </div>
                           {searchedEmployees.length > 0 ? (
                             searchedEmployees.map((employee) => (
-                              <SelectItem key={employee.id} value={employee.id} className={addendumModalSelectItemClass}>
+                              <SelectItem key={employee.id} value={employee.id} className={terminationModalSelectItemClass}>
                                 {employee.employee_name} {employee.employee_surname}
                               </SelectItem>
                             ))
@@ -2888,7 +2728,7 @@ const PoorPerformanceTerminationGenerator = ({
                           id="employeeName"
                           value={formData.employeeName}
                           onChange={(e) => setFormData({ ...formData, employeeName: e.target.value })}
-                          className={getAddendumModalInputClass(formData.employeeName.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.employeeName.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2899,7 +2739,7 @@ const PoorPerformanceTerminationGenerator = ({
                           id="employeeSurname"
                           value={formData.employeeSurname}
                           onChange={(e) => setFormData({ ...formData, employeeSurname: e.target.value })}
-                          className={getAddendumModalInputClass(formData.employeeSurname.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.employeeSurname.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2915,12 +2755,12 @@ const PoorPerformanceTerminationGenerator = ({
                             }));
                           }}
                         >
-                          <SelectTrigger className={`${getAddendumModalSelectTriggerClass(Boolean(formData.idType))} ${addendumModalDropdownToneClass}`}>
+                          <SelectTrigger className={`${getTerminationModalSelectTriggerClass(Boolean(formData.idType))} ${terminationModalDropdownToneClass}`}>
                             <SelectValue placeholder="Choose document type" />
                           </SelectTrigger>
-                          <SelectContent className={addendumModalSelectContentClass}>
-                            <SelectItem value="id" className={addendumModalSelectItemClass}>ID Number</SelectItem>
-                            <SelectItem value="passport" className={addendumModalSelectItemClass}>Passport Number</SelectItem>
+                          <SelectContent className={terminationModalSelectContentClass}>
+                            <SelectItem value="id" className={terminationModalSelectItemClass}>ID Number</SelectItem>
+                            <SelectItem value="passport" className={terminationModalSelectItemClass}>Passport Number</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -2949,7 +2789,7 @@ const PoorPerformanceTerminationGenerator = ({
                               }));
                             }
                           }}
-                          className={`${getAddendumModalInputClass(
+                          className={`${getTerminationModalInputClass(
                             formData.idType === "id"
                               ? formData.employeeIdNumber.trim().length > 0
                               : formData.passportNumber.trim().length > 0,
@@ -2970,7 +2810,7 @@ const PoorPerformanceTerminationGenerator = ({
                           id="homeAddressLine"
                           value={formData.homeAddressLine}
                           onChange={(e) => setFormData({ ...formData, homeAddressLine: e.target.value })}
-                          className={getAddendumModalInputClass(formData.homeAddressLine.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.homeAddressLine.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2979,7 +2819,7 @@ const PoorPerformanceTerminationGenerator = ({
                           id="homeAddressLine2"
                           value={formData.homeAddressLine2}
                           onChange={(e) => setFormData({ ...formData, homeAddressLine2: e.target.value })}
-                          className={getAddendumModalInputClass(formData.homeAddressLine2.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.homeAddressLine2.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2990,7 +2830,7 @@ const PoorPerformanceTerminationGenerator = ({
                           id="homeCity"
                           value={formData.homeCity}
                           onChange={(e) => setFormData({ ...formData, homeCity: e.target.value })}
-                          className={getAddendumModalInputClass(formData.homeCity.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.homeCity.trim().length > 0)}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -3003,18 +2843,18 @@ const PoorPerformanceTerminationGenerator = ({
                         >
                           <SelectTrigger
                             id="homeProvince"
-                            className={`${getAddendumModalSelectTriggerClass(
+                            className={`${getTerminationModalSelectTriggerClass(
                               formData.homeProvince.trim().length > 0,
-                            )} ${addendumModalDropdownToneClass}`}
+                            )} ${terminationModalDropdownToneClass}`}
                           >
                             <SelectValue placeholder="Select province" />
                           </SelectTrigger>
-                          <SelectContent className={addendumModalSelectContentClass}>
+                          <SelectContent className={terminationModalSelectContentClass}>
                             {southAfricanProvinces.map((province) => (
                               <SelectItem
                                 key={province}
                                 value={province}
-                                className={addendumModalSelectItemClass}
+                                className={terminationModalSelectItemClass}
                               >
                                 {province}
                               </SelectItem>
@@ -3033,7 +2873,7 @@ const PoorPerformanceTerminationGenerator = ({
                             const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 4);
                             setFormData({ ...formData, homeAreaCode: digitsOnly });
                           }}
-                          className={getAddendumModalInputClass(formData.homeAreaCode.trim().length > 0)}
+                          className={getTerminationModalInputClass(formData.homeAreaCode.trim().length > 0)}
                         />
                       </div>
                     </div>
@@ -3084,7 +2924,7 @@ const PoorPerformanceTerminationGenerator = ({
                               openNoticeDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          className={`${getTerminationModalInputClass(formData.issueDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                         <input
                           ref={noticeDatePickerRef}
@@ -3128,7 +2968,7 @@ const PoorPerformanceTerminationGenerator = ({
                         }
                       >
                         <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${addendumModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${terminationModalDropdownToneClass}`}
                         >
                           <SelectValue
                             placeholder="Select notice period"
@@ -3136,9 +2976,9 @@ const PoorPerformanceTerminationGenerator = ({
                             style={!formData.noticePeriod ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
+                        <SelectContent className={terminationModalSelectContentClass}>
                           {noticePeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option} value={option} className={terminationModalSelectItemClass}>
                               {option}
                             </SelectItem>
                           ))}
@@ -3155,7 +2995,7 @@ const PoorPerformanceTerminationGenerator = ({
                           onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeMethod: value }))}
                         >
                           <SelectTrigger
-                            className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${addendumModalDropdownToneClass}`}
+                            className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${terminationModalDropdownToneClass}`}
                           >
                             <SelectValue
                               placeholder="Select notice method"
@@ -3163,9 +3003,9 @@ const PoorPerformanceTerminationGenerator = ({
                               style={!formData.noticeMethod ? { color: "#94a3b8" } : undefined}
                             />
                           </SelectTrigger>
-                          <SelectContent className={addendumModalSelectContentClass}>
+                          <SelectContent className={terminationModalSelectContentClass}>
                             {noticeMethodOptions.map((option) => (
-                              <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                              <SelectItem key={option.value} value={option.value} className={terminationModalSelectItemClass}>
                                 {option.label}
                               </SelectItem>
                             ))}
@@ -3205,7 +3045,7 @@ const PoorPerformanceTerminationGenerator = ({
                           readOnly
                           placeholder="Auto-calculated from notice date and period"
                           value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getAddendumModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          className={`${getTerminationModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                       </div>
                     </div>
@@ -3247,7 +3087,7 @@ const PoorPerformanceTerminationGenerator = ({
                               openHearingDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.hearingDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          className={`${getTerminationModalInputClass(formData.hearingDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                         <input
                           ref={hearingDatePickerRef}
@@ -3296,7 +3136,7 @@ const PoorPerformanceTerminationGenerator = ({
                               openConsultationDatePicker();
                             }
                           }}
-                          className={`${getAddendumModalInputClass(formData.performanceConsultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          className={`${getTerminationModalInputClass(formData.performanceConsultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                         />
                         <input
                           ref={consultationDatePickerRef}
@@ -3323,7 +3163,7 @@ const PoorPerformanceTerminationGenerator = ({
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, improvementPeriod: value }))}
                       >
                         <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.improvementPeriod))} ${addendumModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.improvementPeriod))} ${terminationModalDropdownToneClass}`}
                         >
                           <SelectValue
                             placeholder="Select improvement period"
@@ -3331,9 +3171,9 @@ const PoorPerformanceTerminationGenerator = ({
                             style={!formData.improvementPeriod ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
+                        <SelectContent className={terminationModalSelectContentClass}>
                           {improvementPeriodOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option} value={option} className={terminationModalSelectItemClass}>
                               {option}
                             </SelectItem>
                           ))}
@@ -3366,7 +3206,7 @@ const PoorPerformanceTerminationGenerator = ({
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeOfAppeal: value }))}
                       >
                         <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${addendumModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${terminationModalDropdownToneClass}`}
                         >
                           <SelectValue
                             placeholder="Select notice of appeal"
@@ -3374,9 +3214,9 @@ const PoorPerformanceTerminationGenerator = ({
                             style={!formData.noticeOfAppeal ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
+                        <SelectContent className={terminationModalSelectContentClass}>
                           {noticeOfAppealOptions.map((option) => (
-                            <SelectItem key={option} value={option} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option} value={option} className={terminationModalSelectItemClass}>
                               {option}
                             </SelectItem>
                           ))}
@@ -3411,7 +3251,7 @@ const PoorPerformanceTerminationGenerator = ({
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, chairperson: value }))}
                       >
                         <SelectTrigger
-                          className={`${getAddendumModalSelectTriggerClass(Boolean(formData.chairperson))} ${addendumModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.chairperson))} ${terminationModalDropdownToneClass}`}
                         >
                           <SelectValue
                             placeholder="Select chairperson type"
@@ -3419,9 +3259,9 @@ const PoorPerformanceTerminationGenerator = ({
                             style={!formData.chairperson ? { color: "#94a3b8" } : undefined}
                           />
                         </SelectTrigger>
-                        <SelectContent className={addendumModalSelectContentClass}>
+                        <SelectContent className={terminationModalSelectContentClass}>
                           {chairpersonOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value} className={addendumModalSelectItemClass}>
+                            <SelectItem key={option.value} value={option.value} className={terminationModalSelectItemClass}>
                               {option.label}
                             </SelectItem>
                           ))}
@@ -3437,7 +3277,7 @@ const PoorPerformanceTerminationGenerator = ({
                         value={formData.issuer}
                         onChange={(e) => setFormData((prev) => ({ ...prev, issuer: e.target.value }))}
                         placeholder="Name and surname of person issuing this document."
-                        className={`${getAddendumModalInputClass(formData.issuer.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        className={`${getTerminationModalInputClass(formData.issuer.trim().length > 0)} placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -3834,7 +3674,7 @@ const PoorPerformanceTerminationGenerator = ({
                                           value={customClauseTitleDraft}
                                           onChange={(e) => setCustomClauseTitleDraft(e.target.value)}
                                           placeholder="Clause title"
-                                          className={getAddendumModalInputClass(customClauseTitleDraft.trim().length > 0)}
+                                          className={getTerminationModalInputClass(customClauseTitleDraft.trim().length > 0)}
                                         />
                                       ) : null}
                                       <Textarea
@@ -3943,7 +3783,7 @@ const PoorPerformanceTerminationGenerator = ({
             );
           })() : (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-muted-foreground">Complete the form to preview the contract.</p>
+                <p className="text-sm text-muted-foreground">Complete the form to preview the termination letter.</p>
               </div>
             )}
           </ScrollArea>
@@ -4065,7 +3905,7 @@ const PoorPerformanceTerminationGenerator = ({
                   filteredMisconductTypes.map((type) => (
                     <label
                       key={type}
-                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${terminationModalSelectItemClass}`}
                     >
                       <Checkbox
                         checked={draftMisconductTypes.includes(type)}
@@ -4161,7 +4001,7 @@ const PoorPerformanceTerminationGenerator = ({
                 {transmissionMethodOptions.map((method) => (
                   <label
                     key={method}
-                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${addendumModalSelectItemClass}`}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${terminationModalSelectItemClass}`}
                   >
                     <Checkbox
                       checked={draftTransmissionMethods.includes(method)}
@@ -4335,6 +4175,14 @@ const PoorPerformanceTerminationGenerator = ({
 };
 
 export default PoorPerformanceTerminationGenerator;
+
+
+
+
+
+
+
+
 
 
 

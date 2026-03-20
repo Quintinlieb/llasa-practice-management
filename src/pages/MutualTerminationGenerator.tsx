@@ -119,13 +119,57 @@ const retirementAgeOptions: MutualTerminationBaseFormData["retirementAge"][] = [
 const caseTypeOptions = [
   { value: 'mutual_termination', label: 'Mutual Termination Letter' },
 ] as const;
+const noticePeriodOptions = [
+  "1 week",
+  "2 weeks",
+  "4 weeks",
+  "5 weeks",
+  "6 weeks",
+  "7 weeks",
+  "8 weeks",
+  "9 weeks",
+  "10 weeks",
+  "11 weeks",
+  "12 weeks",
+] as const;
 const noticeMethodOptions = [
   { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
 ] as const;
+const paymentOptions: PaymentKey[] = ["notice", "annual_leave", "gratuity", "severance", "outstanding_salary"];
+const paymentOptionLabels: Record<PaymentKey, string> = {
+  notice: "Notice payment",
+  annual_leave: "Annual leave payment",
+  gratuity: "Gratuity payment",
+  severance: "Severance payment",
+  outstanding_salary: "Outstanding salary payment",
+};
+const paymentOptionDocumentLabels: Record<PaymentKey, string> = {
+  notice: "Notice payment",
+  annual_leave: "Annual leave payment",
+  gratuity: "Gratuity payment",
+  severance: "Severance payment",
+  outstanding_salary: "Outstanding salary payment",
+};
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
+
+const parseAmountValue = (raw: string) => {
+  const cleaned = raw.replace(/\s+/g, "").replace(/,/g, "").replace(/[^0-9.-]/g, "");
+  const parsed = Number.parseFloat(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isTotalPaymentSummary = (text: string) => /^total:\s*/i.test(text.trim());
+const isAgreedPaymentSubParagraph = (text: string) => {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  if (isTotalPaymentSummary(normalized)) return true;
+  return (Object.values(paymentOptionDocumentLabels) as string[]).some((label) =>
+    normalized.startsWith(`${label.toLowerCase()}:`),
+  );
+};
 
 const formatAmountInput = (raw: string) => {
   const cleaned = raw.replace(/\s+/g, "").replace(/,/g, "").replace(/[^0-9.]/g, "");
@@ -885,7 +929,7 @@ const MutualTerminationGenerator = ({
     }
   };
 
-  const openEffectiveDatePicker = () => {
+  const openPreviousEndDatePicker = () => {
     const picker = previousEndDatePickerRef.current;
     if (!picker) return;
     if (typeof (picker as any).showPicker === "function") {
@@ -1879,12 +1923,12 @@ const MutualTerminationGenerator = ({
                           readOnly
                           placeholder="Please select a date"
                           value={formData.consultationDate ? toDisplayDate(formData.consultationDate) : ""}
-                          onClick={openEffectiveDatePicker}
-                          onFocus={openEffectiveDatePicker}
+                          onClick={openPreviousEndDatePicker}
+                          onFocus={openPreviousEndDatePicker}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              openEffectiveDatePicker();
+                              openPreviousEndDatePicker();
                             }
                           }}
                           className={`${getTerminationModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}

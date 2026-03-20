@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,14 +12,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, Building2, User2, Briefcase, Check, Undo2, X, Info, Plus, Calendar, TriangleAlert, Mail, Phone, Palette } from "lucide-react";
+import { Download, Building2, User2, Briefcase, Undo2, X, Info, Plus, Mail, Phone, Palette } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import {
-  salaryFrequencyOptions,
   extractDobFromId,
   calculateAgeFromDob,
   type EmploymentFormData as RetrenchmentBaseFormData,
@@ -40,25 +39,15 @@ type RetrenchmentFormState = {
   voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
   abscondmentNoticeDate: string;
-  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
-  appliedProgressiveDisciplinaryAction: string;
-  hearingDate: string;
-  performanceConsultationDate: string;
-  improvementPeriod: string;
-  misconductTypes: string[];
+  retrenchmentReasons: string[];
   selectionCriteria: string[];
 } & Omit<RetrenchmentBaseFormData, "salaryAmount" | "gender" | "race" | "annualLeaveDays"> & {
   salaryAmount: string;
   annualLeaveDays: string;
-  gender: RetrenchmentBaseFormData["gender"] | "";
-  race: RetrenchmentBaseFormData["race"] | "";
-  referenceDate: string;
   caseType: RetrenchmentCaseType | "";
   effectiveDate: string;
-  previousEndDate: string;
-  updatedEndDate: string;
   idType: "id" | "passport";
   homeAddressLine: string;
   homeAddressLine2: string;
@@ -70,12 +59,9 @@ type RetrenchmentFormState = {
 type AmendmentType = "add" | "amend";
 type RetrenchmentCaseType = 'retrenchment';
 
-type RetrenchmentData = RetrenchmentBaseFormData & {
-  referenceDate: string;
+type RetrenchmentData = Omit<RetrenchmentBaseFormData, "gender" | "race"> & {
   caseType: RetrenchmentCaseType;
   effectiveDate: string;
-  previousEndDate: string;
-  updatedEndDate: string;
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
@@ -87,14 +73,9 @@ type RetrenchmentData = RetrenchmentBaseFormData & {
   voluntaryRetrenchment: "yes" | "no" | "";
   transmissionMethods: string[];
   abscondmentNoticeDate: string;
-  absentFromDate: string;
   noticePeriod: string;
   noticeOfAppeal: string;
-  appliedProgressiveDisciplinaryAction: string;
-  hearingDate: string;
-  performanceConsultationDate: string;
-  improvementPeriod: string;
-  misconductTypes: string[];
+  retrenchmentReasons: string[];
   selectionCriteria: string[];
   homeAddressLine: string;
   homeAddressLine2: string;
@@ -114,8 +95,6 @@ type SlimEmployee = {
   employee_surname: string;
   nationality: string | null;
   emergency_contact_number: string | null;
-  gender: string | null;
-  race: string | null;
   cell_number: string | null;
   email: string | null;
   job_title: string | null;
@@ -136,25 +115,20 @@ type ClauseDefinition = {
 
 type CustomClause = ClauseDefinition & { insertAfterId: string | null; amendmentType: AmendmentType };
 
-const salaryFrequencyLabels: Record<RetrenchmentBaseFormData["salaryFrequency"], string> = {
-  month: "per month",
-  week: "per week",
-  day: "per day",
-  hour: "per hour",
+type UntypedSupabaseQuery = {
+  select: (columns: string) => UntypedSupabaseQuery;
+  eq: (column: string, value: string) => UntypedSupabaseQuery;
+  maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+  then: <TResult1 = { data: unknown; error: unknown }, TResult2 = never>(
+    onfulfilled?: ((value: { data: unknown; error: unknown }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ) => Promise<TResult1 | TResult2>;
 };
 
-const probationOptions: RetrenchmentBaseFormData["probationPeriod"][] = ["1", "3", "6"];
-const probationLabels: Record<RetrenchmentBaseFormData["probationPeriod"], string> = {
-  "1": "1 Month",
-  "3": "3 Months",
-  "6": "6 Months",
+type UntypedSupabaseClient = {
+  from: (relation: string) => UntypedSupabaseQuery;
 };
 
-const retirementAgeOptions: RetrenchmentBaseFormData["retirementAge"][] = ["55", "60", "65"];
-
-const caseTypeOptions = [
-  { value: 'retrenchment', label: 'Retrenchment Termination Letter' },
-] as const;
 const logoPlacementOptions = [
   { value: "center", label: "Header and footer" },
   { value: "left", label: "Header only" },
@@ -299,27 +273,11 @@ const getAutoSeverancePackageFromStartDate = (startDateRaw: string): string => {
   if (completedYears >= 32) return "32 weeks";
   return `${completedYears} weeks`;
 };
-const improvementPeriodOptions = [
-  "1 week",
-  "2 weeks",
-  "3 weeks",
-  "1 month",
-  "5 weeks",
-  "6 weeks",
-  "7 weeks",
-  "2 months",
-  "9 weeks",
-  "10 weeks",
-  "11 weeks",
-  "3 months",
-] as const;
-
 const noticeOfAppealOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const noticeMethodOptions = [
   { value: "required_to_work_notice_period", label: "Required to work during Notice Period" },
   { value: "not_required_to_work_notice_period", label: "Not required to work during Notice Period" },
 ] as const;
-const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const transmissionMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
 const severancePackageOptions = [
   "None",
@@ -353,26 +311,6 @@ const RETRENCHMENT_REASON_OPTIONS = [
   "Introduction of new technology or automation",
   "Closure of a department, division, or business unit",
 ] as const;
-const MISCONDUCT_TYPES = [
-  "Unauthorised Absenteeism",
-  "Poor Time Keeping",
-  "Sleeping On Duty",
-  "Using Phone on Duty",
-  "Insubordination",
-  "Insolent Behaviour",
-  "Unauthorised Possession",
-  "Unauthorised Excess",
-  "Unauthorised Removal",
-  "Testing Positive for Alcohol",
-  "Intoxicated at Work",
-  "Dereliction of Duties",
-  "Negligence",
-  "Dishonesty",
-  "Breach of Policy",
-  "Breach of Rule(s)",
-  "Breach of Procedure",
-] as const;
-
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 2 }).format(amount);
 
@@ -389,32 +327,6 @@ const toDisplayDate = (value: string) => {
   return `${day}/${month}/${year}`;
 };
 
-const toIsoDate = (value: string) => {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!match) return null;
-  const [, d, m, y] = match;
-  const day = d.padStart(2, "0");
-  const month = m.padStart(2, "0");
-  const iso = `${y}-${month}-${day}`;
-  const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime()) ? null : iso;
-};
-
-const fillClausePlaceholders = (body: string | string[], referenceDateValue: string, effectiveDate: string, updatedEndDate = "") => {
-  const replaceText = (text: string) =>
-    text
-      .replace("[reference date]", referenceDateValue)
-      .replace("[effective date]", effectiveDate)
-      .replace("[new end date]", updatedEndDate || "________________________");
-  return Array.isArray(body) ? body.map(replaceText) : replaceText(body);
-};
-
-const extractYear = (value: string) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value.slice(0, 4) : String(date.getFullYear());
-};
-
 const makeClauseId = (title: string) =>
   title
     .toLowerCase()
@@ -429,23 +341,10 @@ const generateCustomClauseId = () =>
     ? crypto.randomUUID()
     : `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const SAME_DAY_HEARING_NOTICE_CAUTION = "__SAME_DAY_HEARING_NOTICE_CAUTION__";
-
 const deriveAgeFromId = (id: string) => {
   const dob = extractDobFromId(id);
   if (!dob) return "";
   return String(calculateAgeFromDob(dob));
-};
-
-const formatMisconductList = (types: string[]) => {
-  const normalized = types
-    .map((type) => type.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (normalized.length === 0) return "[forms of misconduct]";
-  if (normalized.length === 1) return normalized[0];
-  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
-  return `${normalized.slice(0, -1).join(", ")} and ${normalized[normalized.length - 1]}`;
 };
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
@@ -840,9 +739,6 @@ const RetrenchmentTerminationGenerator = ({
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
-  const [conductOffences, setConductOffences] = useState<
-    { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
-  >([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(false);
@@ -861,15 +757,9 @@ const RetrenchmentTerminationGenerator = ({
   const [activeStep, setActiveStep] = useState(0);
   const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
-  const [sameDayCaution, setSameDayCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
-    open: false,
-    pendingAction: "",
-  });
-  const [sameDayOverrideAccepted, setSameDayOverrideAccepted] = useState(false);
-  const [sameDayCautionDismissed, setSameDayCautionDismissed] = useState(false);
-  const [misconductSearch, setMisconductSearch] = useState("");
-  const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
-  const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
+  const [retrenchmentReasonSearch, setRetrenchmentReasonSearch] = useState("");
+  const [retrenchmentReasonPickerOpen, setRetrenchmentReasonPickerOpen] = useState(false);
+  const [draftRetrenchmentReasons, setDraftRetrenchmentReasons] = useState<string[]>([]);
   const [selectionCriteriaPickerOpen, setSelectionCriteriaPickerOpen] = useState(false);
   const [draftSelectionCriteria, setDraftSelectionCriteria] = useState<string[]>([]);
   const [transmissionPickerOpen, setTransmissionPickerOpen] = useState(false);
@@ -878,14 +768,9 @@ const RetrenchmentTerminationGenerator = ({
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const abscondmentNoticeDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const consultationDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const referenceDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const previousEndDatePickerRef = useRef<HTMLInputElement | null>(null);
-  const updatedEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
   const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const retrenchmentReasonSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const addClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -929,20 +814,12 @@ const RetrenchmentTerminationGenerator = ({
     voluntaryRetrenchment: "no",
     transmissionMethods: [],
     abscondmentNoticeDate: "",
-    absentFromDate: "",
     noticePeriod: "",
     noticeOfAppeal: "",
-    appliedProgressiveDisciplinaryAction: "",
-    hearingDate: "",
-    performanceConsultationDate: "",
-    improvementPeriod: "",
-    misconductTypes: [],
+    retrenchmentReasons: [],
     selectionCriteria: [],
-    referenceDate: "",
     caseType: 'retrenchment',
     effectiveDate: "",
-    previousEndDate: "",
-    updatedEndDate: "",
     idType: "id",
     startDate: new Date().toISOString().split("T")[0],
     issueDate: new Date().toISOString().split("T")[0],
@@ -959,8 +836,6 @@ const RetrenchmentTerminationGenerator = ({
     homeAreaCode: "",
     employeeNumber: "",
     nationality: "South African",
-    gender: "",
-    race: "",
     employeeCell: "",
     alternativeContact: "",
     employeeEmail: "",
@@ -999,9 +874,8 @@ const RetrenchmentTerminationGenerator = ({
     () => sanitizeThemeColors(formData.letterheadThemeColors),
     [formData.letterheadThemeColors],
   );
-  const misconductOptions = useMemo(() => {
-    const fromConduct = conductOffences.map((offence) => offence.name);
-    const merged = [...MISCONDUCT_TYPES, ...fromConduct, ...formData.misconductTypes];
+  const retrenchmentReasonOptions = useMemo(() => {
+    const merged = [...RETRENCHMENT_REASON_OPTIONS, ...formData.retrenchmentReasons];
     return Array.from(
       new Set(
         merged
@@ -1009,12 +883,16 @@ const RetrenchmentTerminationGenerator = ({
           .filter((value) => value.length > 0),
       ),
     );
-  }, [conductOffences, formData.misconductTypes]);
-  const filteredMisconductTypes = useMemo(() => {
-    const query = misconductSearch.trim().toLowerCase();
-    if (!query) return misconductOptions;
-    return misconductOptions.filter((type) => type.toLowerCase().includes(query));
-  }, [misconductOptions, misconductSearch]);
+  }, [formData.retrenchmentReasons]);
+  const filteredRetrenchmentReasons = useMemo(() => {
+    const query = retrenchmentReasonSearch.trim().toLowerCase();
+    if (!query) return retrenchmentReasonOptions;
+    return retrenchmentReasonOptions.filter((type) => type.toLowerCase().includes(query));
+  }, [retrenchmentReasonOptions, retrenchmentReasonSearch]);
+  const supabaseUntyped = useMemo(
+    () => supabase as unknown as UntypedSupabaseClient,
+    [],
+  );
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
@@ -1032,76 +910,27 @@ const RetrenchmentTerminationGenerator = ({
 
   const fetchEmployees = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabaseUntyped
       .from("employees")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
+        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
       )
       .eq("company_id", user.id);
     if (error) {
       console.warn("Unable to load employees", error);
       return;
     }
-    if (data) setEmployees(data as SlimEmployee[]);
-  }, [user]);
-
-  const fetchConductOffences = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await (supabase as any)
-      .from("company_code_of_conduct")
-      .select("data")
-      .eq("company_id", user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.warn("Unable to load conduct offences", error);
-      return;
+    if (Array.isArray(data)) {
+      setEmployees(data as SlimEmployee[]);
     }
-
-    const sections =
-      (
-        data?.data as {
-          sections?: Array<{
-            title?: string;
-            offences?: Array<{ name?: string; category?: string; first?: string }>;
-          }>;
-        }
-      )?.sections ?? [];
-
-    const mapped = sections
-      .flatMap((section) => {
-        const sectionCategory = section.title?.toLowerCase().includes("dismiss")
-          ? "Dismissible"
-          : section.title?.toLowerCase().includes("minor")
-            ? "Minor"
-          : section.title?.toLowerCase().includes("serious")
-            ? "Serious"
-            : undefined;
-        return (section.offences ?? []).map((offence) => {
-          const name = offence.name?.trim();
-          if (!name) return null;
-          const category =
-            (offence.category as "Minor" | "Serious" | "Dismissible" | undefined) ?? sectionCategory ?? "Serious";
-          return { name, category, firstOutcome: offence.first ?? "" };
-        });
-      })
-      .filter(
-        (item): item is { name: string; category: "Minor" | "Serious" | "Dismissible"; firstOutcome: string } =>
-          Boolean(item?.name),
-      );
-
-    if (mapped.length > 0) {
-      setConductOffences(mapped);
-    }
-  }, [user]);
+  }, [user, supabaseUntyped]);
 
   useEffect(() => {
     if (user) {
       fetchProfile();
       fetchEmployees();
-      fetchConductOffences();
     }
-  }, [user, fetchEmployees, fetchProfile, fetchConductOffences]);
+  }, [user, fetchEmployees, fetchProfile]);
 
   useEffect(() => {
     if (profile) {
@@ -1125,8 +954,6 @@ const RetrenchmentTerminationGenerator = ({
     const passportNumber = !hasIdNumber ? employee.id_number ?? "" : "";
     const emergencyContact =
       (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: RetrenchmentBaseFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: RetrenchmentBaseFormData["race"] }).race || "";
     const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
     const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
     const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
@@ -1154,8 +981,6 @@ const RetrenchmentTerminationGenerator = ({
       passportNumber: passportNumber || prev.passportNumber,
       nationality: employeeNationality,
       alternativeContact: emergencyContact || prev.alternativeContact,
-      gender: genderValue || prev.gender,
-      race: raceValue || prev.race,
       employeeCell: cellNumber || prev.employeeCell,
       employeeEmail: emailAddress || prev.employeeEmail,
       jobTitle: jobTitle || prev.jobTitle,
@@ -1189,20 +1014,12 @@ const RetrenchmentTerminationGenerator = ({
       voluntaryRetrenchment: "no",
       transmissionMethods: [],
       abscondmentNoticeDate: "",
-      absentFromDate: "",
       noticePeriod: "",
       noticeOfAppeal: "",
-      appliedProgressiveDisciplinaryAction: "",
-      hearingDate: "",
-      performanceConsultationDate: "",
-      improvementPeriod: "",
-      misconductTypes: [],
+      retrenchmentReasons: [],
       selectionCriteria: [],
-      referenceDate: "",
       caseType: 'retrenchment',
       effectiveDate: "",
-      previousEndDate: "",
-      updatedEndDate: "",
       idType: "id",
       startDate: new Date().toISOString().split("T")[0],
       issueDate: new Date().toISOString().split("T")[0],
@@ -1219,8 +1036,6 @@ const RetrenchmentTerminationGenerator = ({
       homeAreaCode: "",
     employeeNumber: "",
     nationality: "South African",
-    gender: "",
-    race: "",
       employeeCell: "",
       alternativeContact: "",
       employeeEmail: "",
@@ -1333,7 +1148,7 @@ const RetrenchmentTerminationGenerator = ({
       const hasVoluntaryRetrenchment = Boolean(formData.voluntaryRetrenchment);
       const needsSelectionCriteria = formData.voluntaryRetrenchment !== "yes";
       const hasSelectionCriteria = !needsSelectionCriteria || formData.selectionCriteria.length > 0;
-      const hasRetrenchmentReasons = formData.misconductTypes.length > 0;
+      const hasRetrenchmentReasons = formData.retrenchmentReasons.length > 0;
       const hasTransmissionMethods = formData.transmissionMethods.length > 0;
       return Boolean(
         formData.issueDate &&
@@ -1358,9 +1173,7 @@ const RetrenchmentTerminationGenerator = ({
       formData.severancePackage,
       formData.voluntaryRetrenchment,
       formData.selectionCriteria,
-      formData.misconductTypes,
-      formData.performanceConsultationDate,
-      formData.improvementPeriod,
+      formData.retrenchmentReasons,
       formData.transmissionMethods,
       formData.issueDate,
     ],
@@ -1542,21 +1355,13 @@ const RetrenchmentTerminationGenerator = ({
       voluntaryRetrenchment: "no",
       transmissionMethods: [],
       abscondmentNoticeDate: "",
-      absentFromDate: "",
       noticePeriod: "",
       noticeOfAppeal: "",
-      appliedProgressiveDisciplinaryAction: "",
-      hearingDate: "",
-      performanceConsultationDate: "",
-      improvementPeriod: "",
-      misconductTypes: [],
+      retrenchmentReasons: [],
       selectionCriteria: [],
       caseType: 'retrenchment',
       effectiveDate: "",
       issueDate: new Date().toISOString().split("T")[0],
-      previousEndDate: "",
-      updatedEndDate: "",
-      referenceDate: "",
     }));
   };
 
@@ -1604,62 +1409,40 @@ const RetrenchmentTerminationGenerator = ({
     }
   }, [addingAfter, editingClause, getPreviewScrollElement]);
 
-  const openNoticeDatePicker = () => {
-    const picker = noticeDatePickerRef.current;
+  const openNativeDatePicker = (picker: HTMLInputElement | null) => {
     if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
+    const candidate = picker as HTMLInputElement & { showPicker?: () => void };
+    if (typeof candidate.showPicker === "function") {
+      candidate.showPicker();
+      return;
     }
+    picker.click();
+  };
+
+  const openNoticeDatePicker = () => {
+    openNativeDatePicker(noticeDatePickerRef.current);
   };
 
   const openAbscondmentNoticeDatePicker = () => {
-    const picker = abscondmentNoticeDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
+    openNativeDatePicker(abscondmentNoticeDatePickerRef.current);
   };
 
-  const openHearingDatePicker = () => {
-    const picker = hearingDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
+  const openRetrenchmentReasonPicker = () => {
+    setDraftRetrenchmentReasons(formData.retrenchmentReasons);
+    setRetrenchmentReasonSearch("");
+    setRetrenchmentReasonPickerOpen(true);
   };
 
-  const openConsultationDatePicker = () => {
-    const picker = consultationDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
+  const cancelRetrenchmentReasonPicker = () => {
+    setRetrenchmentReasonPickerOpen(false);
+    setRetrenchmentReasonSearch("");
+    setDraftRetrenchmentReasons([]);
   };
 
-  const openMisconductPicker = () => {
-    setDraftMisconductTypes(formData.misconductTypes);
-    setMisconductSearch("");
-    setMisconductPickerOpen(true);
-  };
-
-  const cancelMisconductPicker = () => {
-    setMisconductPickerOpen(false);
-    setMisconductSearch("");
-    setDraftMisconductTypes([]);
-  };
-
-  const applyMisconductPicker = () => {
-    setFormData((prev) => ({ ...prev, misconductTypes: draftMisconductTypes }));
-    setMisconductPickerOpen(false);
-    setMisconductSearch("");
+  const applyRetrenchmentReasonPicker = () => {
+    setFormData((prev) => ({ ...prev, retrenchmentReasons: draftRetrenchmentReasons }));
+    setRetrenchmentReasonPickerOpen(false);
+    setRetrenchmentReasonSearch("");
   };
 
   const openSelectionCriteriaPicker = () => {
@@ -1738,36 +1521,6 @@ const RetrenchmentTerminationGenerator = ({
     setDraftLetterheadThemeColors([]);
   };
 
-  const openReferenceDatePicker = () => {
-    const picker = referenceDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openEffectiveDatePicker = () => {
-    const picker = previousEndDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
-  const openNewEndDatePicker = () => {
-    const picker = updatedEndDatePickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-    } else {
-      picker.click();
-    }
-  };
-
   const handleCompanyLogoUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1834,7 +1587,7 @@ const RetrenchmentTerminationGenerator = ({
     checkRequired(formData.homeAreaCode, "Area code");
     checkRequired(formData.issueDate, "Date of notice");
     checkRequired(formData.abscondmentNoticeDate, "S189 Consultation");
-    if (formData.misconductTypes.length === 0) {
+    if (formData.retrenchmentReasons.length === 0) {
       missingFields.push("Retrenchment reason(s)");
     }
     checkRequired(formData.chairperson, "Chairperson");
@@ -1861,13 +1614,8 @@ const RetrenchmentTerminationGenerator = ({
       issueDate,
       salaryAmount: Number(formData.salaryAmount) || 0,
       annualLeaveDays: Number(formData.annualLeaveDays) || 0,
-      gender: formData.gender as RetrenchmentBaseFormData["gender"],
-      race: formData.race as RetrenchmentBaseFormData["race"],
       idType: formData.idType,
       caseType: 'retrenchment',
-      referenceDate: "",
-      previousEndDate: "",
-      updatedEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
@@ -1879,14 +1627,9 @@ const RetrenchmentTerminationGenerator = ({
       selectionCriteria: formData.selectionCriteria,
       transmissionMethods: formData.transmissionMethods,
       abscondmentNoticeDate: formData.abscondmentNoticeDate,
-      absentFromDate: formData.absentFromDate,
       noticePeriod: formData.noticePeriod,
       noticeOfAppeal: formData.noticeOfAppeal,
-      appliedProgressiveDisciplinaryAction: formData.appliedProgressiveDisciplinaryAction,
-      hearingDate: formData.hearingDate,
-      performanceConsultationDate: formData.performanceConsultationDate,
-      improvementPeriod: formData.improvementPeriod,
-      misconductTypes: formData.misconductTypes,
+      retrenchmentReasons: formData.retrenchmentReasons,
       homeAddressLine: formData.homeAddressLine,
       homeAddressLine2: formData.homeAddressLine2,
       homeCity: formData.homeCity,
@@ -2057,7 +1800,7 @@ const RetrenchmentTerminationGenerator = ({
     const terminationDateDisplay = formatDate(data.effectiveDate || data.issueDate);
     const abscondmentNoticeDateDisplay = formatDate(data.abscondmentNoticeDate || "");
     const retrenchmentReasonsDisplay = formatListWithAnd(
-      data.misconductTypes.map(formatRetrenchmentReasonItem),
+      data.retrenchmentReasons.map(formatRetrenchmentReasonItem),
       "[reason(s) for retrenchment]",
     );
     const selectionCriteriaDisplay = formatListWithAnd(
@@ -2409,7 +2152,7 @@ const RetrenchmentTerminationGenerator = ({
       const underlinedSegment = `${employeeNameValue} (${employeeIdLabel}: ${employeeIdValue})`;
       const ackLead = `I, ${underlinedSegment}, hereby acknowledge that I received this letter and confirm that the content hereof was explained to me.`;
       const ackLines = doc.splitTextToSize(ackLead, contentWidth - 4);
-      let ackCursorY = y;
+      const ackCursorY = y;
       ackLines.forEach((line, idx) => {
         doc.text(line, margin + 2, ackCursorY + idx * 4.8);
       });
@@ -2444,7 +2187,7 @@ const RetrenchmentTerminationGenerator = ({
     }
 
     if (download) {
-      doc.save(`Poor_Performance_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
+      doc.save(`Retrenchment_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
         description: "Retrenchment termination letter has been generated.",
@@ -2463,10 +2206,6 @@ const RetrenchmentTerminationGenerator = ({
       generatePDF(validated, true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
-      if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
-        setSameDayCaution({ open: true, pendingAction: "download" });
-        return;
-      }
       toast({
         title: "Validation error",
         description: message,
@@ -2485,10 +2224,6 @@ const RetrenchmentTerminationGenerator = ({
       setShowFinalActions(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Please check the required fields.";
-      if (message === SAME_DAY_HEARING_NOTICE_CAUTION) {
-        setSameDayCaution({ open: true, pendingAction: "finish" });
-        return;
-      }
       toast({
         title: "Validation error",
         description: message,
@@ -2496,26 +2231,6 @@ const RetrenchmentTerminationGenerator = ({
       });
     }
   }
-
-  const closeSameDayCaution = () => {
-    setSameDayCautionDismissed(true);
-    setSameDayCaution({ open: false, pendingAction: "" });
-    setFormData((prev) => ({ ...prev, hearingDate: "" }));
-  };
-
-  const confirmSameDayCaution = () => {
-    const pending = sameDayCaution.pendingAction;
-    setSameDayOverrideAccepted(true);
-    setSameDayCautionDismissed(false);
-    setSameDayCaution({ open: false, pendingAction: "" });
-    if (pending === "download") {
-      handleDownload();
-      return;
-    }
-    if (pending === "finish") {
-      handleFinish();
-    }
-  };
 
   if (loading) {
     return (
@@ -3132,23 +2847,23 @@ const RetrenchmentTerminationGenerator = ({
                       <button
                         id="retrenchmentReasons"
                         type="button"
-                        onClick={openMisconductPicker}
-                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.misconductTypes.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
+                        onClick={openRetrenchmentReasonPicker}
+                        className={`${baseModalFieldClass} !h-[34px] !border-[1.75px] ${formData.retrenchmentReasons.length > 0 ? "!border-emerald-500" : "!border-slate-300"} w-full px-3 text-left`}
                       >
                         <span
                           className={cn(
                             "block truncate text-[11px]",
-                            formData.misconductTypes.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
+                            formData.retrenchmentReasons.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
-                          {formData.misconductTypes.length > 0
-                            ? `${formData.misconductTypes.length} reason(s) selected`
+                          {formData.retrenchmentReasons.length > 0
+                            ? `${formData.retrenchmentReasons.length} reason(s) selected`
                             : "Select retrenchment reason(s)"}
                         </span>
                       </button>
-                      {formData.misconductTypes.length > 0 ? (
+                      {formData.retrenchmentReasons.length > 0 ? (
                         <div className="flex flex-wrap gap-2 pt-1">
-                          {formData.misconductTypes.map((reason) => (
+                          {formData.retrenchmentReasons.map((reason) => (
                             <Badge
                               key={reason}
                               variant="outline"
@@ -3573,7 +3288,7 @@ const RetrenchmentTerminationGenerator = ({
               const terminationDateDisplay = formatDate(validatedPreview.effectiveDate || validatedPreview.issueDate);
               const abscondmentNoticeDateDisplay = formatDate(validatedPreview.abscondmentNoticeDate || "");
               const retrenchmentReasonsDisplay = formatListWithAnd(
-                validatedPreview.misconductTypes.map(formatRetrenchmentReasonItem),
+                validatedPreview.retrenchmentReasons.map(formatRetrenchmentReasonItem),
                 "[reason(s) for retrenchment]",
               );
               const selectionCriteriaDisplay = formatListWithAnd(
@@ -3866,9 +3581,7 @@ const RetrenchmentTerminationGenerator = ({
                                         autoCorrect="on"
                                       />
                                       <div className="flex items-center justify-end gap-2">
-                                        {Boolean(
-                                          clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id],
-                                        ) ? (
+                                        {clauseEdits[activeEditingClause.id] || customClauseTitleEdits[activeEditingClause.id] ? (
                                           <Button
                                             size="sm"
                                             variant="ghost"
@@ -4000,51 +3713,7 @@ const RetrenchmentTerminationGenerator = ({
         )}
       </div>
 
-      <Dialog open={sameDayCaution.open} onOpenChange={(open) => (!open ? closeSameDayCaution() : undefined)}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <TriangleAlert className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
-            </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80" onClick={closeSameDayCaution}>
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <DialogHeader className="px-6 pt-5 pb-1">
-            <DialogDescription className="py-1 text-[11px] text-slate-600">
-              Best labour practice requires either the employer or an independent decision maker to apply his/her mind
-              before making a dismissal decision. Giving notice of dismissal on the same day as the hearing may be
-              viewed as if the employer decided on dismissal before the hearing which could result in a procedurally unfair
-              dismissal. Are you sure you want to continue?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="px-6 pb-6 pt-0">
-            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
-              <div className="flex items-center gap-[42px]">
-                <Button
-                  type="button"
-                  onClick={closeSameDayCaution}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
-                >
-                  No
-                </Button>
-                <Button
-                  type="button"
-                  onClick={confirmSameDayCaution}
-                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
-                >
-                  Yes
-                </Button>
-              </div>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
+      <Dialog open={retrenchmentReasonPickerOpen} onOpenChange={(open) => (open ? openRetrenchmentReasonPicker() : cancelRetrenchmentReasonPicker())}>
         <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
           <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
             <div className="flex items-center gap-2 pl-2">
@@ -4064,26 +3733,26 @@ const RetrenchmentTerminationGenerator = ({
           </DialogHeader>
           <div className="space-y-3 px-6 pb-6 pt-4">
             <Input
-              ref={misconductSearchInputRef}
+              ref={retrenchmentReasonSearchInputRef}
               placeholder="Search retrenchment reasons"
-              value={misconductSearch}
-              onChange={(e) => setMisconductSearch(e.target.value)}
+              value={retrenchmentReasonSearch}
+              onChange={(e) => setRetrenchmentReasonSearch(e.target.value)}
               className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
             />
             <ScrollArea className="max-h-72 rounded border border-slate-200 bg-white">
               <div className="space-y-1 p-3">
-                {filteredMisconductTypes.length === 0 ? (
+                {filteredRetrenchmentReasons.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No retrenchment reasons match your search.</p>
                 ) : (
-                  filteredMisconductTypes.map((type) => (
+                  filteredRetrenchmentReasons.map((type) => (
                     <label
                       key={type}
                       className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${terminationModalSelectItemClass}`}
                     >
                       <Checkbox
-                        checked={draftMisconductTypes.includes(type)}
+                        checked={draftRetrenchmentReasons.includes(type)}
                         onCheckedChange={(checked) =>
-                          setDraftMisconductTypes((prev) =>
+                          setDraftRetrenchmentReasons((prev) =>
                             checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
                           )
                         }
@@ -4096,11 +3765,11 @@ const RetrenchmentTerminationGenerator = ({
               </div>
             </ScrollArea>
             <div>
-              {draftMisconductTypes.length === 0 ? (
+              {draftRetrenchmentReasons.length === 0 ? (
                 <div className="text-xs text-slate-600">No type selected</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {draftMisconductTypes.map((type) => (
+                  {draftRetrenchmentReasons.map((type) => (
                     <Badge
                       key={type}
                       variant="outline"
@@ -4119,7 +3788,7 @@ const RetrenchmentTerminationGenerator = ({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={cancelMisconductPicker}
+                  onClick={cancelRetrenchmentReasonPicker}
                   className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
                 >
                   Cancel
@@ -4129,8 +3798,8 @@ const RetrenchmentTerminationGenerator = ({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => setDraftMisconductTypes([])}
-                  disabled={draftMisconductTypes.length === 0}
+                  onClick={() => setDraftRetrenchmentReasons([])}
+                  disabled={draftRetrenchmentReasons.length === 0}
                   className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
                 >
                   Clear
@@ -4139,7 +3808,7 @@ const RetrenchmentTerminationGenerator = ({
               <div className="justify-self-end">
                 <Button
                   type="button"
-                  onClick={applyMisconductPicker}
+                  onClick={applyRetrenchmentReasonPicker}
                   className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
                 >
                   Done
@@ -4443,6 +4112,8 @@ const RetrenchmentTerminationGenerator = ({
 };
 
 export default RetrenchmentTerminationGenerator;
+
+
 
 
 

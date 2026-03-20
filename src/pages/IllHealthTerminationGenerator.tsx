@@ -147,6 +147,11 @@ const caseTypeOptions = [
   { value: 'ill_health', label: 'Ill Health Termination Letter' },
 ] as const;
 
+const logoPlacementOptions = [
+  { value: "center", label: "Header and footer" },
+  { value: "left", label: "Header only" },
+] as const;
+
 const letterheadColorOptions = [
   { value: "#111827" }, // black
   { value: "#FF0000" }, // red

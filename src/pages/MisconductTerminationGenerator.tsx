@@ -143,6 +143,11 @@ const caseTypeOptions = [
   { value: 'misconduct', label: 'Misconduct Termination Letter' },
 ] as const;
 
+const logoPlacementOptions = [
+  { value: "center", label: "Header and footer" },
+  { value: "left", label: "Header only" },
+] as const;
+
 const letterheadColorOptions = [
   { value: "#111827" }, // black
   { value: "#FF0000" }, // red

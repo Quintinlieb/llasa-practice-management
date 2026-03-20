@@ -893,6 +893,87 @@ const RetirementTerminationGenerator = ({
       ),
     [snippetContainerWidthMm, snippetPaddingTopMm, snippetVisibleHeightMm],
   );
+  const [formData, setFormData] = useState<ContractFormState>({
+    employeeId: "",
+    age: "",
+    companyLogoDataUrl: "",
+    logoPlacement: "center",
+    letterheadThemeColors: [defaultDividerColor, defaultIconColor],
+    issuer: "",
+    noticeMethod: "",
+    severancePackage: "None",
+    voluntaryRetrenchment: "no",
+    transmissionMethods: [],
+    abscondmentNoticeDate: "",
+    absentFromDate: "",
+    noticePeriod: "",
+    appliedProgressiveDisciplinaryAction: "",
+    hearingDate: "",
+    performanceConsultationDate: "",
+    improvementPeriod: "",
+    misconductTypes: [],
+    selectionCriteria: [],
+    contractReference: "",
+    addendumType: "general",
+    effectiveDate: "",
+    contractEndDate: "",
+    newEndDate: "",
+    idType: "id",
+    startDate: new Date().toISOString().split("T")[0],
+    issueDate: new Date().toISOString().split("T")[0],
+    employeeName: "",
+    employeeSurname: "",
+    employeeIdNumber: "",
+    passportNumber: "",
+    employeeAddress: "",
+    employeePostalAddress: "",
+    homeAddressLine: "",
+    homeAddressLine2: "",
+    homeCity: "",
+    homeProvince: "",
+    homeAreaCode: "",
+    employeeNumber: "",
+    nationality: "South African",
+    gender: "",
+    race: "",
+    employeeCell: "",
+    alternativeContact: "",
+    employeeEmail: "",
+    tradingName: "",
+    employerContact: profile?.company_contact || "",
+    employerEmail: profile?.company_email || "",
+    jobTitle: "",
+    salaryAmount: "",
+    annualLeaveDays: "15",
+    salaryFrequency: "month",
+    probationPeriod: "3",
+    department: "",
+    retirementAge: "65",
+    workplace: profile?.physical_address || "",
+    interpreter: "no",
+    reportsTo: "",
+    additionalNotes: "",
+  });
+  const searchedEmployees = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase();
+    return employees.filter((employee) => {
+      if (!query) return true;
+      const haystack = [
+        employee.employee_name,
+        employee.employee_surname,
+        employee.employee_number,
+        employee.id_number,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [employees, employeeSearchQuery]);
+  const selectedLetterheadThemeColors = useMemo(
+    () => sanitizeThemeColors(formData.letterheadThemeColors),
+    [formData.letterheadThemeColors],
+  );
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;

@@ -20,7 +20,7 @@ type DocumentKey =
   | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
-  | "permanentContract"
+    | "permanentContract"
   | "temporaryContract"
   | "addendum"
   | "noticeTermination"
@@ -79,8 +79,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   precautionarySuspensionNotice: lazy(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazy(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazy(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
-  incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
-  permanentContract: lazy(() => import("./PermanentContractGenerator")),
+  incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),  permanentContract: lazy(() => import("./PermanentContractGenerator")),
   temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
   addendum: lazy(() => import("./AddendumGenerator")),
   noticeTermination: lazy(() => import("./MisconductTerminationGenerator")),
@@ -138,14 +137,8 @@ const documentCategories: DocumentCategory[] = [
     title: "Other",
     icon: ChartBarIcon,
     items: [
-      { label: "Performance Appraisals", active: false },
-      { label: "Counselling", active: false },
       { label: "Certificate of Service", active: false },
-      { label: "Leave Request", active: false },
-      { label: "Grievance", active: false },
       { label: "Offer of Employment", active: false },
-      { label: "Interview Invitation", active: false },
-      { label: "Objection to Con/Arb", active: false },
     ],
   },
 ];
@@ -165,7 +158,7 @@ const Documents = () => {
     | "contemplatedRetrenchmentNotice"
     | "incapacityPerformanceHearingNotice"
     | "incapacityIllHealthHearingNotice"
-    | "addendum"
+        | "addendum"
     | "permanentContract"
     | "temporaryContract"
     | "noticeTermination"
@@ -289,8 +282,7 @@ const Documents = () => {
       : modalDocument === "incapacityPerformanceHearingNotice"
         ? "Incapacity Hearing (Performance)"
       : modalDocument === "incapacityIllHealthHearingNotice"
-        ? "Incapacity Hearing (Ill health)"
-      : modalDocument === "addendum"
+        ? "Incapacity Hearing (Ill health)"      : modalDocument === "addendum"
         ? "Addendum"
         : modalDocument === "poorPerformanceTermination"
           ? "Poor Performance"
@@ -342,8 +334,7 @@ const Documents = () => {
               : modalDocument === "incapacityPerformanceHearingNotice"
                 ? "Notice Details"
               : modalDocument === "incapacityIllHealthHearingNotice"
-                ? "Notice Details"
-              : modalDocument === "addendum"
+                ? "Notice Details"              : modalDocument === "addendum"
                 ? "Addendum Details"
               : modalDocument === "noticeTermination" ||
                 modalDocument === "illHealthTermination" ||
@@ -579,8 +570,7 @@ const Documents = () => {
       "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
       "Review all wording carefully before downloading the final contemplated retrenchment notice.",
     ],
-  ] as const;
-  const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
+  ] as const;  const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
@@ -594,8 +584,7 @@ const Documents = () => {
   const incapacityIllHealthHearingActiveNotes =
     incapacityIllHealthHearingStepNotes[modalActiveStep] ?? incapacityIllHealthHearingStepNotes[0];
   const contemplatedRetrenchmentNoticeActiveNotes =
-    contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];
-  const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
+    contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];  const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
     index === 0
       ? [
           "This step sets how your company details appear on the seperation agreement.",
@@ -636,8 +625,7 @@ const Documents = () => {
       : modalDocument === "incapacityPerformanceHearingNotice"
       ? incapacityPerformanceHearingActiveNotes
       : modalDocument === "incapacityIllHealthHearingNotice"
-      ? incapacityIllHealthHearingActiveNotes
-      : modalDocument === "noticeTermination" ||
+      ? incapacityIllHealthHearingActiveNotes      : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
         modalDocument === "retrenchmentTermination" ||
@@ -657,8 +645,7 @@ const Documents = () => {
       selectedDocument !== "precautionarySuspensionNotice" &&
       selectedDocument !== "contemplatedRetrenchmentNotice" &&
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
-      selectedDocument !== "incapacityIllHealthHearingNotice" &&
-      selectedDocument !== "addendum" &&
+      selectedDocument !== "incapacityIllHealthHearingNotice" &&      selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
       selectedDocument !== "abscondmentTermination" &&
@@ -751,7 +738,7 @@ const Documents = () => {
                                             | "contemplatedRetrenchmentNotice"
                                             | "incapacityPerformanceHearingNotice"
                                             | "incapacityIllHealthHearingNotice"
-                                            | "addendum"
+                                                                                        | "addendum"
                                             | "noticeTermination"
                                             | "illHealthTermination"
                                             | "abscondmentTermination"
@@ -802,8 +789,7 @@ const Documents = () => {
             selectedDocument !== "precautionarySuspensionNotice" &&
             selectedDocument !== "contemplatedRetrenchmentNotice" &&
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
-            selectedDocument !== "incapacityIllHealthHearingNotice" &&
-            selectedDocument !== "addendum" &&
+            selectedDocument !== "incapacityIllHealthHearingNotice" &&            selectedDocument !== "addendum" &&
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
             selectedDocument !== "abscondmentTermination" &&
@@ -1003,8 +989,7 @@ const Documents = () => {
             || modalDocument === "precautionarySuspensionNotice"
             || modalDocument === "contemplatedRetrenchmentNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
-            || modalDocument === "incapacityIllHealthHearingNotice"
-            || modalDocument === "addendum"
+            || modalDocument === "incapacityIllHealthHearingNotice"            || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
             || modalDocument === "abscondmentTermination"
@@ -1052,8 +1037,7 @@ const Documents = () => {
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Notices"
                         : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Notices"
-                        : modalDocument === "noticeTermination" ||
+                          ? "Notices"                        : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
                           modalDocument === "retrenchmentTermination" ||
@@ -1076,8 +1060,7 @@ const Documents = () => {
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Incapacity Hearing (Performance)"
                         : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Incapacity Hearing (Ill health)"
-                        : modalDocument === "illHealthTermination"
+                          ? "Incapacity Hearing (Ill health)"                        : modalDocument === "illHealthTermination"
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"
                           ? "Abscondment/Desertion"
@@ -1354,4 +1337,5 @@ const Documents = () => {
 };
 
 export default Documents;
+
 

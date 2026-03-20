@@ -20,7 +20,8 @@ type DocumentKey =
   | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
-    | "permanentContract"
+  | "serviceCertificate"
+  | "permanentContract"
   | "temporaryContract"
   | "addendum"
   | "noticeTermination"
@@ -87,6 +88,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
   incapacityIllHealthHearingNotice: lazyDocumentComponent(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
+  serviceCertificate: lazyDocumentComponent(() => import("./ServiceCertificateGenerator")),
   permanentContract: lazyDocumentComponent(() => import("./PermanentContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
@@ -145,7 +147,7 @@ const documentCategories: DocumentCategory[] = [
     title: "Other",
     icon: ChartBarIcon,
     items: [
-      { label: "Certificate of Service", active: false },
+      { id: "serviceCertificate", label: "Certificate of Service", active: true },
       { label: "Offer of Employment", active: false },
     ],
   },
@@ -279,7 +281,10 @@ const Documents = () => {
       : modalDocument === "incapacityPerformanceHearingNotice"
         ? "Incapacity Hearing (Performance)"
       : modalDocument === "incapacityIllHealthHearingNotice"
-        ? "Incapacity Hearing (Ill health)"      : modalDocument === "addendum"
+        ? "Incapacity Hearing (Ill health)"
+      : modalDocument === "serviceCertificate"
+        ? "Certificate of Service"
+      : modalDocument === "addendum"
         ? "Addendum"
         : modalDocument === "poorPerformanceTermination"
           ? "Poor Performance"
@@ -307,6 +312,7 @@ const Documents = () => {
     modalDocument === "contemplatedRetrenchmentNotice" ||
     modalDocument === "incapacityPerformanceHearingNotice" ||
     modalDocument === "incapacityIllHealthHearingNotice" ||
+    modalDocument === "serviceCertificate" ||
     modalDocument === "addendum" ||
     modalDocument === "noticeTermination" ||
     modalDocument === "illHealthTermination" ||
@@ -331,7 +337,10 @@ const Documents = () => {
               : modalDocument === "incapacityPerformanceHearingNotice"
                 ? "Notice Details"
               : modalDocument === "incapacityIllHealthHearingNotice"
-                ? "Notice Details"              : modalDocument === "addendum"
+                ? "Notice Details"
+              : modalDocument === "serviceCertificate"
+                ? "Certificate Details"
+              : modalDocument === "addendum"
                 ? "Addendum Details"
               : modalDocument === "noticeTermination" ||
                 modalDocument === "illHealthTermination" ||
@@ -622,7 +631,10 @@ const Documents = () => {
       : modalDocument === "incapacityPerformanceHearingNotice"
       ? incapacityPerformanceHearingActiveNotes
       : modalDocument === "incapacityIllHealthHearingNotice"
-      ? incapacityIllHealthHearingActiveNotes      : modalDocument === "noticeTermination" ||
+      ? incapacityIllHealthHearingActiveNotes
+      : modalDocument === "serviceCertificate"
+      ? incapacityIllHealthHearingActiveNotes
+      : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
         modalDocument === "retrenchmentTermination" ||
@@ -642,7 +654,9 @@ const Documents = () => {
       selectedDocument !== "precautionarySuspensionNotice" &&
       selectedDocument !== "contemplatedRetrenchmentNotice" &&
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
-      selectedDocument !== "incapacityIllHealthHearingNotice" &&      selectedDocument !== "addendum" &&
+      selectedDocument !== "incapacityIllHealthHearingNotice" &&
+      selectedDocument !== "serviceCertificate" &&
+      selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
       selectedDocument !== "abscondmentTermination" &&
@@ -713,6 +727,7 @@ const Documents = () => {
                                         item.id === "contemplatedRetrenchmentNotice" ||
                                         item.id === "incapacityPerformanceHearingNotice" ||
                                         item.id === "incapacityIllHealthHearingNotice" ||
+                                        item.id === "serviceCertificate" ||
                                         item.id === "addendum" ||
                                         item.id === "noticeTermination" ||
                                         item.id === "illHealthTermination" ||
@@ -768,7 +783,9 @@ const Documents = () => {
             selectedDocument !== "precautionarySuspensionNotice" &&
             selectedDocument !== "contemplatedRetrenchmentNotice" &&
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
-            selectedDocument !== "incapacityIllHealthHearingNotice" &&            selectedDocument !== "addendum" &&
+            selectedDocument !== "incapacityIllHealthHearingNotice" &&
+            selectedDocument !== "serviceCertificate" &&
+            selectedDocument !== "addendum" &&
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
             selectedDocument !== "abscondmentTermination" &&
@@ -968,7 +985,9 @@ const Documents = () => {
             || modalDocument === "precautionarySuspensionNotice"
             || modalDocument === "contemplatedRetrenchmentNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
-            || modalDocument === "incapacityIllHealthHearingNotice"            || modalDocument === "addendum"
+            || modalDocument === "incapacityIllHealthHearingNotice"
+            || modalDocument === "serviceCertificate"
+            || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
             || modalDocument === "abscondmentTermination"
@@ -989,6 +1008,7 @@ const Documents = () => {
           modalDocument === "contemplatedRetrenchmentNotice" ||
           modalDocument === "incapacityPerformanceHearingNotice" ||
           modalDocument === "incapacityIllHealthHearingNotice" ||
+          modalDocument === "serviceCertificate" ||
           modalDocument === "addendum" ||
           modalDocument === "noticeTermination" ||
           modalDocument === "illHealthTermination" ||
@@ -1016,7 +1036,10 @@ const Documents = () => {
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Notices"
                         : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Notices"                        : modalDocument === "noticeTermination" ||
+                          ? "Notices"
+                        : modalDocument === "serviceCertificate"
+                          ? "Other"
+                        : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
                           modalDocument === "retrenchmentTermination" ||
@@ -1039,7 +1062,10 @@ const Documents = () => {
                         : modalDocument === "incapacityPerformanceHearingNotice"
                           ? "Incapacity Hearing (Performance)"
                         : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Incapacity Hearing (Ill health)"                        : modalDocument === "illHealthTermination"
+                          ? "Incapacity Hearing (Ill health)"
+                        : modalDocument === "serviceCertificate"
+                          ? "Certificate of Service"
+                        : modalDocument === "illHealthTermination"
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"
                           ? "Abscondment/Desertion"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -256,6 +256,8 @@ const TemporaryContractGenerator = ({
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const employeePrefillAppliedRef = useRef(false);
 
   type SlimProfile = Pick<
     Tables<"profiles">,
@@ -1030,6 +1032,46 @@ const TemporaryContractGenerator = ({
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (employeePrefillAppliedRef.current) return;
+    if (!location.state || typeof location.state !== "object") return;
+    if (tempEmployees.length > 0) {
+      employeePrefillAppliedRef.current = true;
+      return;
+    }
+
+    const state = location.state as {
+      employeeName?: unknown;
+      employeeSurname?: unknown;
+      employeeIdNumber?: unknown;
+    };
+    const employeeName = typeof state.employeeName === "string" ? state.employeeName.trim() : "";
+    const employeeSurname = typeof state.employeeSurname === "string" ? state.employeeSurname.trim() : "";
+    const employeeIdNumber = typeof state.employeeIdNumber === "string" ? state.employeeIdNumber.trim() : "";
+
+    if (!employeeName && !employeeSurname && !employeeIdNumber) {
+      employeePrefillAppliedRef.current = true;
+      return;
+    }
+
+    const idDigits = employeeIdNumber.replace(/\D/g, "");
+    const isSouthAfricanId = idDigits.length === 13;
+    const prefilledRow: TempEmployeeRow = {
+      id: makeRowId(),
+      employeeName,
+      employeeSurname,
+      employeeIdNumber: isSouthAfricanId ? idDigits : "",
+      passportNumber: isSouthAfricanId ? "" : employeeIdNumber,
+      employeeCell: "",
+      employeeAddress: "",
+    };
+
+    setTempEmployees([prefilledRow]);
+    setSelectedEmployeeIds([prefilledRow.id]);
+    applyEmployeeToFormData(prefilledRow);
+    employeePrefillAppliedRef.current = true;
+  }, [applyEmployeeToFormData, location.state, tempEmployees.length]);
 
   const clearCurrentStepFields = () => {
     if (activeStep === 0) {

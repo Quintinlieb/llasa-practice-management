@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -973,6 +973,8 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const employeePrefillAppliedRef = useRef(false);
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
@@ -1290,6 +1292,47 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
         .filter((employee): employee is SlimEmployee => Boolean(employee)),
     [selectedEmployeeIds, selectedEmployeeMap],
   );
+
+  useEffect(() => {
+    if (employeePrefillAppliedRef.current) return;
+    if (!location.state || typeof location.state !== "object") return;
+    if (!employees.length) return;
+
+    const state = location.state as {
+      employeeName?: unknown;
+      employeeSurname?: unknown;
+      employeeIdNumber?: unknown;
+    };
+    const employeeName = typeof state.employeeName === "string" ? state.employeeName.trim() : "";
+    const employeeSurname = typeof state.employeeSurname === "string" ? state.employeeSurname.trim() : "";
+    const employeeIdNumber = typeof state.employeeIdNumber === "string" ? state.employeeIdNumber.trim() : "";
+
+    if (!employeeName && !employeeSurname && !employeeIdNumber) {
+      employeePrefillAppliedRef.current = true;
+      return;
+    }
+
+    const targetName = `${employeeName} ${employeeSurname}`.trim().toLowerCase();
+    const targetIdDigits = employeeIdNumber.replace(/\D/g, "");
+    const matchedEmployee = employees.find((employee) => {
+      const employeeNameValue = `${employee.employee_name ?? ""} ${employee.employee_surname ?? ""}`.trim().toLowerCase();
+      const employeeIdValue = (employee.id_number ?? "").trim();
+      const employeeIdDigits = employeeIdValue.replace(/\D/g, "");
+      const matchesId =
+        employeeIdNumber.length > 0 &&
+        (employeeIdValue.toLowerCase() === employeeIdNumber.toLowerCase() ||
+          (targetIdDigits.length > 0 && employeeIdDigits === targetIdDigits));
+      const matchesName = targetName.length > 0 && employeeNameValue === targetName;
+      return matchesId || matchesName;
+    });
+
+    if (matchedEmployee) {
+      setSelectedEmployeeIds([matchedEmployee.id]);
+      setDraftSelectedEmployeeIds([matchedEmployee.id]);
+    }
+    employeePrefillAppliedRef.current = true;
+  }, [employees, location.state]);
+
   const searchedEmployees = useMemo(() => {
     const query = employeeSearchQuery.trim().toLowerCase();
     return employees.filter((employee) => {

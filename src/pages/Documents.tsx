@@ -30,6 +30,7 @@ type DocumentKey =
   | "retirementTermination"
   | "poorPerformanceTermination"
   | "mutualTermination";
+type ModalDocumentKey = Exclude<DocumentKey, "codeOfConduct">;
 
 type DocumentItem = {
   id?: DocumentKey;
@@ -72,23 +73,30 @@ type DocumentComponentProps = {
   }) => void;
 };
 
+const lazyDocumentComponent = (loader: () => Promise<any>) =>
+  lazy(async () => {
+    const mod = await loader();
+    return { default: mod.default as ComponentType<DocumentComponentProps> };
+  });
+
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
-  codeOfConduct: lazy(() => import("./documents/discipline/CodeOfConductPreview")),
-  warnings: lazy(() => import("./WarningGenerator")),
-  disciplinaryHearingNotice: lazy(() => import("./DisciplinaryHearingNoticeGenerator")),
-  precautionarySuspensionNotice: lazy(() => import("./PrecautionarySuspensionNoticeGenerator")),
-  contemplatedRetrenchmentNotice: lazy(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
-  incapacityPerformanceHearingNotice: lazy(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
-  incapacityIllHealthHearingNotice: lazy(() => import("./IncapacityIllHealthHearingNoticeGenerator")),  permanentContract: lazy(() => import("./PermanentContractGenerator")),
-  temporaryContract: lazy(() => import("./TemporaryContractGenerator")),
-  addendum: lazy(() => import("./AddendumGenerator")),
-  noticeTermination: lazy(() => import("./MisconductTerminationGenerator")),
-  illHealthTermination: lazy(() => import("./IllHealthTerminationGenerator")),
-  abscondmentTermination: lazy(() => import("./AbscondmentTerminationGenerator")),
-  retrenchmentTermination: lazy(() => import("./RetrenchmentTerminationGenerator")),
-  retirementTermination: lazy(() => import("./RetirementTerminationGenerator")),
-  poorPerformanceTermination: lazy(() => import("./PoorPerformanceTerminationGenerator")),
-  mutualTermination: lazy(() => import("./MutualTerminationGenerator")),
+  codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
+  warnings: lazyDocumentComponent(() => import("./WarningGenerator")),
+  disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
+  precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
+  contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
+  incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
+  incapacityIllHealthHearingNotice: lazyDocumentComponent(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
+  permanentContract: lazyDocumentComponent(() => import("./PermanentContractGenerator")),
+  temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
+  addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
+  noticeTermination: lazyDocumentComponent(() => import("./MisconductTerminationGenerator")),
+  illHealthTermination: lazyDocumentComponent(() => import("./IllHealthTerminationGenerator")),
+  abscondmentTermination: lazyDocumentComponent(() => import("./AbscondmentTerminationGenerator")),
+  retrenchmentTermination: lazyDocumentComponent(() => import("./RetrenchmentTerminationGenerator")),
+  retirementTermination: lazyDocumentComponent(() => import("./RetirementTerminationGenerator")),
+  poorPerformanceTermination: lazyDocumentComponent(() => import("./PoorPerformanceTerminationGenerator")),
+  mutualTermination: lazyDocumentComponent(() => import("./MutualTerminationGenerator")),
 };
 
 const documentCategories: DocumentCategory[] = [
@@ -151,25 +159,7 @@ const Documents = () => {
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
-  const [modalDocument, setModalDocument] = useState<
-    | "warnings"
-    | "disciplinaryHearingNotice"
-    | "precautionarySuspensionNotice"
-    | "contemplatedRetrenchmentNotice"
-    | "incapacityPerformanceHearingNotice"
-    | "incapacityIllHealthHearingNotice"
-        | "addendum"
-    | "permanentContract"
-    | "temporaryContract"
-    | "noticeTermination"
-    | "illHealthTermination"
-    | "abscondmentTermination"
-    | "retrenchmentTermination"
-    | "retirementTermination"
-    | "poorPerformanceTermination"
-    | "mutualTermination"
-    | null
-  >(null);
+  const [modalDocument, setModalDocument] = useState<ModalDocumentKey | null>(null);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -192,6 +182,13 @@ const Documents = () => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
     if (nextSelected && documentComponents[nextSelected]) {
       setSelectedDocument(nextSelected);
+      if (nextSelected !== "codeOfConduct") {
+        setStepMeta(null);
+        setBreadcrumbStep(null);
+        setModalDocument(nextSelected);
+      } else {
+        setModalDocument(null);
+      }
     }
   }, [location.state]);
 
@@ -730,25 +727,7 @@ const Documents = () => {
                                         setSelectedDocument(item.id);
                                         setStepMeta(null);
                                         setBreadcrumbStep(null);
-                                        setModalDocument(
-                                          item.id as
-                                            | "warnings"
-                                            | "disciplinaryHearingNotice"
-                                            | "precautionarySuspensionNotice"
-                                            | "contemplatedRetrenchmentNotice"
-                                            | "incapacityPerformanceHearingNotice"
-                                            | "incapacityIllHealthHearingNotice"
-                                                                                        | "addendum"
-                                            | "noticeTermination"
-                                            | "illHealthTermination"
-                                            | "abscondmentTermination"
-                                            | "retrenchmentTermination"
-                                            | "retirementTermination"
-                                            | "mutualTermination"
-                                            | "poorPerformanceTermination"
-                                            | "permanentContract"
-                                            | "temporaryContract",
-                                        );
+                                        setModalDocument(item.id as ModalDocumentKey);
                                         return;
                                       }
                                       setSelectedDocument(item.id!);

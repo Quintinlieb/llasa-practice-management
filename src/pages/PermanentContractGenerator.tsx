@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -285,6 +285,8 @@ const PermanentContractGenerator = ({
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const employeePrefillAppliedRef = useRef(false);
 
   type SlimProfile = Pick<
     Tables<"profiles">,
@@ -645,6 +647,48 @@ const PermanentContractGenerator = ({
       age: ageFromId,
     }));
   };
+
+  useEffect(() => {
+    if (employeePrefillAppliedRef.current) return;
+    if (!location.state || typeof location.state !== "object") return;
+
+    const state = location.state as {
+      employeeName?: unknown;
+      employeeSurname?: unknown;
+      employeeIdNumber?: unknown;
+    };
+
+    const employeeName = typeof state.employeeName === "string" ? state.employeeName.trim() : "";
+    const employeeSurname = typeof state.employeeSurname === "string" ? state.employeeSurname.trim() : "";
+    const employeeIdNumber = typeof state.employeeIdNumber === "string" ? state.employeeIdNumber.trim() : "";
+
+    if (!employeeName && !employeeSurname && !employeeIdNumber) {
+      employeePrefillAppliedRef.current = true;
+      return;
+    }
+
+    if (!employees.length) return;
+
+    const fullName = `${employeeName} ${employeeSurname}`.trim().toLowerCase();
+    const idDigits = employeeIdNumber.replace(/\D/g, "");
+
+    const matchedEmployee = employees.find((employee) => {
+      const employeeFullName = `${employee.employee_name ?? ""} ${employee.employee_surname ?? ""}`.trim().toLowerCase();
+      const rawId = (employee.id_number ?? "").trim();
+      const rawDigits = rawId.replace(/\D/g, "");
+      const matchesId =
+        employeeIdNumber.length > 0 &&
+        (rawId.toLowerCase() === employeeIdNumber.toLowerCase() || (idDigits.length > 0 && rawDigits === idDigits));
+      const matchesName = fullName.length > 0 && employeeFullName === fullName;
+      return matchesId || matchesName;
+    });
+
+    if (matchedEmployee) {
+      handleEmployeeSelect(matchedEmployee.id);
+    }
+
+    employeePrefillAppliedRef.current = true;
+  }, [employees, handleEmployeeSelect, location.state]);
 
   const handleSalaryAmountChange = (value: string) => {
     const sanitized = value.replace(/,/g, "").replace(/[^\d.]/g, "");
@@ -1566,13 +1610,13 @@ const PermanentContractGenerator = ({
       {
         title: "Probation",
         body:
-          "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employee’s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employer’s discretion.",
+          "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employeeâ€™s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employerâ€™s discretion.",
       },
       {
         title: "Performance and adaptability",
         body: [
-          "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employer’s satisfaction.",
-          "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee’s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employee’s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
+          "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employerâ€™s satisfaction.",
+          "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employeeâ€™s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employeeâ€™s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
         ],
       },
       {
@@ -1584,19 +1628,19 @@ const PermanentContractGenerator = ({
         title: "Remuneration",
         body: [
           "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
-          "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+          "Any future salary increases shall be considered at the Employerâ€™s discretion, taking into account the Employeeâ€™s performance and the Employerâ€™s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
           "The Employee will be remunerated at two times the normal wage for work performed on a public holiday.",
         ],
       },
       {
         title: "Deductions",
         body:
-          "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employee’s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
+          "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employeeâ€™s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
       },
       {
         title: "Hours of work",
         body:
-          "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
+          "The Employeeâ€™s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
       },
       {
         title: "Overtime",
@@ -1606,23 +1650,23 @@ const PermanentContractGenerator = ({
       {
         title: "Retirement",
         body:
-          "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+          "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) monthâ€™s written notice, and no further consultation shall be required.",
       },
       {
         title: "Exclusivity of employment",
-        body: "The Employee shall not undertake any outside work or business activity without the Employer’s prior written consent.",
+        body: "The Employee shall not undertake any outside work or business activity without the Employerâ€™s prior written consent.",
       },
       {
         title: "Annual bonus",
         body: [
-          "Any annual bonus is ex-gratia and granted entirely at the Employer’s discretion, subject to the Employer’s financial position and the Employee’s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
+          "Any annual bonus is ex-gratia and granted entirely at the Employerâ€™s discretion, subject to the Employerâ€™s financial position and the Employeeâ€™s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
           "The Employee agrees that no pro-rata bonus shall be payable in the event of termination of employment for any reason.",
         ],
       },
       {
         title: "Termination of employment",
         body: [
-          "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
+          "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employeeâ€™s services.",
           "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
         ],
       },
@@ -1656,9 +1700,9 @@ const PermanentContractGenerator = ({
       {
         title: "Family responsibility leave",
         body: [
-          "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employee’s child, or in the event of the death of the Employee’s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
-          "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four days’ prior notice.",
-          "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a child’s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employee’s relationship to the deceased.",
+          "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employeeâ€™s child, or in the event of the death of the Employeeâ€™s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
+          "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four daysâ€™ prior notice.",
+          "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a childâ€™s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employeeâ€™s relationship to the deceased.",
           "Failure to provide notice or proof when requested may result in the leave not being approved and treated as unpaid leave. Family responsibility leave does not accumulate, may not be carried over, and lapses at the end of each annual leave cycle.",
         ],
       },
@@ -1677,7 +1721,7 @@ const PermanentContractGenerator = ({
         body: [
           "The Employee consents to the collection, use and storage of Personal Information and Special Personal Information, as defined in POPIA, for purposes related to the employment relationship. This includes payroll and benefit administration, statutory reporting, security and access control, monitoring for operational and risk-management purposes, internal and external communication, and compliance with legal and contractual obligations.",
           "The Employee consents to the sharing or transfer of Personal Information, where necessary, to third party service providers such as benefit administrators and insurers, to clients or service providers for operational purposes, and to secure cloud-based or foreign storage platforms that offer adequate data protection in accordance with POPIA.",
-          "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employer’s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
+          "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employerâ€™s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
         ],
       },
       {
@@ -1699,13 +1743,13 @@ const PermanentContractGenerator = ({
         title: "Health and fitness",
         body: [
           "The Employee confirms that he or she is medically fit to perform the duties of the position. Should the Employee become unable to perform these duties for health reasons, the Employer may follow the applicable incapacity procedures prescribed by the Labour Relations Act, which may result in termination of employment.",
-          "The Employer may require the Employee to undergo a medical assessment, at the Employer’s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
+          "The Employer may require the Employee to undergo a medical assessment, at the Employerâ€™s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
         ],
       },
       {
         title: "Change of status",
         body: [
-          "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employer’s records remain accurate and up to date.",
+          "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employerâ€™s records remain accurate and up to date.",
           "The Employee cannot hold the Employer liable for making use of incorrect details if the Employee breaches this clause.",
         ],
       },
@@ -1734,15 +1778,15 @@ const PermanentContractGenerator = ({
       {
         title: "Temporary lay-off",
         body: [
-          "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one day’s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
-          "Temporary lay offs may be introduced due to circumstances beyond the Employer’s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
+          "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one dayâ€™s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
+          "Temporary lay offs may be introduced due to circumstances beyond the Employerâ€™s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
         ],
       },
       {
         title: "Proof of citizenship",
         body: [
           "The Employee must provide proof of South African citizenship upon commencement of employment. If not a South African citizen, the Employee must submit a valid work permit or proof of permanent residency within seven days of request, and must continue to provide updated documentation whenever required.",
-          "It is the Employee’s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
+          "It is the Employeeâ€™s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
         ],
       },
       {
@@ -1755,7 +1799,7 @@ const PermanentContractGenerator = ({
         body: [
           "This agreement constitutes the entire agreement between the parties, and no variation, amendment or addition shall be valid unless reduced to writing and signed by both parties. Any indulgence or leniency granted shall not constitute a waiver of rights.",
           "By signing this agreement, both parties acknowledge that they have read and understood its contents and agree to be bound by its terms. The Employee confirms that the conditions of employment have been explained where necessary and that he or she voluntarily accepts them.",
-          "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
+          "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employerâ€™s rules and procedures. Where this agreement and the Employerâ€™s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
         ],
       },
       ])
@@ -2897,13 +2941,13 @@ const PermanentContractGenerator = ({
                 {
                   title: "Probation",
                   body:
-                    "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employee’s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employer’s discretion.",
+                    "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess the Employeeâ€™s performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may terminate the employment in accordance with labour law. Successful completion of probation does not guarantee continued employment, and confirmation of permanent employment remains at the Employerâ€™s discretion.",
                 },
                 {
                   title: "Performance and adaptability",
                   body: [
-                    "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employer’s satisfaction.",
-                    "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee’s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employee’s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
+                    "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives. The Employee confirms that he/she has the necessary skills, qualifications, and experience to perform the required duties to the Employerâ€™s satisfaction.",
+                    "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employeeâ€™s reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. If the work described in the Employeeâ€™s job description becomes unavailable, the Employee agrees to perform suitable alternative work without loss of remuneration, although this does not create a right to continued employment. Should no suitable alternative work exist, the Employer may initiate retrenchment processes in accordance with applicable labour laws.",
                   ],
                 },
                 {
@@ -2915,19 +2959,19 @@ const PermanentContractGenerator = ({
                   title: "Remuneration",
                   body: [
                     "The Employee shall receive the Gross Salary, which shall comply with all applicable legislation.  Unauthorised or unapproved absence from work shall result in no payment for the period of absence.",
-                    "Any future salary increases shall be considered at the Employer’s discretion, taking into account the Employee’s performance and the Employer’s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
+                    "Any future salary increases shall be considered at the Employerâ€™s discretion, taking into account the Employeeâ€™s performance and the Employerâ€™s financial position in the preceding financial year. No expectation of an increase is created by this clause, and the granting of any increase remains entirely discretionary.",
                     "The Employee will be remunerated at two times the normal wage for work performed on a public holiday.",
                   ],
                 },
                 {
                   title: "Deductions",
                   body:
-                    "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employee’s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
+                    "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any voluntary benefits or contributions agreed to by the parties. The Employee further agrees that the Employer may deduct any amount lawfully owed to it, including losses, damages, cash or stock shortages resulting from the Employeeâ€™s negligence, misconduct, or dishonesty, provided such deductions comply with applicable labour laws and are properly recorded and communicated.",
                 },
                 {
                   title: "Hours of work",
                   body:
-                    "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
+                    "The Employeeâ€™s ordinary working hours shall not exceed forty-five (45) hours per week. The Employee shall be entitled to a daily unpaid lunch break of one (1) hour, taken at the time agreed between the parties.",
                 },
                 {
                   title: "Overtime",
@@ -2937,23 +2981,23 @@ const PermanentContractGenerator = ({
                 {
                   title: "Retirement",
                   body:
-                    "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) month’s written notice, and no further consultation shall be required.",
+                    "The Employee shall retire at the age recorded in page 1 of this agreement, unless otherwise agreed in writing. If the Employee continues working beyond the agreed retirement age, the Employer may terminate the employment contract on the basis of retirement by giving at least one (1) monthâ€™s written notice, and no further consultation shall be required.",
                 },
                 {
                   title: "Exclusivity of employment",
-                  body: "The Employee shall not undertake any outside work or business activity without the Employer’s prior written consent.",
+                  body: "The Employee shall not undertake any outside work or business activity without the Employerâ€™s prior written consent.",
                 },
                 {
                   title: "Annual bonus",
                   body: [
-                    "Any annual bonus is ex-gratia and granted entirely at the Employer’s discretion, subject to the Employer’s financial position and the Employee’s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
+                    "Any annual bonus is ex-gratia and granted entirely at the Employerâ€™s discretion, subject to the Employerâ€™s financial position and the Employeeâ€™s conduct and performance. No entitlement or expectation of a bonus is created, regardless of whether bonuses were granted in previous years, and the Employer may withhold a bonus at any time.",
                     "The Employee agrees that no pro-rata bonus shall be payable in the event of termination of employment for any reason.",
                   ],
                 },
                 {
                   title: "Termination of employment",
                   body: [
-                    "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employee’s services.",
+                    "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may, at its discretion, make payment in lieu of notice when terminating the Employeeâ€™s services.",
                     "The Employer reserves the right to summarily dismiss the Employee for gross misconduct, following a fair disciplinary process and in accordance with the principles of substantive and procedural fairness.",
                   ],
                 },
@@ -2987,9 +3031,9 @@ const PermanentContractGenerator = ({
                 {
                   title: "Family responsibility leave",
                   body: [
-                    "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employee’s child, or in the event of the death of the Employee’s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
-                    "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four days’ prior notice.",
-                    "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a child’s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employee’s relationship to the deceased.",
+                    "An Employee who has completed four months of continuous employment and who works at least four days per week is entitled to three days of paid family responsibility leave per annual leave cycle. This leave may be taken for the illness of the Employeeâ€™s child, or in the event of the death of the Employeeâ€™s spouse or life partner, parent or adoptive parent, grandparent, child or adopted child, grandchild, or sibling.",
+                    "The Employee must notify the Employer as soon as reasonably possible if family responsibility leave is required. Where the leave relates to a funeral, the Employee must, where practicable, give at least four daysâ€™ prior notice.",
+                    "The Employer may request reasonable proof of the reason for leave, including a medical certificate for a childâ€™s illness, a death certificate or other acceptable proof in cases of bereavement, and proof of the Employeeâ€™s relationship to the deceased.",
                     "Failure to provide notice or proof when requested may result in the leave not being approved and treated as unpaid leave. Family responsibility leave does not accumulate, may not be carried over, and lapses at the end of each annual leave cycle.",
                   ],
                 },
@@ -3008,7 +3052,7 @@ const PermanentContractGenerator = ({
                   body: [
                     "The Employee consents to the collection, use and storage of Personal Information and Special Personal Information, as defined in POPIA, for purposes related to the employment relationship. This includes payroll and benefit administration, statutory reporting, security and access control, monitoring for operational and risk-management purposes, internal and external communication, and compliance with legal and contractual obligations.",
                     "The Employee consents to the sharing or transfer of Personal Information, where necessary, to third party service providers such as benefit administrators and insurers, to clients or service providers for operational purposes, and to secure cloud-based or foreign storage platforms that offer adequate data protection in accordance with POPIA.",
-                    "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employer’s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
+                    "The Employee warrants that all Personal Information supplied is accurate and undertakes to update the Employer if any information changes. The Employee agrees to comply with the Employerâ€™s POPIA policies and acknowledges that failure to do so may result in disciplinary action.",
                   ],
                 },
                 {
@@ -3030,13 +3074,13 @@ const PermanentContractGenerator = ({
                   title: "Health and fitness",
                   body: [
                     "The Employee confirms that he or she is medically fit to perform the duties of the position. Should the Employee become unable to perform these duties for health reasons, the Employer may follow the applicable incapacity procedures prescribed by the Labour Relations Act, which may result in termination of employment.",
-                    "The Employer may require the Employee to undergo a medical assessment, at the Employer’s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
+                    "The Employer may require the Employee to undergo a medical assessment, at the Employerâ€™s cost, to determine fitness for duty. Unreasonable refusal to attend such an assessment may result in disciplinary action.",
                   ],
                 },
                 {
                   title: "Change of status",
                   body: [
-                    "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employer’s records remain accurate and up to date.",
+                    "The Employee must promptly notify the Employer in writing of any change to his or her personal details as recorded in this agreement, and in any event within seven days of such change, so that the Employerâ€™s records remain accurate and up to date.",
                     "The Employee cannot hold the Employer liable for making use of incorrect details if the Employee breaches this clause.",
                   ],
                 },
@@ -3065,15 +3109,15 @@ const PermanentContractGenerator = ({
                 {
                   title: "Temporary lay-off",
                   body: [
-                    "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one day’s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
-                    "Temporary lay offs may be introduced due to circumstances beyond the Employer’s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
+                    "The Employee agrees that the Employer may implement a temporary lay off when necessary. Where reasonably possible, the Employer will provide at least one dayâ€™s notice, stating the reason and expected duration. The Employee acknowledges that no remuneration is payable during a temporary lay off.",
+                    "Temporary lay offs may be introduced due to circumstances beyond the Employerâ€™s control, including adverse weather, shortages of material or a temporary shortage of work. A temporary lay off in terms of this clause does not constitute a unilateral change to conditions of employment, nor shall it be regarded as a dismissal, retrenchment or breach of contract.",
                   ],
                 },
                 {
                   title: "Proof of citizenship",
                   body: [
                     "The Employee must provide proof of South African citizenship upon commencement of employment. If not a South African citizen, the Employee must submit a valid work permit or proof of permanent residency within seven days of request, and must continue to provide updated documentation whenever required.",
-                    "It is the Employee’s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
+                    "It is the Employeeâ€™s sole responsibility to ensure that any work permit remains valid for the full duration of employment. The Employee agrees that failure to maintain a valid permit or to provide updated proof when required will result in immediate termination of employment.",
                   ],
                 },
                 {
@@ -3086,7 +3130,7 @@ const PermanentContractGenerator = ({
                   body: [
                     "This agreement constitutes the entire agreement between the parties, and no variation, amendment or addition shall be valid unless reduced to writing and signed by both parties. Any indulgence or leniency granted shall not constitute a waiver of rights.",
                     "By signing this agreement, both parties acknowledge that they have read and understood its contents and agree to be bound by its terms. The Employee confirms that the conditions of employment have been explained where necessary and that he or she voluntarily accepts them.",
-                    "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employer’s rules and procedures. Where this agreement and the Employer’s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
+                    "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically addressed shall be governed by the Employerâ€™s rules and procedures. Where this agreement and the Employerâ€™s policies are silent, the provisions of the Basic Conditions of Employment Act shall apply.",
                   ],
                 },
               ])
@@ -3508,6 +3552,7 @@ const PermanentContractGenerator = ({
 };
 
 export default PermanentContractGenerator;
+
 
 
 

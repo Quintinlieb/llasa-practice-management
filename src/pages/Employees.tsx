@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent, SyntheticEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -29,7 +29,10 @@ import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -299,13 +302,29 @@ type WarningDeleteUndoState = {
 };
 
 type DocumentOption = {
+  category: string;
   label: string;
-  description: string;
   path: string;
   active: boolean;
 };
 
-type DocumentKey = "warnings" | "permanentContract" | "temporaryContract" | "addendum";
+type DocumentKey =
+  | "warnings"
+  | "permanentContract"
+  | "temporaryContract"
+  | "addendum"
+  | "noticeTermination"
+  | "illHealthTermination"
+  | "abscondmentTermination"
+  | "retrenchmentTermination"
+  | "retirementTermination"
+  | "poorPerformanceTermination"
+  | "mutualTermination"
+  | "disciplinaryHearingNotice"
+  | "precautionarySuspensionNotice"
+  | "contemplatedRetrenchmentNotice"
+  | "incapacityPerformanceHearingNotice"
+  | "incapacityIllHealthHearingNotice";
 
 type ConductOffence = {
   category: "Minor" | "Serious" | "Dismissible";
@@ -962,36 +981,126 @@ const computeProbationEndDate = (startDate?: string, probationPeriod?: string) =
 
 const documentOptions: DocumentOption[] = [
   {
+    category: "Warnings",
     label: "Written Warning",
-    description: "Generate a disciplinary warning with company and employee data.",
-    path: "/documents/discipline/warnings",
+    path: "/documents/warnings",
     active: true,
   },
   {
+    category: "Contracts",
     label: "Permanent Contract",
-    description: "Generate a permanent employment contract.",
     path: "/documents/contracts/permanent",
     active: true,
   },
   {
+    category: "Contracts",
     label: "Temporary Contract",
-    description: "Generate a temporary employment contract.",
     path: "/documents/contracts/temporary",
     active: true,
   },
   {
+    category: "Contracts",
     label: "Addendum",
-    description: "Generate an addendum for an existing contract.",
     path: "/documents/contracts/addendum",
     active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Misconduct",
+    path: "/documents/terminations/misconduct",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Ill Health",
+    path: "/documents/terminations/ill-health",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Poor Performance",
+    path: "/documents/terminations/poor-performance",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Abscondment/Desertion",
+    path: "/documents/terminations/abscondment",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Retrenchment",
+    path: "/documents/terminations/retrenchment",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Retirement",
+    path: "/documents/terminations/retirement",
+    active: true,
+  },
+  {
+    category: "Terminations",
+    label: "Mutual Seperation Agreement",
+    path: "/documents/terminations/mutual-separation",
+    active: true,
+  },
+  {
+    category: "Notices",
+    label: "Disciplinary Hearing",
+    path: "/documents/notices/disciplinary-hearing",
+    active: true,
+  },
+  {
+    category: "Notices",
+    label: "Incapacity Hearing (Performance)",
+    path: "/documents/notices/incapacity-performance-hearing",
+    active: true,
+  },
+  {
+    category: "Notices",
+    label: "Incapacity Hearing (Ill health)",
+    path: "/documents/notices/incapacity-ill-health-hearing",
+    active: true,
+  },
+  {
+    category: "Notices",
+    label: "Precautionary Suspension",
+    path: "/documents/notices/precautionary-suspension",
+    active: true,
+  },
+  {
+    category: "Notices",
+    label: "Contemplated Retrenchment (S189)",
+    path: "/documents/notices/contemplated-retrenchment",
+    active: true,
+  },
+  {
+    category: "Other",
+    label: "Certificate of Service",
+    path: "/documents/other/certificate-of-service",
+    active: false,
   },
 ];
 
 const documentPathToKey: Record<string, DocumentKey> = {
-  "/documents/discipline/warnings": "warnings",
+  "/documents/warnings": "warnings",
   "/documents/contracts/permanent": "permanentContract",
   "/documents/contracts/temporary": "temporaryContract",
   "/documents/contracts/addendum": "addendum",
+  "/documents/terminations/misconduct": "noticeTermination",
+  "/documents/terminations/ill-health": "illHealthTermination",
+  "/documents/terminations/poor-performance": "poorPerformanceTermination",
+  "/documents/terminations/abscondment": "abscondmentTermination",
+  "/documents/terminations/retrenchment": "retrenchmentTermination",
+  "/documents/terminations/retirement": "retirementTermination",
+  "/documents/terminations/mutual-separation": "mutualTermination",
+  "/documents/notices/disciplinary-hearing": "disciplinaryHearingNotice",
+  "/documents/notices/incapacity-performance-hearing": "incapacityPerformanceHearingNotice",
+  "/documents/notices/incapacity-ill-health-hearing": "incapacityIllHealthHearingNotice",
+  "/documents/notices/precautionary-suspension": "precautionarySuspensionNotice",
+  "/documents/notices/contemplated-retrenchment": "contemplatedRetrenchmentNotice",
 };
 
 const Employees = () => {
@@ -1124,12 +1233,9 @@ const Employees = () => {
   const [reportingToQuery, setReportingToQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
-  const firstActiveDocPath = documentOptions.find((doc) => doc.active)?.path ?? "";
-  const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>(firstActiveDocPath);
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>("");
   const newEmployeeMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
-  const tableCardRef = useRef<HTMLDivElement | null>(null);
-  const [tableOffsetTop, setTableOffsetTop] = useState(0);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [deleteUndo, setDeleteUndo] = useState<DeleteUndoState | null>(null);
   const [deleteUndoCountdown, setDeleteUndoCountdown] = useState(0);
@@ -1256,6 +1362,15 @@ const Employees = () => {
   const [originalBasicSalary, setOriginalBasicSalary] = useState("");
   const [originalWorkEmail, setOriginalWorkEmail] = useState("");
   const [originalWorkCellNumber, setOriginalWorkCellNumber] = useState("");
+  const documentOptionsByCategory = useMemo(() => {
+    const grouped = new Map<string, DocumentOption[]>();
+    documentOptions.forEach((option) => {
+      const existing = grouped.get(option.category) ?? [];
+      existing.push(option);
+      grouped.set(option.category, existing);
+    });
+    return Array.from(grouped.entries());
+  }, []);
   const branchOptions = useMemo(() => {
     const normalized = companyBranches
       .map((value) => value.trim())
@@ -1678,33 +1793,11 @@ const Employees = () => {
     [profileSchemaBase],
   );
 
-  useLayoutEffect(() => {
-    const updateOffset = () => {
-      if (!tableCardRef.current) return;
-      const rect = tableCardRef.current.getBoundingClientRect();
-      setTableOffsetTop(rect.top);
-    };
-
-    updateOffset();
-    const onResize = () => requestAnimationFrame(updateOffset);
-    window.addEventListener("resize", onResize);
-
-    return () => window.removeEventListener("resize", onResize);
-  }, [isProfilePanelOpen, employees.length, filteredEmployees.length]);
-
-  const tableBottomGap = 32;
-  const tableFooterHeight = 32;
-  const tableMaxHeight =
-    tableOffsetTop > 0
-      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight}px)`
-      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight}px)`;
-  const tableBodyMaxHeight =
-    tableOffsetTop > 0
-      ? `calc(100vh - ${tableOffsetTop}px - ${tableBottomGap + tableFooterHeight + 56}px)`
-      : `calc(100vh - ${380 + tableBottomGap + tableFooterHeight + 56}px)`;
   const totalPages = Math.max(1, Math.ceil(totalEmployeeCount / DEFAULT_PAGE_SIZE));
   const isFirstPage = currentPage === 1;
   const isLastPage = currentPage >= totalPages;
+  const tableBottomPaddingPx = -42;
+  const tableBodyResponsiveHeight = `calc(100dvh - var(--app-header-height,5rem) - ${320 + tableBottomPaddingPx}px)`;
   const tableRangeStart = totalEmployeeCount === 0 ? 0 : (currentPage - 1) * DEFAULT_PAGE_SIZE + 1;
   const tableRangeEnd =
     totalEmployeeCount === 0
@@ -1743,8 +1836,8 @@ const Employees = () => {
     raceFilter !== "all" ||
     nationalityFilter !== "all";
 
-  const handleDocumentCategorySelect = (path: string) => {
-    const targetEmployee = documentDialogEmployee || selectedEmployee;
+  const handleDocumentCategorySelect = (path: string, targetEmployeeOverride?: Employee | null) => {
+    const targetEmployee = targetEmployeeOverride || selectedEmployee;
     const selectedDocument = documentPathToKey[path];
     const state = {
       ...(targetEmployee
@@ -1766,9 +1859,9 @@ const Employees = () => {
 
   useEffect(() => {
     if (documentDialogEmployee) {
-      setSelectedDocumentPath(firstActiveDocPath);
+      setSelectedDocumentPath("");
     }
-  }, [documentDialogEmployee, firstActiveDocPath]);
+  }, [documentDialogEmployee]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -8914,9 +9007,9 @@ const Employees = () => {
                 </p>
               </div>
             </div>
-            <section className="relative flex-1 overflow-y-auto overflow-x-hidden pr-2">
-              <div className="space-y-0 p-0">
-        <Card className="rounded-none bg-white border-0 shadow-none">
+            <section className="relative flex-1 min-h-0 overflow-hidden overflow-x-hidden pr-2">
+              <div className="h-full min-h-0 space-y-0 p-0 flex flex-col">
+        <Card className="rounded-none bg-white border-0 shadow-none h-full min-h-0 flex flex-col">
           <CardHeader className="pl-4 pr-4 pt-5 pb-3 space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -8962,13 +9055,13 @@ const Employees = () => {
                       type="button"
                       variant="outline"
                       disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
-                      className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:text-slate-300"
+                      className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 data-[state=open]:rounded-b-none data-[state=open]:border-blue-400 disabled:text-slate-300"
                     >
                       <span>{isExportingEmployeesPdf || isExportingEmployeesExcel ? "Exporting" : "Export"}</span>
                       <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-36 text-[11px]">
+                  <DropdownMenuContent align="end" sideOffset={0} className="w-36 text-[11px] rounded-t-none border-t-0">
                     <DropdownMenuItem
                       onClick={() => void handleExportEmployeesPdf()}
                       disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
@@ -8998,17 +9091,17 @@ const Employees = () => {
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                      className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:bg-white hover:text-blue-600 data-[state=open]:rounded-b-none data-[state=open]:border-blue-400"
                     >
                       <span>Filter</span>
                       <ChevronDown className={`h-4 w-4 transition-transform ${isFiltersPanelOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
-                    side="left"
-                    align="start"
-                    sideOffset={8}
-                    className="w-[260px] rounded-sm border border-slate-200 bg-white p-0 shadow-lg"
+                    side="bottom"
+                    align="end"
+                    sideOffset={0}
+                    className="w-[260px] rounded-t-none border border-slate-200 border-t-0 bg-white p-0 shadow-lg"
                   >
                     <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
                       <span className="text-[12px] font-semibold text-slate-800">Filter</span>
@@ -9186,13 +9279,13 @@ const Employees = () => {
                   <DropdownMenuTrigger asChild>
                     <Button
                       ref={newEmployeeMenuTriggerRef}
-                      className="h-8 w-36 justify-between rounded px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:bg-blue-600 data-[state=open]:text-white"
+                      className="h-8 w-36 justify-between rounded px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:rounded-b-none data-[state=open]:bg-blue-600 data-[state=open]:text-white"
                     >
                       <span className="truncate">New Employee</span>
                       <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-36 text-[11px]">
+                  <DropdownMenuContent align="end" sideOffset={0} className="w-36 text-[11px] rounded-t-none border-t-0">
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
@@ -9223,7 +9316,7 @@ const Employees = () => {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pl-4 pr-4 pb-2">
+          <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
             {isEmployeesLoading ? (
               <div className="flex items-center justify-center pt-[210px] pb-10">
                 <img
@@ -9270,9 +9363,7 @@ const Employees = () => {
             ) : (
               <div className="space-y-2">
                 <div
-                  ref={tableCardRef}
                   className="relative overflow-hidden rounded-sm border border-slate-200"
-                  style={{ maxHeight: tableMaxHeight }}
                 >
                   <div className="grid grid-cols-[0.4fr_2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                     <div className="flex items-center justify-center">
@@ -9301,8 +9392,8 @@ const Employees = () => {
                   </div>
                   <div
                     ref={tableScrollRef}
-                    className="divide-y employee-table-scroll overflow-y-auto"
-                    style={{ maxHeight: tableBodyMaxHeight }}
+                    className="divide-y employee-table-scroll overflow-y-auto min-h-0"
+                    style={{ height: tableBodyResponsiveHeight, maxHeight: tableBodyResponsiveHeight }}
                   >
                     {filteredEmployees.map((employee) => (
                       <div
@@ -10361,49 +10452,71 @@ const Employees = () => {
           if (!open) setDocumentDialogEmployee(null);
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-blue-600 font-semibold uppercase tracking-wide text-sm">
-              Documents
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Select a document to generate for this employee.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <FilePlus className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">New Document</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="px-6 pt-4 pb-6">
+            <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+              Select any document from the list below to instantly start drafting a new document for{" "}
+              {`${documentDialogEmployee?.employee_name ?? ""} ${documentDialogEmployee?.employee_surname ?? ""}`.trim()}.
+            </p>
             <div className="space-y-1">
               <Label htmlFor="document-select">Choose a document</Label>
-              <Select
-                value={selectedDocumentPath || ""}
-                onValueChange={setSelectedDocumentPath}
-              >
-                <SelectTrigger id="document-select">
-                  <SelectValue placeholder="Select a document to generate" />
+              <Select value={selectedDocumentPath || ""} onValueChange={setSelectedDocumentPath}>
+                <SelectTrigger
+                  id="document-select"
+                  className={`${getAddModalSelectTriggerClass(Boolean(selectedDocumentPath))} ${addModalDropdownToneClass}`}
+                >
+                  <SelectValue placeholder="Select a document" />
                 </SelectTrigger>
-                <SelectContent>
-                  {documentOptions.map((doc) => (
-                    <SelectItem key={doc.path} value={doc.path} disabled={!doc.active}>
-                      {doc.label} {!doc.active ? "(coming soon)" : ""}
-                    </SelectItem>
+                <SelectContent className="text-[11px]">
+                  {documentOptionsByCategory.map(([category, items], categoryIndex) => (
+                    <SelectGroup key={category}>
+                      <SelectLabel className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        {category}
+                      </SelectLabel>
+                      {items.map((doc) => (
+                        <SelectItem
+                          key={doc.path}
+                          value={doc.path}
+                          disabled={!doc.active}
+                          className={employeeDropdownSelectItemClass}
+                        >
+                          {doc.label} {!doc.active ? "(coming soon)" : ""}
+                        </SelectItem>
+                      ))}
+                      {categoryIndex < documentOptionsByCategory.length - 1 && <SelectSeparator />}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            <div className="h-[27px]" />
             <Button
-              className="w-full"
+              className="h-[30px] w-full rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
               onClick={() => {
                 const selected = documentOptions.find((d) => d.path === selectedDocumentPath);
                 if (selected?.active) {
-                  handleDocumentCategorySelect(selected.path);
+                  handleDocumentCategorySelect(selected.path, documentDialogEmployee);
                 }
               }}
               disabled={!documentOptions.find((d) => d.path === selectedDocumentPath && d.active)}
             >
-              Go
+              Draft
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
   </DashboardLayout>
 );
  };

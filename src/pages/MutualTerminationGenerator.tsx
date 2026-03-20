@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { useNavigate } from "react-router-dom";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -342,6 +342,8 @@ const MutualTerminationGenerator = ({
   const { user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const employeePrefillAppliedRef = useRef(false);
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
@@ -548,6 +550,48 @@ const MutualTerminationGenerator = ({
       idType: nextIdType,
     }));
   };
+
+  useEffect(() => {
+    if (employeePrefillAppliedRef.current) return;
+    if (!location.state || typeof location.state !== "object") return;
+
+    const state = location.state as {
+      employeeName?: unknown;
+      employeeSurname?: unknown;
+      employeeIdNumber?: unknown;
+    };
+
+    const employeeName = typeof state.employeeName === "string" ? state.employeeName.trim() : "";
+    const employeeSurname = typeof state.employeeSurname === "string" ? state.employeeSurname.trim() : "";
+    const employeeIdNumber = typeof state.employeeIdNumber === "string" ? state.employeeIdNumber.trim() : "";
+
+    if (!employeeName && !employeeSurname && !employeeIdNumber) {
+      employeePrefillAppliedRef.current = true;
+      return;
+    }
+
+    if (!employees.length) return;
+
+    const fullName = `${employeeName} ${employeeSurname}`.trim().toLowerCase();
+    const idDigits = employeeIdNumber.replace(/\D/g, "");
+
+    const matchedEmployee = employees.find((employee) => {
+      const employeeFullName = `${employee.employee_name ?? ""} ${employee.employee_surname ?? ""}`.trim().toLowerCase();
+      const rawId = (employee.id_number ?? "").trim();
+      const rawDigits = rawId.replace(/\D/g, "");
+      const matchesId =
+        employeeIdNumber.length > 0 &&
+        (rawId.toLowerCase() === employeeIdNumber.toLowerCase() || (idDigits.length > 0 && rawDigits === idDigits));
+      const matchesName = fullName.length > 0 && employeeFullName === fullName;
+      return matchesId || matchesName;
+    });
+
+    if (matchedEmployee) {
+      handleEmployeeSelect(matchedEmployee.id);
+    }
+
+    employeePrefillAppliedRef.current = true;
+  }, [employees, handleEmployeeSelect, location.state]);
 
   const resetForm = () => {
     setFormData({
@@ -2607,7 +2651,7 @@ const MutualTerminationGenerator = ({
                                         if (isAgreedPaymentSubParagraph(text)) {
                                           nodes.push(
                                             <div key={`${clause.id}-${parentIndex}-${text}`} className="grid grid-cols-[auto,1fr] gap-2 pl-5 text-justify">
-                                              <span className="font-semibold">•</span>
+                                              <span className="font-semibold">â€¢</span>
                                               {isTotalPaymentSummary(text) ? (
                                                 <p className="text-justify whitespace-pre-line text-black">
                                                   <span className="font-semibold">Total</span>
@@ -2885,6 +2929,8 @@ const MutualTerminationGenerator = ({
 };
 
 export default MutualTerminationGenerator;
+
+
 
 
 

@@ -286,8 +286,7 @@ const formatCurrency = (amount: number) =>
 
 const formatParagraphSalary = (amount: number) => {
   const us = amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const withSpaces = us.replace(/,/g, " ");
-  return `R ${withSpaces.replace(".", ",")}`;
+  return `R ${us}`;
 };
 
 const formatSalaryAmountDisplay = (value: string) => {

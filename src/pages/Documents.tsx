@@ -148,7 +148,6 @@ const documentCategories: DocumentCategory[] = [
     icon: ChartBarIcon,
     items: [
       { id: "serviceCertificate", label: "Certificate of Service", active: true },
-      { label: "Offer of Employment", active: false },
     ],
   },
 ];

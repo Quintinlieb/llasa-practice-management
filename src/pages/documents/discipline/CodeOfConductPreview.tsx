@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
-import { Download, Plus, Loader2, Trash2, X } from "lucide-react";
+import { Upload, Plus, Loader2, Trash2, X } from "lucide-react";
 import jsPDF from "jspdf";
 
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
@@ -1351,7 +1351,7 @@ export default function CodeOfConductPreviewPage({
                   disabled={isExporting || sections.length === 0}
                   className="mb-1 h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center gap-1 border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:text-slate-300"
                 >
-                  {isExporting ? <Download className="h-3.5 w-3.5 animate-pulse" /> : <Download className="h-3.5 w-3.5" />}
+                  {isExporting ? <Upload className="h-3.5 w-3.5 animate-pulse" /> : <Upload className="h-3.5 w-3.5" />}
                   {isExporting ? "Exporting" : "Export"}
                 </Button>
               </div>

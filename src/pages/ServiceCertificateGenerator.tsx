@@ -1157,20 +1157,21 @@ const ServiceCertificateGenerator = ({
       const hasTerminationDate = Boolean(formData.terminationDate);
       const hasJobTitle = Boolean(formData.jobTitle.trim());
       const hasContractType = Boolean(formData.serviceContractType.trim());
+      const hasSalaryAmount = Boolean(formData.salaryAmount.trim());
+      const hasSalaryFrequency = Boolean(formData.salaryFrequency);
+      const hasValidSalaryPair =
+        (hasSalaryAmount && hasSalaryFrequency) || (!hasSalaryAmount && !hasSalaryFrequency);
       const hasIndustryRegulationDetail =
         formData.industryRegulation === "none"
           ? true
           : Boolean(formData.industryRegulationDetail.trim());
-      const hasSalaryAmount = Boolean(formData.salaryAmount.trim());
-      const hasSalaryFrequency = Boolean(formData.salaryFrequency);
       return Boolean(
         hasServiceStartDate &&
           hasTerminationDate &&
           hasJobTitle &&
           hasContractType &&
-          hasIndustryRegulationDetail &&
-          hasSalaryAmount &&
-          hasSalaryFrequency,
+          hasValidSalaryPair &&
+          hasIndustryRegulationDetail,
       );
     },
     [
@@ -1178,10 +1179,10 @@ const ServiceCertificateGenerator = ({
       formData.terminationDate,
       formData.jobTitle,
       formData.serviceContractType,
-      formData.industryRegulation,
-      formData.industryRegulationDetail,
       formData.salaryAmount,
       formData.salaryFrequency,
+      formData.industryRegulation,
+      formData.industryRegulationDetail,
     ],
   );
 
@@ -1767,11 +1768,17 @@ const ServiceCertificateGenerator = ({
     if (formData.industryRegulation === "sectoral_determination") {
       checkRequired(formData.industryRegulationDetail, "Sectoral determination");
     }
-    checkRequired(formData.salaryAmount, "Salary");
-    checkRequired(formData.salaryFrequency, "Salary cycle");
-
     if (missingFields.length) {
       throw new Error(`Please fill in the following required fields: ${missingFields.join(", ")}`);
+    }
+
+    const hasSalaryAmount = Boolean(formData.salaryAmount.trim());
+    const hasSalaryFrequency = Boolean(formData.salaryFrequency);
+    if (hasSalaryAmount && !hasSalaryFrequency) {
+      throw new Error("Please select salary cycle when salary is provided.");
+    }
+    if (!hasSalaryAmount && hasSalaryFrequency) {
+      throw new Error("Please enter salary amount when salary cycle is selected.");
     }
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(formData.serviceStartDate) && /^\d{4}-\d{2}-\d{2}$/.test(formData.terminationDate)) {
@@ -1783,11 +1790,14 @@ const ServiceCertificateGenerator = ({
     }
 
     const issueDate = formData.issueDate;
+    const normalizedSalaryAmount = Number(formData.salaryAmount.replace(/,/g, "")) || 0;
+    const normalizedSalaryFrequency = (formData.salaryFrequency || "month") as PermanentContractFormData["salaryFrequency"];
 
     return {
       ...formData,
       issueDate,
-      salaryAmount: Number(formData.salaryAmount.replace(/,/g, "")) || 0,
+      salaryAmount: normalizedSalaryAmount,
+      salaryFrequency: normalizedSalaryFrequency,
       annualLeaveDays: Number(formData.annualLeaveDays) || 0,
       gender: formData.gender as PermanentContractFormData["gender"],
       race: formData.race as PermanentContractFormData["race"],
@@ -2210,9 +2220,9 @@ const ServiceCertificateGenerator = ({
     };
 
     const drawHearingDetailsSection = () => {
-      const leftLabel = "Service Start:";
+      const leftLabel = "Start Date:";
       const leftValue = valueOrLine(formatDate(data.serviceStartDate));
-      const rightLabel = "Termination Date:";
+      const rightLabel = "End Date:";
       const rightValue = valueOrLine(formatDate(data.terminationDate));
       const locationLabel = "Job Title:";
       const locationValue = valueOrLine(data.jobTitle || "________________________");
@@ -2220,7 +2230,7 @@ const ServiceCertificateGenerator = ({
       const salaryValue = valueOrLine(
         data.salaryAmount > 0
           ? `${formatCurrency(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`
-          : "________________________",
+          : "Undisclosed",
       );
       const columnGap = 4;
       const columnWidth = (contentWidth - sectionPaddingX * 2 - columnGap) / 2;
@@ -2248,7 +2258,7 @@ const ServiceCertificateGenerator = ({
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text("B. SERVICE DETAILS", margin + sectionPaddingX, startY + 4.7);
+      doc.text("B. EMPLOYMENT DETAILS", margin + sectionPaddingX, startY + 4.7);
 
       const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       const leftX = margin + sectionPaddingX;
@@ -2308,7 +2318,7 @@ const ServiceCertificateGenerator = ({
       doc.roundedRect(margin, startY, contentWidth, sectionHeight, sectionCornerRadius, sectionCornerRadius, "S");
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
-      doc.text("C. INDUSTRY DETAILS", margin + sectionPaddingX, startY + 4.7);
+      doc.text("C. EMPLOYER INDUSTRY DETAILS", margin + sectionPaddingX, startY + 4.7);
 
       const rowY = startY + sectionHeaderHeight + sectionPaddingY + 3;
       const leftX = margin + sectionPaddingX;
@@ -2506,6 +2516,10 @@ const ServiceCertificateGenerator = ({
     }`.trim();
     const paragraphContractType = (data.serviceContractType || "").trim().toLowerCase();
     const currentYear = new Date().getFullYear();
+    const remunerationSentence =
+      data.salaryAmount > 0
+        ? ` At the date of termination, the employee's remuneration was ${formatParagraphSalary(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}.`
+        : "";
     const confirmationParagraph = `This serves to confirm that ${
       confirmationName || "________________________"
     }, identity number ${
@@ -2520,11 +2534,7 @@ const ServiceCertificateGenerator = ({
       formatDate(data.terminationDate) || "________________________"
     }, during which period he/she held the position of ${
       data.jobTitle || "________________________"
-    }. At the date of termination, the employee's remuneration was ${
-      data.salaryAmount > 0
-        ? `${formatParagraphSalary(data.salaryAmount)} ${salaryFrequencyLabels[data.salaryFrequency]}`
-        : "________________________"
-    }.`;
+    }.${remunerationSentence}`;
     y += 8;
     doc.setFont("helvetica", "bold");
     drawWrapped(salutationLine, margin + sectionPaddingX, contentWidth - sectionPaddingX * 2, 4.8);
@@ -3058,7 +3068,24 @@ const ServiceCertificateGenerator = ({
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="serviceStartDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Service Start <span className="text-red-500">*</span>
+                        Start Date <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Start date info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              The employee&apos;s first day of employment with the company.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <div className="flex items-start gap-2">
                         <Input
@@ -3091,7 +3118,24 @@ const ServiceCertificateGenerator = ({
 
                     <div className="space-y-1.5">
                       <Label htmlFor="terminationDate" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Termination Date <span className="text-red-500">*</span>
+                        End Date <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="End date info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              The employee&apos;s final day of employment with the company.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <div className="flex items-start gap-2">
                         <Input
@@ -3162,7 +3206,7 @@ const ServiceCertificateGenerator = ({
 
                     <div className="space-y-1.5">
                       <Label htmlFor="salaryAmount" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Salary (R) <span className="text-red-500">*</span>
+                        Salary (R)
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3201,7 +3245,7 @@ const ServiceCertificateGenerator = ({
 
                     <div className="space-y-1.5">
                       <Label htmlFor="salaryFrequency" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
-                        Salary cycle <span className="text-red-500">*</span>
+                        Salary cycle
                       </Label>
                       <Select
                         value={formData.salaryFrequency || undefined}
@@ -3231,6 +3275,23 @@ const ServiceCertificateGenerator = ({
                     <div className="space-y-1.5">
                       <Label htmlFor="industryRegulation" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                         Industry regulation <span className="text-red-500">*</span>
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                aria-label="Industry regulation info"
+                              >
+                                <Info className="h-3.5 w-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className={fixedTooltipContentClass}>
+                              Select the applicable bargaining council or sectoral determination that governs this employment.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </Label>
                       <Select
                         value={formData.industryRegulation}
@@ -3263,6 +3324,46 @@ const ServiceCertificateGenerator = ({
                       <div className="space-y-1.5 md:col-span-2">
                         <Label htmlFor="industryRegulationDetail" className={`${modalFieldLabelClass} inline-flex items-center gap-1`}>
                           {formData.industryRegulation === "bargaining_council" ? "Bargaining council" : "Sectoral determination"} <span className="text-red-500">*</span>
+                          {formData.industryRegulation === "bargaining_council" ? (
+                            <TooltipProvider delayDuration={0}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                    aria-label="Bargaining council info"
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className={fixedTooltipContentClass}>
+                                  Enter the full bargaining council name and include the abbreviation in brackets,{" "}
+                                  <span className="italic">e.g., Motor Industry Bargaining Council (MIBCO).</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
+                          {formData.industryRegulation === "sectoral_determination" ? (
+                            <TooltipProvider delayDuration={0}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    className="inline-flex items-center text-slate-400 hover:text-slate-600"
+                                    aria-label="Sectoral determination info"
+                                  >
+                                    <Info className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className={fixedTooltipContentClass}>
+                                  Enter the full industry description and include the abbreviated sector number in brackets,{" "}
+                                  <span className="italic">e.g., Wholesale and Retail (SD9).</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
                         </Label>
                         <Input
                           id="industryRegulationDetail"
@@ -3411,15 +3512,15 @@ const ServiceCertificateGenerator = ({
 
                     <section className="overflow-hidden rounded border border-slate-300">
                       <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                        B. Service Details
+                        B. Employment Details
                       </div>
                       <div className="grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-2">
                         <div className="grid grid-cols-[92px,1fr]">
-                          <span className="font-semibold">Service Start:</span>
+                          <span className="font-semibold">Start Date:</span>
                           <span>{formatDate(validatedPreview.serviceStartDate) || "________________________"}</span>
                         </div>
                         <div className="grid grid-cols-[124px,1fr]">
-                          <span className="font-semibold">Termination Date:</span>
+                          <span className="font-semibold">End Date:</span>
                           <span>{formatDate(validatedPreview.terminationDate) || "________________________"}</span>
                         </div>
                         <div className="grid grid-cols-[92px,1fr]">
@@ -3431,7 +3532,7 @@ const ServiceCertificateGenerator = ({
                           <span>
                             {validatedPreview.salaryAmount > 0
                               ? `${formatCurrency(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}`
-                              : "________________________"}
+                              : "Undisclosed"}
                           </span>
                         </div>
                       </div>
@@ -3439,7 +3540,7 @@ const ServiceCertificateGenerator = ({
                     {validatedPreview.industryRegulation !== "none" ? (
                       <section className="overflow-hidden rounded border border-slate-300">
                         <div className="w-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase">
-                          C. Industry details
+                          C. Employer Industry details
                         </div>
                         <div className="grid grid-cols-1 gap-2 px-3 py-2">
                           <div className="grid grid-cols-[92px,1fr]">
@@ -3453,7 +3554,12 @@ const ServiceCertificateGenerator = ({
                     ) : null}
                     <p className="mt-8 text-[11px] font-semibold leading-relaxed">To whom it may concern</p>
                     <p className="mt-1.5 text-[11px] leading-relaxed">
-                      {`This serves to confirm that ${
+                      {(() => {
+                        const remunerationSentence =
+                          validatedPreview.salaryAmount > 0
+                            ? ` At the date of termination, the employee's remuneration was ${formatParagraphSalary(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}.`
+                            : "";
+                        return `This serves to confirm that ${
                         [validatedPreview.employeeName, validatedPreview.employeeSurname].filter(Boolean).join(" ").trim() ||
                         "________________________"
                       }, identity number ${
@@ -3471,11 +3577,8 @@ const ServiceCertificateGenerator = ({
                         formatDate(validatedPreview.terminationDate) || "________________________"
                       }, during which period he/she held the position of ${
                         validatedPreview.jobTitle || "________________________"
-                      }. At the date of termination, the employee's remuneration was ${
-                        validatedPreview.salaryAmount > 0
-                          ? `${formatParagraphSalary(validatedPreview.salaryAmount)} ${salaryFrequencyLabels[validatedPreview.salaryFrequency]}`
-                          : "________________________"
-                      }.`}
+                      }.${remunerationSentence}`;
+                      })()}
                     </p>
                     <p className="mt-10 text-[11px] leading-relaxed">
                       {`Signed and issued at __________________________ on this ______ day of ____________________________ ${new Date().getFullYear()}`}

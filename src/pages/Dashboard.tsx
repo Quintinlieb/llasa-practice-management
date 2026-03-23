@@ -1,698 +1,701 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
-import { Activity, AlertTriangle, FileText, Sparkles, Users, CalendarDays } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
+import { CircleAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
+import { contractTypes } from "@/lib/validation";
 
 type Employee = Tables<"employees"> & {
+  status?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  gender?: string | null;
-  race?: string | null;
-  nationality?: string | null;
   contract_type?: string | null;
-  employment_type?: string | null;
+  probation_period?: string | null;
+  termination_reason?: string | null;
+  terminated_at?: string | null;
 };
 
 type WarningRow = {
   id: string;
-  company_id?: string;
   employee_id?: string;
-  misconduct_type?: string | null;
   warning_type?: string | null;
+  misconduct_type?: string | null;
   issue_date?: string | null;
+  expiry_date?: string | null;
 };
 
-type DocumentRow = Tables<"documents">;
-
-const warningTable = () => (supabase as any).from("employee_warnings");
+type RangeKey = "7d" | "30d" | "3m" | "6m";
+type ProbationItem = { id: string; name: string; label: string; start: string; end: string; progress: number };
 
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const warningValidityMonths: Record<string, number> = {
-  first: 3,
-  second: 6,
-  serious: 12,
-  final: 12,
+const rangeOptions: Array<{ value: RangeKey; label: string }> = [
+  { value: "7d", label: "Next 7 days" },
+  { value: "30d", label: "Next 30 days" },
+  { value: "3m", label: "Next 3 months" },
+  { value: "6m", label: "Next 6 months" },
+];
+const warningMonths: Record<string, number> = { first: 3, second: 6, serious: 12, final: 12 };
+const trigCls =
+  "h-8 rounded border border-slate-200 bg-white text-[11px] hover:border-blue-400 focus:ring-0";
+const itemCls = "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600";
+const warningTable = () => (supabase as any).from("employee_warnings");
+const pieColors = ["#2563eb", "#16a34a", "#ea580c", "#7c3aed", "#0891b2", "#dc2626", "#0f766e"];
+const genderColor = (label: string) => {
+  const key = label.trim().toLowerCase();
+  if (key === "male") return "#2563eb";
+  if (key === "female") return "#7c3aed";
+  if (key === "unspecified") return "#94a3b8";
+  return "#64748b";
+};
+const raceColor = (label: string, idx: number) => {
+  const key = label.trim().toLowerCase();
+  if (key === "unspecified") return "#94a3b8";
+  if (key === "white") return "#2563eb";
+  if (key === "indian") return "#eab308";
+  return pieColors[idx % pieColors.length];
 };
 
-const addMonths = (date: Date, months: number) => {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
+const parseDate = (v?: string | null) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
 };
+
+const fmtDate = (d: Date) =>
+  d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+const addDays = (d: Date, n: number) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+};
+
+const addMonths = (d: Date, n: number) => {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+};
+
+const rangeEnd = (t: Date, r: RangeKey) =>
+  r === "30d" ? addDays(t, 30) : r === "3m" ? addMonths(t, 3) : r === "6m" ? addMonths(t, 6) : addDays(t, 7);
+
+const normType = (v?: string | null) => {
+  const k = (v ?? "").toLowerCase().trim();
+  if (k === "first") return "First Written Warning";
+  if (k === "second") return "Second Written Warning";
+  if (k === "serious") return "Serious Written Warning";
+  if (k === "final") return "Final Written Warning";
+  return v?.trim() || "Warning";
+};
+
+const getWarningExpiry = (w: WarningRow) => {
+  const ex = parseDate(w.expiry_date);
+  if (ex) return ex;
+  const issue = parseDate(w.issue_date);
+  if (!issue) return null;
+  return addMonths(issue, warningMonths[(w.warning_type ?? "").toLowerCase().trim()] ?? 6);
+};
+
+const cType = (v?: string | null) => (v?.trim() ? v.trim() : "Unspecified");
 
 const Dashboard = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [stats, setStats] = useState({ employees: 0, documents: 0 });
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [warnings, setWarnings] = useState<WarningRow[]>([]);
-  const [documents, setDocuments] = useState<DocumentRow[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(false);
-  const [warningYear, setWarningYear] = useState<number>(new Date().getFullYear());
-  const [misconductFilter, setMisconductFilter] = useState<string>("all");
-  const [startYear, setStartYear] = useState<number>(new Date().getFullYear());
-  const [employmentTypeFilter, setEmploymentTypeFilter] = useState<string>("all");
+  const [busy, setBusy] = useState(false);
+
+  const [upcomingRange, setUpcomingRange] = useState<RangeKey>("30d");
+
+  const [issuedYear, setIssuedYear] = useState(new Date().getFullYear());
+
+  const [workforceYearFilter, setWorkforceYearFilter] = useState<string>(String(new Date().getFullYear()));
+  const [contractFilter, setContractFilter] = useState<string>("all");
+  const [terminationReason, setTerminationReason] = useState("all");
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate("/auth");
-    }
-  }, [user, loading, navigate]);
+    if (!loading && !user) navigate("/auth");
+  }, [loading, navigate, user]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const run = async () => {
       if (!user) return;
-      setIsLoadingData(true);
+      setBusy(true);
       try {
-        const [{ data: profileData, error: profileError }] = await Promise.all([
-          supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-        ]);
-
-        if (profileError) {
-          throw profileError;
-        }
-        if (!profileData) {
+        const { data: p, error: pe } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+        if (pe) throw pe;
+        if (!p) {
           navigate("/account-setup");
           return;
         }
-
-        const [
-          { count: employeeCount },
-          { count: documentCount },
-          employeeResponse,
-          warningResponse,
-          documentResponse,
-        ] = await Promise.all([
-          supabase.from("employees").select("*", { count: "exact", head: true }).eq("company_id", user.id),
-          supabase.from("documents").select("*", { count: "exact", head: true }).eq("company_id", user.id),
+        const [e, w] = await Promise.all([
           (supabase as any)
             .from("employees")
-            .select("id, contract_type, start_date, gender, race, nationality")
+            .select("id,employee_name,employee_surname,status,start_date,end_date,contract_type,probation_period,termination_reason,terminated_at,gender,race")
             .eq("company_id", user.id),
           warningTable()
-            .select("id, company_id, employee_id, misconduct_type, warning_type, issue_date")
+            .select("id,employee_id,warning_type,misconduct_type,issue_date,expiry_date")
             .eq("company_id", user.id),
-          supabase.from("documents").select("id, company_id, created_at, document_type").eq("company_id", user.id),
         ]);
-
-        setStats({
-          employees: employeeCount || 0,
-          documents: documentCount || 0,
-        });
-
-        if (employeeResponse.error) throw employeeResponse.error;
-        if (warningResponse.error) throw warningResponse.error;
-        if (documentResponse.error) throw documentResponse.error;
-
-        setEmployees(employeeResponse.data ?? []);
-        setWarnings((warningResponse.data as WarningRow[]) ?? []);
-        setDocuments((documentResponse.data as DocumentRow[]) ?? []);
-      } catch (error: any) {
-        console.error(error);
+        if (e.error) throw e.error;
+        if (w.error) throw w.error;
+        setEmployees((e.data ?? []) as Employee[]);
+        setWarnings((w.data ?? []) as WarningRow[]);
+      } catch (err: unknown) {
         toast({
           title: "Unable to load dashboard",
-          description: error.message || "Please try again.",
+          description: err instanceof Error ? err.message : "Please try again.",
           variant: "destructive",
         });
       } finally {
-        setIsLoadingData(false);
+        setBusy(false);
       }
     };
+    void run();
+  }, [navigate, toast, user]);
 
-    fetchData();
-  }, [user, navigate, toast]);
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
-  const parseDate = (value?: string | null) => {
-    if (!value) return null;
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? null : date;
-  };
+  const names = useMemo(
+    () => new Map(employees.map((e) => [e.id, `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim()])),
+    [employees],
+  );
 
-  const documentsThisMonth = useMemo(() => {
-    const now = new Date();
-    return documents.filter((doc) => {
-      const created = parseDate(doc.created_at);
-      return created && created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
-    }).length;
-  }, [documents]);
+  const activeEmployees = useMemo(
+    () => employees.filter((e) => (e.status ?? "").toLowerCase().trim() !== "inactive"),
+    [employees],
+  );
 
-  const misconductRisk = useMemo(() => {
-    const employeesWithWarnings = new Set(warnings.map((w) => w.employee_id).filter(Boolean)).size;
-    const ratio = stats.employees ? employeesWithWarnings / stats.employees : 0;
-    if (!stats.employees) return { label: "No data", tone: "text-muted-foreground", helper: "Add employees to see risk." };
-    if (ratio >= 0.3) return { label: "High", tone: "text-destructive", helper: "Many employees have recent warnings." };
-    if (ratio >= 0.12) return { label: "Medium", tone: "text-amber-600", helper: "Monitor active warnings closely." };
-    return { label: "Low", tone: "text-emerald-600", helper: "Healthy - few warning records." };
-  }, [warnings, stats.employees]);
-
-  const employmentTypeData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    employees.forEach((emp) => {
-      const type =
-        (emp.employment_type || emp.contract_type || "Unspecified").toLowerCase().replace(/_/g, " ").trim();
-      const label =
-        type === "permanent"
-          ? "Permanent"
-          : type === "fixed-term" || type === "fixed term"
-            ? "Fixed-term"
-            : type === "temporary"
-              ? "Temporary"
-              : type === "casual"
-                ? "Casual"
-                : type
-                  ? type.charAt(0).toUpperCase() + type.slice(1)
-                  : "Unspecified";
-      counts[label] = (counts[label] || 0) + 1;
+  const genderData = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeEmployees.forEach((e) => {
+      const value = ((e as any).gender ?? "").toString().trim() || "Unspecified";
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     });
+    return Array.from(counts.entries())
+      .map(([label, total]) => ({ label, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [activeEmployees]);
 
-    return Object.entries(counts)
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value);
+  const raceData = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeEmployees.forEach((e) => {
+      const value = ((e as any).race ?? "").toString().trim() || "Unspecified";
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([label, total]) => ({ label, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [activeEmployees]);
+
+  const warningYears = useMemo(() => {
+    const ys = warnings
+      .map((w) => parseDate(w.issue_date)?.getFullYear())
+      .filter((y): y is number => typeof y === "number");
+    if (!ys.length) return [new Date().getFullYear()];
+    const min = Math.min(...ys);
+    const max = new Date().getFullYear();
+    const out: number[] = [];
+    for (let y = max; y >= min; y -= 1) out.push(y);
+    return out;
+  }, [warnings]);
+
+  useEffect(() => {
+    if (!warningYears.includes(issuedYear)) setIssuedYear(warningYears[0]);
+  }, [issuedYear, warningYears]);
+
+  const workforceYears = useMemo(() => {
+    const years = employees
+      .flatMap((e) => [parseDate(e.start_date)?.getFullYear(), parseDate(e.end_date)?.getFullYear()])
+      .filter((y): y is number => typeof y === "number");
+    if (!years.length) return [new Date().getFullYear()];
+    const min = Math.min(...years);
+    const max = new Date().getFullYear();
+    const out: number[] = [];
+    for (let y = max; y >= min; y -= 1) out.push(y);
+    return out;
   }, [employees]);
 
-  const demographicBlocks = useMemo(() => {
-    const raceCounts: Record<string, number> = {};
-    const genderCounts: Record<string, number> = {};
-    let saCount = 0;
-    let foreignCount = 0;
+  useEffect(() => {
+    if (workforceYears.includes(Number(workforceYearFilter))) return;
+    const currentYear = new Date().getFullYear();
+    if (workforceYears.includes(currentYear)) {
+      setWorkforceYearFilter(String(currentYear));
+      return;
+    }
+    setWorkforceYearFilter(workforceYears.length > 0 ? String(workforceYears[0]) : "all");
+  }, [workforceYearFilter, workforceYears]);
 
-    employees.forEach((emp) => {
-      const race = emp.race || "Unspecified";
-      raceCounts[race] = (raceCounts[race] || 0) + 1;
+  const allContractOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...contractTypes,
+          ...employees.map((e) => cType(e.contract_type)),
+        ]),
+      ).sort(),
+    [employees],
+  );
 
-      const gender = emp.gender || "Unspecified";
-      genderCounts[gender] = (genderCounts[gender] || 0) + 1;
-
-      const nationality = (emp.nationality || "").toLowerCase();
-      if (!nationality || nationality.includes("south") || nationality === "rsa" || nationality === "sa") {
-        saCount += 1;
-      } else {
-        foreignCount += 1;
+  const workforceChartData = useMemo(() => {
+    const years = workforceYearFilter === "all" ? workforceYears : [Number(workforceYearFilter)];
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const onlyCurrentYear = years.length === 1 && years[0] === currentYear;
+    return monthLabels.map((label, monthIdx) => {
+      if (onlyCurrentYear && monthIdx > currentMonth) {
+        return { label, total: null };
       }
+      let total = 0;
+      years.forEach((year) => {
+        const monthStart = new Date(year, monthIdx, 1);
+        const monthEnd = new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
+        total += employees.filter((e) => {
+          const start = parseDate(e.start_date);
+          if (!start || start > monthEnd) return false;
+          const end = parseDate(e.end_date);
+          if (end && end < monthStart) return false;
+          if (contractFilter !== "all" && cType(e.contract_type) !== contractFilter) return false;
+          return true;
+        }).length;
+      });
+      return { label, total };
     });
+  }, [contractFilter, employees, today, workforceYearFilter, workforceYears]);
+  const terminationOptions = useMemo(
+    () =>
+      Array.from(new Set(employees.map((e) => (e.termination_reason ?? "").trim()).filter(Boolean))).sort(),
+    [employees],
+  );
 
-    const toArray = (source: Record<string, number>) =>
-      Object.entries(source)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value);
-
-    return {
-      race: toArray(raceCounts),
-      gender: toArray(genderCounts),
-      citizenship: [
-        { label: "RSA", value: saCount },
-        { label: "Foreigners", value: foreignCount },
-      ],
-    };
-  }, [employees]);
-
-  const warningsByType = useMemo(() => {
-    const misconductCounts: Record<string, number> = {};
-    warnings.forEach((row) => {
-      const misconduct = row.misconduct_type || "Unspecified";
-      misconductCounts[misconduct] = (misconductCounts[misconduct] || 0) + 1;
+  const issuedByMonth = useMemo(() => {
+    const data = monthLabels.map((label) => ({ label, total: 0 }));
+    warnings.forEach((w) => {
+      const d = parseDate(w.issue_date);
+      if (d && d.getFullYear() === issuedYear) data[d.getMonth()].total += 1;
     });
+    return data;
+  }, [issuedYear, warnings]);
 
-    return Object.entries(misconductCounts)
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value);
-  }, [warnings]);
 
-  const warningStatusTimeline = useMemo(() => {
-    const now = new Date();
-    const monthly = monthLabels.map((label, idx) => ({ label, active: 0 }));
-    warnings.forEach((row) => {
-      const issued = parseDate(row.issue_date);
-      if (!issued) return;
-      if (issued.getFullYear() !== warningYear) return;
-      if (misconductFilter !== "all" && (row.misconduct_type || "Unspecified") !== misconductFilter) return;
-      const months = warningValidityMonths[(row.warning_type || "").toLowerCase()] ?? 6;
-      const expiry = addMonths(issued, months);
-      if (expiry < now) return;
-      monthly[issued.getMonth()].active += 1;
+  const probationActive = useMemo(
+    () =>
+      activeEmployees
+        .map((e) => {
+          const start = parseDate(e.start_date);
+          const months = Number.parseInt((e.probation_period ?? "").trim(), 10);
+          if (!start || !Number.isFinite(months) || months <= 0) return null;
+          const end = addMonths(start, months);
+          if (today < start || today > end) return null;
+          const total = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+          const done = Math.max(0, Math.ceil((today.getTime() - start.getTime()) / 86400000));
+          return {
+            id: e.id,
+            name: `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim(),
+            label: months === 1 ? "1 month" : `${months} months`,
+            start: fmtDate(start),
+            end: fmtDate(end),
+            progress: Math.max(0, Math.min(100, Math.round((done / total) * 100))),
+          };
+        })
+        .filter((x): x is ProbationItem => Boolean(x))
+        .sort((a, b) => b.progress - a.progress),
+    [activeEmployees, today],
+  );
+
+
+  const upcomingEvents = useMemo(() => {
+    const endWindow = rangeEnd(today, upcomingRange);
+    const warningEvents = warnings
+      .map((w) => {
+        const due = getWarningExpiry(w);
+        if (!due || due < today || due > endWindow) return null;
+        return {
+          id: `warning-${w.id}`,
+          name: names.get(w.employee_id ?? "") ?? "Employee",
+          type: "Warning expires",
+          date: due,
+          dateLabel: fmtDate(due),
+        };
+      })
+      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+
+    const contractEvents = activeEmployees
+      .map((e) => {
+        const contractType = (e.contract_type ?? "").toLowerCase().trim();
+        const isTemporary = contractType === "temporary" || contractType === "fixed-term" || contractType === "fixed term";
+        if (!isTemporary) return null;
+        const due = parseDate(e.end_date);
+        if (!due || due < today || due > endWindow) return null;
+        return {
+          id: `contract-${e.id}`,
+          name: `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim(),
+          type: "Temporary contract ends",
+          date: due,
+          dateLabel: fmtDate(due),
+        };
+      })
+      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+
+    const probationEvents = activeEmployees
+      .map((e) => {
+        const start = parseDate(e.start_date);
+        const months = Number.parseInt((e.probation_period ?? "").trim(), 10);
+        if (!start || !Number.isFinite(months) || months <= 0) return null;
+        const due = addMonths(start, months);
+        if (due < today || due > endWindow) return null;
+        return {
+          id: `probation-${e.id}`,
+          name: `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim(),
+          type: "Probation ends",
+          date: due,
+          dateLabel: fmtDate(due),
+        };
+      })
+      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+
+    return [...warningEvents, ...contractEvents, ...probationEvents]
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .slice(0, 20);
+  }, [activeEmployees, names, today, upcomingRange, warnings]);
+
+  const terminationsByMonth = useMemo(() => {
+    const data = monthLabels.map((label) => ({ label, total: 0 }));
+    employees.forEach((e) => {
+      const d = parseDate(e.terminated_at);
+      const r = (e.termination_reason ?? "").trim();
+      if (d && (terminationReason === "all" || r === terminationReason)) data[d.getMonth()].total += 1;
     });
-    return monthly;
-  }, [warnings, warningYear, misconductFilter]);
+    return data;
+  }, [employees, terminationReason]);
 
-  const warningYearOptions = useMemo(() => {
-    const years = new Set<number>([new Date().getFullYear()]);
-    warnings.forEach((row) => {
-      const issued = parseDate(row.issue_date);
-      if (issued) years.add(issued.getFullYear());
-    });
-    return Array.from(years).sort((a, b) => b - a);
-  }, [warnings]);
+  const rangeSelect = (value: RangeKey, onChange: (v: RangeKey) => void) => (
+    <Select value={value} onValueChange={(v) => onChange(v as RangeKey)}>
+      <SelectTrigger className={`${trigCls} w-[145px]`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {rangeOptions.map((r) => (
+          <SelectItem key={r.value} value={r.value} className={itemCls}>
+            {r.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
-  const misconductOptions = useMemo(() => {
-    const opts = new Set<string>();
-    warnings.forEach((row) => {
-      if (row.misconduct_type) opts.add(row.misconduct_type);
-    });
-    return Array.from(opts).sort();
-  }, [warnings]);
+  const hintIcon = (message: string) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:text-blue-600"
+          aria-label="More information"
+        >
+          <CircleAlert className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-[11px] leading-snug">
+        <p>{message}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 
-  const normalizeEmploymentType = (emp: Employee) => {
-    const type = (emp.employment_type || emp.contract_type || "Unspecified").toLowerCase().replace(/_/g, " ").trim();
-    return type || "unspecified";
-  };
+  const chartCard = (title: string, desc: string, controls: ReactNode, chart: ReactNode, hint?: string) => (
+    <Card className="rounded-sm border border-slate-300 shadow-none flex min-h-[270px] flex-col overflow-hidden">
+      <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+              {hint ? hintIcon(hint) : null}
+            </div>
+            <CardDescription className="mt-1 text-[11px]">{desc}</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">{controls}</div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-3">{chart}</CardContent>
+    </Card>
+  );
 
-  const startsTimeline = useMemo(() => {
-    return monthLabels.map((label, idx) => {
-      const total = employees.filter((emp) => {
-        const start = parseDate(emp.start_date);
-        if (!start || start.getFullYear() !== startYear || start.getMonth() !== idx) return false;
-        if (employmentTypeFilter === "all") return true;
-        return normalizeEmploymentType(emp) === employmentTypeFilter;
-      }).length;
-      return { label, hires: total };
-    });
-  }, [employees, startYear, employmentTypeFilter]);
-
-  const startYearOptions = useMemo(() => {
-    const years = new Set<number>([new Date().getFullYear()]);
-    employees.forEach((emp) => {
-      const start = parseDate(emp.start_date);
-      if (start) years.add(start.getFullYear());
-    });
-    return Array.from(years).sort((a, b) => b - a);
-  }, [employees]);
-
-  const employmentTypeOptions = useMemo(() => {
-    const opts = new Set<string>();
-    employees.forEach((emp) => {
-      opts.add(normalizeEmploymentType(emp));
-    });
-    return Array.from(opts).sort();
-  }, [employees]);
-
-  if (loading || isLoadingData) {
+  if (loading || busy) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <img
-          src="/zappir_thumbnail_blue.png"
-          alt="Loading"
-          className="h-12 w-12 animate-spin"
-          style={{ animationDuration: "2s" }}
-        />
+        <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
       </div>
     );
   }
 
-  const pieColors = ["#2563eb", "#22c55e", "#eab308", "#f97316", "#a855f7", "#06b6d4", "#ef4444"];
-
   return (
     <DashboardLayout>
-      <div className="space-y-4 -ml-6 -mr-6 pl-3 pr-3">
-        <header className="rounded-2xl px-5 py-4 space-y-1 flex flex-col gap-2 md:flex-row md:items-center md:justify-between bg-white border border-slate-300">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1 text-xs font-semibold tracking-wide text-slate-700">
-              <span className="underline-offset-2 rounded-sm">Home</span>
-              <span aria-hidden="true" className="text-slate-500">
-                &gt;
-              </span>
-              <span className="underline-offset-2 rounded-sm" aria-current="page">
-                Dashboard
-              </span>
+      <TooltipProvider>
+      <div className="space-y-0 -m-6">
+        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))]">
+          <div className="flex h-full flex-col">
+            <div className="pl-4 pr-4 pt-1">
+              <div className="pt-5 pb-2">
+                <h1 className="text-4xl font-normal text-blue-600 -ml-1">Dashboard</h1>
+                <p className="text-xs text-slate-600 mt-2">Operational events and workforce trends.</p>
+              </div>
             </div>
-            <h1 className="text-xl font-bold uppercase text-blue-700 leading-snug">Workforce Overview</h1>
-            <p className="text-xs text-gray-600">
-              Monitor headcount trends, demographics, and disciplinary activity at a glance.
-            </p>
+            <section className="relative flex-1 min-h-0 overflow-auto overflow-x-hidden pr-2 pb-4">
+              <div className="grid items-start gap-3 px-4 pb-2 md:grid-cols-2">
+                <Card className="rounded-sm border border-slate-300 shadow-none flex h-[230px] flex-col overflow-hidden" style={{ height: 230, minHeight: 230 }}>
+                  <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-sm font-semibold">Upcoming Events</CardTitle>
+                        <CardDescription className="mt-1 text-[11px]">
+                          Upcoming probation, warning, and temporary-contract events.
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2">{rangeSelect(upcomingRange, setUpcomingRange)}</div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-1 min-h-0 pt-3">
+                    {upcomingEvents.length === 0 ? (
+                      <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-[11px] text-slate-500">
+                        No upcoming events in the selected range.
+                      </div>
+                    ) : (
+                      <div className="h-full min-h-0 overflow-y-auto pr-1">
+                        <ul className="list-disc list-outside space-y-2 pl-5 text-[11px] text-slate-700">
+                          {upcomingEvents.map((event) => (
+                            <li key={event.id} className="leading-4 transition-colors marker:text-slate-500 hover:text-blue-600 hover:marker:text-blue-600">
+                              {event.type === "Temporary contract ends"
+                                ? `Temporary contract for ${event.name} expiring on ${event.dateLabel}.`
+                                : event.type === "Probation ends"
+                                  ? `Probation period for ${event.name} ending on ${event.dateLabel}.`
+                                  : `Warning for ${event.name} expiring on ${event.dateLabel}.`}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="rounded-sm border border-slate-300 shadow-none flex h-[230px] flex-col overflow-hidden" style={{ height: 230, minHeight: 230 }}>
+                  <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <CardTitle className="text-sm font-semibold">Employee Demographics</CardTitle>
+                      {hintIcon("Complete employee profiles on the Employees page and capture gender and race to populate these demographics accurately.")}
+                    </div>
+                    <CardDescription className="mt-1 text-[11px]">
+                      Workforce by gender and race.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-2 pb-1">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-sm px-2 pt-1 pb-0">
+                        <div className="flex items-center justify-start gap-1">
+                          <div className="flex w-32 shrink-0 flex-col items-center">
+                            <p className="mb-1 w-full text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Gender</p>
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-32 w-32 shrink-0">
+                              <PieChart>
+                                <Pie data={genderData} dataKey="total" nameKey="label" innerRadius={22} outerRadius={42} paddingAngle={3}>
+                                  {genderData.map((_, idx) => (
+                                    <Cell key={`gender-${idx}`} fill={genderColor(genderData[idx]?.label ?? "")} />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ChartContainer>
+                          </div>
+                          <div className="space-y-0 text-[10px] text-slate-700">
+                            {genderData.map((item, idx) => (
+                              <p key={item.label} className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: genderColor(item.label) }} />
+                                <span>{item.label} ({item.total})</span>
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-sm px-2 pt-1 pb-0">
+                        <div className="flex items-center justify-start gap-1">
+                          <div className="flex w-32 shrink-0 flex-col items-center">
+                            <p className="mb-1 w-full text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Race</p>
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-32 w-32 shrink-0">
+                              <PieChart>
+                                <Pie data={raceData} dataKey="total" nameKey="label" innerRadius={22} outerRadius={42} paddingAngle={3}>
+                                  {raceData.map((_, idx) => (
+                                    <Cell key={`race-${idx}`} fill={raceColor(raceData[idx]?.label ?? "", idx)} />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ChartContainer>
+                          </div>
+                          <div className="space-y-0 text-[10px] text-slate-700">
+                            {raceData.map((item, idx) => (
+                              <p key={item.label} className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: raceColor(item.label, idx) }} />
+                                <span>{item.label} ({item.total})</span>
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {chartCard(
+                  "Current Workforce",
+                  "Single monthly trend line filtered by selected years and contract types.",
+                  <>
+                    <Select value={workforceYearFilter} onValueChange={setWorkforceYearFilter}>
+                      <SelectTrigger className={`${trigCls} w-[130px]`}>
+                        <SelectValue placeholder="Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className={itemCls}>All years</SelectItem>
+                        {workforceYears.map((y) => (
+                          <SelectItem key={y} value={String(y)} className={itemCls}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={contractFilter} onValueChange={setContractFilter}>
+                      <SelectTrigger className={`${trigCls} w-[160px]`}>
+                        <SelectValue placeholder="Contract type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className={itemCls}>All contracts</SelectItem>
+                        {allContractOptions.map((c) => (
+                          <SelectItem key={c} value={c} className={itemCls}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>,
+                  <ChartContainer config={{ total: { label: "Employees", color: "hsl(217, 91%, 60%)" } }} className="h-44 w-full">
+                    <LineChart data={workforceChartData}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} tick={{ fontSize: 9 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line type="monotone" dataKey="total" stroke="var(--color-total)" strokeWidth={2} dot={{ r: 2.5 }} />
+                    </LineChart>
+                  </ChartContainer>,
+                  "Complete employee profiles on the Employees page and capture contract type, start date, and end date to keep this graph accurate.",
+                )}
+
+                <Card className="rounded-sm border border-slate-300 shadow-none flex min-h-[270px] flex-col overflow-hidden">
+                  <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <CardTitle className="text-sm font-semibold">Probation Periods</CardTitle>
+                          {hintIcon("Complete employee profiles on the Employees page and capture start date and probation period to keep probation progress up to date.")}
+                        </div>
+                        <CardDescription className="mt-1 text-[11px]">Progress per employee currently on probation.</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-3">
+                    {probationActive.length === 0 ? (
+                      <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-[11px] text-slate-500">
+                        No active probation periods.
+                      </div>
+                    ) : (
+                      <div className="h-[196px] divide-y divide-slate-200 overflow-y-auto pr-1">
+                        {probationActive.map((p) => (
+                          <div key={p.id} className="bg-white py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="min-w-0 text-[11px] text-slate-700">
+                                <span className="font-semibold text-slate-900">{p.name}</span>
+                                <span> - {p.label} (Start: {p.start} | End: {p.end})</span>
+                              </p>
+                              <div className="flex w-[170px] shrink-0 items-center gap-2">
+                                <div className="h-1.5 w-full rounded-full bg-slate-200">
+                                  <div className="h-1.5 rounded-full bg-blue-600" style={{ width: `${p.progress}%` }} />
+                                </div>
+                                <span className="w-[34px] text-right text-[10px] font-semibold text-blue-700">{p.progress}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {chartCard(
+                  "Terminations",
+                  "Monthly termination trend.",
+                  <Select value={terminationReason} onValueChange={setTerminationReason}>
+                    <SelectTrigger className={`${trigCls} w-[170px]`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className={itemCls}>All reasons</SelectItem>
+                      {terminationOptions.map((r) => (
+                        <SelectItem key={r} value={r} className={itemCls}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>,
+                  <ChartContainer config={{ total: { label: "Terminations", color: "hsl(0, 72%, 51%)" } }} className="h-44 w-full">
+                    <LineChart data={terminationsByMonth}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} tick={{ fontSize: 9 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line type="monotone" dataKey="total" stroke="var(--color-total)" strokeWidth={2} dot={{ r: 2.5 }} />
+                    </LineChart>
+                  </ChartContainer>,
+                )}
+
+                {chartCard(
+                  "Warnings Issued",
+                  "Total warnings issued by month.",
+                  <Select value={String(issuedYear)} onValueChange={(v) => setIssuedYear(Number(v))}>
+                    <SelectTrigger className={`${trigCls} w-[100px]`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warningYears.map((y) => (
+                        <SelectItem key={y} value={String(y)} className={itemCls}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>,
+                  <ChartContainer config={{ total: { label: "Warnings", color: "hsl(221, 83%, 53%)" } }} className="h-44 w-full">
+                    <BarChart data={issuedByMonth}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={30} tick={{ fontSize: 9 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey="total" radius={4} fill="var(--color-total)" />
+                    </BarChart>
+                  </ChartContainer>,
+                )}
+
+              </div>
+            </section>
           </div>
-          <span className="text-[11px] text-muted-foreground flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1.5 shadow-inner self-start md:self-auto">
-            <Activity className="h-3.5 w-3.5 text-primary" />
-            Live summary
-          </span>
-        </header>
-
-        <div className="rounded-xl border border-border/60 bg-gradient-to-br from-muted/40 via-background to-background p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            <button
-              onClick={() => navigate("/employees")}
-              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Users className="h-4 w-4" />
-              </span>
-              <div className="flex-1 leading-tight">
-                Employees
-                <p className="text-xs font-normal text-muted-foreground">
-                  Manage and view your <span className="text-primary font-semibold">{stats.employees}</span> employees.
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => navigate("/warning-generator")}
-              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
-                <AlertTriangle className="h-4 w-4" />
-              </span>
-              <div className="flex-1 leading-tight">
-                Draft Warning
-                <p className="text-xs font-normal text-muted-foreground">Generate a disciplinary warning.</p>
-              </div>
-            </button>
-            <button
-              onClick={() => navigate("/documents/contracts")}
-              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                <FileText className="h-4 w-4" />
-              </span>
-              <div className="flex-1 leading-tight">
-                Draft Contract
-                <p className="text-xs font-normal text-muted-foreground">Start an employment agreement.</p>
-              </div>
-            </button>
-            <button
-              onClick={() => navigate("/calendar")}
-              className="flex h-full items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-4 py-3 text-left text-sm font-semibold shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                <CalendarDays className="h-4 w-4" />
-              </span>
-              <div className="flex-1 leading-tight">
-                Calendar
-                <p className="text-xs font-normal text-muted-foreground">
-                  View upcoming expiring documents.
-                </p>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-2 pb-1 space-y-1">
-              <CardTitle className="text-base">Employment</CardTitle>
-              <CardDescription className="text-xs">
-                Total distribution by employment type.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 pb-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <ChartContainer
-                  config={{ count: { label: "Employees", color: "#2563eb" } }}
-                  className="h-32 w-32 shrink-0"
-                >
-                  <PieChart>
-                    <Pie data={employmentTypeData} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
-                      {employmentTypeData.map((_, idx) => (
-                        <Cell key={idx} fill={pieColors[(idx + 3) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
-                      ))}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-                  </PieChart>
-                </ChartContainer>
-                <div className="flex flex-col gap-1 text-[11px] leading-tight">
-                  {employmentTypeData.map((item, idx) => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                      <span
-                        className="h-2.5 w-2.5 rounded-sm"
-                        style={{ backgroundColor: pieColors[(idx + 3) % pieColors.length] }}
-                      />
-                      <span className="text-foreground">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-2 pb-1 space-y-1">
-              <CardTitle className="text-base">Gender</CardTitle>
-              <CardDescription className="text-xs">
-                Total distribution by gender.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 pb-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <ChartContainer
-                  config={{ count: { label: "Employees", color: "#2563eb" } }}
-                  className="h-32 w-32 shrink-0"
-                >
-                  <PieChart>
-                    <Pie data={demographicBlocks.gender} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
-                      {demographicBlocks.gender.map((_, idx) => (
-                        <Cell key={idx} fill={pieColors[idx % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
-                      ))}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-                  </PieChart>
-                </ChartContainer>
-                <div className="flex flex-col gap-1 text-[11px] leading-tight">
-                  {demographicBlocks.gender.map((item, idx) => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                      <span
-                        className="h-2.5 w-2.5 rounded-sm"
-                        style={{ backgroundColor: pieColors[idx % pieColors.length] }}
-                      />
-                      <span className="text-foreground">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-2 pb-1 space-y-1">
-              <CardTitle className="text-base">Race</CardTitle>
-              <CardDescription className="text-xs">
-                Total distribution by race.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 pb-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <ChartContainer
-                  config={{ count: { label: "Employees", color: "#22c55e" } }}
-                  className="h-32 w-32 shrink-0"
-                >
-                  <PieChart>
-                    <Pie data={demographicBlocks.race} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={5}>
-                      {demographicBlocks.race.map((_, idx) => (
-                        <Cell key={idx} fill={pieColors[(idx + 1) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
-                      ))}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-                  </PieChart>
-                </ChartContainer>
-                <div className="flex flex-col gap-1 text-[11px] leading-tight">
-                  {demographicBlocks.race.map((item, idx) => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                      <span
-                        className="h-2.5 w-2.5 rounded-sm"
-                        style={{ backgroundColor: pieColors[(idx + 1) % pieColors.length] }}
-                      />
-                      <span className="text-foreground">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-2 pb-1 space-y-1">
-              <CardTitle className="text-base">Nationality</CardTitle>
-              <CardDescription className="text-xs">
-                Total distribution by nationality.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 pb-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <ChartContainer
-                  config={{ count: { label: "Employees", color: "#f97316" } }}
-                  className="h-32 w-32 shrink-0"
-                >
-                  <PieChart>
-                    <Pie data={demographicBlocks.citizenship} dataKey="value" nameKey="label" innerRadius={26} outerRadius={44} paddingAngle={6}>
-                      {demographicBlocks.citizenship.map((_, idx) => (
-                        <Cell key={idx} fill={pieColors[(idx + 2) % pieColors.length]} className="transition-all duration-200 hover:opacity-80" />
-                      ))}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
-                  </PieChart>
-                </ChartContainer>
-                <div className="flex flex-col gap-1 text-[11px] leading-tight">
-                  {demographicBlocks.citizenship.map((item, idx) => (
-                    <div key={item.label} className="flex items-center gap-1.5">
-                      <span
-                        className="h-2.5 w-2.5 rounded-sm"
-                        style={{ backgroundColor: pieColors[(idx + 2) % pieColors.length] }}
-                      />
-                      <span className="text-foreground">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="text-base">Workforce</CardTitle>
-                <CardDescription className="text-xs">View total workforce by year and month.</CardDescription>
-              </div>
-              <div className="w-28">
-                <Select value={String(startYear)} onValueChange={(val) => setStartYear(Number(val))}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {startYearOptions.map((yr) => (
-                      <SelectItem key={yr} value={String(yr)}>
-                        {yr}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <ChartContainer
-                config={{ hires: { label: "Hires", color: "hsl(221, 83%, 53%)" } }}
-                className="h-44 w-full aspect-auto"
-              >
-                <BarChart data={startsTimeline} margin={{ left: 0, right: 0, bottom: 8 }} barCategoryGap="10%">
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    height={28}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    domain={[0, "dataMax + 2"]}
-                    tickLine={false}
-                    axisLine={false}
-                    width={30}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="hires" radius={6} fill="var(--color-hires)" />
-                </BarChart>
-              </ChartContainer>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Employment type</span>
-                <Select value={employmentTypeFilter} onValueChange={setEmploymentTypeFilter}>
-                  <SelectTrigger className="h-8 w-44 text-xs">
-                    <SelectValue placeholder="Filter employment type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All types</SelectItem>
-                    {employmentTypeOptions.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border/70 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <CardHeader className="py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="text-base">Active warnings issued</CardTitle>
-                <CardDescription className="text-xs">View total active warnings by year and month.</CardDescription>
-              </div>
-              <div className="w-28">
-                <Select value={String(warningYear)} onValueChange={(val) => setWarningYear(Number(val))}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warningYearOptions.map((yr) => (
-                      <SelectItem key={yr} value={String(yr)}>
-                        {yr}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <ChartContainer
-                config={{
-                  active: { label: "Active warnings", color: "hsl(152, 76%, 40%)" },
-                }}
-                className="h-44 w-full aspect-auto"
-              >
-                <BarChart data={warningStatusTimeline} margin={{ left: 0, right: 0, bottom: 8 }} barCategoryGap="10%">
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    height={28}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    domain={[0, "dataMax + 2"]}
-                    tickLine={false}
-                    axisLine={false}
-                    width={30}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="active" radius={6} fill="var(--color-active)" />
-                </BarChart>
-              </ChartContainer>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Misconduct</span>
-                <Select value={misconductFilter} onValueChange={setMisconductFilter}>
-                  <SelectTrigger className="h-8 w-40 text-xs">
-                    <SelectValue placeholder="Filter misconduct" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All misconduct</SelectItem>
-                    {misconductOptions.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-        </div>
-
-        <div className="rounded-xl border border-dashed border-border/70 bg-card/60 p-3 text-xs text-muted-foreground shadow-inner">
-          <div className="flex items-center gap-2 font-medium text-foreground">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Need a document quickly?
-          </div>
-          <p className="mt-1">
-            Generate warnings or manage employees directly from the navigation. Charts use the same underlying data - no extra setup required.
-          </p>
         </div>
       </div>
+      </TooltipProvider>
     </DashboardLayout>
   );
 };

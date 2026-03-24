@@ -1261,6 +1261,8 @@ const Employees = () => {
   const warningDeleteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const endDateInputRef = useRef<HTMLInputElement | null>(null);
+  const addModalStartDateInputRef = useRef<HTMLInputElement | null>(null);
+  const addModalEndDateInputRef = useRef<HTMLInputElement | null>(null);
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDateInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -3868,8 +3870,8 @@ const Employees = () => {
                 </div>
               </div>
 
-              {employeeStatus !== "Inactive" && (
-                <div className="pl-5 pr-2 pt-2">
+              <div className="pl-5 pr-2 pt-2 min-h-[28px]">
+                {employeeStatus !== "Inactive" ? (
                   <div className="flex justify-end">
                     <TooltipProvider delayDuration={150}>
                       <Tooltip>
@@ -3900,8 +3902,8 @@ const Employees = () => {
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                </div>
-              )}
+                ) : null}
+              </div>
 
               <div className="px-5 pb-4 pt-6">
 
@@ -4546,10 +4548,11 @@ const Employees = () => {
   };
 
   const handleUndoDelete = async () => {
-    if (!deleteUndo) return;
+    if (!deleteUndo || !user?.id) return;
     try {
       const payload = deleteUndo.deletedEmployees.map((employee) => ({
         ...employee,
+        company_id: user.id,
         created_at: employee.created_at ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));
@@ -4941,7 +4944,9 @@ const Employees = () => {
   const handleTerminateEmployee = async (employee: Employee) => {
     if (!user) return;
     const fullName = `${(employee.employee_name ?? "").trim()} ${(employee.employee_surname ?? "").trim()}`.trim();
-    const confirmed = confirm(`Are you sure you want to terminate ${fullName || "this employee"}?`);
+    const confirmed = confirm(
+      `This action permanently removes this employee and all related records from Zappir's databases. You will have 20 seconds to undo after deletion; once that 20-second undo period expires, this action cannot be undone.\n\nAre you sure you want to delete ${fullName || "this employee"}?`,
+    );
     if (!confirmed) return;
 
     const { error } = await supabase.from("employees").delete().eq("id", employee.id);
@@ -9982,7 +9987,31 @@ const Employees = () => {
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                 Start Date <span className="text-red-600">*</span>
                               </span>
-                              <Input id="startDate" className={getAddModalInputClass(addForm.startDate.trim().length > 0)} type="date" placeholder="Please insert start date" value={addForm.startDate} onChange={(e) => setAddForm((prev) => ({ ...prev, startDate: e.target.value }))} />
+                              <Input
+                                id="startDate"
+                                className={getAddModalInputClass(addForm.startDate.trim().length > 0)}
+                                type="text"
+                                readOnly
+                                placeholder="Please select a date"
+                                value={addForm.startDate ? formatDisplayDate(addForm.startDate) : ""}
+                                onClick={() => openDatePicker(addModalStartDateInputRef.current)}
+                                onFocus={() => openDatePicker(addModalStartDateInputRef.current)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    openDatePicker(addModalStartDateInputRef.current);
+                                  }
+                                }}
+                              />
+                              <input
+                                ref={addModalStartDateInputRef}
+                                type="date"
+                                value={addForm.startDate}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, startDate: e.target.value }))}
+                                className="sr-only"
+                                aria-hidden="true"
+                                tabIndex={-1}
+                              />
                             </div>
                           </div>
                           {addForm.contractType === "Temporary" && (
@@ -9990,7 +10019,31 @@ const Employees = () => {
                                 <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                   End Date <span className="text-red-600">*</span>
                                 </span>
-                                <Input id="endDate" className={getAddModalInputClass(addForm.endDate.trim().length > 0)} type="date" placeholder="Please insert end date" value={addForm.endDate} onChange={(e) => setAddForm((prev) => ({ ...prev, endDate: e.target.value }))} />
+                                <Input
+                                  id="endDate"
+                                  className={getAddModalInputClass(addForm.endDate.trim().length > 0)}
+                                  type="text"
+                                  readOnly
+                                  placeholder="Please select a date"
+                                  value={addForm.endDate ? formatDisplayDate(addForm.endDate) : ""}
+                                  onClick={() => openDatePicker(addModalEndDateInputRef.current)}
+                                  onFocus={() => openDatePicker(addModalEndDateInputRef.current)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      openDatePicker(addModalEndDateInputRef.current);
+                                    }
+                                  }}
+                                />
+                                <input
+                                  ref={addModalEndDateInputRef}
+                                  type="date"
+                                  value={addForm.endDate}
+                                  onChange={(e) => setAddForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                                  className="sr-only"
+                                  aria-hidden="true"
+                                  tabIndex={-1}
+                                />
                               </div>
                             </div>
                           )}

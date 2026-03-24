@@ -1,4 +1,4 @@
-import { FolderOpen, Users, Home, CalendarClock, Headset, Bell, Settings, LogOut, Bot } from "lucide-react";
+import { FolderOpen, Users, Home, Headset, Bell, Settings, LogOut, Bot } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
 import {
@@ -20,7 +20,6 @@ const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Employees", url: "/employees", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
-  { title: "Calendar", url: "/calendar", icon: CalendarClock },
   { title: "Assistant", url: "/assistant", icon: Bot },
 ];
 
@@ -136,7 +135,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                   isActive={location.pathname === "/settings"}
                   data-collapsed={isCollapsed}
                 >
-                  <NavLink to="/settings" className="w-full text-xs">
+                  <NavLink to="/settings" state={{ backgroundLocation: location }} className="w-full text-xs">
                     <Settings className="h-5 w-5" />
                     <span className={cn(isCollapsed && "sr-only")}>Settings</span>
                   </NavLink>

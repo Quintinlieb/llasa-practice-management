@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, Menu, User, Building2, Lock, FileText, Palette, SlidersHorizontal } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
 import { companySetupBaseSchema, companySetupSchema, southAfricanProvinces } from "@/lib/validation";
@@ -22,8 +22,14 @@ const passwordSchema = z.string()
   .regex(/[0-9]/, "Must contain at least one number")
   .regex(/[^A-Za-z0-9]/, "Must contain at least one special character");
 
-const Settings = () => {
+type SettingsProps = {
+  embedded?: boolean;
+  onClose?: () => void;
+};
+
+const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,6 +72,16 @@ const Settings = () => {
   });
 
   const [passwordError, setPasswordError] = useState("");
+  const [settingsTab, setSettingsTab] = useState<"user" | "company" | "companySetup" | "auth" | "plan" | "personalize">("user");
+
+  const settingsTabs: Array<{ value: "user" | "company" | "companySetup" | "auth" | "plan" | "personalize"; label: string; icon: LucideIcon }> = [
+    { value: "user", label: "User Details", icon: User },
+    { value: "company", label: "Company Details", icon: Building2 },
+    { value: "companySetup", label: "Company Setup", icon: SlidersHorizontal },
+    { value: "auth", label: "Authentication", icon: Lock },
+    { value: "plan", label: "Plan", icon: FileText },
+    { value: "personalize", label: "Personalize", icon: Palette },
+  ];
 
   useEffect(() => {
     if (user) {
@@ -348,7 +364,34 @@ const Settings = () => {
     setSaving(false);
   };
 
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+      return;
+    }
+    navigate("/dashboard");
+  };
+
   if (loading) {
+    if (embedded) {
+      return (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/65"
+            aria-label="Close settings"
+            onClick={handleClose}
+          />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <section className="relative z-10 h-[70vh] w-full max-w-[980px] overflow-hidden rounded-sm border-0 bg-[#2D4256] !shadow-none">
+              <div className="flex h-full items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            </section>
+          </div>
+        </div>
+      );
+    }
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
@@ -358,29 +401,65 @@ const Settings = () => {
     );
   }
 
-  return (
-    <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Manage your account and company settings</p>
-        </div>
+  const selectedTabLabel = settingsTabs.find((tab) => tab.value === settingsTab)?.label ?? "User Details";
+  const companyDisplayName = companyDetails.company_name?.trim() || "Company";
 
-        <Tabs defaultValue="user" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="user">User Details</TabsTrigger>
-            <TabsTrigger value="company">Company Details</TabsTrigger>
-            <TabsTrigger value="password">Password</TabsTrigger>
-            <TabsTrigger value="plan">Plan</TabsTrigger>
-          </TabsList>
+  const content = (
+      <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
+        <div className={`mx-auto flex h-full w-full ${embedded ? "max-w-[980px] rounded-sm border-0 bg-[#2D4256] !shadow-none" : "max-w-[980px] rounded-sm border border-slate-300 bg-[#2D4256] shadow-sm"} flex-col overflow-hidden`}>
+          <header className="flex items-center justify-between px-6 pt-4 pb-3">
+            <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
+              <Menu className="h-3.5 w-3.5 -ml-1" />
+              <span className="font-semibold text-slate-700">{`${companyDisplayName} / Settings / ${selectedTabLabel}`}</span>
+            </div>
+            <button
+              type="button"
+              className="flex h-7 w-7 items-center justify-center rounded-sm bg-sky-50 text-slate-500 hover:text-slate-900"
+              onClick={handleClose}
+              aria-label="Close settings"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
 
-          <TabsContent value="user">
-            <Card>
-              <CardHeader>
-                <CardTitle>User Information</CardTitle>
-                <CardDescription>Update your personal information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          <div className="min-h-0 flex-1 px-6 pb-4">
+            <div className="flex h-full min-h-0 items-stretch gap-4">
+            <aside className="h-full w-[180px] overflow-hidden rounded-sm bg-[#2D4256]">
+              <div className="px-4 py-3 text-[10px] font-semibold text-white/70">Settings</div>
+              <div className="space-y-0">
+                {settingsTabs.map((tab) => {
+                  const isActive = settingsTab === tab.value;
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      onClick={() => setSettingsTab(tab.value)}
+                      className={`flex w-full items-center gap-3 border-b border-white/10 px-5 py-3 text-left text-[10px] font-semibold text-white transition-all duration-150 hover:bg-[#010D1A] hover:text-white ${
+                        isActive ? "bg-[#010D1A] border-b-2 border-b-blue-500" : ""
+                      }`}
+                    >
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                        <Icon className="h-4 w-4 text-white" />
+                      </span>
+                      <span className="text-[10px] font-semibold leading-4 text-white">
+                        {tab.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+
+            <div className="min-w-0 flex-1 min-h-0 flex flex-col">
+            <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm border border-white/20 bg-[#2D4256] px-3 pt-2 pb-2 text-[11px] text-white [&_.text-muted-foreground]:!text-white/75 [&_label]:!text-[10px] [&_label]:!text-white/80 [&_input]:h-8 [&_input]:border-white/30 [&_input]:bg-[#2D4256] [&_input]:text-[11px] [&_input]:text-white [&_input]:placeholder:text-white/55 [&_button]:text-[11px] [&_[role=combobox]]:h-8 [&_[role=combobox]]:border-white/30 [&_[role=combobox]]:bg-[#2D4256] [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:text-white">
+              {settingsTab === "user" && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-white">User Information</h3>
+                <p className="text-[11px] text-white/75">Update your personal information</p>
+              </div>
+              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="user_name">First Name</Label>
@@ -428,17 +507,17 @@ const Settings = () => {
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Changes
                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
+            </div>
+              )}
 
-          <TabsContent value="company">
-            <Card>
-              <CardHeader>
-                <CardTitle>Company Information</CardTitle>
-                <CardDescription>Update your company details</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              {settingsTab === "company" && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-white">Company Information</h3>
+                <p className="text-[11px] text-white/75">Update your company details</p>
+              </div>
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="company_type" className="text-blue-600">Company Type</Label>
                   <Select
@@ -648,104 +727,21 @@ const Settings = () => {
                     />
                   </div>
                 </div>
-                <div className="rounded-md border border-slate-200 p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <h3 className="text-sm font-semibold text-slate-900">Branches</h3>
-                      <p className="text-xs text-slate-500">
-                        Activate branches and configure the list available for your company.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="branches_enabled" className="text-sm">
-                        Activate Branches
-                      </Label>
-                      <Switch
-                        id="branches_enabled"
-                        checked={branchSettings.branches_enabled}
-                        onCheckedChange={(checked) =>
-                          setBranchSettings((prev) => ({
-                            ...prev,
-                            branches_enabled: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Enter branch name"
-                      value={branchNameInput}
-                      onChange={(e) => setBranchNameInput(e.target.value)}
-                      disabled={!branchSettings.branches_enabled}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          handleAddBranch();
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleAddBranch}
-                      disabled={!branchSettings.branches_enabled || !branchNameInput.trim()}
-                    >
-                      <Plus className="mr-1 h-4 w-4" />
-                      Add
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {branchSettings.branches.length === 0 ? (
-                      <p className="text-xs text-slate-500">No branches added yet.</p>
-                    ) : (
-                      branchSettings.branches.map((branchName) => (
-                        <div
-                          key={branchName}
-                          className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs text-slate-700"
-                        >
-                          <span>{branchName}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveBranch(branchName)}
-                            className="text-slate-500 hover:text-rose-600"
-                            aria-label={`Remove ${branchName}`}
-                            disabled={!branchSettings.branches_enabled}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleBranchSettingsUpdate}
-                    disabled={branchSaving}
-                  >
-                    {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Branch Settings
-                  </Button>
-                </div>
                 <Button onClick={handleCompanyDetailsUpdate} disabled={saving}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Save Changes
                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
+            </div>
+              )}
 
-          <TabsContent value="password">
-            <Card>
-              <CardHeader>
-                <CardTitle>Change Password</CardTitle>
-                <CardDescription>Update your account password</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              {settingsTab === "auth" && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-white">Change Password</h3>
+                <p className="text-[11px] text-white/75">Update your account password</p>
+              </div>
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
                   <div className="relative">
@@ -795,17 +791,109 @@ const Settings = () => {
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Update Password
                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
+            </div>
+              )}
 
-          <TabsContent value="plan">
-            <Card>
-              <CardHeader>
-                <CardTitle>Subscription Plan</CardTitle>
-                <CardDescription>Manage your subscription</CardDescription>
-              </CardHeader>
-              <CardContent>
+              {settingsTab === "companySetup" && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-white">Company Setup</h3>
+                    <p className="text-[11px] text-white/75">Configure company setup options for your workspace.</p>
+                  </div>
+                  <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-semibold text-white">Branches</h3>
+                          <p className="text-xs text-white/75">
+                            Activate branches and configure the list available for your company.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="branches_enabled" className="text-sm !text-white/80">
+                            Activate Branches
+                          </Label>
+                          <Switch
+                            id="branches_enabled"
+                            checked={branchSettings.branches_enabled}
+                            onCheckedChange={(checked) =>
+                              setBranchSettings((prev) => ({
+                                ...prev,
+                                branches_enabled: checked,
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Enter branch name"
+                          value={branchNameInput}
+                          onChange={(e) => setBranchNameInput(e.target.value)}
+                          disabled={!branchSettings.branches_enabled}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleAddBranch();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleAddBranch}
+                          disabled={!branchSettings.branches_enabled || !branchNameInput.trim()}
+                        >
+                          <Plus className="mr-1 h-4 w-4" />
+                          Add
+                        </Button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {branchSettings.branches.length === 0 ? (
+                          <p className="text-xs text-white/70">No branches added yet.</p>
+                        ) : (
+                          branchSettings.branches.map((branchName) => (
+                            <div
+                              key={branchName}
+                              className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs text-white"
+                            >
+                              <span>{branchName}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBranch(branchName)}
+                                className="text-white/75 hover:text-rose-300"
+                                aria-label={`Remove ${branchName}`}
+                                disabled={!branchSettings.branches_enabled}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleBranchSettingsUpdate}
+                        disabled={branchSaving}
+                      >
+                        {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Branch Settings
+                      </Button>
+                    </div>
+                  </div>
+              )}
+
+              {settingsTab === "plan" && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-white">Subscription Plan</h3>
+                <p className="text-[11px] text-white/75">Manage your subscription</p>
+              </div>
+              <div>
                 <div className="text-center py-12">
                   <p className="text-muted-foreground mb-4">
                     Subscription plans are coming soon!
@@ -815,13 +903,55 @@ const Settings = () => {
                     options become available.
                   </p>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </div>
+            </div>
+              )}
+
+              {settingsTab === "personalize" && (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold text-white">Personalize</h3>
+                    <p className="text-[11px] text-white/75">Customize your workspace preferences</p>
+                  </div>
+                  <div>
+                    <div className="text-center py-12">
+                      <p className="text-muted-foreground mb-3">
+                        Personalization settings are coming soon.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        This section will allow you to tailor your Nudoc workspace and user experience.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+            </div>
+          </div>
+        </div>
+        </div>
       </div>
-    </DashboardLayout>
   );
+
+  if (embedded) {
+    return (
+      <div className="fixed inset-0 z-50">
+        <button
+          type="button"
+          className="absolute inset-0 bg-slate-900/65"
+          aria-label="Close settings"
+          onClick={handleClose}
+        />
+        <div className="absolute inset-0 flex items-center justify-center p-4">
+          <section className="relative z-10 h-[70vh] w-full max-w-[980px] overflow-hidden rounded-sm">
+            {content}
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  return <DashboardLayout>{content}</DashboardLayout>;
 };
 
 export default Settings;

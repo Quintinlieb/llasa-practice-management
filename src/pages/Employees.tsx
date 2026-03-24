@@ -625,6 +625,14 @@ const normalizeSalaryForStorage = (value: string) => {
   return `${integerPart}.${decimalPart}`;
 };
 
+const getDisplayFileNameFromPath = (path?: string | null, fallback = "document.pdf") => {
+  const raw = (path ?? "").split("/").pop() || "";
+  if (!raw) return fallback;
+  // Stored contract paths use: <employeeUuid>-<timestamp>-<originalFileName>
+  const withPrefixRemoved = raw.replace(/^[0-9a-f-]{36}-\d+-/i, "");
+  return withPrefixRemoved || raw;
+};
+
 const getAgeFromIdNumber = (idNumber?: string | null) => {
   if (!idNumber) return "--";
   const digits = idNumber.replace(/\D/g, "");
@@ -2365,7 +2373,7 @@ const Employees = () => {
           id: row.id,
           contractType: row.contract_type,
           issueDate: row.issue_date,
-          fileName: row.file_url ? row.file_url.split("/").pop() || "contract.pdf" : "",
+          fileName: getDisplayFileNameFromPath(row.file_url, "contract.pdf"),
           fileUrl: row.file_url,
           isActive: row.is_active ?? false,
         })) ?? [];

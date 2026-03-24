@@ -675,6 +675,7 @@ const MisconductTerminationGenerator = ({
   const navigate = useNavigate();
   const location = useLocation();
   const employeePrefillAppliedRef = useRef(false);
+  const maxDailyDraftingPrompts = 7;
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
   const [employees, setEmployees] = useState<SlimEmployee[]>([]);
@@ -760,6 +761,7 @@ const MisconductTerminationGenerator = ({
   const [draftingAssistantOpen, setDraftingAssistantOpen] = useState(false);
   const [draftingAssistantChargeType, setDraftingAssistantChargeType] = useState<string | null>(null);
   const [isDraftingAssistantGenerating, setIsDraftingAssistantGenerating] = useState(false);
+  const [remainingDraftingPrompts, setRemainingDraftingPrompts] = useState(maxDailyDraftingPrompts);
   const [draftingAssistantFocusedField, setDraftingAssistantFocusedField] = useState<
     "misconductOccurredWhen" | "whatHappened" | "additionalDetails" | null
   >(null);
@@ -796,6 +798,8 @@ const MisconductTerminationGenerator = ({
     "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getAddendumModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
+  const getAddendumModalTextareaClass = (isComplete: boolean) =>
+    `${baseModalFieldClass} !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
@@ -1607,6 +1611,10 @@ const MisconductTerminationGenerator = ({
     setDraftingAssistantAccepted(false);
   };
   const draftingAssistantNeedsInvolvement = requiresInvolvementSelection(draftingAssistantChargeType);
+  const autoResizeTextarea = (target: HTMLTextAreaElement) => {
+    target.style.height = "auto";
+    target.style.height = `${target.scrollHeight}px`;
+  };
 
   const generateChargeDraft = async () => {
     if (!draftingAssistantChargeType) return;
@@ -1672,8 +1680,11 @@ const MisconductTerminationGenerator = ({
         body: { message: prompt, history: [] },
       });
       if (error) {
-        let detail = "";
         const context = (error as { context?: Response })?.context;
+        if (context instanceof Response && context.status === 429) {
+          setRemainingDraftingPrompts(0);
+        }
+        let detail = "";
         if (context instanceof Response) {
           try {
             detail = await context.text();
@@ -1683,6 +1694,12 @@ const MisconductTerminationGenerator = ({
         }
         const message = detail ? `${error.message}: ${detail}` : error.message;
         throw new Error(message);
+      }
+      const remaining = Number(data?.remaining);
+      if (!Number.isNaN(remaining)) {
+        setRemainingDraftingPrompts(Math.max(0, Math.min(maxDailyDraftingPrompts, remaining)));
+      } else {
+        setRemainingDraftingPrompts((prev) => Math.max(0, prev - 1));
       }
       const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
       if (!reply) {
@@ -3469,21 +3486,28 @@ const MisconductTerminationGenerator = ({
                           </div>
                           <Textarea
                             id={`misconductDescription-${type}`}
+                            ref={(el) => {
+                              if (el) autoResizeTextarea(el);
+                            }}
                             value={formData.misconductDescriptions[type] || ""}
-                            onChange={(e) =>
+                            onChange={(e) => {
                               setFormData((prev) => ({
                                 ...prev,
                                 misconductDescriptions: {
                                   ...prev.misconductDescriptions,
                                   [type]: e.target.value,
                                 },
-                              }))
-                            }
+                              }));
+                              autoResizeTextarea(e.currentTarget);
+                            }}
+                            onInput={(e) => autoResizeTextarea(e.currentTarget)}
                             placeholder="Type the charge description here or use the drafting assistant to generate a charge..."
-                            className={`${getAddendumModalInputClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[88px] !outline-none !ring-0 !ring-offset-0 !focus:ring-0 !focus:ring-offset-0 !focus-visible:ring-0 !focus-visible:ring-offset-0`}
+                            className={`${getAddendumModalTextareaClass(Boolean((formData.misconductDescriptions[type] || "").trim()))} min-h-[68px] resize-none overflow-hidden !outline-none !ring-0 !ring-offset-0 !focus:ring-0 !focus:ring-offset-0 !focus-visible:ring-0 !focus-visible:ring-offset-0`}
                           />
                           {aiGeneratedChargeTypes.includes(type) ? (
-                            <p className="text-[10px] text-slate-500">AI-generated draft. Review before use.</p>
+                            <p className="text-[10px] text-slate-500">
+                              {`${remainingDraftingPrompts}/${maxDailyDraftingPrompts} daily AI charges left. Review this draft charge before use.`}
+                            </p>
                           ) : null}
                         </div>
                       ))}

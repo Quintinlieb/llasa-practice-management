@@ -25,7 +25,13 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-const maxDailyQuestions = 10
+const usageScopeLimits: Record<string, number> = {
+  assistant: 10,
+  disciplinary_drafting: 7,
+}
+
+const isDraftingAssistantPrompt = (message: string) =>
+  /draft a formal disciplinary charge description/i.test(message)
 
 type OffenceRow = {
   name: string
@@ -251,25 +257,69 @@ const incrementAssistantUsage = async (
   url: string,
   anonKey: string,
   authHeader: string,
+  usageScope: string,
 ): Promise<number | null> => {
-  try {
-    const response = await fetch(`${url}/rest/v1/rpc/increment_assistant_usage`, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        apikey: anonKey,
-        "Content-Type": "application/json",
-      },
-      body: "{}",
-    })
-    if (!response.ok) {
+  const parseUsageCount = (payload: unknown): number | null => {
+    if (typeof payload === "number") return payload
+    if (typeof payload === "string") {
+      const n = Number(payload)
+      return Number.isNaN(n) ? null : n
+    }
+    if (Array.isArray(payload)) {
+      const first = payload[0]
+      if (typeof first === "number") return first
+      if (typeof first === "string") {
+        const n = Number(first)
+        if (!Number.isNaN(n)) return n
+      }
+      if (first && typeof first === "object") {
+        const obj = first as Record<string, unknown>
+        const candidate =
+          obj.count ?? obj.request_count ?? obj.increment_assistant_usage
+        return parseUsageCount(candidate)
+      }
       return null
     }
-    const data = await response.json()
-    if (typeof data === "number") return data
-    if (Array.isArray(data) && typeof data[0] === "number") return data[0]
-    if (typeof data?.count === "number") return data.count
+    if (payload && typeof payload === "object") {
+      const obj = payload as Record<string, unknown>
+      const candidate =
+        obj.count ?? obj.request_count ?? obj.increment_assistant_usage
+      return parseUsageCount(candidate)
+    }
     return null
+  }
+
+  const headers = {
+    Authorization: authHeader,
+    apikey: anonKey,
+    "Content-Type": "application/json",
+  }
+
+  try {
+    let response = await fetch(`${url}/rest/v1/rpc/increment_assistant_usage`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ p_usage_scope: usageScope }),
+    })
+
+    if (!response.ok) {
+      response = await fetch(`${url}/rest/v1/rpc/increment_assistant_usage`, {
+        method: "POST",
+        headers,
+        body: "{}",
+      })
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.log("USAGE_RPC_STATUS:", response.status)
+      console.log("USAGE_RPC_ERROR:", errorText)
+      return null
+    }
+
+    const raw = await response.text()
+    const parsed = raw ? JSON.parse(raw) : null
+    return parseUsageCount(parsed)
   } catch {
     return null
   }
@@ -298,6 +348,7 @@ Deno.serve(async (req: Request) => {
   let body: {
     message?: string
     history?: Array<{ role?: string; content?: string }>
+    scope?: string
   }
   try {
     body = await req.json()
@@ -312,6 +363,14 @@ Deno.serve(async (req: Request) => {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : ""
+  const requestedScope =
+    typeof body.scope === "string" ? body.scope.trim().toLowerCase() : ""
+  const inferredScope = isDraftingAssistantPrompt(message)
+    ? "disciplinary_drafting"
+    : "assistant"
+  const usageScope = usageScopeLimits[requestedScope] ? requestedScope : inferredScope
+  const maxDailyQuestions = usageScopeLimits[usageScope]
+
   if (!message) {
     return new Response(
       JSON.stringify({ error: "Message is required" }),
@@ -349,6 +408,7 @@ Deno.serve(async (req: Request) => {
     supabaseUrl,
     supabaseAnonKey,
     authHeader,
+    usageScope,
   )
   if (usageCount === null) {
     return new Response(
@@ -366,6 +426,7 @@ Deno.serve(async (req: Request) => {
         error: "Daily limit reached",
         limit: maxDailyQuestions,
         remaining: 0,
+        scope: usageScope,
       }),
       {
         status: 429,
@@ -517,7 +578,7 @@ Deno.serve(async (req: Request) => {
       : baseReply
 
   return new Response(
-    JSON.stringify({ reply: finalReply, remaining }),
+    JSON.stringify({ reply: finalReply, remaining, scope: usageScope }),
     { headers: { "Content-Type": "application/json", ...corsHeaders } },
   )
 })

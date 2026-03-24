@@ -6563,7 +6563,9 @@ const Employees = () => {
               </div>
             </div>
             <div className="flex items-center gap-3" style={{ marginTop: "13px" }}>
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload ID/Passport</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
+                {hasEffectiveIdDocument ? "ID/Passport Document" : "Upload ID/Passport"}
+              </Label>
               <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
                 {isEditMode && !hasEffectiveIdDocument && (
                   <>
@@ -8023,7 +8025,9 @@ const Employees = () => {
             </Select>
           </div>
           <div className="flex items-center gap-3" style={{ transform: "translateY(5px)" }}>
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload Contract</Label>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
+              {hasEffectiveEmploymentContract ? "Employment Contract" : "Upload Contract"}
+            </Label>
             <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
               {isEditMode && !hasEffectiveEmploymentContract && (
                 <>

@@ -21,6 +21,7 @@ type Employee = Tables<"employees"> & {
   probation_period?: string | null;
   termination_reason?: string | null;
   terminated_at?: string | null;
+  nationality?: string | null;
 };
 
 type WarningRow = {
@@ -34,17 +35,28 @@ type WarningRow = {
 
 type RangeKey = "7d" | "30d" | "3m" | "6m";
 type ProbationItem = { id: string; name: string; label: string; start: string; end: string; progress: number };
+type UpcomingEvent = { id: string; employeeId: string | null; name: string; type: string; date: Date; dateLabel: string };
 
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const terminationReasonOptions = [
+  "Dismissed",
+  "Resigned",
+  "Retrenched",
+  "Retired",
+  "Contract expired",
+  "Illness",
+  "Performance",
+  "Absconded",
+] as const;
 const rangeOptions: Array<{ value: RangeKey; label: string }> = [
-  { value: "7d", label: "Next 7 days" },
-  { value: "30d", label: "Next 30 days" },
-  { value: "3m", label: "Next 3 months" },
-  { value: "6m", label: "Next 6 months" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "3m", label: "3 months" },
+  { value: "6m", label: "6 months" },
 ];
 const warningMonths: Record<string, number> = { first: 3, second: 6, serious: 12, final: 12 };
 const trigCls =
-  "h-8 rounded border border-slate-200 bg-white text-[11px] hover:border-blue-400 focus:ring-0";
+  "h-8 rounded border border-slate-200 bg-white px-2 text-[11px] hover:border-blue-400 data-[state=open]:border-blue-400 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0";
 const itemCls = "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600";
 const warningTable = () => (supabase as any).from("employee_warnings");
 const pieColors = ["#2563eb", "#16a34a", "#ea580c", "#7c3aed", "#0891b2", "#dc2626", "#0f766e"];
@@ -61,6 +73,12 @@ const raceColor = (label: string, idx: number) => {
   if (key === "white") return "#2563eb";
   if (key === "indian") return "#eab308";
   return pieColors[idx % pieColors.length];
+};
+const nationalityColor = (label: string) => {
+  const key = label.trim().toLowerCase();
+  if (key === "unspecified") return "#94a3b8";
+  if (key === "south african") return "#16a34a";
+  return "#ea580c";
 };
 
 const parseDate = (v?: string | null) => {
@@ -106,6 +124,8 @@ const getWarningExpiry = (w: WarningRow) => {
 
 const cType = (v?: string | null) => (v?.trim() ? v.trim() : "Unspecified");
 
+const isInactiveStatus = (v?: string | null) => (v ?? "").trim().toLowerCase() === "inactive";
+
 const Dashboard = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -118,6 +138,7 @@ const Dashboard = () => {
   const [upcomingRange, setUpcomingRange] = useState<RangeKey>("30d");
 
   const [issuedYear, setIssuedYear] = useState(new Date().getFullYear());
+  const [terminationYear, setTerminationYear] = useState(new Date().getFullYear());
 
   const [workforceYearFilter, setWorkforceYearFilter] = useState<string>(String(new Date().getFullYear()));
   const [contractFilter, setContractFilter] = useState<string>("all");
@@ -141,7 +162,7 @@ const Dashboard = () => {
         const [e, w] = await Promise.all([
           (supabase as any)
             .from("employees")
-            .select("id,employee_name,employee_surname,status,start_date,end_date,contract_type,probation_period,termination_reason,terminated_at,gender,race")
+            .select("id,employee_name,employee_surname,status,start_date,end_date,contract_type,probation_period,termination_reason,terminated_at,gender,race,nationality")
             .eq("company_id", user.id),
           warningTable()
             .select("id,employee_id,warning_type,misconduct_type,issue_date,expiry_date")
@@ -176,7 +197,7 @@ const Dashboard = () => {
   );
 
   const activeEmployees = useMemo(
-    () => employees.filter((e) => (e.status ?? "").toLowerCase().trim() !== "inactive"),
+    () => employees.filter((e) => !isInactiveStatus(e.status)),
     [employees],
   );
 
@@ -200,6 +221,22 @@ const Dashboard = () => {
     return Array.from(counts.entries())
       .map(([label, total]) => ({ label, total }))
       .sort((a, b) => b.total - a.total);
+  }, [activeEmployees]);
+
+  const nationalityData = useMemo(() => {
+    const counts = new Map<string, number>([
+      ["Unspecified", 0],
+      ["South African", 0],
+      ["Foreigners", 0],
+    ]);
+    activeEmployees.forEach((e) => {
+      const value = ((e as any).nationality ?? "").toString().trim().toLowerCase();
+      const key = !value ? "Unspecified" : value === "south african" ? "South African" : "Foreigners";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([label, total]) => ({ label, total }))
+      .filter((item) => item.total > 0);
   }, [activeEmployees]);
 
   const warningYears = useMemo(() => {
@@ -230,6 +267,14 @@ const Dashboard = () => {
     return out;
   }, [employees]);
 
+  const terminationYears = useMemo(() => {
+    const max = new Date().getFullYear();
+    const min = max - 5;
+    const out: number[] = [];
+    for (let y = max; y >= min; y -= 1) out.push(y);
+    return out;
+  }, []);
+
   useEffect(() => {
     if (workforceYears.includes(Number(workforceYearFilter))) return;
     const currentYear = new Date().getFullYear();
@@ -239,6 +284,10 @@ const Dashboard = () => {
     }
     setWorkforceYearFilter(workforceYears.length > 0 ? String(workforceYears[0]) : "all");
   }, [workforceYearFilter, workforceYears]);
+
+  useEffect(() => {
+    if (!terminationYears.includes(terminationYear)) setTerminationYear(terminationYears[0]);
+  }, [terminationYear, terminationYears]);
 
   const allContractOptions = useMemo(
     () =>
@@ -264,23 +313,21 @@ const Dashboard = () => {
       years.forEach((year) => {
         const monthStart = new Date(year, monthIdx, 1);
         const monthEnd = new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
+        const isCurrentMonthCell = year === currentYear && monthIdx === currentMonth;
         total += employees.filter((e) => {
+          if (contractFilter !== "all" && cType(e.contract_type) !== contractFilter) return false;
           const start = parseDate(e.start_date);
-          if (!start || start > monthEnd) return false;
+          if (!start) return isCurrentMonthCell && !isInactiveStatus(e.status);
+          if (start > monthEnd) return false;
           const end = parseDate(e.end_date);
           if (end && end < monthStart) return false;
-          if (contractFilter !== "all" && cType(e.contract_type) !== contractFilter) return false;
           return true;
         }).length;
       });
       return { label, total };
     });
   }, [contractFilter, employees, today, workforceYearFilter, workforceYears]);
-  const terminationOptions = useMemo(
-    () =>
-      Array.from(new Set(employees.map((e) => (e.termination_reason ?? "").trim()).filter(Boolean))).sort(),
-    [employees],
-  );
+  const terminationOptions = useMemo(() => [...terminationReasonOptions], []);
 
   const issuedByMonth = useMemo(() => {
     const data = monthLabels.map((label) => ({ label, total: 0 }));
@@ -326,13 +373,14 @@ const Dashboard = () => {
         if (!due || due < today || due > endWindow) return null;
         return {
           id: `warning-${w.id}`,
+          employeeId: w.employee_id ?? null,
           name: names.get(w.employee_id ?? "") ?? "Employee",
           type: "Warning expires",
           date: due,
           dateLabel: fmtDate(due),
         };
       })
-      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+      .filter((item): item is UpcomingEvent => Boolean(item));
 
     const contractEvents = activeEmployees
       .map((e) => {
@@ -343,13 +391,14 @@ const Dashboard = () => {
         if (!due || due < today || due > endWindow) return null;
         return {
           id: `contract-${e.id}`,
+          employeeId: e.id,
           name: `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim(),
           type: "Temporary contract ends",
           date: due,
           dateLabel: fmtDate(due),
         };
       })
-      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+      .filter((item): item is UpcomingEvent => Boolean(item));
 
     const probationEvents = activeEmployees
       .map((e) => {
@@ -360,13 +409,14 @@ const Dashboard = () => {
         if (due < today || due > endWindow) return null;
         return {
           id: `probation-${e.id}`,
+          employeeId: e.id,
           name: `${e.employee_name ?? "Employee"} ${e.employee_surname ?? ""}`.trim(),
           type: "Probation ends",
           date: due,
           dateLabel: fmtDate(due),
         };
       })
-      .filter((item): item is { id: string; name: string; type: string; date: Date; dateLabel: string } => Boolean(item));
+      .filter((item): item is UpcomingEvent => Boolean(item));
 
     return [...warningEvents, ...contractEvents, ...probationEvents]
       .sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -378,14 +428,27 @@ const Dashboard = () => {
     employees.forEach((e) => {
       const d = parseDate(e.terminated_at);
       const r = (e.termination_reason ?? "").trim();
-      if (d && (terminationReason === "all" || r === terminationReason)) data[d.getMonth()].total += 1;
+      if (!d || d.getFullYear() !== terminationYear) return;
+      const normalized = r.toLowerCase();
+      const matchesReason =
+        terminationReason === "all" ||
+        r === terminationReason ||
+        (terminationReason === "Illness" &&
+          (r === "Illness" || r === "Illness/Medically boarded" || normalized.includes("illness"))) ||
+        (terminationReason === "Performance" && normalized.includes("performance"));
+      if (matchesReason) data[d.getMonth()].total += 1;
     });
     return data;
-  }, [employees, terminationReason]);
+  }, [employees, terminationReason, terminationYear]);
+
+  const handleUpcomingEventClick = (event: UpcomingEvent) => {
+    if (!event.employeeId) return;
+    navigate("/employees", { state: { openEmployeeId: event.employeeId, openEmployeeTab: "employment" } });
+  };
 
   const rangeSelect = (value: RangeKey, onChange: (v: RangeKey) => void) => (
     <Select value={value} onValueChange={(v) => onChange(v as RangeKey)}>
-      <SelectTrigger className={`${trigCls} w-[145px]`}>
+      <SelectTrigger className={`${trigCls} w-[92px]`}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -415,8 +478,15 @@ const Dashboard = () => {
     </Tooltip>
   );
 
-  const chartCard = (title: string, desc: string, controls: ReactNode, chart: ReactNode, hint?: string) => (
-    <Card className="rounded-sm border border-slate-300 shadow-none flex min-h-[270px] flex-col overflow-hidden">
+  const chartCard = (
+    title: string,
+    desc: string,
+    controls: ReactNode,
+    chart: ReactNode,
+    hint?: string,
+    cardClassName?: string,
+  ) => (
+    <Card className={`rounded-sm border border-slate-300 shadow-none flex min-h-[270px] flex-col overflow-hidden ${cardClassName ?? ""}`}>
       <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -448,20 +518,20 @@ const Dashboard = () => {
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))]">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-5 pb-2">
+              <div className="pt-5 pb-8">
                 <h1 className="text-4xl font-normal text-blue-600 -ml-1">Dashboard</h1>
                 <p className="text-xs text-slate-600 mt-2">Operational events and workforce trends.</p>
               </div>
             </div>
             <section className="relative flex-1 min-h-0 overflow-auto overflow-x-hidden pr-2 pb-4">
-              <div className="grid items-start gap-3 px-4 pb-2 md:grid-cols-2">
+              <div className="grid items-stretch gap-3 px-4 pb-2 md:grid-cols-2">
                 <Card className="rounded-sm border border-slate-300 shadow-none flex h-[230px] flex-col overflow-hidden" style={{ height: 230, minHeight: 230 }}>
                   <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <CardTitle className="text-sm font-semibold">Upcoming Events</CardTitle>
                         <CardDescription className="mt-1 text-[11px]">
-                          Upcoming probation, warning, and temporary-contract events.
+                          Plan ahead with full insight into upcoming workforce events.
                         </CardDescription>
                       </div>
                       <div className="flex items-center gap-2">{rangeSelect(upcomingRange, setUpcomingRange)}</div>
@@ -476,12 +546,28 @@ const Dashboard = () => {
                       <div className="h-full min-h-0 overflow-y-auto pr-1">
                         <ul className="list-disc list-outside space-y-2 pl-5 text-[11px] text-slate-700">
                           {upcomingEvents.map((event) => (
-                            <li key={event.id} className="leading-4 transition-colors marker:text-slate-500 hover:text-blue-600 hover:marker:text-blue-600">
-                              {event.type === "Temporary contract ends"
-                                ? `Temporary contract for ${event.name} expiring on ${event.dateLabel}.`
-                                : event.type === "Probation ends"
-                                  ? `Probation period for ${event.name} ending on ${event.dateLabel}.`
-                                  : `Warning for ${event.name} expiring on ${event.dateLabel}.`}
+                            <li key={event.id} className="cursor-default select-none leading-4 transition-colors marker:text-slate-500 hover:text-blue-600 hover:underline hover:decoration-blue-600 hover:underline-offset-2 hover:marker:text-blue-600">
+                              {event.employeeId ? (
+                                <button
+                                  type="button"
+                                  className="cursor-pointer text-left"
+                                  onClick={() => handleUpcomingEventClick(event)}
+                                >
+                                  {event.type === "Temporary contract ends"
+                                    ? `Temporary contract for ${event.name} expiring on ${event.dateLabel}.`
+                                    : event.type === "Probation ends"
+                                      ? `Probation period for ${event.name} ending on ${event.dateLabel}.`
+                                      : `Warning for ${event.name} expiring on ${event.dateLabel}.`}
+                                </button>
+                              ) : (
+                                <span>
+                                  {event.type === "Temporary contract ends"
+                                    ? `Temporary contract for ${event.name} expiring on ${event.dateLabel}.`
+                                    : event.type === "Probation ends"
+                                      ? `Probation period for ${event.name} ending on ${event.dateLabel}.`
+                                      : `Warning for ${event.name} expiring on ${event.dateLabel}.`}
+                                </span>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -494,21 +580,21 @@ const Dashboard = () => {
                   <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
                     <div className="flex items-center gap-1.5">
                       <CardTitle className="text-sm font-semibold">Employee Demographics</CardTitle>
-                      {hintIcon("Complete employee profiles on the Employees page and capture gender and race to populate these demographics accurately.")}
+                      {hintIcon("Complete employee profiles on the Employees page and capture gender, race, and nationality to populate these demographics accurately.")}
                     </div>
                     <CardDescription className="mt-1 text-[11px]">
-                      Workforce by gender and race.
+                      Clear breakdown of your workforce composition at a glance.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-2 pb-1">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-sm px-2 pt-1 pb-0">
-                        <div className="flex items-center justify-start gap-1">
-                          <div className="flex w-32 shrink-0 flex-col items-center">
-                            <p className="mb-1 w-full text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Gender</p>
-                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-32 w-32 shrink-0">
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-sm pl-0 pr-1 pt-1 pb-0">
+                        <div className="flex items-start gap-1">
+                          <div className="shrink-0">
+                            <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Gender</p>
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
                               <PieChart>
-                                <Pie data={genderData} dataKey="total" nameKey="label" innerRadius={22} outerRadius={42} paddingAngle={3}>
+                                <Pie data={genderData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
                                   {genderData.map((_, idx) => (
                                     <Cell key={`gender-${idx}`} fill={genderColor(genderData[idx]?.label ?? "")} />
                                   ))}
@@ -516,9 +602,9 @@ const Dashboard = () => {
                               </PieChart>
                             </ChartContainer>
                           </div>
-                          <div className="space-y-0 text-[10px] text-slate-700">
-                            {genderData.map((item, idx) => (
-                              <p key={item.label} className="flex items-center gap-1.5">
+                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
+                            {genderData.map((item) => (
+                              <p key={item.label} className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: genderColor(item.label) }} />
                                 <span>{item.label} ({item.total})</span>
                               </p>
@@ -526,13 +612,13 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-sm px-2 pt-1 pb-0">
-                        <div className="flex items-center justify-start gap-1">
-                          <div className="flex w-32 shrink-0 flex-col items-center">
-                            <p className="mb-1 w-full text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Race</p>
-                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-32 w-32 shrink-0">
+                      <div className="rounded-sm px-1 pt-1 pb-0">
+                        <div className="flex items-start gap-1">
+                          <div className="shrink-0">
+                            <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Race</p>
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
                               <PieChart>
-                                <Pie data={raceData} dataKey="total" nameKey="label" innerRadius={22} outerRadius={42} paddingAngle={3}>
+                                <Pie data={raceData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
                                   {raceData.map((_, idx) => (
                                     <Cell key={`race-${idx}`} fill={raceColor(raceData[idx]?.label ?? "", idx)} />
                                   ))}
@@ -540,10 +626,34 @@ const Dashboard = () => {
                               </PieChart>
                             </ChartContainer>
                           </div>
-                          <div className="space-y-0 text-[10px] text-slate-700">
+                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
                             {raceData.map((item, idx) => (
-                              <p key={item.label} className="flex items-center gap-1.5">
+                              <p key={item.label} className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: raceColor(item.label, idx) }} />
+                                <span>{item.label} ({item.total})</span>
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-sm px-1 pt-1 pb-0">
+                        <div className="flex items-start gap-1">
+                          <div className="shrink-0">
+                            <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Nationality</p>
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
+                              <PieChart>
+                                <Pie data={nationalityData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
+                                  {nationalityData.map((item) => (
+                                    <Cell key={`nationality-${item.label}`} fill={nationalityColor(item.label)} />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ChartContainer>
+                          </div>
+                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
+                            {nationalityData.map((item) => (
+                              <p key={item.label} className="flex items-center gap-1">
+                                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: nationalityColor(item.label) }} />
                                 <span>{item.label} ({item.total})</span>
                               </p>
                             ))}
@@ -556,10 +666,10 @@ const Dashboard = () => {
 
                 {chartCard(
                   "Current Workforce",
-                  "Single monthly trend line filtered by selected years and contract types.",
-                  <>
+                  "Track employee growth across contracts and year.",
+                  <div className="flex flex-nowrap gap-2">
                     <Select value={workforceYearFilter} onValueChange={setWorkforceYearFilter}>
-                      <SelectTrigger className={`${trigCls} w-[130px]`}>
+                      <SelectTrigger className={`${trigCls} w-[92px]`}>
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
                       <SelectContent>
@@ -572,7 +682,7 @@ const Dashboard = () => {
                       </SelectContent>
                     </Select>
                     <Select value={contractFilter} onValueChange={setContractFilter}>
-                      <SelectTrigger className={`${trigCls} w-[160px]`}>
+                      <SelectTrigger className={`${trigCls} w-[114px]`}>
                         <SelectValue placeholder="Contract type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -584,8 +694,8 @@ const Dashboard = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                  </>,
-                  <ChartContainer config={{ total: { label: "Employees", color: "hsl(217, 91%, 60%)" } }} className="h-44 w-full">
+                  </div>,
+                  <ChartContainer config={{ total: { label: "Employees", color: "hsl(217, 91%, 60%)" } }} className="h-52 w-full">
                     <LineChart data={workforceChartData}>
                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} />
@@ -595,9 +705,10 @@ const Dashboard = () => {
                     </LineChart>
                   </ChartContainer>,
                   "Complete employee profiles on the Employees page and capture contract type, start date, and end date to keep this graph accurate.",
+                  "min-h-[290px]",
                 )}
 
-                <Card className="rounded-sm border border-slate-300 shadow-none flex min-h-[270px] flex-col overflow-hidden">
+                <Card className="rounded-sm border border-slate-300 shadow-none flex min-h-[290px] flex-col overflow-hidden">
                   <CardHeader className="border-b border-slate-200 bg-slate-50/70 py-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -605,17 +716,17 @@ const Dashboard = () => {
                           <CardTitle className="text-sm font-semibold">Probation Periods</CardTitle>
                           {hintIcon("Complete employee profiles on the Employees page and capture start date and probation period to keep probation progress up to date.")}
                         </div>
-                        <CardDescription className="mt-1 text-[11px]">Progress per employee currently on probation.</CardDescription>
+                        <CardDescription className="mt-1 text-[11px]">Monitor employees on probation with real-time progress tracking.</CardDescription>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="pt-3">
+                  <CardContent className="flex-1 min-h-0 pt-3">
                     {probationActive.length === 0 ? (
                       <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-[11px] text-slate-500">
                         No active probation periods.
                       </div>
                     ) : (
-                      <div className="h-[196px] divide-y divide-slate-200 overflow-y-auto pr-1">
+                      <div className="h-full min-h-0 divide-y divide-slate-200 overflow-y-auto pr-1">
                         {probationActive.map((p) => (
                           <div key={p.id} className="bg-white py-2">
                             <div className="flex items-center justify-between gap-3">
@@ -639,20 +750,34 @@ const Dashboard = () => {
 
                 {chartCard(
                   "Terminations",
-                  "Monthly termination trend.",
-                  <Select value={terminationReason} onValueChange={setTerminationReason}>
-                    <SelectTrigger className={`${trigCls} w-[170px]`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all" className={itemCls}>All reasons</SelectItem>
-                      {terminationOptions.map((r) => (
-                        <SelectItem key={r} value={r} className={itemCls}>
-                          {r}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>,
+                  "Analyse termination patterns by reason and year.",
+                  <div className="flex flex-nowrap gap-2">
+                    <Select value={String(terminationYear)} onValueChange={(v) => setTerminationYear(Number(v))}>
+                      <SelectTrigger className={`${trigCls} w-[92px]`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {terminationYears.map((y) => (
+                          <SelectItem key={y} value={String(y)} className={itemCls}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={terminationReason} onValueChange={setTerminationReason}>
+                      <SelectTrigger className={`${trigCls} w-[148px]`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className={itemCls}>All reasons</SelectItem>
+                        {terminationOptions.map((r) => (
+                          <SelectItem key={r} value={r} className={itemCls}>
+                            {r}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>,
                   <ChartContainer config={{ total: { label: "Terminations", color: "hsl(0, 72%, 51%)" } }} className="h-44 w-full">
                     <LineChart data={terminationsByMonth}>
                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -666,9 +791,9 @@ const Dashboard = () => {
 
                 {chartCard(
                   "Warnings Issued",
-                  "Total warnings issued by month.",
+                  "View current disciplinary warnings at a glance.",
                   <Select value={String(issuedYear)} onValueChange={(v) => setIssuedYear(Number(v))}>
-                    <SelectTrigger className={`${trigCls} w-[100px]`}>
+                    <SelectTrigger className={`${trigCls} w-[92px]`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

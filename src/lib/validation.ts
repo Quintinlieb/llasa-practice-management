@@ -747,6 +747,11 @@ export const employeeImportSchema = z.object({
     .refine((val) => !val || contractTypes.includes(val as (typeof contractTypes)[number]), {
       message: `Contract type must be one of: ${contractTypes.join(", ")}`,
     }),
+  startDate: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (typeof val === "string" ? val.trim() : "")),
   gender: z
     .string()
     .optional()

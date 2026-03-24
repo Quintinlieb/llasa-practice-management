@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent, SyntheticEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -586,6 +586,7 @@ const formatDisplayDate = (value?: string | null) => {
   return `${day}/${month}/${year}`;
 };
 
+
 const formatThousandsWithCommas = (value: string) => {
   if (!value) return "";
   const [integerPart, decimalPart] = value.split(".");
@@ -838,7 +839,8 @@ const terminationReasons = [
   "Retrenched/Staff reduction",
   "Retired",
   "Contract expired",
-  "Illness/Medically boarded",
+  "Illness",
+  "Performance",
   "Absconded",
 ] as const;
 const licenceCategoryLabels: Record<LicenceCategory, string> = {
@@ -1107,6 +1109,7 @@ const documentPathToKey: Record<string, DocumentKey> = {
 
 const Employees = () => {
  const { user, loading } = useAuth();
+ const location = useLocation();
  const navigate = useNavigate();
  const { toast } = useToast();
 
@@ -1222,6 +1225,7 @@ const Employees = () => {
   const tradeUnionTriggerRef = useRef<HTMLButtonElement | null>(null);
   const warningMisconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const warningFileInputRef = useRef<HTMLInputElement | null>(null);
+  const warningIssueDateInputRef = useRef<HTMLInputElement | null>(null);
   const [nationalityOpen, setNationalityOpen] = useState(false);
   const [nationalityQuery, setNationalityQuery] = useState("");
   const [genderOpen, setGenderOpen] = useState(false);
@@ -1250,6 +1254,7 @@ const Employees = () => {
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const endDateInputRef = useRef<HTMLInputElement | null>(null);
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
+  const terminationDateInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDocumentFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -5447,7 +5452,7 @@ const Employees = () => {
   };
 
 
-   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
      const file = e.target.files?.[0];
      if (!file || !user) return;
      setIsLoading(true);
@@ -5455,7 +5460,7 @@ const Employees = () => {
        const data = await file.arrayBuffer();
        const workbook = XLSX.read(data);
        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "yyyy-mm-dd", defval: "" });
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "dd/mm/yyyy", defval: "" });
 
       const validatedEmployees: Array<{
         rowNumber: number;
@@ -5489,6 +5494,21 @@ const Employees = () => {
       };
 
       const normalizeContractType = (value: string) => normalizeEnumValue(value, contractTypes);
+      const normalizeStartDate = (value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) return "";
+
+        const yyyyMmDdMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+        if (yyyyMmDdMatch) return trimmed;
+
+        const ddMmYyyyMatch = /^(\d{2})[ \\/.-](\d{2})[ \\/.-](\d{4})$/.exec(trimmed);
+        if (ddMmYyyyMatch) {
+          const [, day, month, year] = ddMmYyyyMatch;
+          return `${year}-${month}-${day}`;
+        }
+
+        return trimmed;
+      };
 
       for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i] as Record<string, unknown>;
@@ -5502,6 +5522,7 @@ const Employees = () => {
             gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
             race: normalizeEnumValue(getColumnValue(row, "Race", "race"), raceOptions),
             contractType: normalizeContractType(getColumnValue(row, "Contract Type", "contract_type")),
+            startDate: normalizeStartDate(getColumnValue(row, "Start Date", "start_date", "StartDate")),
             nationality: normalizeEnumValue(getColumnValue(row, "Nationality", "nationality"), nationalityOptions),
             cellNumber: getColumnValue(row, "Cell Number", "cell_number"),
             email: getColumnValue(row, "Email", "email"),
@@ -5525,6 +5546,7 @@ const Employees = () => {
               id_number: validated.idNumber || null,
               employee_number: validated.employeeNumber || null,
               contract_type: validated.contractType || null,
+              start_date: validated.startDate || null,
               gender: validated.gender || null,
               race: validated.race || null,
               nationality: validated.nationality || null,
@@ -5661,6 +5683,7 @@ const Employees = () => {
       { header: "Email", key: "email", width: 26 },
       { header: "Income Tax Number", key: "incomeTaxNumber", width: 20 },
       { header: "Contract Type", key: "contractType", width: 16 },
+      { header: "Start Date", key: "startDate", width: 14 },
       { header: "Job Title", key: "jobTitle", width: 20 },
       { header: "Address Line 1", key: "addressLine1", width: 24 },
       { header: "Address Line 2", key: "addressLine2", width: 24 },
@@ -5682,6 +5705,7 @@ const Employees = () => {
       email: "john.doe@example.com",
       incomeTaxNumber: "1234567890",
       contractType: "Permanent",
+      startDate: new Date(2024, 0, 15),
       jobTitle: "Store Manager",
       addressLine1: "123 Main Street",
       addressLine2: "",
@@ -5702,6 +5726,7 @@ const Employees = () => {
       email: "jane.smith@example.com",
       incomeTaxNumber: "0987654321",
       contractType: "Temporary",
+      startDate: new Date(2025, 1, 1),
       jobTitle: "Admin Clerk",
       addressLine1: "45 Market Road",
       addressLine2: "Unit 7",
@@ -5711,6 +5736,8 @@ const Employees = () => {
     });
 
     worksheet.getColumn(4).numFmt = "0";
+    worksheet.getColumn(12).numFmt = "dd/mm/yyyy";
+    worksheet.getColumn(12).alignment = { horizontal: "left" };
 
     const listSheet = workbook.addWorksheet("Lists");
     listSheet.getColumn(1).values = ["", ...genderOptions];
@@ -5744,7 +5771,7 @@ const Employees = () => {
         allowBlank: true,
         formulae: [nationalityFormula],
       };
-      worksheet.getCell(row, 16).dataValidation = {
+      worksheet.getCell(row, 17).dataValidation = {
         type: "list",
         allowBlank: true,
         formulae: [provinceFormula],
@@ -5801,7 +5828,7 @@ const Employees = () => {
      setSelectedEmployees(next);
    };
 
-  const openProfileDialog = async (employee: Employee) => {
+  const openProfileDialog = async (employee: Employee, initialTab: EmployeeTab = "personal") => {
     let employeeForProfile = employee;
     if (user) {
       const { data } = await (supabase as any)
@@ -5848,11 +5875,36 @@ const Employees = () => {
       trade: "",
       training: "",
     });
-   setActiveTab("personal");
+   setActiveTab(initialTab);
    setIsEditMode(false);
    setActiveEditSection(null);
    setIsProfilePanelOpen(true);
   };
+
+  useEffect(() => {
+    const state = (location.state ?? {}) as { openEmployeeId?: string; openEmployeeTab?: EmployeeTab };
+    const requestedId = (state.openEmployeeId ?? "").trim();
+    const requestedTab = state.openEmployeeTab ?? "personal";
+    if (!requestedId) return;
+    const run = async () => {
+      const existing = employees.find((employee) => employee.id === requestedId);
+      const fetched =
+        existing || !user?.id
+          ? null
+          : ((await (supabase as any)
+              .from("employees")
+              .select(employeeSelectColumnsWithTermination)
+              .eq("company_id", user.id)
+              .eq("id", requestedId)
+              .maybeSingle()).data as Employee | null);
+      const targetEmployee = existing ?? fetched;
+      if (targetEmployee) {
+        await openProfileDialog(targetEmployee, requestedTab);
+      }
+      navigate("/employees", { replace: true, state: {} });
+    };
+    void run();
+  }, [employees, location.state, navigate, user?.id]);
 
   const closeProfileDialog = () => {
     if (!guardEditSession()) return;
@@ -6468,29 +6520,47 @@ const Employees = () => {
               <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
                 {isSouthAfricanNationality ? "Date of Birth (Auto)" : "Date of Birth"}
               </Label>
-              <Input
-                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                placeholder={isSouthAfricanNationality ? "Auto from ID" : "Please insert"}
-                type="date"
-                value={profileForm.dateOfBirth}
-                readOnly={isDobReadOnly}
-                onFocus={enableEditMode}
-                onMouseDown={enableEditMode}
-                ref={dateOfBirthInputRef}
-                onClick={() => {
-                  if (isDobReadOnly) return;
-                  if (!isEditMode) {
-                    return;
+              <div className="ml-auto w-full max-w-[320px]">
+                <Input
+                  className={`${fieldInputClass} w-full`}
+                  type="text"
+                  readOnly
+                  placeholder={isSouthAfricanNationality ? "Auto from ID" : "Please insert"}
+                  value={profileForm.dateOfBirth ? formatDisplayDate(profileForm.dateOfBirth) : ""}
+                  onFocus={() => {
+                    enableEditMode();
+                    if (isDobReadOnly || !isEditMode) return;
+                    openDatePicker(dateOfBirthInputRef.current);
+                  }}
+                  onMouseDown={enableEditMode}
+                  onClick={() => {
+                    if (isDobReadOnly || !isEditMode) return;
+                    openDatePicker(dateOfBirthInputRef.current);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (isDobReadOnly || !isEditMode) return;
+                      openDatePicker(dateOfBirthInputRef.current);
+                    }
+                  }}
+                />
+                <input
+                  ref={dateOfBirthInputRef}
+                  type="date"
+                  value={profileForm.dateOfBirth}
+                  readOnly={isDobReadOnly}
+                  onChange={(e) =>
+                    setProfileForm((prev) => ({
+                      ...prev,
+                      dateOfBirth: e.target.value,
+                    }))
                   }
-                  openDatePicker(dateOfBirthInputRef.current);
-                }}
-                onChange={(e) =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    dateOfBirth: e.target.value,
-                  }))
-                }
-              />
+                  className="sr-only"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
+              </div>
             </div>
             <div className="flex items-center gap-3" style={{ marginTop: "13px" }}>
               <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Upload ID/Passport</Label>
@@ -7519,12 +7589,32 @@ const Employees = () => {
               </div>
               <div className="flex items-center gap-3">
                 <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Termination Date</Label>
-                <Input
-                  className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                  type="date"
-                  value={terminationDateRaw}
-                  onChange={(e) => void handleTerminationDateChange(e.target.value)}
-                />
+                <div className="ml-auto w-full max-w-[320px]">
+                  <Input
+                    className={`${fieldInputClass} w-full`}
+                    type="text"
+                    readOnly
+                    placeholder="Please select a date"
+                    value={terminationDateRaw ? formatDisplayDate(terminationDateRaw) : ""}
+                    onClick={() => openDatePicker(terminationDateInputRef.current)}
+                    onFocus={() => openDatePicker(terminationDateInputRef.current)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDatePicker(terminationDateInputRef.current);
+                      }
+                    }}
+                  />
+                  <input
+                    ref={terminationDateInputRef}
+                    type="date"
+                    value={terminationDateRaw}
+                    onChange={(e) => void handleTerminationDateChange(e.target.value)}
+                    className="sr-only"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-3">
                 <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Termination Letter</Label>
@@ -7764,54 +7854,90 @@ const Employees = () => {
           </div>
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Start Date</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              type="date"
-              value={profileForm.startDate}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              ref={startDateInputRef}
-              onClick={() => {
-                if (!isEditMode) {
-                  return;
+            <div className="ml-auto w-full max-w-[320px]">
+              <Input
+                className={`${fieldInputClass} w-full`}
+                type="text"
+                readOnly
+                placeholder="Please select a date"
+                value={profileForm.startDate ? formatDisplayDate(profileForm.startDate) : ""}
+                onFocus={() => {
+                  enableEditMode();
+                  if (!isEditMode) return;
+                  openDatePicker(startDateInputRef.current);
+                }}
+                onMouseDown={enableEditMode}
+                onClick={() => {
+                  if (!isEditMode) return;
+                  openDatePicker(startDateInputRef.current);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    if (!isEditMode) return;
+                    openDatePicker(startDateInputRef.current);
+                  }
+                }}
+              />
+              <input
+                ref={startDateInputRef}
+                type="date"
+                value={profileForm.startDate}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    startDate: e.target.value,
+                  }))
                 }
-                openDatePicker(startDateInputRef.current);
-              }}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  startDate: e.target.value,
-                }))
-              }
-            />
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            </div>
           </div>
           {profileForm.contractType === "Temporary" && (
             <div className="flex items-center gap-3">
               <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>End Date</Label>
-              <Input
-                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                placeholder="Please insert"
-                type="date"
-                value={profileForm.endDate}
-                readOnly={!isEditMode}
-                onFocus={enableEditMode}
-                onMouseDown={enableEditMode}
-                ref={endDateInputRef}
-                onClick={() => {
-                  if (!isEditMode) {
-                    return;
+              <div className="ml-auto w-full max-w-[320px]">
+                <Input
+                  className={`${fieldInputClass} w-full`}
+                  type="text"
+                  readOnly
+                  placeholder="Please select a date"
+                  value={profileForm.endDate ? formatDisplayDate(profileForm.endDate) : ""}
+                  onFocus={() => {
+                    enableEditMode();
+                    if (!isEditMode) return;
+                    openDatePicker(endDateInputRef.current);
+                  }}
+                  onMouseDown={enableEditMode}
+                  onClick={() => {
+                    if (!isEditMode) return;
+                    openDatePicker(endDateInputRef.current);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (!isEditMode) return;
+                      openDatePicker(endDateInputRef.current);
+                    }
+                  }}
+                />
+                <input
+                  ref={endDateInputRef}
+                  type="date"
+                  value={profileForm.endDate}
+                  onChange={(e) =>
+                    setProfileForm((prev) => ({
+                      ...prev,
+                      endDate: e.target.value,
+                    }))
                   }
-                  openDatePicker(endDateInputRef.current);
-                }}
-                onChange={(e) =>
-                  setProfileForm((prev) => ({
-                    ...prev,
-                    endDate: e.target.value,
-                  }))
-                }
-              />
+                  className="sr-only"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
+              </div>
             </div>
           )}
           <div className="flex items-center gap-3">
@@ -10113,13 +10239,33 @@ const Employees = () => {
                 <Label htmlFor="issueDate">
                   Date of issue <span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  id="issueDate"
-                  type="date"
-                  value={warningForm.issueDate}
-                  onChange={(e) => setWarningForm((prev) => ({ ...prev, issueDate: e.target.value }))}
-                  className={getAddModalInputClass(warningForm.issueDate.trim().length > 0)}
-                />
+                <div className="flex items-start gap-2">
+                  <Input
+                    id="issueDate"
+                    type="text"
+                    readOnly
+                    placeholder="Please select a date"
+                    value={warningForm.issueDate ? formatDisplayDate(warningForm.issueDate) : ""}
+                    onClick={() => openDatePicker(warningIssueDateInputRef.current)}
+                    onFocus={() => openDatePicker(warningIssueDateInputRef.current)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDatePicker(warningIssueDateInputRef.current);
+                      }
+                    }}
+                    className={`${getAddModalInputClass(warningForm.issueDate.trim().length > 0)} flex-1 cursor-pointer`}
+                  />
+                  <input
+                    ref={warningIssueDateInputRef}
+                    type="date"
+                    value={warningForm.issueDate}
+                    onChange={(e) => setWarningForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                    className="sr-only"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                  />
+                </div>
               </div>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">

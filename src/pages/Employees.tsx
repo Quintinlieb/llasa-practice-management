@@ -1425,7 +1425,25 @@ const Employees = () => {
 
     const loadedBranches = Array.isArray(data?.branches)
       ? data.branches
-          .map((value: unknown) => String(value ?? "").trim())
+          .map((value: unknown) => {
+            if (typeof value === "string") {
+              const raw = value.trim();
+              if (raw.startsWith("{") && raw.endsWith("}")) {
+                try {
+                  const parsed = JSON.parse(raw) as Record<string, unknown>;
+                  return String(parsed.name ?? "").trim();
+                } catch {
+                  return raw;
+                }
+              }
+              return raw;
+            }
+            if (value && typeof value === "object") {
+              const record = value as Record<string, unknown>;
+              return String(record.name ?? "").trim();
+            }
+            return "";
+          })
           .filter(Boolean)
       : [];
     setCompanyBranchesEnabled(Boolean(data?.branches_enabled));

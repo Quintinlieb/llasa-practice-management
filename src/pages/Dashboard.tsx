@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -518,9 +519,15 @@ const Dashboard = () => {
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))]">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-5 pb-8">
-                <h1 className="text-4xl font-normal text-blue-600 -ml-1">Dashboard</h1>
-                <p className="text-xs text-slate-600 mt-2">Operational events and workforce trends.</p>
+              <div className="flex items-end justify-between gap-3 pt-5 pb-8">
+                <div>
+                  <h1 className="text-4xl font-normal text-blue-600 -ml-1">Dashboard</h1>
+                  <p className="text-xs text-slate-600 mt-2">Operational events and workforce trends.</p>
+                </div>
+                <Button type="button" className="mr-6 h-8 w-auto translate-y-3 whitespace-nowrap rounded border border-blue-600 bg-white px-4 text-[11px] font-medium text-blue-600 hover:bg-blue-600 hover:text-white">
+                  <FileText className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  Generate Report
+                </Button>
               </div>
             </div>
             <section className="relative flex-1 min-h-0 overflow-auto overflow-x-hidden pr-2 pb-4">
@@ -586,15 +593,15 @@ const Dashboard = () => {
                       Clear breakdown of your workforce composition at a glance.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-2 pb-1">
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-sm pl-0 pr-1 pt-1 pb-0">
+                  <CardContent className="flex flex-1 items-center justify-center pt-2 pb-1">
+                    <div className="grid w-fit gap-1 sm:grid-cols-3">
+                      <div className="rounded-sm px-0 pt-1 pb-0">
                         <div className="flex items-start gap-1">
                           <div className="shrink-0">
                             <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Gender</p>
-                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-[88px] w-[88px] shrink-0">
                               <PieChart>
-                                <Pie data={genderData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
+                                <Pie data={genderData} dataKey="total" nameKey="label" innerRadius={15} outerRadius={30} paddingAngle={3}>
                                   {genderData.map((_, idx) => (
                                     <Cell key={`gender-${idx}`} fill={genderColor(genderData[idx]?.label ?? "")} />
                                   ))}
@@ -602,7 +609,7 @@ const Dashboard = () => {
                               </PieChart>
                             </ChartContainer>
                           </div>
-                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
+                          <div className="mt-2 ml-2 self-center space-y-0 text-[10px] text-slate-700">
                             {genderData.map((item) => (
                               <p key={item.label} className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: genderColor(item.label) }} />
@@ -612,13 +619,13 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-sm px-1 pt-1 pb-0">
+                      <div className="rounded-sm px-0 pt-1 pb-0">
                         <div className="flex items-start gap-1">
                           <div className="shrink-0">
                             <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Race</p>
-                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-[88px] w-[88px] shrink-0">
                               <PieChart>
-                                <Pie data={raceData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
+                                <Pie data={raceData} dataKey="total" nameKey="label" innerRadius={15} outerRadius={30} paddingAngle={3}>
                                   {raceData.map((_, idx) => (
                                     <Cell key={`race-${idx}`} fill={raceColor(raceData[idx]?.label ?? "", idx)} />
                                   ))}
@@ -626,7 +633,7 @@ const Dashboard = () => {
                               </PieChart>
                             </ChartContainer>
                           </div>
-                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
+                          <div className="mt-2 ml-2 self-center space-y-0 text-[10px] text-slate-700">
                             {raceData.map((item, idx) => (
                               <p key={item.label} className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: raceColor(item.label, idx) }} />
@@ -636,13 +643,13 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-sm px-1 pt-1 pb-0">
+                      <div className="rounded-sm px-0 pt-1 pb-0">
                         <div className="flex items-start gap-1">
                           <div className="shrink-0">
                             <p className="mb-1 text-center text-[11px] font-semibold text-slate-700 underline decoration-slate-500 underline-offset-2">Nationality</p>
-                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-20 w-20 shrink-0">
+                            <ChartContainer config={{ total: { label: "Employees", color: "#2563eb" } }} className="h-[88px] w-[88px] shrink-0">
                               <PieChart>
-                                <Pie data={nationalityData} dataKey="total" nameKey="label" innerRadius={14} outerRadius={28} paddingAngle={3}>
+                                <Pie data={nationalityData} dataKey="total" nameKey="label" innerRadius={15} outerRadius={30} paddingAngle={3}>
                                   {nationalityData.map((item) => (
                                     <Cell key={`nationality-${item.label}`} fill={nationalityColor(item.label)} />
                                   ))}
@@ -650,7 +657,7 @@ const Dashboard = () => {
                               </PieChart>
                             </ChartContainer>
                           </div>
-                          <div className="mt-2 self-center space-y-0 text-[10px] text-slate-700">
+                          <div className="mt-2 ml-2 self-center space-y-0 text-[10px] text-slate-700">
                             {nationalityData.map((item) => (
                               <p key={item.label} className="flex items-center gap-1">
                                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: nationalityColor(item.label) }} />
@@ -826,3 +833,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+

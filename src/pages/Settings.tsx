@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X, User, Building2, Lock, FileText, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, FileText, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
@@ -71,6 +71,13 @@ type BranchSettingsForm = {
   branches: BranchEntry[];
 };
 
+type SubuserInviteForm = {
+  name: string;
+  surname: string;
+  contact_number: string;
+  email: string;
+};
+
 const emptyUserDetails: UserDetailsForm = {
   user_name: "",
   user_surname: "",
@@ -113,6 +120,13 @@ const emptyBranchForm: BranchEntry = {
   area_code: "",
 };
 
+const emptySubuserInviteForm: SubuserInviteForm = {
+  name: "",
+  surname: "",
+  contact_number: "",
+  email: "",
+};
+
 const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -143,16 +157,20 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   });
 
   const [passwordError, setPasswordError] = useState("");
-  const [settingsTab, setSettingsTab] = useState<"user" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize">("user");
+  const [settingsTab, setSettingsTab] = useState<"user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize">("user");
   const [personaliseLogoLayout, setPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
   const [personaliseLogoPreview, setPersonaliseLogoPreview] = useState("");
   const [initialPersonaliseLogoLayout, setInitialPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
   const [initialPersonaliseLogoPreview, setInitialPersonaliseLogoPreview] = useState("");
   const [personaliseLogoName, setPersonaliseLogoName] = useState("");
+  const [isInviteSubuserOpen, setIsInviteSubuserOpen] = useState(false);
+  const [subuserInviteForm, setSubuserInviteForm] = useState<SubuserInviteForm>(emptySubuserInviteForm);
+  const [subuserInviteSubmitting, setSubuserInviteSubmitting] = useState(false);
   const personaliseLogoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const settingsTabs: Array<{ value: "user" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize"; label: string; icon: LucideIcon }> = [
+  const settingsTabs: Array<{ value: "user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize"; label: string; icon: LucideIcon }> = [
     { value: "user", label: "User Details", icon: User },
+    { value: "subusers", label: "Subusers", icon: Users },
     { value: "company", label: "Company Profile", icon: Building2 },
     { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "companySetup", label: "Company Setup", icon: SlidersHorizontal },
@@ -162,9 +180,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   ];
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600";
+  const subuserModalInputClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300";
   const floatingLabelClass =
     "pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-400";
   const settingsActionRowClass = "mt-auto flex justify-center border-t border-slate-100 bg-white pt-3 pb-1";
+  const isSubuserInviteFormComplete =
+    subuserInviteForm.name.trim().length > 0 &&
+    subuserInviteForm.surname.trim().length > 0 &&
+    subuserInviteForm.contact_number.trim().length > 0 &&
+    subuserInviteForm.email.trim().length > 0;
 
   useEffect(() => {
     if (user) {
@@ -1043,6 +1068,72 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     navigate("/dashboard");
   };
 
+  const handleSubuserInviteDialogChange = (open: boolean) => {
+    setIsInviteSubuserOpen(open);
+    if (!open) {
+      setSubuserInviteForm(emptySubuserInviteForm);
+      setSubuserInviteSubmitting(false);
+    }
+  };
+
+  const handleSubuserInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSubuserInviteSubmitting(true);
+
+    const payload = {
+      name: subuserInviteForm.name.trim(),
+      surname: subuserInviteForm.surname.trim(),
+      contact_number: subuserInviteForm.contact_number.trim(),
+      email: subuserInviteForm.email.trim().toLowerCase(),
+    };
+
+    const { data, error } = await supabase.functions.invoke("Subuser_invites", {
+      body: payload,
+    });
+    const response = (data ?? null) as { ok?: boolean; error?: string } | null;
+
+    if (error) {
+      let errorMessage = error.message || "Unable to send invite right now.";
+      const errorWithContext = error as { context?: Response };
+      if (errorWithContext.context) {
+        try {
+          const contextBody = await errorWithContext.context.clone().json() as { error?: string; message?: string };
+          errorMessage = contextBody.error || contextBody.message || errorMessage;
+        } catch {
+          try {
+            const contextText = await errorWithContext.context.text();
+            if (contextText?.trim()) errorMessage = contextText.trim();
+          } catch {
+            // Keep original message when context payload can't be parsed.
+          }
+        }
+      }
+      toast({
+        title: "Invite failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      setSubuserInviteSubmitting(false);
+      return;
+    }
+
+    if (!response?.ok) {
+      toast({
+        title: "Invite failed",
+        description: response?.error || "Unable to send invite right now.",
+        variant: "destructive",
+      });
+      setSubuserInviteSubmitting(false);
+      return;
+    }
+
+    toast({
+      title: "Invite sent",
+      description: `Invitation link sent to ${payload.email}.`,
+    });
+    handleSubuserInviteDialogChange(false);
+  };
+
   if (loading) {
     if (embedded) {
       return (
@@ -1173,6 +1264,26 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     </Button>
                   </div>
                 ) : null}
+              </div>
+            </div>
+              )}
+
+              {settingsTab === "subusers" && (
+            <div className="flex h-full flex-col space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-900">Subusers</h3>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Here, the main user can add multiple users by sending a link to their email address.
+                </p>
+              </div>
+              <div className={settingsActionRowClass.replace("justify-center", "justify-start")}>
+                <Button
+                  type="button"
+                  onClick={() => setIsInviteSubuserOpen(true)}
+                  className={popupActionButtonClass}
+                >
+                  Add Subuser
+                </Button>
               </div>
             </div>
               )}
@@ -2018,6 +2129,98 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
               )}
             </section>
+
+            <Dialog open={isInviteSubuserOpen} onOpenChange={handleSubuserInviteDialogChange}>
+              <DialogContent
+                className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+                  <div className="flex items-center gap-2 pl-2">
+                    <UserPlus className="h-4 w-4 text-white" />
+                    <DialogTitle className="text-sm font-semibold text-white">Add Subuser</DialogTitle>
+                  </div>
+                  <DialogClose asChild>
+                    <button type="button" className="text-white hover:text-white/80" aria-label="Close invite popup">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </DialogClose>
+                </div>
+                <div className="px-6 pt-0 pb-7"></div>
+                <form onSubmit={handleSubuserInviteSubmit} className="space-y-4 px-6 pb-6 pt-0">
+                  <div className="w-full space-y-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
+                        <Input
+                          value={subuserInviteForm.name}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, name: e.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert name"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Surname <span className="text-red-600">*</span></span>
+                        <Input
+                          value={subuserInviteForm.surname}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, surname: e.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert surname"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Contact Number <span className="text-red-600">*</span></span>
+                        <Input
+                          value={subuserInviteForm.contact_number}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, contact_number: e.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert contact number"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Email <span className="text-red-600">*</span></span>
+                        <Input
+                          type="email"
+                          value={subuserInviteForm.email}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, email: e.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert email"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 pt-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                      onClick={() => handleSubuserInviteDialogChange(false)}
+                      disabled={subuserInviteSubmitting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                      disabled={subuserInviteSubmitting || !isSubuserInviteFormComplete}
+                    >
+                      {subuserInviteSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Submit
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
 
             </div>
           </div>

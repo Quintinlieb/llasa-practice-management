@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -144,6 +144,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const [passwordError, setPasswordError] = useState("");
   const [settingsTab, setSettingsTab] = useState<"user" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize">("user");
+  const [personaliseLogoLayout, setPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
+  const [personaliseLogoPreview, setPersonaliseLogoPreview] = useState("");
+  const [initialPersonaliseLogoLayout, setInitialPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
+  const [initialPersonaliseLogoPreview, setInitialPersonaliseLogoPreview] = useState("");
+  const [personaliseLogoName, setPersonaliseLogoName] = useState("");
+  const personaliseLogoInputRef = useRef<HTMLInputElement | null>(null);
 
   const settingsTabs: Array<{ value: "user" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize"; label: string; icon: LucideIcon }> = [
     { value: "user", label: "User Details", icon: User },
@@ -151,8 +157,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "companySetup", label: "Company Setup", icon: SlidersHorizontal },
     { value: "auth", label: "Authentication", icon: Lock },
-    { value: "plan", label: "Plan", icon: FileText },
-    { value: "personalize", label: "Personalize", icon: Palette },
+    { value: "plan", label: "Subscription", icon: FileText },
+    { value: "personalize", label: "Personalise", icon: Palette },
   ];
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600";
@@ -169,13 +175,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const fetchProfile = async () => {
     if (!user) return;
 
-    const { data, error } = await (supabase as any)
+    const baseProfileSelect =
+      "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email, branches_enabled, branches";
+    const profileSelectWithPersonalise = `${baseProfileSelect}, company_logo_data_url, company_logo_layout`;
+
+    const withPersonalise = await (supabase as any)
       .from("profiles")
-      .select(
-        "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email, branches_enabled, branches",
-      )
+      .select(profileSelectWithPersonalise)
       .eq("id", user.id)
       .maybeSingle();
+    const fallbackWithoutPersonalise = withPersonalise.error
+      ? await (supabase as any)
+          .from("profiles")
+          .select(baseProfileSelect)
+          .eq("id", user.id)
+          .maybeSingle()
+      : null;
+    const data = withPersonalise.error ? fallbackWithoutPersonalise?.data : withPersonalise.data;
+    const error = withPersonalise.error ? fallbackWithoutPersonalise?.error : withPersonalise.error;
 
     if (error) {
       toast({
@@ -282,6 +299,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       };
       setBranchSettings(nextBranchSettings);
       setInitialBranchSettings(nextBranchSettings);
+
+      const storedLogoDataUrl = (((data as any).company_logo_data_url ?? "") as string).trim();
+      const storedLogoLayoutRaw = (((data as any).company_logo_layout ?? "") as string).trim().toLowerCase();
+      const storedLogoLayout =
+        storedLogoLayoutRaw === "vertical" || storedLogoLayoutRaw === "horizontal"
+          ? storedLogoLayoutRaw
+          : null;
+      setPersonaliseLogoPreview(storedLogoDataUrl);
+      setInitialPersonaliseLogoPreview(storedLogoDataUrl);
+      setPersonaliseLogoLayout(storedLogoLayout);
+      setInitialPersonaliseLogoLayout(storedLogoLayout);
     }
     setLoading(false);
   };
@@ -646,6 +674,318 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }));
   };
 
+  const cropPersonaliseLogoPadding = (dataUrl: string): Promise<string> =>
+    new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const sourceWidth = img.naturalWidth || img.width;
+        const sourceHeight = img.naturalHeight || img.height;
+        if (!sourceWidth || !sourceHeight) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = sourceWidth;
+        canvas.height = sourceHeight;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(dataUrl);
+          return;
+        }
+
+        context.drawImage(img, 0, 0, sourceWidth, sourceHeight);
+        const pixels = context.getImageData(0, 0, sourceWidth, sourceHeight).data;
+
+        let left = sourceWidth;
+        let top = sourceHeight;
+        let right = -1;
+        let bottom = -1;
+
+        for (let y = 0; y < sourceHeight; y++) {
+          for (let x = 0; x < sourceWidth; x++) {
+            const index = (y * sourceWidth + x) * 4;
+            const r = pixels[index];
+            const g = pixels[index + 1];
+            const b = pixels[index + 2];
+            const a = pixels[index + 3];
+
+            const isTransparent = a < 18;
+            const isNearWhite = r > 246 && g > 246 && b > 246;
+            if (isTransparent || isNearWhite) continue;
+
+            if (x < left) left = x;
+            if (y < top) top = y;
+            if (x > right) right = x;
+            if (y > bottom) bottom = y;
+          }
+        }
+
+        if (right < left || bottom < top) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const padding = Math.max(1, Math.round(Math.min(sourceWidth, sourceHeight) * 0.025));
+        const cropX = Math.max(0, left - padding);
+        const cropY = Math.max(0, top - padding);
+        const cropWidth = Math.min(sourceWidth - cropX, right - left + 1 + padding * 2);
+        const cropHeight = Math.min(sourceHeight - cropY, bottom - top + 1 + padding * 2);
+
+        const croppedCanvas = document.createElement("canvas");
+        croppedCanvas.width = cropWidth;
+        croppedCanvas.height = cropHeight;
+        const croppedContext = croppedCanvas.getContext("2d");
+        if (!croppedContext) {
+          resolve(dataUrl);
+          return;
+        }
+
+        croppedContext.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+        resolve(croppedCanvas.toDataURL("image/png"));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+
+  const detectPersonaliseLogoLayout = (
+    dataUrl: string,
+  ): Promise<"vertical" | "horizontal" | null> =>
+    new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        if (!width || !height) {
+          resolve(null);
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(null);
+          return;
+        }
+
+        context.drawImage(img, 0, 0, width, height);
+        const pixels = context.getImageData(0, 0, width, height).data;
+        const rowInk = new Array<number>(height).fill(0);
+        const colInk = new Array<number>(width).fill(0);
+
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const r = pixels[idx];
+            const g = pixels[idx + 1];
+            const b = pixels[idx + 2];
+            const a = pixels[idx + 3];
+            const isTransparent = a < 18;
+            const isNearWhite = r > 246 && g > 246 && b > 246;
+            if (isTransparent || isNearWhite) continue;
+            rowInk[y] += 1;
+            colInk[x] += 1;
+          }
+        }
+
+        const scoreSplitStructure = (series: number[]) => {
+          const n = series.length;
+          if (n < 10) return 0;
+          const maxInk = Math.max(...series);
+          if (maxInk <= 0) return 0;
+
+          const minSplit = Math.floor(n * 0.28);
+          const maxSplit = Math.ceil(n * 0.72);
+          const valleyWindow = Math.max(1, Math.floor(n * 0.02));
+          let best = 0;
+
+          for (let split = minSplit; split <= maxSplit; split++) {
+            const leftPeak = Math.max(...series.slice(0, split));
+            const rightPeak = Math.max(...series.slice(split));
+            if (leftPeak <= 0 || rightPeak <= 0) continue;
+            const valleyStart = Math.max(0, split - valleyWindow);
+            const valleyEnd = Math.min(n, split + valleyWindow + 1);
+            const valley = Math.min(...series.slice(valleyStart, valleyEnd));
+            const raw = Math.min(leftPeak, rightPeak) - valley;
+            if (raw > best) best = raw;
+          }
+
+          return best / maxInk;
+        };
+
+        const verticalStackScore = scoreSplitStructure(rowInk); // icon above text
+        const horizontalSideScore = scoreSplitStructure(colInk); // icon beside text
+
+        const rowStartTop = 0;
+        const rowEndTop = Math.max(1, Math.floor(height * 0.45));
+        const rowStartBottom = Math.min(height - 1, Math.floor(height * 0.55));
+        const rowEndBottom = height;
+        const spanRatioForRows = (startRow: number, endRow: number) => {
+          let minX = width;
+          let maxX = -1;
+          for (let y = startRow; y < endRow; y++) {
+            for (let x = 0; x < width; x++) {
+              const idx = (y * width + x) * 4;
+              const r = pixels[idx];
+              const g = pixels[idx + 1];
+              const b = pixels[idx + 2];
+              const a = pixels[idx + 3];
+              const isTransparent = a < 18;
+              const isNearWhite = r > 246 && g > 246 && b > 246;
+              if (isTransparent || isNearWhite) continue;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+            }
+          }
+          if (maxX < minX) return 0;
+          return (maxX - minX + 1) / width;
+        };
+        const topSpanRatio = spanRatioForRows(rowStartTop, rowEndTop);
+        const bottomSpanRatio = spanRatioForRows(rowStartBottom, rowEndBottom);
+        const bottomMuchWiderThanTop = bottomSpanRatio > topSpanRatio + 0.18;
+        const aspectRatio = width / height;
+
+        if (
+          horizontalSideScore >= 0.28 &&
+          horizontalSideScore > verticalStackScore * 1.45 &&
+          !bottomMuchWiderThanTop
+        ) {
+          resolve("horizontal");
+          return;
+        }
+
+        if (
+          (verticalStackScore >= 0.2 &&
+            verticalStackScore > horizontalSideScore * 1.15) ||
+          (bottomMuchWiderThanTop && verticalStackScore >= 0.12)
+        ) {
+          resolve("vertical");
+          return;
+        }
+
+        // Fallback: if structural confidence is borderline, use cleaned aspect ratio.
+        // This catches wide/tall logos that don't present a strong split signal.
+        if (
+          aspectRatio >= 1.2 &&
+          horizontalSideScore >= verticalStackScore * 0.72
+        ) {
+          resolve("horizontal");
+          return;
+        }
+
+        if (
+          aspectRatio <= 0.84 &&
+          verticalStackScore >= horizontalSideScore * 0.72
+        ) {
+          resolve("vertical");
+          return;
+        }
+
+        // Very strong ratio bias should still decide, unless strongly contradicted.
+        if (aspectRatio >= 1.38 && verticalStackScore < horizontalSideScore * 1.35) {
+          resolve("horizontal");
+          return;
+        }
+
+        if (aspectRatio <= 0.72 && horizontalSideScore < verticalStackScore * 1.35) {
+          resolve("vertical");
+          return;
+        }
+
+        resolve(null);
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+
+  const handlePersonaliseLogoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) return;
+
+    if (!selectedFile.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file",
+        description: "Please upload an image file for your logo.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const maxBytes = 4 * 1024 * 1024;
+    if (selectedFile.size > maxBytes) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 4MB.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) {
+        toast({
+          title: "Upload failed",
+          description: "We couldn't read this file. Please try another image.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const cleanedLogo = await cropPersonaliseLogoPadding(result);
+      const detectedLayout = await detectPersonaliseLogoLayout(cleanedLogo);
+      setPersonaliseLogoPreview(cleanedLogo);
+      setPersonaliseLogoName(selectedFile.name);
+      if (detectedLayout) {
+        setPersonaliseLogoLayout(detectedLayout);
+      }
+    };
+    reader.readAsDataURL(selectedFile);
+  };
+
+  const handleRemovePersonaliseLogo = () => {
+    setPersonaliseLogoPreview("");
+    setPersonaliseLogoName("");
+    setPersonaliseLogoLayout(null);
+    if (personaliseLogoInputRef.current) {
+      personaliseLogoInputRef.current.value = "";
+    }
+  };
+
+  const handlePersonaliseUpdate = async () => {
+    if (!user) return;
+    setSaving(true);
+
+    const { error } = await (supabase as any)
+      .from("profiles")
+      .update({
+        company_logo_data_url: personaliseLogoPreview || null,
+        company_logo_layout: personaliseLogoLayout || null,
+      })
+      .eq("id", user.id);
+
+    if (error) {
+      toast({
+        title: "Unable to save personalisation",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } else {
+      setInitialPersonaliseLogoPreview(personaliseLogoPreview);
+      setInitialPersonaliseLogoLayout(personaliseLogoLayout);
+      toast({
+        title: "Success",
+        description: "Personalisation settings updated successfully",
+      });
+    }
+
+    setSaving(false);
+  };
+
   const companyProfileKeys: Array<keyof CompanyDetailsForm> = [
     "company_name",
     "company_type",
@@ -691,6 +1031,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const shouldShowCompanySetupPrimaryAction = isBranchSettingsDirty || isBranchAddDirty || isBranchEditDirty;
   const shouldShowAuthAction =
     passwordData.newPassword.trim().length > 0 || passwordData.confirmPassword.trim().length > 0;
+  const isPersonaliseDirty =
+    personaliseLogoPreview !== initialPersonaliseLogoPreview ||
+    personaliseLogoLayout !== initialPersonaliseLogoLayout;
 
   const handleClose = () => {
     if (onClose) {
@@ -704,9 +1047,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (embedded) {
       return (
         <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-          <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 sm:rounded-sm [&>button]:hidden">
+          <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
             <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-slate-700" />
+              <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
             </div>
           </DialogContent>
         </Dialog>
@@ -715,7 +1058,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-full">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
         </div>
       </DashboardLayout>
     );
@@ -980,7 +1323,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Physical</h4>
-                  <div className="h-px w-full bg-slate-200" />
+                  <div className="h-px w-full bg-blue-200" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1076,7 +1419,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       Copy from Physical
                     </Button>
                   </div>
-                  <div className="h-px w-full bg-slate-200" />
+                  <div className="h-px w-full bg-blue-200" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1551,21 +1894,127 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "personalize" && (
-                <div className="space-y-4">
+                <div className="flex h-full flex-col space-y-5">
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-slate-900">Personalize</h3>
-                    <p className="mb-2 text-[11px] text-slate-500">Customize your workspace preferences</p>
+                    <h3 className="text-sm font-semibold text-slate-900">Personalise</h3>
+                    <p className="mb-2 text-[11px] text-slate-500">Fine-tune how your documents look so every output feels more aligned with your brand and communication style.</p>
                   </div>
-                  <div>
-                    <div className="text-center py-12">
-                      <p className="text-muted-foreground mb-3">
-                        Personalization settings are coming soon.
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        This section will allow you to tailor your Nudoc workspace and user experience.
-                      </p>
+
+                  <div className="space-y-1 pt-3">
+                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Logo</h4>
+                    <div className="h-px w-full bg-blue-200" />
+                  </div>
+
+                  <div
+                    className={`grid items-start gap-6 ${
+                      personaliseLogoPreview ? "grid-cols-[320px_1fr]" : "max-w-[320px] grid-cols-1"
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="personaliseLogoUpload" className="text-[11px] font-semibold text-slate-700">
+                        Company logo (optional)
+                      </Label>
+                      <div className="space-y-2">
+                        <input
+                          id="personaliseLogoUpload"
+                          ref={personaliseLogoInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          className="hidden"
+                          onChange={handlePersonaliseLogoSelect}
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-[30px] min-w-[84px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:bg-white hover:text-blue-600"
+                            onClick={() => personaliseLogoInputRef.current?.click()}
+                          >
+                            {personaliseLogoPreview ? "Change" : "Upload logo"}
+                          </Button>
+                          {personaliseLogoPreview ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="h-[30px] min-w-[84px] border-0 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-none hover:bg-white hover:text-red-600 hover:underline hover:underline-offset-2"
+                              onClick={handleRemovePersonaliseLogo}
+                            >
+                              Remove
+                            </Button>
+                          ) : null}
+                        </div>
+                        {personaliseLogoPreview ? (
+                          <div className="inline-block w-fit rounded border border-slate-300 bg-white p-2">
+                            <img
+                              src={personaliseLogoPreview}
+                              alt="Company logo preview"
+                              className="h-20 w-auto object-contain"
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
+                    {personaliseLogoPreview ? (
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] font-semibold text-slate-700">Logo layout</Label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setPersonaliseLogoLayout("vertical")}
+                            className="text-left"
+                          >
+                            <div
+                              className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
+                                personaliseLogoLayout === "vertical"
+                                  ? "border-blue-600 bg-blue-50"
+                                  : "border-slate-300 bg-white hover:border-blue-500"
+                              }`}
+                            >
+                              <div className="flex flex-col items-center">
+                                <div className="h-5 w-5 rounded-md bg-blue-600/90" />
+                                <div className="mt-1.5 h-1.5 w-12 rounded bg-slate-700/80" />
+                                <div className="mt-1 h-1 w-9 rounded bg-slate-400/90" />
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-700">Vertical</p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPersonaliseLogoLayout("horizontal")}
+                            className="text-left"
+                          >
+                            <div
+                              className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
+                                personaliseLogoLayout === "horizontal"
+                                  ? "border-blue-600 bg-blue-50"
+                                  : "border-slate-300 bg-white hover:border-blue-500"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="h-5 w-5 rounded-md bg-blue-600/90" />
+                                <div>
+                                  <div className="h-1.5 w-10 rounded bg-slate-700/80" />
+                                  <div className="mt-1 h-1 w-8 rounded bg-slate-400/90" />
+                                </div>
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-700">Horizontal</p>
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
+
+                  {isPersonaliseDirty ? (
+                    <div className={settingsActionRowClass}>
+                      <Button onClick={handlePersonaliseUpdate} disabled={saving} className={popupActionButtonClass}>
+                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Changes
+                      </Button>
+                    </div>
+                  ) : null}
+
                 </div>
               )}
             </section>
@@ -1580,7 +2029,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   if (embedded) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-        <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 sm:rounded-sm [&>button]:hidden">
+        <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
           {content}
         </DialogContent>
       </Dialog>

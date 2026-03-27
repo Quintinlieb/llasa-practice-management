@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, FileText, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, FileText, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search, Pencil } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { z } from "zod";
@@ -145,6 +145,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [initialBranchSettings, setInitialBranchSettings] = useState<BranchSettingsForm>(emptyBranchSettings);
   const [branchForm, setBranchForm] = useState<BranchEntry>(emptyBranchForm);
   const [showBranchForm, setShowBranchForm] = useState(false);
+  const [showEditBranchForm, setShowEditBranchForm] = useState(false);
+  const [selectedBranchToEdit, setSelectedBranchToEdit] = useState<string | null>(null);
+  const [branchEditDraft, setBranchEditDraft] = useState<BranchEntry>(emptyBranchForm);
   const [branchEditMode, setBranchEditMode] = useState(false);
   const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
   const [branchSearchQuery, setBranchSearchQuery] = useState("");
@@ -341,7 +344,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const handleAddBranch = () => {
     const normalizedName = branchForm.name.trim().replace(/\s+/g, " ");
-    if (!normalizedName) return;
+    if (!normalizedName) return false;
     const duplicateExists = branchSettings.branches.some(
       (value) => value.name.toLowerCase() === normalizedName.toLowerCase(),
     );
@@ -351,7 +354,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         description: "Please add a unique branch name.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
     setBranchSettings((prev) => ({
       ...prev,
@@ -368,6 +371,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       ],
     }));
     setBranchForm(emptyBranchForm);
+    return true;
   };
 
   const handleRemoveBranch = (branchNameToRemove: string) => {
@@ -391,39 +395,91 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setShowBranchForm(false);
     setBranchEditMode(false);
     setSelectedBranchName(null);
+    setSelectedBranchToEdit(null);
+    setBranchEditDraft(emptyBranchForm);
+    setShowEditBranchForm(false);
     setBranchForm(emptyBranchForm);
+  };
+
+  const handleOpenEditBranchModal = () => {
+    setBranchEditMode(true);
+    setSelectedBranchName(null);
+    setShowBranchForm(false);
+    setSelectedBranchToEdit(null);
+    setBranchEditDraft(emptyBranchForm);
+    setShowEditBranchForm(false);
+  };
+
+  const handleSelectBranchForEdit = (branchName: string) => {
+    const branch = branchSettings.branches.find((item) => item.name === branchName);
+    if (!branch) return;
+    setSelectedBranchToEdit(branch.name);
+    setBranchEditDraft({
+      name: branch.name,
+      address_line1: branch.address_line1,
+      address_line2: branch.address_line2,
+      city: branch.city,
+      province: branch.province,
+      area_code: branch.area_code,
+    });
+    setShowEditBranchForm(true);
+  };
+
+  const handleApplyBranchEdit = () => {
+    if (!selectedBranchToEdit) return;
+    const originalName = selectedBranchToEdit.trim();
+    const normalizedName = branchEditDraft.name.trim().replace(/\s+/g, " ");
+    if (!normalizedName) {
+      toast({
+        title: "Missing branch name",
+        description: "Branch name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const duplicateExists = branchSettings.branches.some(
+      (item) =>
+        item.name.trim().toLowerCase() === normalizedName.toLowerCase() &&
+        item.name.trim().toLowerCase() !== originalName.toLowerCase(),
+    );
+    if (duplicateExists) {
+      toast({
+        title: "Branch already exists",
+        description: "Please use a unique branch name.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setBranchSettings((prev) => ({
+      ...prev,
+      branches: prev.branches.map((item) => {
+        if (item.name !== originalName) return item;
+        return {
+          name: normalizedName,
+          address_line1: branchEditDraft.address_line1.trim(),
+          address_line2: branchEditDraft.address_line2.trim(),
+          city: branchEditDraft.city.trim(),
+          province: branchEditDraft.province.trim(),
+          area_code: branchEditDraft.area_code.trim(),
+        };
+      }),
+    }));
+
+    setShowEditBranchForm(false);
+    setBranchEditMode(false);
+    setSelectedBranchToEdit(null);
+    setBranchEditDraft(emptyBranchForm);
   };
 
   const handleBranchSettingsUpdate = async () => {
     if (!user) return;
     setBranchSaving(true);
 
-    const normalizedFormName = branchForm.name.trim().replace(/\s+/g, " ");
     const selectedNameNormalized = selectedBranchName?.trim().toLowerCase() ?? "";
     let branchSource = [...branchSettings.branches];
-
-    if (branchSettings.branches_enabled && showBranchForm && normalizedFormName) {
-      const pendingDuplicate = branchSource.some(
-        (item) => item.name.trim().toLowerCase() === normalizedFormName.toLowerCase(),
-      );
-      if (pendingDuplicate) {
-        toast({
-          title: "Branch already exists",
-          description: "Please add a unique branch name.",
-          variant: "destructive",
-        });
-        setBranchSaving(false);
-        return;
-      }
-      branchSource.push({
-        name: normalizedFormName,
-        address_line1: branchForm.address_line1.trim(),
-        address_line2: branchForm.address_line2.trim(),
-        city: branchForm.city.trim(),
-        province: branchForm.province.trim(),
-        area_code: branchForm.area_code.trim(),
-      });
-    }
+    const normalizedFormName = branchForm.name.trim().replace(/\s+/g, " ");
 
     if (branchSettings.branches_enabled && branchEditMode && selectedNameNormalized) {
       if (!normalizedFormName) {
@@ -502,10 +558,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         branches_enabled: branchSettings.branches_enabled,
         branches: cleanedBranches,
       });
-      if (showBranchForm) {
-        setBranchForm(emptyBranchForm);
-        setShowBranchForm(false);
-      }
       if (branchEditMode && selectedNameNormalized) {
         const updatedSelected =
           cleanedBranches.find((item) => item.name.trim().toLowerCase() === normalizedFormName.toLowerCase()) ??
@@ -1038,7 +1090,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const selectedBranch = selectedBranchName
     ? branchSettings.branches.find((item) => item.name === selectedBranchName) ?? null
     : null;
-  const hasBranchFormValues = Object.values(branchForm).some((value) => value.trim().length > 0);
 
   const isUserDirty = JSON.stringify(userDetails) !== JSON.stringify(initialUserDetails);
   const isCompanyProfileDirty = companyProfileKeys.some(
@@ -1048,12 +1099,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     (key) => companyDetails[key] !== initialCompanyDetails[key],
   );
   const isBranchSettingsDirty = JSON.stringify(branchSettings) !== JSON.stringify(initialBranchSettings);
-  const isBranchAddDirty = showBranchForm && hasBranchFormValues;
   const isBranchEditDirty =
     branchEditMode &&
     Boolean(selectedBranch) &&
     JSON.stringify(branchForm) !== JSON.stringify(selectedBranch);
-  const shouldShowCompanySetupPrimaryAction = isBranchSettingsDirty || isBranchAddDirty || isBranchEditDirty;
+  const shouldShowCompanySetupPrimaryAction = isBranchSettingsDirty || isBranchEditDirty;
   const shouldShowAuthAction =
     passwordData.newPassword.trim().length > 0 || passwordData.confirmPassword.trim().length > 0;
   const isPersonaliseDirty =
@@ -1205,12 +1255,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             <div className="min-w-0 flex-1 min-h-0 flex flex-col">
             <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-blue-400 [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-blue-400 [&_[role=combobox]]:focus:border-blue-600 [&_[role=combobox]]:focus-visible:border-blue-600 [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-blue-600">
               {settingsTab === "user" && (
-            <div className="flex h-full flex-col space-y-8">
+            <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-slate-900">User Details</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your personal information</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Personal Information</h4>
+                  <div className="h-px w-full bg-blue-200" />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
                     <span className={floatingLabelClass}>First Name</span>
@@ -1232,6 +1286,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       }
                     />
                   </div>
+                </div>
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
+                  <div className="h-px w-full bg-blue-200" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1289,12 +1347,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "company" && (
-            <div className="flex h-full flex-col space-y-8">
+            <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-slate-900">Company Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Information</h4>
+                  <div className="h-px w-full bg-blue-200" />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
                     <span className={floatingLabelClass}>Company Name</span>
@@ -1356,6 +1418,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     />
                   </div>
                 </div>
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
+                  <div className="h-px w-full bg-blue-200" />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
                     <span className={floatingLabelClass}>Company Contact</span>
@@ -1384,6 +1450,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       }
                     />
                   </div>
+                </div>
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Representative</h4>
+                  <div className="h-px w-full bg-blue-200" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1426,214 +1496,221 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "companyAddress" && (
-            <div className="flex h-full flex-col space-y-8">
+            <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-slate-900">Company Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
-                <div className="space-y-1">
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Physical</h4>
-                  <div className="h-px w-full bg-blue-200" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Address Line 1</span>
-                    <Input
-                      id="physical_address_line1"
-                      value={companyDetails.physical_address_line1}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          physical_address_line1: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Address Line 2</span>
-                    <Input
-                      id="physical_address_line2"
-                      value={companyDetails.physical_address_line2}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          physical_address_line2: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>City</span>
-                    <Input
-                      id="city"
-                      value={companyDetails.city}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          city: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Province</span>
-                    <Select
-                      value={companyDetails.province}
-                      onValueChange={(value) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          province: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        id="province"
-                        aria-label="Province"
-                        className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
-                      >
-                        <SelectValue placeholder="Choose province" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {southAfricanProvinces.map((province) => (
-                          <SelectItem key={province} value={province}>
-                            {province}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Area Code</span>
-                    <Input
-                      id="area_code"
-                      value={companyDetails.area_code}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          area_code: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
                 <div className="space-y-1 pt-3">
-                  <div className="flex items-center gap-6">
-                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Postal</h4>
-                    <Button
-                      type="button"
-                      onClick={handleCopyPhysicalToPostal}
-                      className="h-6 rounded border border-slate-400 bg-white px-2 text-[10px] font-medium text-slate-500 hover:border-blue-600 hover:bg-white hover:text-blue-600"
-                    >
-                      Copy from Physical
-                    </Button>
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Physical</h4>
+                    <div className="relative">
+                      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Postal</h4>
+                      <Button
+                        type="button"
+                        onClick={handleCopyPhysicalToPostal}
+                        className="absolute bottom-0 right-0 h-6 rounded border border-slate-400 bg-white px-2 text-[10px] font-medium text-slate-500 hover:border-blue-600 hover:bg-white hover:text-blue-600"
+                      >
+                        Copy from Physical
+                      </Button>
+                    </div>
                   </div>
                   <div className="h-px w-full bg-blue-200" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Address Line 1</span>
-                    <Input
-                      id="postal_address_line1"
-                      value={companyDetails.postal_address_line1}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          postal_address_line1: e.target.value,
-                        })
-                      }
-                    />
+                <div className="flex flex-col gap-7">
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Address Line 1</span>
+                      <Input
+                        id="physical_address_line1"
+                        value={companyDetails.physical_address_line1}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            physical_address_line1: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Address Line 1</span>
+                      <Input
+                        id="postal_address_line1"
+                        value={companyDetails.postal_address_line1}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            postal_address_line1: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Address Line 2</span>
-                    <Input
-                      id="postal_address_line2"
-                      value={companyDetails.postal_address_line2}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          postal_address_line2: e.target.value,
-                        })
-                      }
-                    />
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Address Line 2</span>
+                      <Input
+                        id="physical_address_line2"
+                        value={companyDetails.physical_address_line2}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            physical_address_line2: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Address Line 2</span>
+                      <Input
+                        id="postal_address_line2"
+                        value={companyDetails.postal_address_line2}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            postal_address_line2: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>City</span>
-                    <Input
-                      id="postal_city"
-                      value={companyDetails.postal_city}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          postal_city: e.target.value,
-                        })
-                      }
-                    />
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>City</span>
+                      <Input
+                        id="city"
+                        value={companyDetails.city}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            city: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>City</span>
+                      <Input
+                        id="postal_city"
+                        value={companyDetails.postal_city}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            postal_city: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Province</span>
-                    <Select
-                      value={companyDetails.postal_province}
-                      onValueChange={(value) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          postal_province: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        id="postal_province"
-                        aria-label="Postal Province"
-                        className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Province</span>
+                      <Select
+                        value={companyDetails.province}
+                        onValueChange={(value) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            province: value,
+                          })
+                        }
                       >
-                        <SelectValue placeholder="Choose province" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {southAfricanProvinces.map((province) => (
-                          <SelectItem key={province} value={province}>
-                            {province}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                        <SelectTrigger
+                          id="province"
+                          aria-label="Province"
+                          className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
+                        >
+                          <SelectValue placeholder="Choose province" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {southAfricanProvinces.map((province) => (
+                            <SelectItem key={province} value={province}>
+                              {province}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Province</span>
+                      <Select
+                        value={companyDetails.postal_province}
+                        onValueChange={(value) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            postal_province: value,
+                          })
+                        }
+                      >
+                        <SelectTrigger
+                          id="postal_province"
+                          aria-label="Postal Province"
+                          className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
+                        >
+                          <SelectValue placeholder="Choose province" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {southAfricanProvinces.map((province) => (
+                            <SelectItem key={province} value={province}>
+                              {province}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Postal Code</span>
-                    <Input
-                      id="postal_area_code"
-                      value={companyDetails.postal_area_code}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          postal_area_code: e.target.value,
-                        })
-                      }
-                    />
+                  <div className="grid grid-cols-2 gap-6 items-start">
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Area Code</span>
+                      <Input
+                        id="area_code"
+                        value={companyDetails.area_code}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            area_code: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="relative w-full max-w-none">
+                      <span className={floatingLabelClass}>Postal Code</span>
+                      <Input
+                        id="postal_area_code"
+                        value={companyDetails.postal_area_code}
+                        onChange={(e) =>
+                          setCompanyDetails({
+                            ...companyDetails,
+                            postal_area_code: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
-                {isCompanyAddressDirty ? (
-                  <div className={settingsActionRowClass}>
-                    <Button onClick={handleCompanyDetailsUpdate} disabled={saving} className={popupActionButtonClass}>
-                      {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Save Changes
-                    </Button>
-                  </div>
-                ) : null}
+              {isCompanyAddressDirty ? (
+                <div className={settingsActionRowClass}>
+                  <Button onClick={handleCompanyDetailsUpdate} disabled={saving} className={popupActionButtonClass}>
+                    {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save Changes
+                  </Button>
+                </div>
+              ) : null}
               </div>
             </div>
               )}
 
               {settingsTab === "auth" && (
-            <div className="flex h-full flex-col space-y-8">
+            <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
                 <h3 className="text-sm font-semibold text-slate-900">Authentication</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Change your password here whenever you need to keep your account secure.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
+                <div className="space-y-1 pt-3">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Reset Password</h4>
+                  <div className="h-px w-full bg-blue-200" />
+                </div>
                 <div className="grid max-w-[760px] grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
                     <span className={floatingLabelClass}>New Password</span>
@@ -1694,12 +1771,18 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "companySetup" && (
-                <div className="flex h-full flex-col space-y-8">
+                <div className="flex h-full min-h-0 flex-col">
                   <div className="space-y-1">
                     <h3 className="text-sm font-semibold text-slate-900">Company Setup</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Enable branch management to organize employees by location and assign them to the correct operating unit across your business.</p>
                   </div>
-                  <div className="flex flex-1 flex-col gap-7">
+                  <div className="mt-3 h-[430px] overflow-y-auto px-3 py-3">
+                    <div className="flex flex-col gap-5">
+                  <div className="space-y-1 pt-3">
+                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Branches</h4>
+                    <div className="h-px w-full bg-blue-200" />
+                  </div>
+                  <div className="flex flex-col gap-7">
                       <div className="flex items-center gap-2">
                         <Switch
                           id="branches_enabled"
@@ -1744,31 +1827,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 <div className="flex items-center justify-end gap-2">
                                   <Button
                                     type="button"
-                                    onClick={() => {
-                                      setBranchEditMode((prev) => {
-                                        const next = !prev;
-                                        if (next) {
-                                          setShowBranchForm(false);
-                                          setSelectedBranchName(null);
-                                          setBranchForm(emptyBranchForm);
-                                        }
-                                        return next;
-                                      });
-                                    }}
-                                    className="h-7 w-[64px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                                    onClick={branchEditMode ? handleCancelBranchAction : handleOpenEditBranchModal}
+                                    className={`h-7 w-[64px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] ${
+                                      branchEditMode
+                                        ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
+                                        : "border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                                    }`}
                                   >
-                                    Edit
+                                    {branchEditMode ? "Cancel" : "Edit"}
                                   </Button>
                                   <Button
                                     type="button"
                                     onClick={() => {
                                       setBranchEditMode(false);
                                       setSelectedBranchName(null);
-                                      setShowBranchForm((prev) => {
-                                        const next = !prev;
-                                        if (next) setBranchForm(emptyBranchForm);
-                                        return next;
-                                      });
+                                      setBranchForm(emptyBranchForm);
+                                      setShowBranchForm(true);
                                     }}
                                     className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                       showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
@@ -1785,11 +1859,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                   onClick={() => {
                                     setBranchEditMode(false);
                                     setSelectedBranchName(null);
-                                    setShowBranchForm((prev) => {
-                                      const next = !prev;
-                                      if (next) setBranchForm(emptyBranchForm);
-                                      return next;
-                                    });
+                                    setBranchForm(emptyBranchForm);
+                                    setShowBranchForm(true);
                                   }}
                                   className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                     showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
@@ -1825,24 +1896,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                         variant="outline"
                                         className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
                                           branchEditMode
-                                            ? selectedBranchName === branchEntry.name
+                                            ? selectedBranchToEdit === branchEntry.name
                                               ? "cursor-pointer border-blue-600 bg-blue-600 text-white"
                                               : "cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
                                             : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-50"
                                         }`}
                                         onClick={
                                           branchEditMode
-                                            ? () => {
-                                                setSelectedBranchName(branchEntry.name);
-                                                setBranchForm({
-                                                  name: branchEntry.name,
-                                                  address_line1: branchEntry.address_line1,
-                                                  address_line2: branchEntry.address_line2,
-                                                  city: branchEntry.city,
-                                                  province: branchEntry.province,
-                                                  area_code: branchEntry.area_code,
-                                                });
-                                              }
+                                            ? () => handleSelectBranchForEdit(branchEntry.name)
                                             : undefined
                                         }
                                       >
@@ -1861,127 +1922,366 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     ))}
                                   </div>
                                 </div>
+                                {branchEditMode ? (
+                                  <p className="mt-1 text-[10px] text-slate-500">
+                                    Please select any of the listed branches to edit.
+                                  </p>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
 
-                          {showBranchForm || (branchEditMode && selectedBranchName) ? (
-                            <>
-                              <div className="relative w-full max-w-none">
-                                <span className={floatingLabelClass}>Branch Name</span>
-                                <Input
-                                  placeholder="Enter branch name"
-                                  value={branchForm.name}
-                                  onChange={(e) => setBranchForm((prev) => ({ ...prev, name: e.target.value }))}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter") {
-                                      event.preventDefault();
-                                      handleAddBranch();
-                                    }
-                                  }}
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="relative w-full max-w-none">
-                                  <span className={floatingLabelClass}>Address Line 1</span>
-                                  <Input
-                                    placeholder="Enter address line 1"
-                                    value={branchForm.address_line1}
-                                    onChange={(e) => setBranchForm((prev) => ({ ...prev, address_line1: e.target.value }))}
-                                  />
-                                </div>
-                                <div className="relative w-full max-w-none">
-                                  <span className={floatingLabelClass}>Address Line 2</span>
-                                  <Input
-                                    placeholder="Enter address line 2"
-                                    value={branchForm.address_line2}
-                                    onChange={(e) => setBranchForm((prev) => ({ ...prev, address_line2: e.target.value }))}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-3 gap-4">
-                                <div className="relative w-full max-w-none">
-                                  <span className={floatingLabelClass}>City</span>
-                                  <Input
-                                    placeholder="Enter city"
-                                    value={branchForm.city}
-                                    onChange={(e) => setBranchForm((prev) => ({ ...prev, city: e.target.value }))}
-                                  />
-                                </div>
-                                <div className="relative w-full max-w-none">
-                                  <span className={floatingLabelClass}>Province</span>
-                                  <Select
-                                    value={branchForm.province}
-                                    onValueChange={(value) => setBranchForm((prev) => ({ ...prev, province: value }))}
-                                  >
-                                    <SelectTrigger
-                                      aria-label="Branch province"
-                                      className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
-                                    >
-                                      <SelectValue placeholder="Choose province" />
-                                    </SelectTrigger>
-                                    <SelectContent className="text-[11px]">
-                                      {southAfricanProvinces.map((province) => (
-                                        <SelectItem
-                                          key={province}
-                                          value={province}
-                                          className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                                        >
-                                          {province}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <div className="relative w-full max-w-none">
-                                  <span className={floatingLabelClass}>Area Code</span>
-                                  <Input
-                                    placeholder="Enter area code"
-                                    value={branchForm.area_code}
-                                    onChange={(e) => setBranchForm((prev) => ({ ...prev, area_code: e.target.value }))}
-                                  />
-                                </div>
-                              </div>
-
-                            </>
-                          ) : null}
-
-                          {showBranchForm || branchEditMode || shouldShowCompanySetupPrimaryAction ? (
-                            <div className={`${settingsActionRowClass} gap-2`}>
-                              {showBranchForm || branchEditMode ? (
-                                <Button
-                                  type="button"
-                                  onClick={handleCancelBranchAction}
-                                  disabled={branchSaving}
-                                  variant="outline"
-                                  className="h-8 min-w-[108px] rounded border-slate-300 px-3 text-[11px] text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Cancel
-                                </Button>
-                              ) : null}
-                              {shouldShowCompanySetupPrimaryAction ? (
-                                <Button
-                                  type="button"
-                                  onClick={handleBranchSettingsUpdate}
-                                  disabled={branchSaving}
-                                  className={
-                                    showBranchForm
-                                      ? "h-[28px] min-w-[108px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600"
-                                      : popupActionButtonClass
-                                  }
-                                >
-                                  {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                  {showBranchForm ? "Add Branch" : "Save Changes"}
-                                </Button>
-                              ) : null}
-                            </div>
-                          ) : null}
                         </>
                       ) : null}
+                      <div className="space-y-1 pt-3">
+                        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Departments</h4>
+                        <div className="h-px w-full bg-blue-200" />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Departments</span>
+                        <Input
+                          placeholder="Click to view or add departments"
+                          aria-label="Departments"
+                          readOnly
+                        />
+                      </div>
                     </div>
                   </div>
+                  {branchEditMode || shouldShowCompanySetupPrimaryAction ? (
+                    <div className="mt-3 border-t border-slate-100 bg-white pt-4 pb-1">
+                      <div className="flex justify-center gap-2">
+                        {branchEditMode ? (
+                          <Button
+                            type="button"
+                            onClick={handleCancelBranchAction}
+                            disabled={branchSaving}
+                            variant="outline"
+                            className="h-8 min-w-[108px] rounded border-slate-300 px-3 text-[11px] text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel
+                          </Button>
+                        ) : null}
+                        {shouldShowCompanySetupPrimaryAction ? (
+                          <Button
+                            type="button"
+                            onClick={handleBranchSettingsUpdate}
+                            disabled={branchSaving}
+                            className={popupActionButtonClass}
+                          >
+                            {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Changes
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <Dialog
+                    open={showBranchForm}
+                    onOpenChange={(open) => {
+                      setShowBranchForm(open);
+                      if (!open) setBranchForm(emptyBranchForm);
+                    }}
+                  >
+                    <DialogContent
+                      className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                    >
+                      <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+                        <div className="flex items-center gap-2 pl-2">
+                          <Building2 className="h-4 w-4 text-white" />
+                          <DialogTitle className="text-sm font-semibold text-white">New Branch</DialogTitle>
+                        </div>
+                        <DialogClose asChild>
+                          <button type="button" className="text-white hover:text-white/80" aria-label="Close new branch popup">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </DialogClose>
+                      </div>
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const added = handleAddBranch();
+                          if (added) setShowBranchForm(false);
+                        }}
+                        className="space-y-4 px-6 pb-6 pt-4"
+                      >
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Branch Name <span className="text-red-600">*</span>
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert branch name"
+                              value={branchForm.name}
+                              onChange={(e) => setBranchForm((prev) => ({ ...prev, name: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Address Line 1
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert address line 1"
+                              value={branchForm.address_line1}
+                              onChange={(e) => setBranchForm((prev) => ({ ...prev, address_line1: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Address Line 2
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert address line 2"
+                              value={branchForm.address_line2}
+                              onChange={(e) => setBranchForm((prev) => ({ ...prev, address_line2: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              City
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert city"
+                              value={branchForm.city}
+                              onChange={(e) => setBranchForm((prev) => ({ ...prev, city: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Province
+                            </span>
+                            <Select
+                              value={branchForm.province}
+                              onValueChange={(value) => setBranchForm((prev) => ({ ...prev, province: value }))}
+                            >
+                              <SelectTrigger
+                                aria-label="Branch province"
+                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300"
+                              >
+                                <SelectValue placeholder="Please select province" />
+                              </SelectTrigger>
+                              <SelectContent className="text-[11px]">
+                                {southAfricanProvinces.map((province) => (
+                                  <SelectItem
+                                    key={province}
+                                    value={province}
+                                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                  >
+                                    {province}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Area Code
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert area code"
+                              value={branchForm.area_code}
+                              onChange={(e) => setBranchForm((prev) => ({ ...prev, area_code: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 pt-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                            onClick={() => {
+                              setShowBranchForm(false);
+                              setBranchForm(emptyBranchForm);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                            disabled={branchForm.name.trim().length === 0}
+                          >
+                            Add Branch
+                          </Button>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog
+                    open={showEditBranchForm}
+                    onOpenChange={(open) => {
+                      setShowEditBranchForm(open);
+                      if (!open) {
+                        setSelectedBranchToEdit(null);
+                        setBranchEditDraft(emptyBranchForm);
+                      }
+                    }}
+                  >
+                    <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+                      <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+                        <div className="flex items-center gap-2 pl-2">
+                          <Pencil className="h-4 w-4 text-white" />
+                          <DialogTitle className="text-sm font-semibold text-white">
+                            {selectedBranchToEdit ? `Edit ${selectedBranchToEdit}` : "Edit Branch"}
+                          </DialogTitle>
+                        </div>
+                        <DialogClose asChild>
+                          <button type="button" className="text-white hover:text-white/80" aria-label="Close edit branches popup">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </DialogClose>
+                      </div>
+
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          handleApplyBranchEdit();
+                        }}
+                        className="space-y-4 px-6 pb-6 pt-4"
+                      >
+                        <p
+                          aria-hidden="true"
+                          className="pointer-events-none select-none text-[11px] leading-relaxed text-transparent"
+                        >
+                          Complete the details below to create a new company branch and add it to your branch list.
+                        </p>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Branch Name <span className="text-red-600">*</span>
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert branch name"
+                              value={branchEditDraft.name}
+                              onChange={(e) => setBranchEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Address Line 1
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert address line 1"
+                              value={branchEditDraft.address_line1}
+                              onChange={(e) => setBranchEditDraft((prev) => ({ ...prev, address_line1: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Address Line 2
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert address line 2"
+                              value={branchEditDraft.address_line2}
+                              onChange={(e) => setBranchEditDraft((prev) => ({ ...prev, address_line2: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              City
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert city"
+                              value={branchEditDraft.city}
+                              onChange={(e) => setBranchEditDraft((prev) => ({ ...prev, city: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Province
+                            </span>
+                            <Select
+                              value={branchEditDraft.province}
+                              onValueChange={(value) => setBranchEditDraft((prev) => ({ ...prev, province: value }))}
+                            >
+                              <SelectTrigger
+                                aria-label="Edit branch province"
+                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300"
+                              >
+                                <SelectValue placeholder="Please select province" />
+                              </SelectTrigger>
+                              <SelectContent className="text-[11px]">
+                                {southAfricanProvinces.map((province) => (
+                                  <SelectItem
+                                    key={province}
+                                    value={province}
+                                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                  >
+                                    {province}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                          <div className="relative w-full max-w-none">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                              Area Code
+                            </span>
+                            <Input
+                              className={subuserModalInputClass}
+                              placeholder="Please insert area code"
+                              value={branchEditDraft.area_code}
+                              onChange={(e) => setBranchEditDraft((prev) => ({ ...prev, area_code: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-2 pt-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                            onClick={() => {
+                              setSelectedBranchToEdit(null);
+                              setBranchEditDraft(emptyBranchForm);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                            disabled={!selectedBranchToEdit || branchEditDraft.name.trim().length === 0}
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
               )}
 
               {settingsTab === "plan" && (

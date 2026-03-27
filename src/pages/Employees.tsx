@@ -300,6 +300,11 @@ type WarningDeleteUndoState = {
   storagePath?: string;
   expiresAt: number;
 };
+type TerminationUndoState = {
+  employeeId: string;
+  employeeBefore: Employee;
+  expiresAt: number;
+};
 
 type DocumentOption = {
   category: string;
@@ -1259,12 +1264,21 @@ const Employees = () => {
   const [warningDeleteCountdown, setWarningDeleteCountdown] = useState(0);
   const warningDeleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningDeleteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [terminationUndo, setTerminationUndo] = useState<TerminationUndoState | null>(null);
+  const [terminationUndoCountdown, setTerminationUndoCountdown] = useState(0);
+  const terminationUndoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const terminationUndoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isTerminateDialogOpen, setIsTerminateDialogOpen] = useState(false);
+  const [pendingTerminationReason, setPendingTerminationReason] = useState("");
+  const [pendingTerminationDate, setPendingTerminationDate] = useState(dateToday());
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const endDateInputRef = useRef<HTMLInputElement | null>(null);
   const addModalStartDateInputRef = useRef<HTMLInputElement | null>(null);
   const addModalEndDateInputRef = useRef<HTMLInputElement | null>(null);
   const dateOfBirthInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDateInputRef = useRef<HTMLInputElement | null>(null);
+  const terminateModalDateInputRef = useRef<HTMLInputElement | null>(null);
+  const terminateModalDocumentInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDocumentFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1541,15 +1555,31 @@ const Employees = () => {
   );
 
   const handleTerminateWithReason = useCallback(
-    async (reason: string) => {
+    async (reason: string, terminationDate: string) => {
       if (!selectedEmployee || !user) return;
+      if (!reason.trim()) {
+        toast({
+          title: "Termination reason required",
+          description: "Please select a termination reason.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      if (!terminationDate.trim()) {
+        toast({
+          title: "Termination date required",
+          description: "Please select a termination date.",
+          variant: "destructive",
+        });
+        return false;
+      }
       const previousJobTitle = (profileForm.jobTitle || selectedEmployee.job_title || "").trim() || null;
 
       const employmentClearPatch: EmployeeUpdate = {
         status: "inactive",
         termination_reason: reason,
         previous_job_title: previousJobTitle,
-        terminated_at: null,
+        terminated_at: terminationDate,
         employee_number: null,
         start_date: null,
         end_date: null,
@@ -1622,25 +1652,55 @@ const Employees = () => {
         setAllEmployees((prev) =>
           prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
         );
+        setTerminationUndo({
+          employeeId: selectedEmployee.id,
+          employeeBefore: selectedEmployee,
+          expiresAt: Date.now() + 20000,
+        });
 
         toast({
           title: "Employee terminated",
-          description: "Status set to Inactive and employment details were archived.",
+          description: "Status set to Inactive. You can undo this action for 20 seconds.",
         });
-        toast({
-          title: "Next step",
-          description: "Open Employment tab to set Termination Date and upload the Termination Letter.",
-          className: "border-blue-500",
-        });
+        return true;
       } catch (error: unknown) {
         toast({
           title: "Unable to terminate employee",
           description: getSafeErrorMessage(error),
           variant: "destructive",
         });
+        return false;
       }
     },
     [profileForm.jobTitle, selectedEmployee, toast, user],
+  );
+
+  const openTerminationDialog = useCallback(() => {
+    setPendingTerminationReason("");
+    setPendingTerminationDate(dateToday());
+    setPendingTerminationDocumentFile(null);
+    setPendingTerminationDocumentName("");
+    setIsTerminateDialogOpen(true);
+  }, []);
+
+  const handleTerminateModalDocumentFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!isPdfFile(file.name)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload a PDF file.",
+          variant: "destructive",
+        });
+        event.target.value = "";
+        return;
+      }
+      setPendingTerminationDocumentFile(file);
+      setPendingTerminationDocumentName(file.name);
+      event.target.value = "";
+    },
+    [toast],
   );
 
   const isProfileDirty = useMemo(() => {
@@ -2049,6 +2109,95 @@ const Employees = () => {
       description: "The warning has been restored.",
     });
   };
+
+  const clearTerminationUndoTimers = useCallback(() => {
+    if (terminationUndoTimeoutRef.current) {
+      clearTimeout(terminationUndoTimeoutRef.current);
+      terminationUndoTimeoutRef.current = null;
+    }
+    if (terminationUndoIntervalRef.current) {
+      clearInterval(terminationUndoIntervalRef.current);
+      terminationUndoIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearTerminationUndoState = useCallback(() => {
+    clearTerminationUndoTimers();
+    setTerminationUndo(null);
+    setTerminationUndoCountdown(0);
+  }, [clearTerminationUndoTimers]);
+
+  const startTerminationUndoTimers = useCallback(
+    (pending: TerminationUndoState) => {
+      clearTerminationUndoTimers();
+      setTerminationUndo(pending);
+      const updateCountdown = () => {
+        const remaining = Math.max(0, Math.ceil((pending.expiresAt - Date.now()) / 1000));
+        setTerminationUndoCountdown(remaining);
+      };
+      updateCountdown();
+      terminationUndoIntervalRef.current = setInterval(updateCountdown, 1000);
+      terminationUndoTimeoutRef.current = setTimeout(() => {
+        clearTerminationUndoState();
+      }, Math.max(0, pending.expiresAt - Date.now()));
+    },
+    [clearTerminationUndoState, clearTerminationUndoTimers],
+  );
+
+  const handleUndoTermination = useCallback(async () => {
+    if (!terminationUndo || !user) return;
+    const { employeeBefore, employeeId } = terminationUndo;
+    const snapshot = employeeBefore as any;
+    const {
+      id: _id,
+      company_id: _companyId,
+      created_at: _createdAt,
+      updated_at: _updatedAt,
+      ...updatePayload
+    } = snapshot;
+
+    const { error } = await supabase
+      .from("employees")
+      .update(updatePayload as TablesInsert<"employees">)
+      .eq("id", employeeId)
+      .eq("company_id", user.id);
+
+    if (error) {
+      toast({
+        title: "Unable to undo termination",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const restored = employeeBefore;
+    setSelectedEmployee((prev) => (prev && prev.id === employeeId ? restored : prev));
+    setProfileForm((prev) => (selectedEmployee?.id === employeeId ? createProfileFormFromEmployee(restored) : prev));
+    setEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
+    setFilteredEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
+    setAllEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
+
+    const restoredStatus = ((restored as any).status ?? "").toString().toLowerCase();
+    setEmployeeStatus(restoredStatus === "inactive" ? "Inactive" : "Active");
+    clearTerminationUndoState();
+    toast({
+      title: "Termination undone",
+      description: "Employee status and employment details were restored.",
+    });
+  }, [clearTerminationUndoState, selectedEmployee?.id, terminationUndo, toast, user]);
+
+  useEffect(() => {
+    if (terminationUndo) {
+      startTerminationUndoTimers(terminationUndo);
+    } else {
+      clearTerminationUndoTimers();
+      setTerminationUndoCountdown(0);
+    }
+    return () => {
+      clearTerminationUndoTimers();
+    };
+  }, [terminationUndo, startTerminationUndoTimers, clearTerminationUndoTimers]);
 
   const isPdfFile = (fileName?: string) => fileName?.toLowerCase().endsWith(".pdf") ?? false;
 
@@ -2911,6 +3060,27 @@ const Employees = () => {
     },
     [fetchTerminationDocument, pendingTerminationDocumentFile, terminationDocumentByEmployee, toast, user],
   );
+
+  const handleConfirmTerminate = useCallback(async () => {
+    if (!selectedEmployee) return;
+    const employeeId = selectedEmployee.id;
+    const ok = await handleTerminateWithReason(pendingTerminationReason, pendingTerminationDate);
+    if (ok) {
+      if (pendingTerminationDocumentFile) {
+        await uploadTerminationDocument(employeeId, pendingTerminationDocumentFile);
+      }
+      setIsTerminateDialogOpen(false);
+      setPendingTerminationReason("");
+      setPendingTerminationDate(dateToday());
+    }
+  }, [
+    handleTerminateWithReason,
+    pendingTerminationDate,
+    pendingTerminationReason,
+    pendingTerminationDocumentFile,
+    selectedEmployee,
+    uploadTerminationDocument,
+  ]);
 
   const handleOpenTerminationDocument = async (document: EmployeeTerminationDocument) => {
     if (!document.fileUrl) return;
@@ -4029,31 +4199,15 @@ const Employees = () => {
                         <span className="truncate font-semibold group-hover:underline">Rehire</span>
                       </Button>
                     ) : (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] focus:border !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 bg-red-600 text-white border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 data-[state=open]:border-red-700 data-[state=open]:bg-red-600"
-                          >
-                            <span className="truncate font-semibold group-hover:underline">Terminate</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="w-40 text-[11px] text-center">
-                          {terminationReasons.map((reason) => (
-                            <DropdownMenuItem
-                              key={reason}
-                              onClick={() => {
-                                void handleTerminateWithReason(reason);
-                              }}
-                              className="justify-center gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-red-50/70 focus:text-red-600 data-[highlighted]:bg-red-50/70 data-[highlighted]:text-red-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                            >
-                              {reason}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] focus:border !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none bg-red-600 text-white border-red-600 hover:bg-red-600 hover:text-white hover:border-red-600"
+                        onClick={openTerminationDialog}
+                      >
+                        <span className="truncate font-semibold group-hover:underline">Terminate</span>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -10619,6 +10773,121 @@ const Employees = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={isTerminateDialogOpen}
+        onOpenChange={(open) => {
+          setIsTerminateDialogOpen(open);
+          if (!open) {
+            setPendingTerminationReason("");
+          }
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
+          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+            <div className="flex items-center gap-2 pl-2">
+              <LogOut className="h-4 w-4 text-white" />
+              <DialogTitle className="text-sm font-semibold text-white">Terminate Employee</DialogTitle>
+            </div>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="px-6 pb-6 pt-4 space-y-4">
+            <p className="text-[11px] font-semibold text-red-600">
+              Are you sure you want to terminate this employee?
+            </p>
+            <p className="text-[11px] text-slate-600">
+              Confirm termination details before archiving{" "}
+              {`${selectedEmployee?.employee_name ?? ""} ${selectedEmployee?.employee_surname ?? ""}`.trim() || "employee"}.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-semibold text-slate-500">
+                Termination reason <span className="text-red-600">*</span>
+              </Label>
+              <Select value={pendingTerminationReason || undefined} onValueChange={setPendingTerminationReason}>
+                <SelectTrigger className={`${fieldSelectTriggerClass} w-full`}>
+                  <SelectValue placeholder="Please select reason" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {terminationReasons.map((reason) => (
+                    <SelectItem key={reason} value={reason} className={employeeDropdownSelectItemClass}>
+                      {reason}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-semibold text-slate-500">
+                Termination / Last Date of Employment <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                type="text"
+                readOnly
+                placeholder="Please select a date"
+                value={pendingTerminationDate ? formatDisplayDate(pendingTerminationDate) : ""}
+                onClick={() => openDatePicker(terminateModalDateInputRef.current)}
+                onFocus={() => openDatePicker(terminateModalDateInputRef.current)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openDatePicker(terminateModalDateInputRef.current);
+                  }
+                }}
+                className={fieldInputClass}
+              />
+              <input
+                ref={terminateModalDateInputRef}
+                type="date"
+                value={pendingTerminationDate}
+                onChange={(e) => setPendingTerminationDate(e.target.value)}
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-semibold text-slate-500">
+                Termination letter (optional)
+              </Label>
+              <input
+                ref={terminateModalDocumentInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={handleTerminateModalDocumentFileChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => terminateModalDocumentInputRef.current?.click()}
+                className="h-8 w-full justify-start rounded border-slate-200 bg-white px-3 text-[11px] text-slate-700 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+              >
+                {pendingTerminationDocumentName ? "Change document" : "Upload letter"}
+              </Button>
+              <p className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                <Paperclip className="h-3 w-3 shrink-0 text-slate-500" />
+                <span className="truncate">{pendingTerminationDocumentName || "No file selected"}</span>
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-6 pt-0">
+            <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
+                <Button
+                  type="button"
+                  onClick={() => void handleConfirmTerminate()}
+                  disabled={!pendingTerminationDate.trim() || !pendingTerminationReason.trim()}
+                  className="h-[32px] w-[160px] rounded bg-red-600 px-3 text-xs text-white hover:bg-red-700 disabled:bg-slate-300"
+                >
+                  Terminate
+                </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {deleteUndo && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex justify-center px-4">
           <div className="relative flex items-center gap-3 rounded-full border border-blue-200 bg-white/95 px-4 py-2 text-sm font-medium text-blue-900 shadow-[0_6px_18px_rgba(59,130,246,0.3)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -10669,6 +10938,37 @@ const Employees = () => {
                 className="text-blue-700 hover:text-blue-700 focus-visible:text-blue-700"
                 onClick={clearWarningDeleteState}
                 aria-label="Dismiss undo warning notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {terminationUndo && (
+        <div
+          className={`pointer-events-none fixed inset-x-0 ${
+            deleteUndo && warningDeleteUndo ? "top-36" : deleteUndo || warningDeleteUndo ? "top-20" : "top-4"
+          } z-50 flex justify-center px-4`}
+        >
+          <div className="relative flex items-center gap-3 rounded-full border border-red-200 bg-white/95 px-4 py-2 text-sm font-medium text-red-900 shadow-[0_6px_18px_rgba(220,38,38,0.25)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+            <span className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_25px_rgba(220,38,38,0.25)] animate-pulse" aria-hidden="true"></span>
+            <div className="pointer-events-auto flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-red-900 hover:bg-transparent hover:text-red-900 focus-visible:bg-transparent"
+                onClick={() => void handleUndoTermination()}
+              >
+                Undo termination
+                <span className="text-xs text-red-600">{terminationUndoCountdown}s</span>
+              </Button>
+              <button
+                type="button"
+                className="text-red-700 hover:text-red-700 focus-visible:text-red-700"
+                onClick={clearTerminationUndoState}
+                aria-label="Dismiss undo termination notification"
               >
                 <X className="h-4 w-4" />
               </button>

@@ -31,7 +31,11 @@ type WarningRow = {
   warning_type?: string | null;
   misconduct_type?: string | null;
   issue_date?: string | null;
+  date_issued?: string | null;
+  issued_date?: string | null;
   expiry_date?: string | null;
+  expiry?: string | null;
+  created_at?: string | null;
 };
 
 type RangeKey = "7d" | "30d" | "3m" | "6m";
@@ -84,7 +88,25 @@ const nationalityColor = (label: string) => {
 
 const parseDate = (v?: string | null) => {
   if (!v) return null;
-  const d = new Date(v);
+  const raw = String(v).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const d = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const slash = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (slash) {
+    const [, dd, mm, yyyy] = slash;
+    const d = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const dash = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dash) {
+    const [, dd, mm, yyyy] = dash;
+    const d = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
@@ -118,10 +140,13 @@ const normType = (v?: string | null) => {
 const getWarningExpiry = (w: WarningRow) => {
   const ex = parseDate(w.expiry_date);
   if (ex) return ex;
-  const issue = parseDate(w.issue_date);
+  const issue = parseDate(w.issue_date) ?? parseDate(w.created_at);
   if (!issue) return null;
   return addMonths(issue, warningMonths[(w.warning_type ?? "").toLowerCase().trim()] ?? 6);
 };
+
+const getWarningIssueDate = (w: WarningRow) =>
+  parseDate(w.issue_date) ?? parseDate(w.created_at);
 
 const cType = (v?: string | null) => (v?.trim() ? v.trim() : "Unspecified");
 
@@ -166,7 +191,7 @@ const Dashboard = () => {
             .select("id,employee_name,employee_surname,status,start_date,end_date,contract_type,probation_period,termination_reason,terminated_at,gender,race,nationality")
             .eq("company_id", user.id),
           warningTable()
-            .select("id,employee_id,warning_type,misconduct_type,issue_date,expiry_date")
+            .select("id,employee_id,warning_type,misconduct_type,issue_date,expiry_date,created_at")
             .eq("company_id", user.id),
         ]);
         if (e.error) throw e.error;
@@ -241,15 +266,11 @@ const Dashboard = () => {
   }, [activeEmployees]);
 
   const warningYears = useMemo(() => {
-    const ys = warnings
-      .map((w) => parseDate(w.issue_date)?.getFullYear())
+    const years = warnings
+      .map((w) => getWarningIssueDate(w)?.getFullYear())
       .filter((y): y is number => typeof y === "number");
-    if (!ys.length) return [new Date().getFullYear()];
-    const min = Math.min(...ys);
-    const max = new Date().getFullYear();
-    const out: number[] = [];
-    for (let y = max; y >= min; y -= 1) out.push(y);
-    return out;
+    if (!years.length) return [new Date().getFullYear()];
+    return Array.from(new Set(years)).sort((a, b) => b - a);
   }, [warnings]);
 
   useEffect(() => {
@@ -333,7 +354,7 @@ const Dashboard = () => {
   const issuedByMonth = useMemo(() => {
     const data = monthLabels.map((label) => ({ label, total: 0 }));
     warnings.forEach((w) => {
-      const d = parseDate(w.issue_date);
+      const d = getWarningIssueDate(w);
       if (d && d.getFullYear() === issuedYear) data[d.getMonth()].total += 1;
     });
     return data;

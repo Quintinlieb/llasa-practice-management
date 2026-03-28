@@ -2618,21 +2618,22 @@ const TemporaryContractGenerator = ({
           }
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <User2 className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">New Employee</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <User2 className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">New Employee</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-
+            <div className="mt-[46px] bg-white px-6 pb-6 pt-4">
           <form
-            className="space-y-4 px-6 pb-6 pt-4"
+            className="space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
               if (addEmployeeFormStep === 1) {
@@ -2931,25 +2932,28 @@ const TemporaryContractGenerator = ({
               </div>
             </div>
           </form>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showBulkEmployeeDialog} onOpenChange={setShowBulkEmployeeDialog}>
-        <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <UsersRound className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
+        <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <UsersRound className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <div className="px-6 pt-0 pb-2"></div>
-          <div className="px-6 pb-6">
-            <div className="grid gap-6 sm:grid-cols-2 pt-4">
+            <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
+          <div className="pt-0 pb-2"></div>
+          <div className="grid gap-6 sm:grid-cols-2 pt-4">
               <div className="space-y-4 ml-6">
                 <h4 className="text-sm font-semibold">Step1</h4>
                 <button
@@ -2991,6 +2995,7 @@ const TemporaryContractGenerator = ({
                   Click in box above to upload your completed .xlsx file.
                 </p>
               </div>
+            </div>
             </div>
           </div>
         </DialogContent>

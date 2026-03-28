@@ -2202,18 +2202,20 @@ const WarningGenerator = ({
       ) : null}
 
       <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <TriangleAlert className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <TriangleAlert className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more misconduct types. Use Done to apply or Cancel to discard changes.
@@ -2318,22 +2320,26 @@ const WarningGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={warningOverride.open} onOpenChange={(open) => !open && confirmOverrideWarning(false)}>
-        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <TriangleAlert className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <TriangleAlert className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Caution</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-5 pb-1">
             <DialogDescription className="py-1 text-[11px] text-slate-600">
               {warningOverride.message}
@@ -2359,6 +2365,8 @@ const WarningGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

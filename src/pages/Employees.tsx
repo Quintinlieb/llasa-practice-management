@@ -3063,6 +3063,11 @@ const Employees = () => {
 
   const handleConfirmTerminate = useCallback(async () => {
     if (!selectedEmployee) return;
+    const fullName = `${selectedEmployee.employee_name ?? ""} ${selectedEmployee.employee_surname ?? ""}`.trim() || "this employee";
+    const confirmed = confirm(
+      `Are you sure you want to terminate ${fullName}?\n\nThis action can be undone for 20 seconds.`,
+    );
+    if (!confirmed) return;
     const employeeId = selectedEmployee.id;
     const ok = await handleTerminateWithReason(pendingTerminationReason, pendingTerminationDate);
     if (ok) {
@@ -9908,20 +9913,21 @@ const Employees = () => {
                 </Card>
 
                 <Dialog open={isBulkDialogOpen} onOpenChange={handleBulkDialogChange}>
-                  <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-                    <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-                      <div className="flex items-center gap-2 pl-2">
-                        <UsersRound className="h-4 w-4 text-white" />
-                        <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
+                  <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+                    <div className="relative">
+                      <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                        <div className="flex items-center gap-2 pl-2">
+                          <UsersRound className="h-4 w-4 text-white" />
+                          <DialogTitle className="text-sm font-semibold text-white">Add Multiple Employees</DialogTitle>
+                        </div>
+                        <DialogClose asChild>
+                          <button type="button" className="text-white hover:text-white/80">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </DialogClose>
                       </div>
-                      <DialogClose asChild>
-                        <button type="button" className="text-white hover:text-white/80">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </DialogClose>
-                    </div>
-                    <div className="px-6 pt-0 pb-2"></div>
-                    <div className="px-6 pb-6">
+                      <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
+                      <div className="pt-0 pb-2"></div>
                       <div className="grid gap-6 sm:grid-cols-2 pt-4">
                         <div className="space-y-4 ml-6">
                           <h4 className="text-sm font-semibold">Step1</h4>
@@ -9966,30 +9972,33 @@ const Employees = () => {
                           </p>
                         </div>
                       </div>
+                      </div>
                     </div>
                   </DialogContent>
                 </Dialog>
 
                 <Dialog open={isAddDialogOpen} onOpenChange={handleAddDialogChange}>
                   <DialogContent
-                    className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                    className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
                     onCloseAutoFocus={(event) => event.preventDefault()}
                   >
-                    <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-                      <div className="flex items-center gap-2 pl-2">
-                        <User className="h-4 w-4 text-white" />
-                        <DialogTitle className="text-sm font-semibold text-white">
-                          {rehireEmployeeId ? "Rehire Employee" : "New Employee"}
-                        </DialogTitle>
+                    <div className="relative">
+                      <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                        <div className="flex items-center gap-2 pl-2">
+                          <User className="h-4 w-4 text-white" />
+                          <DialogTitle className="text-sm font-semibold text-white">
+                            {rehireEmployeeId ? "Rehire Employee" : "New Employee"}
+                          </DialogTitle>
+                        </div>
+                        <DialogClose asChild>
+                          <button type="button" className="text-white hover:text-white/80">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </DialogClose>
                       </div>
-                      <DialogClose asChild>
-                        <button type="button" className="text-white hover:text-white/80">
-                          <X className="h-4 w-4" />
-                        </button>
-                      </DialogClose>
-                    </div>
-                    <div className="px-6 pt-0 pb-2"></div>
-                    <form onSubmit={handleAddEmployee} className="space-y-4 px-6 pb-6 pt-2">
+                      <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
+                    <div className="pt-0 pb-2"></div>
+                    <form onSubmit={handleAddEmployee} className="space-y-4 pt-2">
                       <div className="mx-auto w-full max-w-[320px] py-4">
                         <div className="relative grid grid-cols-3 items-start">
                           <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
@@ -10360,6 +10369,8 @@ const Employees = () => {
                         </div>
                       </div>
                     </form>
+                      </div>
+                      </div>
                   </DialogContent>
                 </Dialog>
               </div>
@@ -10392,18 +10403,20 @@ const Employees = () => {
           }
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Upload className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">{editingWarning ? "Edit warning" : "Upload warning"}</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Upload className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">{editingWarning ? "Edit warning" : "Upload warning"}</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               {editingWarning ? "Update this warning record." : "Add a warning record with auto-calculated validity."}
@@ -10599,22 +10612,26 @@ const Employees = () => {
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isMisconductPickerOpen} onOpenChange={(open) => (open ? openWarningMisconductPicker() : cancelWarningMisconductPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <TriangleAlert className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <TriangleAlert className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more misconduct types for which the warning was issued.
@@ -10719,6 +10736,8 @@ const Employees = () => {
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -10782,32 +10801,26 @@ const Employees = () => {
           }
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <LogOut className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Terminate Employee</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <LogOut className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Terminate Employee</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <div className="px-6 pb-6 pt-4 space-y-4">
-            <p className="text-[11px] font-semibold text-red-600">
-              Are you sure you want to terminate this employee?
-            </p>
-            <p className="text-[11px] text-slate-600">
-              Confirm termination details before archiving{" "}
-              {`${selectedEmployee?.employee_name ?? ""} ${selectedEmployee?.employee_surname ?? ""}`.trim() || "employee"}.
-            </p>
+            <div className="mt-[46px] bg-white px-6 pb-6 pt-4 space-y-4">
             <div className="space-y-1">
               <Label className="text-[10px] font-semibold text-slate-500">
                 Termination reason <span className="text-red-600">*</span>
               </Label>
               <Select value={pendingTerminationReason || undefined} onValueChange={setPendingTerminationReason}>
-                <SelectTrigger className={`${fieldSelectTriggerClass} w-full`}>
+                <SelectTrigger className={`${fieldSelectTriggerClass} w-full !ring-0 !ring-offset-0 !outline-none focus:!ring-0 focus:!ring-offset-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!outline-none`}>
                   <SelectValue placeholder="Please select reason" />
                 </SelectTrigger>
                 <SelectContent className="text-[11px]">
@@ -10872,8 +10885,7 @@ const Employees = () => {
                 <span className="truncate">{pendingTerminationDocumentName || "No file selected"}</span>
               </p>
             </div>
-          </div>
-          <DialogFooter className="px-6 pb-6 pt-0">
+            <DialogFooter className="px-0 pb-0 pt-0">
             <div className="flex w-full justify-center border-t border-dashed border-muted/60 pt-4">
                 <Button
                   type="button"
@@ -10885,6 +10897,8 @@ const Employees = () => {
                 </Button>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -10983,19 +10997,20 @@ const Employees = () => {
           if (!open) setDocumentDialogEmployee(null);
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <FilePlus className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">New Document</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <FilePlus className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">New Document</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
-          <div className="px-6 pt-4 pb-6">
+            <div className="mt-[46px] bg-white px-6 pt-4 pb-6">
             <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
               Select any document from the list below to instantly start drafting a new document for{" "}
               {`${documentDialogEmployee?.employee_name ?? ""} ${documentDialogEmployee?.employee_surname ?? ""}`.trim()}.
@@ -11044,6 +11059,7 @@ const Employees = () => {
             >
               Draft
             </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

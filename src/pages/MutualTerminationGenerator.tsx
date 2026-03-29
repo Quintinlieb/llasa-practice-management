@@ -1967,12 +1967,12 @@ const MutualTerminationGenerator = ({
                           readOnly
                           placeholder="Please select a date"
                           value={formData.consultationDate ? toDisplayDate(formData.consultationDate) : ""}
-                          onClick={openPreviousEndDatePicker}
-                          onFocus={openPreviousEndDatePicker}
+                          onClick={openEffectiveDatePicker}
+                          onFocus={openEffectiveDatePicker}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              openPreviousEndDatePicker();
+                              openEffectiveDatePicker();
                             }
                           }}
                           className={`${getTerminationModalInputClass(formData.consultationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}
@@ -2016,12 +2016,12 @@ const MutualTerminationGenerator = ({
                           readOnly
                           placeholder="Please select a date"
                           value={formData.terminationDate ? toDisplayDate(formData.terminationDate) : ""}
-                          onClick={openEffectiveDatePicker}
-                          onFocus={openEffectiveDatePicker}
+                          onClick={openPreviousEndDatePicker}
+                          onFocus={openPreviousEndDatePicker}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              openEffectiveDatePicker();
+                              openPreviousEndDatePicker();
                             }
                           }}
                           className={`${getTerminationModalInputClass(formData.terminationDate.trim().length > 0)} flex-1 cursor-pointer placeholder:text-gray-900`}

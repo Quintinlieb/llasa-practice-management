@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,7 +93,10 @@ type MisconductData = MisconductBaseFormData & {
 type SlimProfile = Pick<
   Tables<"profiles">,
   "id" | "company_name" | "company_type" | "registration_number" | "physical_address" | "company_contact" | "company_email"
->;
+> & {
+  company_logo_data_url?: string | null;
+  company_logo_layout?: "vertical" | "horizontal" | null;
+};
 type SlimEmployee = {
   id: string;
   id_number: string | null;
@@ -882,9 +885,11 @@ const MisconductTerminationGenerator = ({
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
+    const profileSelect =
+      "id, company_name, company_type, registration_number, physical_address, company_contact, company_email, company_logo_data_url, company_logo_layout";
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, company_name, company_type, registration_number, physical_address, company_contact, company_email")
+      .select(profileSelect)
       .eq("id", user.id)
       .maybeSingle();
     if (error) {
@@ -969,11 +974,20 @@ const MisconductTerminationGenerator = ({
 
   useEffect(() => {
     if (profile) {
+      const storedLogo = (profile.company_logo_data_url || "").trim();
+      const storedLogoLayout = (profile.company_logo_layout || "").trim().toLowerCase();
       setFormData((prev) => ({
         ...prev,
         workplace: prev.workplace || profile.physical_address || "",
         employerContact: prev.employerContact || profile.company_contact || "",
         employerEmail: prev.employerEmail || profile.company_email || "",
+        companyLogoDataUrl: prev.companyLogoDataUrl || storedLogo,
+        logoPlacement:
+          prev.companyLogoDataUrl || !storedLogo
+            ? prev.logoPlacement
+            : storedLogoLayout === "horizontal"
+              ? "left"
+              : "center",
       }));
     }
   }, [profile]);
@@ -4109,8 +4123,9 @@ const MisconductTerminationGenerator = ({
       </Dialog>
 
       <Dialog open={colorThemePickerOpen} onOpenChange={(open) => (open ? openColorThemePicker() : cancelColorThemePicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
             <div className="flex items-center gap-2 pl-2">
               <Palette className="h-4 w-4 text-white" />
               <DialogTitle className="text-sm font-semibold text-white">Select Colour Theme</DialogTitle>
@@ -4121,6 +4136,7 @@ const MisconductTerminationGenerator = ({
               </button>
             </DialogClose>
           </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose up to two colours. Selection order applies: 1 for divider lines, 2 for icon colour.
@@ -4202,6 +4218,8 @@ const MisconductTerminationGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -4211,6 +4229,7 @@ const MisconductTerminationGenerator = ({
 };
 
 export default MisconductTerminationGenerator;
+
 
 
 

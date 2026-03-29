@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -3036,17 +3036,21 @@ const PrecautionarySuspensionNoticeGenerator = ({
                   {formData.misconductTypes.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {formData.misconductTypes.map((type) => (
-                        <span key={type} className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-700">
+                        <Badge
+                          key={type}
+                          variant="outline"
+                          className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                        >
                           <span>{type}</span>
                           <button
                             type="button"
                             onClick={() => removeMisconductType(type)}
-                            className="text-slate-500 hover:text-red-600"
+                            className="inline-flex items-center text-blue-600 hover:text-blue-800"
                             aria-label={`Remove ${type}`}
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-3 w-3" />
                           </button>
-                        </span>
+                        </Badge>
                       ))}
                     </div>
                   ) : null}
@@ -3342,18 +3346,20 @@ const PrecautionarySuspensionNoticeGenerator = ({
       </Dialog>
 
       <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Misconduct Type(s)</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more misconduct types. Use Done to apply or Cancel to discard changes.
@@ -3454,12 +3460,15 @@ const PrecautionarySuspensionNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={colorThemePickerOpen} onOpenChange={(open) => (open ? openColorThemePicker() : cancelColorThemePicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
             <div className="flex items-center gap-2 pl-2">
               <Palette className="h-4 w-4 text-white" />
               <DialogTitle className="text-sm font-semibold text-white">Select Colour Theme</DialogTitle>
@@ -3470,6 +3479,7 @@ const PrecautionarySuspensionNoticeGenerator = ({
               </button>
             </DialogClose>
           </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose up to two colours. Selection order applies: 1 for divider lines, 2 for icon colour.
@@ -3551,6 +3561,8 @@ const PrecautionarySuspensionNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -3560,6 +3572,7 @@ const PrecautionarySuspensionNoticeGenerator = ({
 };
 
 export default PrecautionarySuspensionNoticeGenerator;
+
 
 
 

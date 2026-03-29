@@ -5074,18 +5074,20 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       </Dialog>
 
       <Dialog open={misconductPickerOpen} onOpenChange={(open) => (open ? openMisconductPicker() : cancelMisconductPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Retrenchment Reason(s)</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Retrenchment Reason(s)</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more retrenchment reason(s).
@@ -5165,6 +5167,8 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -5268,18 +5272,20 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
       </Dialog>
 
       <Dialog open={selectionCriteriaPickerOpen} onOpenChange={(open) => (open ? openSelectionCriteriaPicker() : cancelSelectionCriteriaPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Selection Criteria</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Selection Criteria</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more selection criteria. Use Done to apply or Cancel to discard changes.
@@ -5382,22 +5388,26 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={alternativesPickerOpen} onOpenChange={(open) => (open ? openAlternativesPicker() : cancelAlternativesPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Alternatives Considered</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Alternatives Considered</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more alternatives considered. Use Done to apply or Cancel to discard changes.
@@ -5484,22 +5494,26 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={rejectionReasonsPickerOpen} onOpenChange={(open) => (open ? openRejectionReasonsPicker() : cancelRejectionReasonsPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Rejection Reasons</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Rejection Reasons</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more rejection reasons. This field is optional.
@@ -5581,22 +5595,26 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={assistanceOfferedPickerOpen} onOpenChange={(open) => (open ? openAssistanceOfferedPicker() : cancelAssistanceOfferedPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white sm:max-h-[92vh] [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select Assistance Offered</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] sm:max-h-[92vh] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select Assistance Offered</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose one or more assistance options.
@@ -5683,12 +5701,15 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={colorThemePickerOpen} onOpenChange={(open) => (open ? openColorThemePicker() : cancelColorThemePicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
             <div className="flex items-center gap-2 pl-2">
               <Palette className="h-4 w-4 text-white" />
               <DialogTitle className="text-sm font-semibold text-white">Select Colour Theme</DialogTitle>
@@ -5699,6 +5720,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </button>
             </DialogClose>
           </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose up to two colours. Selection order applies: 1 for divider lines, 2 for icon colour.
@@ -5780,6 +5802,8 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -5789,6 +5813,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 };
 
 export default ContemplatedRetrenchmentNoticeGenerator;
+
 
 
 

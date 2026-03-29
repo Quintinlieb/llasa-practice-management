@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -3476,18 +3476,20 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
       </Dialog>
 
       <Dialog open={performanceConcernPickerOpen} onOpenChange={(open) => (open ? openPerformanceConcernPicker() : cancelPerformanceConcernPicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-            <div className="flex items-center gap-2 pl-2">
-              <Briefcase className="h-4 w-4 text-white" />
-              <DialogTitle className="text-sm font-semibold text-white">Select performance concerns</DialogTitle>
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <Briefcase className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Select performance concerns</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
             </div>
-            <DialogClose asChild>
-              <button type="button" className="text-white hover:text-white/80">
-                <X className="h-4 w-4" />
-              </button>
-            </DialogClose>
-          </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Select one or more concerns from the list, or add your own custom concern.
@@ -3600,12 +3602,15 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={colorThemePickerOpen} onOpenChange={(open) => (open ? openColorThemePicker() : cancelColorThemePicker())}>
-        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-          <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
+        <DialogContent className="w-[94vw] max-w-[680px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
             <div className="flex items-center gap-2 pl-2">
               <Palette className="h-4 w-4 text-white" />
               <DialogTitle className="text-sm font-semibold text-white">Select Colour Theme</DialogTitle>
@@ -3616,6 +3621,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               </button>
             </DialogClose>
           </div>
+            <div className="mt-[46px] bg-white">
           <DialogHeader className="px-6 pt-4 pb-0">
             <DialogDescription className="text-[11px] text-slate-600">
               Choose up to two colours. Selection order applies: 1 for divider lines, 2 for icon colour.
@@ -3697,6 +3703,8 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
               </div>
             </div>
           </DialogFooter>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -3706,6 +3714,7 @@ const IncapacityPerformanceHearingNoticeGenerator = ({
 };
 
 export default IncapacityPerformanceHearingNoticeGenerator;
+
 
 
 

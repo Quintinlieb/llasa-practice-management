@@ -152,6 +152,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
   const [branchSearchQuery, setBranchSearchQuery] = useState("");
   const [branchSearchFocused, setBranchSearchFocused] = useState(false);
+  const branchEditBlockedToastAtRef = useRef(0);
   const [branchSaving, setBranchSaving] = useState(false);
 
   const [passwordData, setPasswordData] = useState({
@@ -1111,11 +1112,37 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     personaliseLogoLayout !== initialPersonaliseLogoLayout;
 
   const handleClose = () => {
+    if (branchEditMode) {
+      handleCancelBranchAction();
+    }
     if (onClose) {
       onClose();
       return;
     }
     navigate("/dashboard");
+  };
+
+  const handleSettingsTabChange = (nextTab: typeof settingsTab) => {
+    if (settingsTab === "companySetup" && branchEditMode && nextTab !== "companySetup") {
+      handleCancelBranchAction();
+    }
+    setSettingsTab(nextTab);
+  };
+
+  const handleCompanySetupClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!branchEditMode) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('[data-branch-edit-allowed="true"]')) return;
+
+    const now = Date.now();
+    if (now - branchEditBlockedToastAtRef.current < 1200) return;
+    branchEditBlockedToastAtRef.current = now;
+
+    toast({
+      title: "Cancel edit mode first",
+      description: "Please select Cancel before interacting with other fields.",
+    });
   };
 
   const handleSubuserInviteDialogChange = (open: boolean) => {
@@ -1188,7 +1215,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (embedded) {
       return (
         <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-          <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
+          <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
             <div className="flex h-full items-center justify-center">
               <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
             </div>
@@ -1208,7 +1235,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const content = (
       <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
         <div className={`mx-auto flex h-full w-full ${embedded ? "rounded-sm border-0 bg-white !shadow-none" : "max-w-[980px] rounded-sm border border-slate-300 bg-white shadow-sm"} flex-col overflow-hidden`}>
-          <header className="flex items-center justify-between bg-[#2D4256] px-6 py-3 -mx-px -mt-px">
+          <header className="flex items-center justify-between bg-[#2D4256] px-6 py-3">
             <div className="flex items-center gap-2 pl-2">
               <SettingsIcon className="h-4 w-4 text-white" />
               <h2 className="text-sm font-semibold text-white">Settings</h2>
@@ -1233,7 +1260,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <button
                       key={tab.value}
                       type="button"
-                      onClick={() => setSettingsTab(tab.value)}
+                      onClick={() => handleSettingsTabChange(tab.value)}
                       className={`mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded px-4 py-3 text-left text-[10px] font-semibold transition-colors ${
                         isActive
                           ? "bg-blue-50 text-slate-900"
@@ -1257,13 +1284,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "user" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">User Details</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">User Details</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your personal information</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Personal Information</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1289,7 +1316,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1329,7 +1356,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "subusers" && (
             <div className="flex h-full flex-col space-y-4">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">Subusers</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">Subusers</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
                   Here, the main user can add multiple users by sending a link to their email address.
                 </p>
@@ -1349,13 +1376,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "company" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">Company Profile</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">Company Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Information</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1379,16 +1406,20 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         })
                       }
                     >
-                      <SelectTrigger id="company_type" aria-label="Company Type">
+                      <SelectTrigger
+                        id="company_type"
+                        aria-label="Company Type"
+                        className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
+                      >
                         <SelectValue placeholder="Choose company type" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="(Pty) Ltd">Private Company (Pty) Ltd</SelectItem>
-                        <SelectItem value="Ltd">Public Company Ltd</SelectItem>
-                        <SelectItem value="Inc">Personal Liability Company Inc</SelectItem>
-                        <SelectItem value="NPC">Non-Profit Company NPC</SelectItem>
-                        <SelectItem value="SOC Ltd">State-Owned Company SOC Ltd</SelectItem>
-                        <SelectItem value="CC">Close Corporation CC</SelectItem>
+                      <SelectContent className="text-[11px]">
+                        <SelectItem value="(Pty) Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Private Company (Pty) Ltd</SelectItem>
+                        <SelectItem value="Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Public Company Ltd</SelectItem>
+                        <SelectItem value="Inc" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Personal Liability Company Inc</SelectItem>
+                        <SelectItem value="NPC" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Non-Profit Company NPC</SelectItem>
+                        <SelectItem value="SOC Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">State-Owned Company SOC Ltd</SelectItem>
+                        <SelectItem value="CC" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Close Corporation CC</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1420,7 +1451,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1453,7 +1484,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Representative</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1498,7 +1529,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "companyAddress" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">Company Address</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">Company Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -1516,7 +1547,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       </Button>
                     </div>
                   </div>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="flex flex-col gap-7">
                   <div className="grid grid-cols-2 gap-6 items-start">
@@ -1618,13 +1649,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <SelectTrigger
                           id="province"
                           aria-label="Province"
-                          className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
+                          className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                         >
                           <SelectValue placeholder="Choose province" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="text-[11px]">
                           {southAfricanProvinces.map((province) => (
-                            <SelectItem key={province} value={province}>
+                            <SelectItem
+                              key={province}
+                              value={province}
+                              className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                            >
                               {province}
                             </SelectItem>
                           ))}
@@ -1645,13 +1680,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <SelectTrigger
                           id="postal_province"
                           aria-label="Postal Province"
-                          className="bg-white border-slate-300 text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400"
+                          className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                         >
                           <SelectValue placeholder="Choose province" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="text-[11px]">
                           {southAfricanProvinces.map((province) => (
-                            <SelectItem key={province} value={province}>
+                            <SelectItem
+                              key={province}
+                              value={province}
+                              className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                            >
                               {province}
                             </SelectItem>
                           ))}
@@ -1703,13 +1742,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "auth" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">Authentication</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">Authentication</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Change your password here whenever you need to keep your account secure.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Reset Password</h4>
-                  <div className="h-px w-full bg-blue-200" />
+                  <div className="h-[0.5px] w-full bg-blue-600" />
                 </div>
                 <div className="grid max-w-[760px] grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -1771,16 +1810,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "companySetup" && (
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="flex h-full min-h-0 flex-col" onClickCapture={handleCompanySetupClickCapture}>
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-slate-900">Company Setup</h3>
+                    <h3 className="text-[20px] font-semibold text-slate-900">Company Setup</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Enable branch management to organize employees by location and assign them to the correct operating unit across your business.</p>
                   </div>
-                  <div className="mt-3 h-[430px] overflow-y-auto px-3 py-3">
-                    <div className="flex flex-col gap-5">
+                  <div className="mt-3 h-[410px] rounded-sm bg-white">
+                    <div className="h-full overflow-y-auto py-3">
+                      <div className="flex flex-col gap-5">
                   <div className="space-y-1 pt-3">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Branches</h4>
-                    <div className="h-px w-full bg-blue-200" />
+                    <div className="h-[0.5px] w-full bg-blue-600" />
                   </div>
                   <div className="flex flex-col gap-7">
                       <div className="flex items-center gap-2">
@@ -1788,6 +1828,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           id="branches_enabled"
                           className="-mt-0.5 scale-90 data-[state=checked]:!bg-blue-600 data-[state=unchecked]:!bg-slate-300"
                           checked={branchSettings.branches_enabled}
+                          disabled={branchEditMode}
                           onCheckedChange={(checked) => {
                             setBranchSettings((prev) => ({
                               ...prev,
@@ -1816,6 +1857,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400"
                                     placeholder="Search branches"
                                     value={branchSearchQuery}
+                                    disabled={branchEditMode}
                                     onChange={(e) => setBranchSearchQuery(e.target.value)}
                                     onFocus={() => setBranchSearchFocused(true)}
                                     onBlur={() => setBranchSearchFocused(false)}
@@ -1828,6 +1870,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                   <Button
                                     type="button"
                                     onClick={branchEditMode ? handleCancelBranchAction : handleOpenEditBranchModal}
+                                    data-branch-edit-allowed="true"
                                     className={`h-7 w-[64px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] ${
                                       branchEditMode
                                         ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
@@ -1844,6 +1887,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       setBranchForm(emptyBranchForm);
                                       setShowBranchForm(true);
                                     }}
+                                    disabled={branchEditMode}
                                     className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                       showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
                                     }`}
@@ -1862,6 +1906,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     setBranchForm(emptyBranchForm);
                                     setShowBranchForm(true);
                                   }}
+                                  disabled={branchEditMode}
                                   className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                     showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
                                   }`}
@@ -1872,62 +1917,66 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             )}
 
                             {branchSettings.branches.length > 0 ? (
-                              <div
-                                className={`relative rounded border bg-white px-3 pb-2 pt-3 ${
-                                  branchEditMode ? "border-blue-600" : "border-slate-300"
-                                }`}
-                              >
-                                <span
-                                  className={`pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none ${
-                                    branchEditMode ? "text-slate-900" : "text-slate-500"
+                              <>
+                                <div
+                                  data-branch-edit-allowed="true"
+                                  className={`relative rounded border bg-white px-3 pb-2 pt-3 ${
+                                    branchEditMode ? "border-blue-600" : "border-slate-300"
                                   }`}
                                 >
-                                  Branch List
-                                </span>
-                                <div className="max-h-[130px] overflow-y-auto pt-1">
-                                  <div className="flex flex-wrap gap-2">
-                                    {branchSettings.branches
-                                      .filter((branchEntry) =>
-                                        branchEntry.name.toLowerCase().includes(branchSearchQuery.trim().toLowerCase()),
-                                      )
-                                      .map((branchEntry) => (
-                                      <Badge
-                                        key={branchEntry.name}
-                                        variant="outline"
-                                        className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
-                                          branchEditMode
-                                            ? selectedBranchToEdit === branchEntry.name
-                                              ? "cursor-pointer border-blue-600 bg-blue-600 text-white"
-                                              : "cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                                            : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-50"
-                                        }`}
-                                        onClick={
-                                          branchEditMode
-                                            ? () => handleSelectBranchForEdit(branchEntry.name)
-                                            : undefined
-                                        }
-                                      >
-                                        <span>{branchEntry.name}</span>
-                                        {!branchEditMode ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleRemoveBranch(branchEntry.name)}
-                                            className="ml-1 inline-flex items-center text-blue-600 hover:text-blue-800"
-                                            aria-label={`Remove ${branchEntry.name}`}
-                                          >
-                                            <X className="h-3.5 w-3.5" />
-                                          </button>
-                                        ) : null}
-                                      </Badge>
-                                    ))}
+                                  <span
+                                    className={`pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none ${
+                                      branchEditMode ? "text-slate-900" : "text-slate-500"
+                                    }`}
+                                  >
+                                    Branch List
+                                  </span>
+                                  <div className="max-h-[130px] overflow-y-auto pt-1">
+                                    <div className="flex flex-wrap gap-2">
+                                      {branchSettings.branches
+                                        .filter((branchEntry) =>
+                                          branchEntry.name.toLowerCase().includes(branchSearchQuery.trim().toLowerCase()),
+                                        )
+                                        .map((branchEntry) => (
+                                        <Badge
+                                          data-branch-edit-allowed="true"
+                                          key={branchEntry.name}
+                                          variant="outline"
+                                          className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
+                                            branchEditMode
+                                              ? selectedBranchToEdit === branchEntry.name
+                                                ? "cursor-pointer border-blue-600 bg-blue-600 text-white"
+                                                : "cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                              : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-50"
+                                          }`}
+                                          onClick={
+                                            branchEditMode
+                                              ? () => handleSelectBranchForEdit(branchEntry.name)
+                                              : undefined
+                                          }
+                                        >
+                                          <span>{branchEntry.name}</span>
+                                          {!branchEditMode ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveBranch(branchEntry.name)}
+                                              className="ml-1 inline-flex items-center text-blue-600 hover:text-blue-800"
+                                              aria-label={`Remove ${branchEntry.name}`}
+                                            >
+                                              <X className="h-3.5 w-3.5" />
+                                            </button>
+                                          ) : null}
+                                        </Badge>
+                                      ))}
+                                    </div>
                                   </div>
                                 </div>
                                 {branchEditMode ? (
-                                  <p className="mt-1 text-[10px] text-slate-500">
+                                  <p className="mt-[-10px] text-[10px] text-slate-500">
                                     Please select any of the listed branches to edit.
                                   </p>
                                 ) : null}
-                              </div>
+                              </>
                             ) : null}
                           </div>
 
@@ -1935,7 +1984,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       ) : null}
                       <div className="space-y-1 pt-3">
                         <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Departments</h4>
-                        <div className="h-px w-full bg-blue-200" />
+                        <div className="h-[0.5px] w-full bg-blue-600" />
                       </div>
                       <div className="relative w-full max-w-none">
                         <span className={floatingLabelClass}>Departments</span>
@@ -1943,35 +1992,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           placeholder="Click to view or add departments"
                           aria-label="Departments"
                           readOnly
+                          disabled={branchEditMode}
                         />
                       </div>
                     </div>
+                    </div>
                   </div>
-                  {branchEditMode || shouldShowCompanySetupPrimaryAction ? (
-                    <div className="mt-3 border-t border-slate-100 bg-white pt-4 pb-1">
+                  {!branchEditMode && shouldShowCompanySetupPrimaryAction ? (
+                    <div className={settingsActionRowClass}>
                       <div className="flex justify-center gap-2">
-                        {branchEditMode ? (
-                          <Button
-                            type="button"
-                            onClick={handleCancelBranchAction}
-                            disabled={branchSaving}
-                            variant="outline"
-                            className="h-8 min-w-[108px] rounded border-slate-300 px-3 text-[11px] text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Cancel
-                          </Button>
-                        ) : null}
-                        {shouldShowCompanySetupPrimaryAction ? (
-                          <Button
-                            type="button"
-                            onClick={handleBranchSettingsUpdate}
-                            disabled={branchSaving}
-                            className={popupActionButtonClass}
-                          >
-                            {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Changes
-                          </Button>
-                        ) : null}
+                        <Button
+                          type="button"
+                          onClick={handleBranchSettingsUpdate}
+                          disabled={branchSaving}
+                          className={popupActionButtonClass}
+                        >
+                          {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Save Changes
+                        </Button>
                       </div>
                     </div>
                   ) : null}
@@ -1984,27 +2022,29 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     }}
                   >
                     <DialogContent
-                      className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                      className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
                       onCloseAutoFocus={(event) => event.preventDefault()}
                     >
-                      <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-                        <div className="flex items-center gap-2 pl-2">
-                          <Building2 className="h-4 w-4 text-white" />
-                          <DialogTitle className="text-sm font-semibold text-white">New Branch</DialogTitle>
+                      <div className="relative">
+                        <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                          <div className="flex items-center gap-2 pl-2">
+                            <Building2 className="h-4 w-4 text-white" />
+                            <DialogTitle className="text-sm font-semibold text-white">New Branch</DialogTitle>
+                          </div>
+                          <DialogClose asChild>
+                            <button type="button" className="text-white hover:text-white/80" aria-label="Close new branch popup">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </DialogClose>
                         </div>
-                        <DialogClose asChild>
-                          <button type="button" className="text-white hover:text-white/80" aria-label="Close new branch popup">
-                            <X className="h-4 w-4" />
-                          </button>
-                        </DialogClose>
-                      </div>
+                        <div className="mt-[46px] bg-white">
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
                           const added = handleAddBranch();
                           if (added) setShowBranchForm(false);
                         }}
-                        className="space-y-4 px-6 pb-6 pt-4"
+                        className="space-y-4 px-6 pb-6 pt-[26px]"
                       >
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                           <div className="relative w-full max-w-none">
@@ -2069,7 +2109,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             >
                               <SelectTrigger
                                 aria-label="Branch province"
-                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300"
+                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                               >
                                 <SelectValue placeholder="Please select province" />
                               </SelectTrigger>
@@ -2121,6 +2161,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           </Button>
                         </div>
                       </form>
+                        </div>
+                      </div>
                     </DialogContent>
                   </Dialog>
 
@@ -2134,34 +2176,30 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       }
                     }}
                   >
-                    <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden">
-                      <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-                        <div className="flex items-center gap-2 pl-2">
-                          <Pencil className="h-4 w-4 text-white" />
-                          <DialogTitle className="text-sm font-semibold text-white">
-                            {selectedBranchToEdit ? `Edit ${selectedBranchToEdit}` : "Edit Branch"}
-                          </DialogTitle>
+                    <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+                      <div className="relative">
+                        <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                          <div className="flex items-center gap-2 pl-2">
+                            <Pencil className="h-4 w-4 text-white" />
+                            <DialogTitle className="text-sm font-semibold text-white">
+                              {selectedBranchToEdit ? `Edit ${selectedBranchToEdit}` : "Edit Branch"}
+                            </DialogTitle>
+                          </div>
+                          <DialogClose asChild>
+                            <button type="button" className="text-white hover:text-white/80" aria-label="Close edit branches popup">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </DialogClose>
                         </div>
-                        <DialogClose asChild>
-                          <button type="button" className="text-white hover:text-white/80" aria-label="Close edit branches popup">
-                            <X className="h-4 w-4" />
-                          </button>
-                        </DialogClose>
-                      </div>
+                        <div className="mt-[46px] bg-white">
 
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
                           handleApplyBranchEdit();
                         }}
-                        className="space-y-4 px-6 pb-6 pt-4"
+                        className="space-y-4 px-6 pb-6 pt-[26px]"
                       >
-                        <p
-                          aria-hidden="true"
-                          className="pointer-events-none select-none text-[11px] leading-relaxed text-transparent"
-                        >
-                          Complete the details below to create a new company branch and add it to your branch list.
-                        </p>
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                           <div className="relative w-full max-w-none">
                             <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
@@ -2225,7 +2263,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             >
                               <SelectTrigger
                                 aria-label="Edit branch province"
-                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300"
+                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                               >
                                 <SelectValue placeholder="Please select province" />
                               </SelectTrigger>
@@ -2278,6 +2316,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           </Button>
                         </div>
                       </form>
+                        </div>
+                      </div>
                     </DialogContent>
                   </Dialog>
                 </div>
@@ -2287,7 +2327,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "plan" && (
             <div className="space-y-4">
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-900">Subscription Plan</h3>
+                <h3 className="text-[20px] font-semibold text-slate-900">Subscription Plan</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Manage your subscription</p>
               </div>
               <div>
@@ -2307,13 +2347,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "personalize" && (
                 <div className="flex h-full flex-col space-y-5">
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-slate-900">Personalise</h3>
+                    <h3 className="text-[20px] font-semibold text-slate-900">Personalise</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Fine-tune how your documents look so every output feels more aligned with your brand and communication style.</p>
                   </div>
 
                   <div className="space-y-1 pt-3">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Logo</h4>
-                    <div className="h-px w-full bg-blue-200" />
+                    <div className="h-[0.5px] w-full bg-blue-600" />
                   </div>
 
                   <div
@@ -2432,20 +2472,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
             <Dialog open={isInviteSubuserOpen} onOpenChange={handleSubuserInviteDialogChange}>
               <DialogContent
-                className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-white [&>button]:hidden"
+                className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
                 onCloseAutoFocus={(event) => event.preventDefault()}
               >
-                <div className="flex items-center justify-between bg-[#2D4256] px-4 py-3 -mx-px -mt-px">
-                  <div className="flex items-center gap-2 pl-2">
-                    <UserPlus className="h-4 w-4 text-white" />
-                    <DialogTitle className="text-sm font-semibold text-white">Add Subuser</DialogTitle>
+                <div className="relative">
+                  <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                    <div className="flex items-center gap-2 pl-2">
+                      <UserPlus className="h-4 w-4 text-white" />
+                      <DialogTitle className="text-sm font-semibold text-white">Add Subuser</DialogTitle>
+                    </div>
+                    <DialogClose asChild>
+                      <button type="button" className="text-white hover:text-white/80" aria-label="Close invite popup">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </DialogClose>
                   </div>
-                  <DialogClose asChild>
-                    <button type="button" className="text-white hover:text-white/80" aria-label="Close invite popup">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </DialogClose>
-                </div>
+                  <div className="mt-[46px] bg-white">
                 <div className="px-6 pt-0 pb-7"></div>
                 <form onSubmit={handleSubuserInviteSubmit} className="space-y-4 px-6 pb-6 pt-0">
                   <div className="w-full space-y-4">
@@ -2519,6 +2561,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     </Button>
                   </div>
                 </form>
+                  </div>
+                </div>
               </DialogContent>
             </Dialog>
 
@@ -2532,7 +2576,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   if (embedded) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-        <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-white p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
+        <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
           {content}
         </DialogContent>
       </Dialog>
@@ -2543,6 +2587,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 };
 
 export default Settings;
+
 
 
 

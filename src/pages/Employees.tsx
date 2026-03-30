@@ -1416,15 +1416,22 @@ const Employees = () => {
 
   const fetchCompanyBranches = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await (supabase as any)
-      .from("profiles")
-      .select("branches_enabled, branches")
-      .eq("id", user.id)
-      .maybeSingle();
+    const [{ data: profileData, error: profileError }, { data: branchRows, error: branchError }] = await Promise.all([
+      (supabase as any)
+        .from("profiles")
+        .select("branches_enabled, branches")
+        .eq("id", user.id)
+        .maybeSingle(),
+      (supabase as any)
+        .from("branches")
+        .select("name")
+        .eq("company_id", user.id)
+        .order("name", { ascending: true }),
+    ]);
 
-    if (error) {
-      const message = (error as { message?: string } | null)?.message ?? "";
-      const isBranchColumnMissing = message.includes("branches_enabled") || message.includes("branches");
+    if (profileError) {
+      const message = (profileError as { message?: string } | null)?.message ?? "";
+      const isBranchColumnMissing = message.includes("branches_enabled");
       if (!isBranchColumnMissing) {
         toast({
           title: "Error",
@@ -1437,8 +1444,14 @@ const Employees = () => {
       return;
     }
 
-    const loadedBranches = Array.isArray(data?.branches)
-      ? data.branches
+    const branchesFromTable = Array.isArray(branchRows)
+      ? branchRows
+          .map((row: any) => String(row?.name ?? "").trim())
+          .filter(Boolean)
+      : [];
+
+    const legacyBranches = Array.isArray(profileData?.branches)
+      ? profileData.branches
           .map((value: unknown) => {
             if (typeof value === "string") {
               const raw = value.trim();
@@ -1460,8 +1473,22 @@ const Employees = () => {
           })
           .filter(Boolean)
       : [];
-    setCompanyBranchesEnabled(Boolean(data?.branches_enabled));
-    setCompanyBranches(Array.from(new Set(loadedBranches)));
+
+    if (branchError) {
+      const message = String((branchError as { message?: string } | null)?.message ?? "").toLowerCase();
+      const isTableMissing = message.includes("relation") && message.includes("branches");
+      if (!isTableMissing) {
+        toast({
+          title: "Error",
+          description: "Could not load branch list.",
+          variant: "destructive",
+        });
+      }
+    }
+
+    const nextBranches = branchesFromTable.length > 0 ? branchesFromTable : legacyBranches;
+    setCompanyBranchesEnabled(Boolean(profileData?.branches_enabled));
+    setCompanyBranches(Array.from(new Set(nextBranches)));
   }, [toast, user]);
 
   useEffect(() => {

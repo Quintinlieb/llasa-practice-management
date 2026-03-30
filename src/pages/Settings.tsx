@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,6 +78,17 @@ type SubuserInviteForm = {
   email: string;
 };
 
+type BranchAllocationEmployee = {
+  id: string;
+  employee_name: string;
+  employee_surname: string;
+  id_number: string;
+  branch: string;
+};
+
+type SettingsTab = "user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize";
+type ProfileDataGroup = "user" | "company" | "branches" | "personalize";
+
 const emptyUserDetails: UserDetailsForm = {
   user_name: "",
   user_surname: "",
@@ -127,11 +138,147 @@ const emptySubuserInviteForm: SubuserInviteForm = {
   email: "",
 };
 
+type SettingsProfileCache = {
+  userDetails?: UserDetailsForm;
+  companyDetails?: CompanyDetailsForm;
+  branchSettings?: BranchSettingsForm;
+  personalise?: {
+    preview: string;
+    layout: "vertical" | "horizontal" | null;
+  };
+  loadedGroups: Set<ProfileDataGroup>;
+};
+
+const settingsProfileCacheByUser = new Map<string, SettingsProfileCache>();
+let personalizeColumnsSupported: boolean | null = null;
+
+const tabToProfileGroup: Record<SettingsTab, ProfileDataGroup | null> = {
+  user: "user",
+  subusers: null,
+  company: "company",
+  companyAddress: "company",
+  companySetup: "branches",
+  auth: null,
+  plan: null,
+  personalize: "personalize",
+};
+
+const profileGroupToTabs: Record<ProfileDataGroup, SettingsTab[]> = {
+  user: ["user"],
+  company: ["company", "companyAddress"],
+  branches: ["companySetup"],
+  personalize: ["personalize"],
+};
+
+const emptyTabLoadingState: Record<SettingsTab, boolean> = {
+  user: false,
+  subusers: false,
+  company: false,
+  companyAddress: false,
+  companySetup: false,
+  auth: false,
+  plan: false,
+  personalize: false,
+};
+
+const allSettingsTabs: SettingsTab[] = ["user", "subusers", "company", "companyAddress", "companySetup", "auth", "plan", "personalize"];
+
+const parseAddressParts = (address: string) => {
+  const addressParts = (address || "")
+    .split(/,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const hasFourParts = addressParts.length === 4;
+
+  return {
+    physical_address_line1: hasFourParts ? "" : addressParts[0] || "",
+    physical_address_line2: hasFourParts ? addressParts[0] || "" : addressParts[1] || "",
+    city: hasFourParts ? addressParts[1] || "" : addressParts[2] || "",
+    province: hasFourParts ? addressParts[2] || "" : addressParts[3] || "",
+    area_code: hasFourParts ? addressParts[3] || "" : addressParts[4] || "",
+  };
+};
+
+const parsePostalAddressParts = (postalAddress: string) => {
+  const postalAddressParts = (postalAddress || "")
+    .split(/,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const postalHasFiveParts = postalAddressParts.length >= 5;
+  const postalHasFourParts = postalAddressParts.length === 4;
+
+  return {
+    postal_address_line1: postalAddressParts[0] || "",
+    postal_address_line2: postalHasFiveParts ? postalAddressParts[1] || "" : "",
+    postal_city: postalHasFiveParts ? postalAddressParts[2] || "" : postalHasFourParts ? postalAddressParts[1] || "" : "",
+    postal_province: postalHasFiveParts ? postalAddressParts[3] || "" : postalHasFourParts ? postalAddressParts[2] || "" : "",
+    postal_area_code: postalHasFiveParts ? postalAddressParts[4] || "" : postalHasFourParts ? postalAddressParts[3] || "" : "",
+  };
+};
+
+const parseBranchValues = (branches: unknown): BranchEntry[] =>
+  Array.isArray(branches)
+    ? branches
+        .map((value: unknown) => {
+          if (typeof value === "string") {
+            const raw = value.trim();
+            let name = raw;
+            let addressLine1 = "";
+            let addressLine2 = "";
+            let city = "";
+            let province = "";
+            let areaCode = "";
+            if (raw.startsWith("{") && raw.endsWith("}")) {
+              try {
+                const parsed = JSON.parse(raw) as Record<string, unknown>;
+                name = String(parsed.name ?? "").trim() || raw;
+                addressLine1 = String(parsed.address_line1 ?? "").trim();
+                addressLine2 = String(parsed.address_line2 ?? "").trim();
+                city = String(parsed.city ?? "").trim();
+                province = String(parsed.province ?? "").trim();
+                areaCode = String(parsed.area_code ?? "").trim();
+              } catch {
+                // Keep raw string fallback for legacy values.
+              }
+            }
+            if (!name) return null;
+            return {
+              name,
+              address_line1: addressLine1,
+              address_line2: addressLine2,
+              city,
+              province,
+              area_code: areaCode,
+            } as BranchEntry;
+          }
+          if (value && typeof value === "object") {
+            const record = value as Record<string, unknown>;
+            const name = String(record.name ?? "").trim();
+            if (!name) return null;
+            return {
+              name,
+              address_line1: String(record.address_line1 ?? "").trim(),
+              address_line2: String(record.address_line2 ?? "").trim(),
+              city: String(record.city ?? "").trim(),
+              province: String(record.province ?? "").trim(),
+              area_code: String(record.area_code ?? "").trim(),
+            } as BranchEntry;
+          }
+          return null;
+        })
+        .filter((value): value is BranchEntry => Boolean(value))
+    : [];
+
+const isPersonalizeColumnError = (error: unknown) => {
+  const err = error as { code?: string; message?: string } | null;
+  const message = String(err?.message || "").toLowerCase();
+  return err?.code === "42703" || (message.includes("column") && message.includes("company_logo"));
+};
+
 const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -161,7 +308,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   });
 
   const [passwordError, setPasswordError] = useState("");
-  const [settingsTab, setSettingsTab] = useState<"user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize">("user");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("user");
   const [personaliseLogoLayout, setPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
   const [personaliseLogoPreview, setPersonaliseLogoPreview] = useState("");
   const [initialPersonaliseLogoLayout, setInitialPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
@@ -170,9 +317,21 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [isInviteSubuserOpen, setIsInviteSubuserOpen] = useState(false);
   const [subuserInviteForm, setSubuserInviteForm] = useState<SubuserInviteForm>(emptySubuserInviteForm);
   const [subuserInviteSubmitting, setSubuserInviteSubmitting] = useState(false);
+  const [isBranchAllocationOpen, setIsBranchAllocationOpen] = useState(false);
+  const [branchAllocationEmployees, setBranchAllocationEmployees] = useState<BranchAllocationEmployee[]>([]);
+  const [branchAllocationLoading, setBranchAllocationLoading] = useState(false);
+  const [branchAllocationSubmitting, setBranchAllocationSubmitting] = useState(false);
+  const [branchAllocationSearchQuery, setBranchAllocationSearchQuery] = useState("");
+  const [branchAllocationSelectedBranch, setBranchAllocationSelectedBranch] = useState("");
+  const [branchAllocationSelectedEmployeeIds, setBranchAllocationSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [branchAllocationAssignedOnly, setBranchAllocationAssignedOnly] = useState(false);
+  const [allocatedBranches, setAllocatedBranches] = useState<string[]>([]);
+  const [tabLoading, setTabLoading] = useState<Record<SettingsTab, boolean>>(emptyTabLoadingState);
+  const loadedGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
+  const loadingGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const personaliseLogoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const settingsTabs: Array<{ value: "user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize"; label: string; icon: LucideIcon }> = [
+  const settingsTabs: Array<{ value: SettingsTab; label: string; icon: LucideIcon }> = [
     { value: "user", label: "User Details", icon: User },
     { value: "subusers", label: "Subusers", icon: Users },
     { value: "company", label: "Company Profile", icon: Building2 },
@@ -194,157 +353,361 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     subuserInviteForm.surname.trim().length > 0 &&
     subuserInviteForm.contact_number.trim().length > 0 &&
     subuserInviteForm.email.trim().length > 0;
+  const branchNames = useMemo(
+    () =>
+      branchSettings.branches
+        .map((item) => item.name.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [branchSettings.branches],
+  );
+  const branchAllocationFilteredEmployees = useMemo(() => {
+    const query = branchAllocationSearchQuery.trim().toLowerCase();
+    return branchAllocationEmployees.filter((employee) => {
+      const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
+      const employeeBranchNormalized = employee.branch.trim().toLowerCase();
+      const matchesAssignment = branchAllocationAssignedOnly
+        ? selectedBranchNormalized.length > 0 && employeeBranchNormalized === selectedBranchNormalized
+        : true;
+      if (!matchesAssignment) return false;
+      if (!query) return true;
+      const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().toLowerCase();
+      return (
+        fullName.includes(query) ||
+        employee.id_number.toLowerCase().includes(query) ||
+        employee.branch.toLowerCase().includes(query)
+      );
+    });
+  }, [branchAllocationAssignedOnly, branchAllocationEmployees, branchAllocationSearchQuery, branchAllocationSelectedBranch]);
+  const branchAllocationFilteredIds = useMemo(
+    () => branchAllocationFilteredEmployees.map((employee) => employee.id),
+    [branchAllocationFilteredEmployees],
+  );
+  const branchAllocationSelectableCount = branchAllocationFilteredIds.length;
 
-  useEffect(() => {
-    if (user) {
-      fetchProfile();
+  const setGroupLoading = useCallback((group: ProfileDataGroup, value: boolean) => {
+    setTabLoading((prev) => {
+      const next = { ...prev };
+      for (const tab of profileGroupToTabs[group]) {
+        next[tab] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  const applyCachedData = useCallback((cached: SettingsProfileCache | undefined) => {
+    if (!cached) return;
+    if (cached.userDetails) {
+      setUserDetails(cached.userDetails);
+      setInitialUserDetails(cached.userDetails);
     }
-  }, [user]);
+    if (cached.companyDetails) {
+      setCompanyDetails(cached.companyDetails);
+      setInitialCompanyDetails(cached.companyDetails);
+    }
+    if (cached.branchSettings) {
+      setBranchSettings(cached.branchSettings);
+      setInitialBranchSettings(cached.branchSettings);
+    }
+    if (cached.personalise) {
+      setPersonaliseLogoPreview(cached.personalise.preview);
+      setInitialPersonaliseLogoPreview(cached.personalise.preview);
+      setPersonaliseLogoLayout(cached.personalise.layout);
+      setInitialPersonaliseLogoLayout(cached.personalise.layout);
+    }
+  }, []);
 
-  const fetchProfile = async () => {
+  const ensureTabDataLoaded = useCallback(async (tab: SettingsTab) => {
     if (!user) return;
+    const group = tabToProfileGroup[tab];
+    if (!group) return;
 
-    const baseProfileSelect =
-      "user_name, user_surname, user_email, user_contact, company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email, branches_enabled, branches";
-    const profileSelectWithPersonalise = `${baseProfileSelect}, company_logo_data_url, company_logo_layout`;
+    const cached = settingsProfileCacheByUser.get(user.id);
+    if (cached?.loadedGroups.has(group) || loadedGroupsRef.current.has(group)) return;
+    if (loadingGroupsRef.current.has(group)) return;
 
-    const withPersonalise = await (supabase as any)
-      .from("profiles")
-      .select(profileSelectWithPersonalise)
-      .eq("id", user.id)
-      .maybeSingle();
-    const fallbackWithoutPersonalise = withPersonalise.error
-      ? await (supabase as any)
+    loadingGroupsRef.current.add(group);
+    setGroupLoading(group, true);
+
+    try {
+      if (group === "user") {
+        const { data, error } = await supabase
           .from("profiles")
-          .select(baseProfileSelect)
+          .select("user_name, user_surname, user_email, user_contact")
           .eq("id", user.id)
-          .maybeSingle()
-      : null;
-    const data = withPersonalise.error ? fallbackWithoutPersonalise?.data : withPersonalise.data;
-    const error = withPersonalise.error ? fallbackWithoutPersonalise?.error : withPersonalise.error;
+          .maybeSingle();
 
-    if (error) {
+        if (error) throw error;
+        if (!data) return;
+
+        const nextUserDetails: UserDetailsForm = {
+          user_name: data.user_name || "",
+          user_surname: data.user_surname || "",
+          user_email: data.user_email || "",
+          user_contact: data.user_contact || "",
+        };
+
+        setUserDetails(nextUserDetails);
+        setInitialUserDetails(nextUserDetails);
+        const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+        nextCache.userDetails = nextUserDetails;
+        nextCache.loadedGroups.add(group);
+        settingsProfileCacheByUser.set(user.id, nextCache);
+        loadedGroupsRef.current.add(group);
+        return;
+      }
+
+      if (group === "company") {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return;
+
+        const physicalAddress = parseAddressParts(data.physical_address || "");
+        const postalAddress = parsePostalAddressParts(data.postal_address || "");
+        const nextCompanyDetails: CompanyDetailsForm = {
+          company_type: data.company_type ?? "",
+          company_name: data.company_name || "",
+          registration_number: data.registration_number || "",
+          vat_number: data.vat_number || "",
+          ...physicalAddress,
+          ...postalAddress,
+          representative_name: data.representative_name || "",
+          representative_surname: data.representative_surname || "",
+          company_contact: data.company_contact || "",
+          company_email: data.company_email || "",
+        };
+
+        setCompanyDetails(nextCompanyDetails);
+        setInitialCompanyDetails(nextCompanyDetails);
+        const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+        nextCache.companyDetails = nextCompanyDetails;
+        nextCache.loadedGroups.add(group);
+        settingsProfileCacheByUser.set(user.id, nextCache);
+        loadedGroupsRef.current.add(group);
+        return;
+      }
+
+      if (group === "branches") {
+        const [{ data: profileData, error: profileError }, { data: branchRows, error: branchError }] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("branches_enabled, branches")
+            .eq("id", user.id)
+            .maybeSingle(),
+          (supabase as any)
+            .from("branches")
+            .select("name, address_line1, address_line2, city, province, area_code")
+            .eq("company_id", user.id)
+            .order("name", { ascending: true }),
+        ]);
+
+        if (profileError) throw profileError;
+        if (!profileData) return;
+        if (branchError) {
+          const message = String((branchError as { message?: string } | null)?.message || "").toLowerCase();
+          const isTableMissing = message.includes("relation") && message.includes("branches");
+          if (!isTableMissing) throw branchError;
+        }
+
+        const branchesFromTable: BranchEntry[] = Array.isArray(branchRows)
+          ? branchRows
+              .map((item: any) => ({
+                name: String(item?.name ?? "").trim(),
+                address_line1: String(item?.address_line1 ?? "").trim(),
+                address_line2: String(item?.address_line2 ?? "").trim(),
+                city: String(item?.city ?? "").trim(),
+                province: String(item?.province ?? "").trim(),
+                area_code: String(item?.area_code ?? "").trim(),
+              }))
+              .filter((item) => item.name.length > 0)
+          : [];
+
+        const nextBranchSettings: BranchSettingsForm = {
+          branches_enabled: Boolean(profileData.branches_enabled),
+          branches: branchesFromTable.length > 0 ? branchesFromTable : parseBranchValues(profileData.branches),
+        };
+
+        setBranchSettings(nextBranchSettings);
+        setInitialBranchSettings(nextBranchSettings);
+        const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+        nextCache.branchSettings = nextBranchSettings;
+        nextCache.loadedGroups.add(group);
+        settingsProfileCacheByUser.set(user.id, nextCache);
+        loadedGroupsRef.current.add(group);
+        return;
+      }
+
+      if (group === "personalize") {
+        if (personalizeColumnsSupported === false) {
+          loadedGroupsRef.current.add(group);
+          const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+          nextCache.loadedGroups.add(group);
+          settingsProfileCacheByUser.set(user.id, nextCache);
+          return;
+        }
+
+        const { data, error } = await (supabase as any)
+          .from("profiles")
+          .select("company_logo_data_url, company_logo_layout")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          if (isPersonalizeColumnError(error)) {
+            personalizeColumnsSupported = false;
+            loadedGroupsRef.current.add(group);
+            const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+            nextCache.loadedGroups.add(group);
+            settingsProfileCacheByUser.set(user.id, nextCache);
+            return;
+          }
+          throw error;
+        }
+
+        personalizeColumnsSupported = true;
+        const preview = (((data as any)?.company_logo_data_url ?? "") as string).trim();
+        const rawLayout = (((data as any)?.company_logo_layout ?? "") as string).trim().toLowerCase();
+        const layout = rawLayout === "vertical" || rawLayout === "horizontal" ? rawLayout : null;
+
+        setPersonaliseLogoPreview(preview);
+        setInitialPersonaliseLogoPreview(preview);
+        setPersonaliseLogoLayout(layout);
+        setInitialPersonaliseLogoLayout(layout);
+        const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+        nextCache.personalise = { preview, layout };
+        nextCache.loadedGroups.add(group);
+        settingsProfileCacheByUser.set(user.id, nextCache);
+        loadedGroupsRef.current.add(group);
+      }
+    } catch (error) {
       toast({
         title: "Error",
         description: "Failed to load profile",
         variant: "destructive",
       });
-    } else if (data) {
-      const addressParts = (data.physical_address || "")
-        .split(/,\s*/)
-        .map((part) => part.trim())
-        .filter(Boolean);
-      const postalAddressParts = (data.postal_address || "")
-        .split(/,\s*/)
-        .map((part) => part.trim())
-        .filter(Boolean);
-      const hasFourParts = addressParts.length === 4;
-      const postalHasFiveParts = postalAddressParts.length >= 5;
-      const postalHasFourParts = postalAddressParts.length === 4;
-      const nextUserDetails: UserDetailsForm = {
-        user_name: data.user_name,
-        user_surname: data.user_surname,
-        user_email: data.user_email,
-        user_contact: data.user_contact,
-      };
-      setUserDetails(nextUserDetails);
-      setInitialUserDetails(nextUserDetails);
-      const nextCompanyDetails: CompanyDetailsForm = {
-        company_type: data.company_type ?? "",
-        company_name: data.company_name,
-        registration_number: data.registration_number,
-        vat_number: data.vat_number || "",
-        physical_address_line1: hasFourParts ? "" : addressParts[0] || "",
-        physical_address_line2: hasFourParts ? addressParts[0] || "" : addressParts[1] || "",
-        city: hasFourParts ? addressParts[1] || "" : addressParts[2] || "",
-        province: hasFourParts ? addressParts[2] || "" : addressParts[3] || "",
-        area_code: hasFourParts ? addressParts[3] || "" : addressParts[4] || "",
-        postal_address_line1: postalAddressParts[0] || "",
-        postal_address_line2: postalHasFiveParts ? postalAddressParts[1] || "" : "",
-        postal_city: postalHasFiveParts ? postalAddressParts[2] || "" : postalHasFourParts ? postalAddressParts[1] || "" : "",
-        postal_province: postalHasFiveParts ? postalAddressParts[3] || "" : postalHasFourParts ? postalAddressParts[2] || "" : "",
-        postal_area_code: postalHasFiveParts ? postalAddressParts[4] || "" : postalHasFourParts ? postalAddressParts[3] || "" : "",
-        representative_name: data.representative_name,
-        representative_surname: data.representative_surname,
-        company_contact: data.company_contact,
-        company_email: data.company_email,
-      };
-      setCompanyDetails(nextCompanyDetails);
-      setInitialCompanyDetails(nextCompanyDetails);
-      const branchValues: BranchEntry[] = Array.isArray(data.branches)
-        ? data.branches
-            .map((value: unknown) => {
-              if (typeof value === "string") {
-                const raw = value.trim();
-                let name = raw;
-                let addressLine1 = "";
-                let addressLine2 = "";
-                let city = "";
-                let province = "";
-                let areaCode = "";
-                if (raw.startsWith("{") && raw.endsWith("}")) {
-                  try {
-                    const parsed = JSON.parse(raw) as Record<string, unknown>;
-                    name = String(parsed.name ?? "").trim() || raw;
-                    addressLine1 = String(parsed.address_line1 ?? "").trim();
-                    addressLine2 = String(parsed.address_line2 ?? "").trim();
-                    city = String(parsed.city ?? "").trim();
-                    province = String(parsed.province ?? "").trim();
-                    areaCode = String(parsed.area_code ?? "").trim();
-                  } catch {
-                    // Keep raw string fallback for legacy values.
-                  }
-                }
-                if (!name) return null;
-                return {
-                  name,
-                  address_line1: addressLine1,
-                  address_line2: addressLine2,
-                  city,
-                  province,
-                  area_code: areaCode,
-                } as BranchEntry;
-              }
-              if (value && typeof value === "object") {
-                const record = value as Record<string, unknown>;
-                const name = String(record.name ?? "").trim();
-                if (!name) return null;
-                return {
-                  name,
-                  address_line1: String(record.address_line1 ?? "").trim(),
-                  address_line2: String(record.address_line2 ?? "").trim(),
-                  city: String(record.city ?? "").trim(),
-                  province: String(record.province ?? "").trim(),
-                  area_code: String(record.area_code ?? "").trim(),
-                } as BranchEntry;
-              }
-              return null;
-            })
-            .filter((value): value is BranchEntry => Boolean(value))
-        : [];
-      const nextBranchSettings: BranchSettingsForm = {
-        branches_enabled: Boolean(data.branches_enabled),
-        branches: branchValues,
-      };
-      setBranchSettings(nextBranchSettings);
-      setInitialBranchSettings(nextBranchSettings);
-
-      const storedLogoDataUrl = (((data as any).company_logo_data_url ?? "") as string).trim();
-      const storedLogoLayoutRaw = (((data as any).company_logo_layout ?? "") as string).trim().toLowerCase();
-      const storedLogoLayout =
-        storedLogoLayoutRaw === "vertical" || storedLogoLayoutRaw === "horizontal"
-          ? storedLogoLayoutRaw
-          : null;
-      setPersonaliseLogoPreview(storedLogoDataUrl);
-      setInitialPersonaliseLogoPreview(storedLogoDataUrl);
-      setPersonaliseLogoLayout(storedLogoLayout);
-      setInitialPersonaliseLogoLayout(storedLogoLayout);
+    } finally {
+      loadingGroupsRef.current.delete(group);
+      setGroupLoading(group, false);
     }
-    setLoading(false);
-  };
+  }, [setGroupLoading, toast, user]);
 
-  const handleAddBranch = () => {
-    const normalizedName = branchForm.name.trim().replace(/\s+/g, " ");
+  useEffect(() => {
+    if (!user) return;
+
+    const cached = settingsProfileCacheByUser.get(user.id);
+    if (cached) {
+      loadedGroupsRef.current = new Set(cached.loadedGroups);
+      applyCachedData(cached);
+    } else {
+      loadedGroupsRef.current = new Set();
+    }
+
+    void ensureTabDataLoaded("user");
+
+    const backgroundTabs = allSettingsTabs.filter((tab) => tab !== "user");
+    const timer = window.setTimeout(() => {
+      for (const tab of backgroundTabs) {
+        void ensureTabDataLoaded(tab);
+      }
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [applyCachedData, ensureTabDataLoaded, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    void ensureTabDataLoaded(settingsTab);
+  }, [ensureTabDataLoaded, settingsTab, user]);
+
+  const persistBranchSettings = useCallback(
+    async (nextEnabled: boolean, nextBranches: BranchEntry[]) => {
+      if (!user) return false;
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          branches_enabled: nextEnabled,
+        })
+        .eq("id", user.id);
+
+      if (profileError) {
+        toast({
+          title: "Error",
+          description: getSafeErrorMessage(profileError),
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      const { error: deleteBranchesError } = await (supabase as any)
+        .from("branches")
+        .delete()
+        .eq("company_id", user.id);
+
+      if (deleteBranchesError) {
+        toast({
+          title: "Error",
+          description: getSafeErrorMessage(deleteBranchesError),
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      if (nextBranches.length > 0) {
+        const branchPayload = nextBranches.map((branch) => ({
+          company_id: user.id,
+          name: branch.name,
+          address_line1: branch.address_line1,
+          address_line2: branch.address_line2,
+          city: branch.city,
+          province: branch.province,
+          area_code: branch.area_code,
+        }));
+        const { error: insertBranchesError } = await (supabase as any)
+          .from("branches")
+          .insert(branchPayload);
+        if (insertBranchesError) {
+          toast({
+            title: "Error",
+            description: getSafeErrorMessage(insertBranchesError),
+            variant: "destructive",
+          });
+          return false;
+        }
+      }
+
+      return true;
+    },
+    [toast, user],
+  );
+
+  const applyLocalBranchSettings = useCallback(
+    (nextEnabled: boolean, nextBranches: BranchEntry[]) => {
+      const nextSettings: BranchSettingsForm = {
+        branches_enabled: nextEnabled,
+        branches: nextBranches,
+      };
+      setBranchSettings(nextSettings);
+      setInitialBranchSettings(nextSettings);
+      if (!user) return;
+      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+      cached.branchSettings = nextSettings;
+      cached.loadedGroups.add("branches");
+      settingsProfileCacheByUser.set(user.id, cached);
+    },
+    [user],
+  );
+
+  const handleAddBranch = async (sourceBranchForm?: BranchEntry) => {
+    const source = sourceBranchForm ?? branchForm;
+    const normalizedName = source.name.trim().replace(/\s+/g, " ");
     if (!normalizedName) return false;
     const duplicateExists = branchSettings.branches.some(
       (value) => value.name.toLowerCase() === normalizedName.toLowerCase(),
@@ -357,34 +720,42 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       });
       return false;
     }
-    setBranchSettings((prev) => ({
-      ...prev,
-      branches: [
-        ...prev.branches,
-        {
-          name: normalizedName,
-          address_line1: branchForm.address_line1.trim(),
-          address_line2: branchForm.address_line2.trim(),
-          city: branchForm.city.trim(),
-          province: branchForm.province.trim(),
-          area_code: branchForm.area_code.trim(),
-        },
-      ],
-    }));
+
+    const nextBranches = [
+      ...branchSettings.branches,
+      {
+        name: normalizedName,
+        address_line1: source.address_line1.trim(),
+        address_line2: source.address_line2.trim(),
+        city: source.city.trim(),
+        province: source.province.trim(),
+        area_code: source.area_code.trim(),
+      },
+    ];
+
+    setBranchSaving(true);
+    const persisted = await persistBranchSettings(branchSettings.branches_enabled, nextBranches);
+    setBranchSaving(false);
+    if (!persisted) return false;
+
+    applyLocalBranchSettings(branchSettings.branches_enabled, nextBranches);
     setBranchForm(emptyBranchForm);
     return true;
   };
 
-  const handleRemoveBranch = (branchNameToRemove: string) => {
+  const handleRemoveBranch = async (branchNameToRemove: string) => {
     const confirmed = confirm(
       `Are you sure you want to delete "${branchNameToRemove}"?`,
     );
     if (!confirmed) return;
 
-    setBranchSettings((prev) => ({
-      ...prev,
-      branches: prev.branches.filter((value) => value.name !== branchNameToRemove),
-    }));
+    const nextBranches = branchSettings.branches.filter((value) => value.name !== branchNameToRemove);
+    setBranchSaving(true);
+    const persisted = await persistBranchSettings(branchSettings.branches_enabled, nextBranches);
+    setBranchSaving(false);
+    if (!persisted) return;
+
+    applyLocalBranchSettings(branchSettings.branches_enabled, nextBranches);
 
     if (selectedBranchName === branchNameToRemove) {
       setSelectedBranchName(null);
@@ -426,7 +797,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setShowEditBranchForm(true);
   };
 
-  const handleApplyBranchEdit = () => {
+  const handleApplyBranchEdit = async () => {
     if (!selectedBranchToEdit) return;
     const originalName = selectedBranchToEdit.trim();
     const normalizedName = branchEditDraft.name.trim().replace(/\s+/g, " ");
@@ -453,25 +824,35 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       return;
     }
 
-    setBranchSettings((prev) => ({
-      ...prev,
-      branches: prev.branches.map((item) => {
-        if (item.name !== originalName) return item;
-        return {
-          name: normalizedName,
-          address_line1: branchEditDraft.address_line1.trim(),
-          address_line2: branchEditDraft.address_line2.trim(),
-          city: branchEditDraft.city.trim(),
-          province: branchEditDraft.province.trim(),
-          area_code: branchEditDraft.area_code.trim(),
-        };
-      }),
-    }));
+    const nextBranches = branchSettings.branches.map((item) => {
+      if (item.name !== originalName) return item;
+      return {
+        name: normalizedName,
+        address_line1: branchEditDraft.address_line1.trim(),
+        address_line2: branchEditDraft.address_line2.trim(),
+        city: branchEditDraft.city.trim(),
+        province: branchEditDraft.province.trim(),
+        area_code: branchEditDraft.area_code.trim(),
+      };
+    });
+
+    setBranchSaving(true);
+    const persisted = await persistBranchSettings(branchSettings.branches_enabled, nextBranches);
+    setBranchSaving(false);
+    if (!persisted) return;
+
+    applyLocalBranchSettings(branchSettings.branches_enabled, nextBranches);
 
     setShowEditBranchForm(false);
     setBranchEditMode(false);
     setSelectedBranchToEdit(null);
     setBranchEditDraft(emptyBranchForm);
+
+    if (selectedBranchName && selectedBranchName === originalName) {
+      const updatedSelected = nextBranches.find((item) => item.name === normalizedName) ?? null;
+      setSelectedBranchName(updatedSelected?.name ?? null);
+      setBranchForm(updatedSelected ?? emptyBranchForm);
+    }
   };
 
   const handleBranchSettingsUpdate = async () => {
@@ -536,41 +917,88 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       return acc;
     }, []);
 
-    const { error } = await supabase
+    const { error: profileError } = await supabase
       .from("profiles")
       .update({
         branches_enabled: branchSettings.branches_enabled,
-        branches: cleanedBranches,
-      } as any)
+      })
       .eq("id", user.id);
 
-    if (error) {
+    if (profileError) {
       toast({
         title: "Error",
-        description: getSafeErrorMessage(error),
+        description: getSafeErrorMessage(profileError),
         variant: "destructive",
       });
-    } else {
-      setBranchSettings((prev) => ({
-        ...prev,
-        branches: cleanedBranches,
-      }));
-      setInitialBranchSettings({
-        branches_enabled: branchSettings.branches_enabled,
-        branches: cleanedBranches,
-      });
-      if (branchEditMode && selectedNameNormalized) {
-        const updatedSelected =
-          cleanedBranches.find((item) => item.name.trim().toLowerCase() === normalizedFormName.toLowerCase()) ??
-          null;
-        setSelectedBranchName(updatedSelected?.name ?? null);
-        setBranchForm(updatedSelected ?? emptyBranchForm);
-      }
-      toast({
-        title: "Success",
-        description: "Branch settings updated successfully",
-      });
+      setBranchSaving(false);
+      return;
     }
+
+    const { error: deleteBranchesError } = await (supabase as any)
+      .from("branches")
+      .delete()
+      .eq("company_id", user.id);
+
+    if (deleteBranchesError) {
+      toast({
+        title: "Error",
+        description: getSafeErrorMessage(deleteBranchesError),
+        variant: "destructive",
+      });
+      setBranchSaving(false);
+      return;
+    }
+
+    if (cleanedBranches.length > 0) {
+      const branchPayload = cleanedBranches.map((branch) => ({
+        company_id: user.id,
+        name: branch.name,
+        address_line1: branch.address_line1,
+        address_line2: branch.address_line2,
+        city: branch.city,
+        province: branch.province,
+        area_code: branch.area_code,
+      }));
+      const { error: insertBranchesError } = await (supabase as any)
+        .from("branches")
+        .insert(branchPayload);
+      if (insertBranchesError) {
+        toast({
+          title: "Error",
+          description: getSafeErrorMessage(insertBranchesError),
+          variant: "destructive",
+        });
+        setBranchSaving(false);
+        return;
+      }
+    }
+
+    setBranchSettings((prev) => ({
+      ...prev,
+      branches: cleanedBranches,
+    }));
+    setInitialBranchSettings({
+      branches_enabled: branchSettings.branches_enabled,
+      branches: cleanedBranches,
+    });
+    const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+    cached.branchSettings = {
+      branches_enabled: branchSettings.branches_enabled,
+      branches: cleanedBranches,
+    };
+    cached.loadedGroups.add("branches");
+    settingsProfileCacheByUser.set(user.id, cached);
+    if (branchEditMode && selectedNameNormalized) {
+      const updatedSelected =
+        cleanedBranches.find((item) => item.name.trim().toLowerCase() === normalizedFormName.toLowerCase()) ??
+        null;
+      setSelectedBranchName(updatedSelected?.name ?? null);
+      setBranchForm(updatedSelected ?? emptyBranchForm);
+    }
+    toast({
+      title: "Success",
+      description: "Branch settings updated successfully",
+    });
 
     setBranchSaving(false);
   };
@@ -612,6 +1040,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         user_email: validated.userEmail,
         user_contact: validated.userContact,
       });
+      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+      cached.userDetails = {
+        user_name: validated.userName,
+        user_surname: validated.userSurname,
+        user_email: validated.userEmail,
+        user_contact: validated.userContact,
+      };
+      cached.loadedGroups.add("user");
+      settingsProfileCacheByUser.set(user.id, cached);
 
       toast({
         title: "Success",
@@ -686,6 +1123,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       if (error) throw error;
 
       setInitialCompanyDetails(companyDetails);
+      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+      cached.companyDetails = companyDetails;
+      cached.loadedGroups.add("company");
+      settingsProfileCacheByUser.set(user.id, cached);
 
       toast({
         title: "Success",
@@ -1055,6 +1496,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     } else {
       setInitialPersonaliseLogoPreview(personaliseLogoPreview);
       setInitialPersonaliseLogoLayout(personaliseLogoLayout);
+      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+      cached.personalise = {
+        preview: personaliseLogoPreview,
+        layout: personaliseLogoLayout,
+      };
+      cached.loadedGroups.add("personalize");
+      settingsProfileCacheByUser.set(user.id, cached);
       toast({
         title: "Success",
         description: "Personalisation settings updated successfully",
@@ -1110,6 +1558,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const isPersonaliseDirty =
     personaliseLogoPreview !== initialPersonaliseLogoPreview ||
     personaliseLogoLayout !== initialPersonaliseLogoLayout;
+  const isCurrentTabLoading = tabLoading[settingsTab];
 
   const handleClose = () => {
     if (branchEditMode) {
@@ -1127,6 +1576,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       handleCancelBranchAction();
     }
     setSettingsTab(nextTab);
+    void ensureTabDataLoaded(nextTab);
   };
 
   const handleCompanySetupClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -1211,26 +1661,207 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     handleSubuserInviteDialogChange(false);
   };
 
-  if (loading) {
-    if (embedded) {
-      return (
-        <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-          <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
-            <div className="flex h-full items-center justify-center">
-              <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
-            </div>
-          </DialogContent>
-        </Dialog>
-      );
+  const fetchBranchAllocationEmployees = useCallback(async () => {
+    if (!user) return;
+    setBranchAllocationLoading(true);
+    const { data, error } = await supabase
+      .from("employees")
+      .select("id, employee_name, employee_surname, id_number, branch")
+      .eq("company_id", user.id)
+      .order("employee_surname", { ascending: true })
+      .order("employee_name", { ascending: true });
+
+    if (error) {
+      toast({
+        title: "Unable to load employees",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      setBranchAllocationEmployees([]);
+    } else {
+      const nextEmployees: BranchAllocationEmployee[] = (data ?? []).map((item: any) => ({
+        id: String(item.id ?? ""),
+        employee_name: String(item.employee_name ?? "").trim(),
+        employee_surname: String(item.employee_surname ?? "").trim(),
+        id_number: String(item.id_number ?? "").trim(),
+        branch: String(item.branch ?? "").trim(),
+      }));
+      setBranchAllocationEmployees(nextEmployees);
     }
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-full">
-          <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
-        </div>
-      </DashboardLayout>
+    setBranchAllocationLoading(false);
+  }, [toast, user]);
+
+  const fetchAllocatedBranches = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await (supabase as any)
+      .from("employees")
+      .select("branch")
+      .eq("company_id", user.id)
+      .not("branch", "is", null);
+
+    if (error) {
+      console.warn("Unable to load allocated branches", error);
+      setAllocatedBranches([]);
+      return;
+    }
+
+    const branchValues: string[] = (data ?? [])
+      .map((item: any) => String(item?.branch ?? "").trim())
+      .filter((value: string) => value.length > 0);
+    const uniqueAllocatedBranches: string[] = Array.from(new Set<string>(branchValues)).sort((a, b) =>
+      a.localeCompare(b),
     );
-  }
+    setAllocatedBranches(uniqueAllocatedBranches);
+  }, [user]);
+
+  const handleBranchAllocationDialogChange = (open: boolean) => {
+    setIsBranchAllocationOpen(open);
+    if (!open) {
+      setBranchAllocationSearchQuery("");
+      setBranchAllocationSelectedBranch("");
+      setBranchAllocationSelectedEmployeeIds(new Set());
+      setBranchAllocationAssignedOnly(false);
+      setBranchAllocationSubmitting(false);
+      return;
+    }
+    void fetchBranchAllocationEmployees();
+    void fetchAllocatedBranches();
+  };
+
+  useEffect(() => {
+    if (!branchAllocationAssignedOnly) return;
+    const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
+    if (!selectedBranchNormalized) {
+      setBranchAllocationSelectedEmployeeIds(new Set());
+      return;
+    }
+    const assignedIds = branchAllocationEmployees
+      .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
+      .map((employee) => employee.id);
+    setBranchAllocationSelectedEmployeeIds(new Set(assignedIds));
+  }, [branchAllocationAssignedOnly, branchAllocationEmployees, branchAllocationSelectedBranch]);
+
+  const toggleBranchAllocationEmployeeSelection = (employeeId: string) => {
+    setBranchAllocationSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFilteredBranchAllocationEmployees = () => {
+    setBranchAllocationSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      for (const employeeId of branchAllocationFilteredIds) {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
+
+  const clearFilteredBranchAllocationEmployees = () => {
+    setBranchAllocationSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      for (const employeeId of branchAllocationFilteredIds) {
+        next.delete(employeeId);
+      }
+      return next;
+    });
+  };
+
+  const handleBranchAllocationApply = async () => {
+    if (!user) return;
+    if (!branchAllocationSelectedBranch) return;
+
+    const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
+    const selectedEmployeeIds = Array.from(branchAllocationSelectedEmployeeIds);
+    const currentlyAssignedToSelectedBranch = new Set(
+      branchAllocationEmployees
+        .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
+        .map((employee) => employee.id),
+    );
+    const selectedSet = new Set(selectedEmployeeIds);
+    const employeeIdsToAssign = selectedEmployeeIds.filter((employeeId) => !currentlyAssignedToSelectedBranch.has(employeeId));
+    const employeeIdsToUnassign = branchAllocationAssignedOnly
+      ? Array.from(currentlyAssignedToSelectedBranch).filter((employeeId) => !selectedSet.has(employeeId))
+      : [];
+    const totalChanges = employeeIdsToAssign.length + employeeIdsToUnassign.length;
+
+    if (totalChanges === 0) {
+      toast({
+        title: "No changes to save",
+        description: "There are no branch allocation changes to apply.",
+      });
+      return;
+    }
+
+    const confirmed = confirm(
+      `Save branch allocation updates for "${branchAllocationSelectedBranch}"?\n\n` +
+      `Assign: ${employeeIdsToAssign.length}\n` +
+      `Unassign: ${employeeIdsToUnassign.length}`,
+    );
+    if (!confirmed) return;
+
+    setBranchAllocationSubmitting(true);
+
+    if (employeeIdsToAssign.length > 0) {
+      const { error: assignError } = await supabase
+        .from("employees")
+        .update({ branch: branchAllocationSelectedBranch } as any)
+        .eq("company_id", user.id)
+        .in("id", employeeIdsToAssign);
+      if (assignError) {
+        toast({
+          title: "Save failed",
+          description: getSafeErrorMessage(assignError),
+          variant: "destructive",
+        });
+        setBranchAllocationSubmitting(false);
+        return;
+      }
+    }
+
+    if (employeeIdsToUnassign.length > 0) {
+      const { error: unassignError } = await (supabase as any)
+        .from("employees")
+        .update({ branch: null } as any)
+        .eq("company_id", user.id)
+        .eq("branch", branchAllocationSelectedBranch)
+        .in("id", employeeIdsToUnassign);
+      if (unassignError) {
+        toast({
+          title: "Save failed",
+          description: getSafeErrorMessage(unassignError),
+          variant: "destructive",
+        });
+        setBranchAllocationSubmitting(false);
+        return;
+      }
+    }
+
+    toast({
+      title: "Branch allocation saved",
+      description: `Assigned ${employeeIdsToAssign.length} and unassigned ${employeeIdsToUnassign.length} employee${
+        totalChanges === 1 ? "" : "s"
+      } for ${branchAllocationSelectedBranch}.`,
+    });
+    setBranchAllocationSelectedEmployeeIds(new Set());
+    setBranchAllocationSearchQuery("");
+    void fetchBranchAllocationEmployees();
+    void fetchAllocatedBranches();
+    setBranchAllocationSubmitting(false);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    if (settingsTab !== "companySetup") return;
+    if (!branchSettings.branches_enabled) return;
+    void fetchAllocatedBranches();
+  }, [branchSettings.branches_enabled, fetchAllocatedBranches, settingsTab, user]);
 
   const content = (
       <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
@@ -1263,8 +1894,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       onClick={() => handleSettingsTabChange(tab.value)}
                       className={`mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded px-4 py-3 text-left text-[10px] font-semibold transition-colors ${
                         isActive
-                          ? "bg-blue-50 text-slate-900"
-                          : "text-slate-500 hover:bg-slate-50 hover:text-blue-600"
+                          ? "bg-blue-50 text-blue-600"
+                          : "text-slate-500 hover:bg-slate-50 hover:text-black"
                       }`}
                     >
                       <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
@@ -1281,10 +1912,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
             <div className="min-w-0 flex-1 min-h-0 flex flex-col">
             <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-blue-400 [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-blue-400 [&_[role=combobox]]:focus:border-blue-600 [&_[role=combobox]]:focus-visible:border-blue-600 [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-blue-600">
+              {isCurrentTabLoading ? (
+                <div className="flex h-full items-center justify-center">
+                  <img src="/zappir_thumbnail_blue.png" alt="Loading tab" className="h-10 w-10 animate-spin" style={{ animationDuration: "2s" }} />
+                </div>
+              ) : (
+                <>
               {settingsTab === "user" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">User Details</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">User Details</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your personal information</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -1356,7 +1993,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "subusers" && (
             <div className="flex h-full flex-col space-y-4">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">Subusers</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">Subusers</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
                   Here, the main user can add multiple users by sending a link to their email address.
                 </p>
@@ -1376,7 +2013,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "company" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">Company Profile</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">Company Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -1529,7 +2166,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "companyAddress" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">Company Address</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">Company Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -1742,7 +2379,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "auth" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">Authentication</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">Authentication</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Change your password here whenever you need to keep your account secure.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -1810,13 +2447,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "companySetup" && (
-                <div className="flex h-full min-h-0 flex-col" onClickCapture={handleCompanySetupClickCapture}>
+                <div className="flex h-full min-h-0 flex-col space-y-5" onClickCapture={handleCompanySetupClickCapture}>
                   <div className="space-y-1">
-                    <h3 className="text-[20px] font-semibold text-slate-900">Company Setup</h3>
+                    <h3 className="text-[20px] font-semibold text-blue-600">Company Setup</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Enable branch management to organize employees by location and assign them to the correct operating unit across your business.</p>
                   </div>
-                  <div className="mt-3 h-[410px] rounded-sm bg-white">
-                    <div className="h-full overflow-y-auto py-3">
+                  <div className="h-[410px] rounded-sm bg-white">
+                    <div className="h-full overflow-y-auto">
                       <div className="flex flex-col gap-5">
                   <div className="space-y-1 pt-3">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Branches</h4>
@@ -1828,17 +2465,21 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           id="branches_enabled"
                           className="-mt-0.5 scale-90 data-[state=checked]:!bg-blue-600 data-[state=unchecked]:!bg-slate-300"
                           checked={branchSettings.branches_enabled}
-                          disabled={branchEditMode}
-                          onCheckedChange={(checked) => {
-                            setBranchSettings((prev) => ({
-                              ...prev,
-                              branches_enabled: checked,
-                            }));
-                            if (!checked) {
+                          disabled={branchEditMode || branchSaving}
+                          onCheckedChange={async (checked) => {
+                            const nextEnabled = Boolean(checked);
+                            setBranchSaving(true);
+                            const persisted = await persistBranchSettings(nextEnabled, branchSettings.branches);
+                            setBranchSaving(false);
+                            if (!persisted) return;
+
+                            applyLocalBranchSettings(nextEnabled, branchSettings.branches);
+                            if (!nextEnabled) {
                               setShowBranchForm(false);
                               setBranchEditMode(false);
                               setSelectedBranchName(null);
                               setBranchForm(emptyBranchForm);
+                              handleBranchAllocationDialogChange(false);
                             }
                           }}
                         />
@@ -1871,10 +2512,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     type="button"
                                     onClick={branchEditMode ? handleCancelBranchAction : handleOpenEditBranchModal}
                                     data-branch-edit-allowed="true"
+                                    disabled={branchSaving}
                                     className={`h-7 w-[64px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] ${
                                       branchEditMode
                                         ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
-                                        : "border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                                      : "border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
                                     }`}
                                   >
                                     {branchEditMode ? "Cancel" : "Edit"}
@@ -1887,7 +2529,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       setBranchForm(emptyBranchForm);
                                       setShowBranchForm(true);
                                     }}
-                                    disabled={branchEditMode}
+                                    disabled={branchEditMode || branchSaving}
                                     className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                       showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
                                     }`}
@@ -1906,7 +2548,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     setBranchForm(emptyBranchForm);
                                     setShowBranchForm(true);
                                   }}
-                                  disabled={branchEditMode}
+                                  disabled={branchEditMode || branchSaving}
                                   className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
                                     showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
                                   }`}
@@ -1958,8 +2600,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                           <span>{branchEntry.name}</span>
                                           {!branchEditMode ? (
                                             <button
-                                              type="button"
-                                              onClick={() => handleRemoveBranch(branchEntry.name)}
+                                            type="button"
+                                              onClick={() => { void handleRemoveBranch(branchEntry.name); }}
                                               className="ml-1 inline-flex items-center text-blue-600 hover:text-blue-800"
                                               aria-label={`Remove ${branchEntry.name}`}
                                             >
@@ -1980,40 +2622,53 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             ) : null}
                           </div>
 
+                          <div className="space-y-1 pt-3">
+                            <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Branch Allocation</h4>
+                            <div className="h-[0.5px] w-full bg-blue-600" />
+                          </div>
+                          <div className="-mt-[12px] flex items-center justify-end">
+                            <Button
+                              type="button"
+                              onClick={() => handleBranchAllocationDialogChange(true)}
+                              disabled={branchNames.length === 0}
+                              className="h-7 min-w-[88px] rounded border-[0.5px] border-blue-600 bg-white px-3 text-[10px] text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
+                            >
+                              Allocate
+                            </Button>
+                          </div>
+                          <div className="-mt-3 relative rounded border border-slate-300 bg-white px-3 pb-2 pt-3">
+                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-500">
+                              Allocated Branches
+                            </span>
+                            <div className="max-h-[130px] overflow-y-auto pt-1">
+                              {allocatedBranches.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {allocatedBranches.map((allocatedBranch) => (
+                                    <Badge
+                                      key={allocatedBranch}
+                                      variant="outline"
+                                      className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-[10px] leading-none !font-normal text-blue-700 hover:bg-blue-50"
+                                    >
+                                      <span>{allocatedBranch}</span>
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-slate-500">No branches allocated to employees yet.</p>
+                              )}
+                            </div>
+                          </div>
+                          {branchNames.length === 0 ? (
+                            <p className="text-[10px] text-slate-500">
+                              Add at least one branch before allocating employees.
+                            </p>
+                          ) : null}
+
                         </>
                       ) : null}
-                      <div className="space-y-1 pt-3">
-                        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Departments</h4>
-                        <div className="h-[0.5px] w-full bg-blue-600" />
-                      </div>
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Departments</span>
-                        <Input
-                          placeholder="Click to view or add departments"
-                          aria-label="Departments"
-                          readOnly
-                          disabled={branchEditMode}
-                        />
-                      </div>
                     </div>
                     </div>
                   </div>
-                  {!branchEditMode && shouldShowCompanySetupPrimaryAction ? (
-                    <div className={settingsActionRowClass}>
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          type="button"
-                          onClick={handleBranchSettingsUpdate}
-                          disabled={branchSaving}
-                          className={popupActionButtonClass}
-                        >
-                          {branchSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                          Save Changes
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-
                   <Dialog
                     open={showBranchForm}
                     onOpenChange={(open) => {
@@ -2041,8 +2696,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
-                          const added = handleAddBranch();
-                          if (added) setShowBranchForm(false);
+                          const draft = { ...branchForm };
+                          setShowBranchForm(false);
+                          setBranchForm(emptyBranchForm);
+                          void handleAddBranch(draft);
                         }}
                         className="space-y-4 px-6 pb-6 pt-[26px]"
                       >
@@ -2155,7 +2812,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <Button
                             type="submit"
                             className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
-                            disabled={branchForm.name.trim().length === 0}
+                            disabled={branchForm.name.trim().length === 0 || branchSaving}
                           >
                             Add Branch
                           </Button>
@@ -2194,9 +2851,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="mt-[46px] bg-white">
 
                       <form
-                        onSubmit={(event) => {
+                        onSubmit={async (event) => {
                           event.preventDefault();
-                          handleApplyBranchEdit();
+                          await handleApplyBranchEdit();
                         }}
                         className="space-y-4 px-6 pb-6 pt-[26px]"
                       >
@@ -2310,12 +2967,185 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <Button
                             type="submit"
                             className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
-                            disabled={!selectedBranchToEdit || branchEditDraft.name.trim().length === 0}
+                            disabled={!selectedBranchToEdit || branchEditDraft.name.trim().length === 0 || branchSaving}
                           >
+                            {branchSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Apply
                           </Button>
                         </div>
                       </form>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={isBranchAllocationOpen} onOpenChange={handleBranchAllocationDialogChange}>
+                    <DialogContent
+                      className="w-[94vw] max-w-[620px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                    >
+                      <div className="relative">
+                        <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                          <div className="flex items-center gap-2 pl-2">
+                            <Users className="h-4 w-4 text-white" />
+                            <DialogTitle className="text-sm font-semibold text-white">Branch Allocation</DialogTitle>
+                          </div>
+                          <DialogClose asChild>
+                            <button type="button" className="text-white hover:text-white/80" aria-label="Close branch allocation popup">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </DialogClose>
+                        </div>
+                        <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
+                          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr]">
+                            <div className="relative">
+                              <span className={floatingLabelClass}>Branch <span className="text-red-600">*</span></span>
+                              <Select
+                                value={branchAllocationSelectedBranch}
+                                onValueChange={setBranchAllocationSelectedBranch}
+                              >
+                                <SelectTrigger
+                                  aria-label="Select branch for allocation"
+                                  className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
+                                >
+                                  <SelectValue placeholder="Select branch" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {branchNames.map((branchName) => (
+                                    <SelectItem
+                                      key={branchName}
+                                      value={branchName}
+                                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                    >
+                                      {branchName}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="relative">
+                              <span className={floatingLabelClass}>Search employees</span>
+                              <Input
+                                className={subuserModalInputClass}
+                                placeholder="Search by name, surname, ID number, or current branch"
+                                value={branchAllocationSearchQuery}
+                                onChange={(event) => setBranchAllocationSearchQuery(event.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                id="branch-allocation-unassigned-only"
+                                className="-mt-0.5 scale-90 data-[state=checked]:!bg-blue-600 data-[state=unchecked]:!bg-slate-300"
+                                checked={branchAllocationAssignedOnly}
+                                onCheckedChange={(checked) => setBranchAllocationAssignedOnly(Boolean(checked))}
+                              />
+                              <Label htmlFor="branch-allocation-unassigned-only" className="text-[10px] text-slate-600">
+                                Show assigned only
+                              </Label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={selectAllFilteredBranchAllocationEmployees}
+                                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
+                                disabled={branchAllocationSelectableCount === 0 || branchAllocationLoading}
+                              >
+                                Select all filtered
+                              </button>
+                              <span className="text-slate-300">|</span>
+                              <button
+                                type="button"
+                                onClick={clearFilteredBranchAllocationEmployees}
+                                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
+                                disabled={branchAllocationSelectedEmployeeIds.size === 0 || branchAllocationLoading}
+                              >
+                                Clear filtered
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 max-h-[300px] overflow-y-auto rounded border border-slate-300 bg-white">
+                            {branchAllocationLoading ? (
+                              <div className="flex items-center justify-center py-10">
+                                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                              </div>
+                            ) : branchAllocationFilteredEmployees.length === 0 ? (
+                              <div className="px-3 py-8 text-center text-[10px] text-slate-500">
+                                No employees match your current filters.
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-slate-100">
+                                {branchAllocationFilteredEmployees.map((employee) => {
+                                  const isSelected = branchAllocationSelectedEmployeeIds.has(employee.id);
+                                  const employeeName = `${employee.employee_name} ${employee.employee_surname}`.trim() || "Unnamed employee";
+                                  return (
+                                    <div
+                                      key={employee.id}
+                                      onClick={() => toggleBranchAllocationEmployeeSelection(employee.id)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          toggleBranchAllocationEmployeeSelection(employee.id);
+                                        }
+                                      }}
+                                      role="button"
+                                      tabIndex={0}
+                                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 ${
+                                        isSelected ? "bg-blue-50/70" : "bg-white"
+                                      }`}
+                                    >
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          readOnly
+                                          className="pointer-events-none h-3.5 w-3.5 accent-blue-600"
+                                        />
+                                        <div className="min-w-0">
+                                          <p className="truncate text-[11px] font-medium text-slate-800">
+                                            {employeeName}
+                                            {employee.id_number ? ` (${employee.id_number})` : " (No ID number)"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <span className="shrink-0 rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-600">
+                                        {employee.branch || "Unassigned"}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-center gap-2 pt-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                              onClick={() => handleBranchAllocationDialogChange(false)}
+                              disabled={branchAllocationSubmitting}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              className="h-[28px] min-w-[110px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                              onClick={handleBranchAllocationApply}
+                              disabled={
+                                branchAllocationSubmitting ||
+                                branchAllocationLoading ||
+                                !branchAllocationSelectedBranch ||
+                                branchAllocationSelectedEmployeeIds.size === 0
+                              }
+                            >
+                              {branchAllocationSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Save
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </DialogContent>
@@ -2327,7 +3157,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "plan" && (
             <div className="space-y-4">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-slate-900">Subscription Plan</h3>
+                <h3 className="text-[20px] font-semibold text-blue-600">Subscription Plan</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Manage your subscription</p>
               </div>
               <div>
@@ -2347,7 +3177,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "personalize" && (
                 <div className="flex h-full flex-col space-y-5">
                   <div className="space-y-1">
-                    <h3 className="text-[20px] font-semibold text-slate-900">Personalise</h3>
+                    <h3 className="text-[20px] font-semibold text-blue-600">Personalise</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Fine-tune how your documents look so every output feels more aligned with your brand and communication style.</p>
                   </div>
 
@@ -2467,6 +3297,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   ) : null}
 
                 </div>
+              )}
+                </>
               )}
             </section>
 

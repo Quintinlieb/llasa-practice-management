@@ -26,6 +26,7 @@ import {
   type EmploymentFormData as PoorPerformanceBaseFormData,
 } from "@/lib/validation";
 import { addServiceDelayToDate } from "@/lib/terminationNotice";
+import { detectLogoLayout, getPdfLogoTargetHeight, type LogoLayout } from "@/lib/logoLayout";
 import type { Tables } from "@/integrations/supabase/types";
 
 type PoorPerformanceFormState = {
@@ -33,6 +34,7 @@ type PoorPerformanceFormState = {
   age: string;
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
+  logoLayout: LogoLayout | null;
   letterheadThemeColors: string[];
   issuer: string;
   chairperson: string;
@@ -75,6 +77,7 @@ type PoorPerformanceData = PoorPerformanceBaseFormData & {
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center" | "left";
+  logoLayout: LogoLayout | null;
   letterheadThemeColors: string[];
   issuer: string;
   chairperson: string;
@@ -97,7 +100,10 @@ type PoorPerformanceData = PoorPerformanceBaseFormData & {
 type SlimProfile = Pick<
   Tables<"profiles">,
   "id" | "company_name" | "company_type" | "registration_number" | "physical_address" | "company_contact" | "company_email"
->;
+> & {
+  company_logo_data_url?: string | null;
+  company_logo_layout?: "vertical" | "horizontal" | null;
+};
 type SlimEmployee = {
   id: string;
   id_number: string | null;
@@ -837,6 +843,7 @@ const PoorPerformanceTerminationGenerator = ({
     age: "",
     companyLogoDataUrl: "",
     logoPlacement: "center",
+    logoLayout: null,
     letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
     chairperson: "",
@@ -929,11 +936,23 @@ const PoorPerformanceTerminationGenerator = ({
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const baseProfileSelect =
+      "id, company_name, company_type, registration_number, physical_address, company_contact, company_email";
+    const profileSelectWithLogo = `${baseProfileSelect}, company_logo_data_url, company_logo_layout`;
+    const withLogo = await (supabase as any)
       .from("profiles")
-      .select("id, company_name, company_type, registration_number, physical_address, company_contact, company_email")
+      .select(profileSelectWithLogo)
       .eq("id", user.id)
       .maybeSingle();
+    const fallbackWithoutLogo = withLogo.error
+      ? await (supabase as any)
+          .from("profiles")
+          .select(baseProfileSelect)
+          .eq("id", user.id)
+          .maybeSingle()
+      : null;
+    const data = withLogo.error ? fallbackWithoutLogo?.data : withLogo.data;
+    const error = withLogo.error ? fallbackWithoutLogo?.error : withLogo.error;
     if (error) {
       console.warn("Unable to load profile", error);
       return;
@@ -1016,11 +1035,19 @@ const PoorPerformanceTerminationGenerator = ({
 
   useEffect(() => {
     if (profile) {
+      const storedLogo = (profile.company_logo_data_url || "").trim();
+      const storedLogoLayoutRaw = (profile.company_logo_layout || "").trim().toLowerCase();
+      const storedLogoLayout: LogoLayout | null =
+        storedLogoLayoutRaw === "vertical" || storedLogoLayoutRaw === "horizontal"
+          ? storedLogoLayoutRaw
+          : null;
       setFormData((prev) => ({
         ...prev,
         workplace: prev.workplace || profile.physical_address || "",
         employerContact: prev.employerContact || profile.company_contact || "",
         employerEmail: prev.employerEmail || profile.company_email || "",
+        companyLogoDataUrl: prev.companyLogoDataUrl || storedLogo,
+        logoLayout: prev.companyLogoDataUrl || !storedLogo ? prev.logoLayout : storedLogoLayout,
       }));
     }
   }, [profile]);
@@ -1129,7 +1156,8 @@ const PoorPerformanceTerminationGenerator = ({
       employeeId: "",
       age: "",
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
       chairperson: "",
@@ -1456,7 +1484,8 @@ const PoorPerformanceTerminationGenerator = ({
       employerContact: profile?.company_contact || "",
       employerEmail: profile?.company_email || "",
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     setCompanyLogoPreview("");
@@ -1688,7 +1717,8 @@ const PoorPerformanceTerminationGenerator = ({
       if (!result) return;
       const trimmedResult = await trimLogoWhitespace(result);
       setCompanyLogoPreview(trimmedResult);
-      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult }));
+      const detectedLayout = (await detectLogoLayout(trimmedResult)) ?? "horizontal";
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult, logoLayout: detectedLayout }));
     };
     reader.onerror = () => {
       toast({
@@ -1705,7 +1735,8 @@ const PoorPerformanceTerminationGenerator = ({
     setFormData((prev) => ({
       ...prev,
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     if (companyLogoInputRef.current) {
@@ -1778,6 +1809,7 @@ const PoorPerformanceTerminationGenerator = ({
       updatedEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
+      logoLayout: formData.logoLayout,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
       chairperson: formData.chairperson,
@@ -2033,7 +2065,7 @@ const PoorPerformanceTerminationGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = 25;
+        const targetLogoHeight = getPdfLogoTargetHeight(data.logoLayout);
         const maxLogoWidth = 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
@@ -2056,7 +2088,7 @@ const PoorPerformanceTerminationGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = 25;
+        const targetLogoHeight = getPdfLogoTargetHeight(data.logoLayout);
         const maxLogoWidth = 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
@@ -2154,6 +2186,7 @@ const PoorPerformanceTerminationGenerator = ({
     }
 
     doc.setDrawColor(dividerR, dividerG, dividerB);
+    doc.setLineWidth(0.2);
     doc.line(margin, y, margin + contentWidth, y);
     doc.setDrawColor(0, 0, 0);
     y += 4.6;
@@ -2176,6 +2209,7 @@ const PoorPerformanceTerminationGenerator = ({
       doc.setPage(pageNumber);
       const footerStartY = pageHeight - centeredFooterBottomGap - centeredFooterHeight;
       doc.setDrawColor(dividerR, dividerG, dividerB);
+      doc.setLineWidth(0.2);
       doc.line(margin, footerStartY, margin + contentWidth, footerStartY);
       doc.setDrawColor(0, 0, 0);
       const footerLineGap = 3.5;
@@ -2602,7 +2636,7 @@ const PoorPerformanceTerminationGenerator = ({
                         >
                           {companyLogoPreview || formData.companyLogoDataUrl ? "Change logo" : "Upload logo"}
                         </Button>
-                        {companyLogoPreview ? (
+                        {companyLogoPreview || formData.companyLogoDataUrl ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -4232,19 +4266,5 @@ const PoorPerformanceTerminationGenerator = ({
 };
 
 export default PoorPerformanceTerminationGenerator;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

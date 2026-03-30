@@ -322,10 +322,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [branchAllocationLoading, setBranchAllocationLoading] = useState(false);
   const [branchAllocationSubmitting, setBranchAllocationSubmitting] = useState(false);
   const [branchAllocationSearchQuery, setBranchAllocationSearchQuery] = useState("");
+  const [branchAllocationSearchFocused, setBranchAllocationSearchFocused] = useState(false);
   const [branchAllocationSelectedBranch, setBranchAllocationSelectedBranch] = useState("");
   const [branchAllocationSelectedEmployeeIds, setBranchAllocationSelectedEmployeeIds] = useState<Set<string>>(new Set());
-  const [branchAllocationAssignedOnly, setBranchAllocationAssignedOnly] = useState(false);
+  const [allocatedBranchEditMode, setAllocatedBranchEditMode] = useState(false);
+  const [selectedAllocatedBranchToEdit, setSelectedAllocatedBranchToEdit] = useState<string | null>(null);
+  const [isAllocatedBranchEmployeesOpen, setIsAllocatedBranchEmployeesOpen] = useState(false);
+  const [allocatedBranchEmployeesSearchQuery, setAllocatedBranchEmployeesSearchQuery] = useState("");
+  const [allocatedBranchEmployeesSearchFocused, setAllocatedBranchEmployeesSearchFocused] = useState(false);
+  const [allocatedBranchSelectedEmployeeIds, setAllocatedBranchSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [allocatedBranchRemoveSubmitting, setAllocatedBranchRemoveSubmitting] = useState(false);
   const [allocatedBranches, setAllocatedBranches] = useState<string[]>([]);
+  const [allocatedBranchSearchQuery, setAllocatedBranchSearchQuery] = useState("");
+  const [allocatedBranchSearchFocused, setAllocatedBranchSearchFocused] = useState(false);
   const [tabLoading, setTabLoading] = useState<Record<SettingsTab, boolean>>(emptyTabLoadingState);
   const loadedGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const loadingGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
@@ -364,26 +373,74 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const branchAllocationFilteredEmployees = useMemo(() => {
     const query = branchAllocationSearchQuery.trim().toLowerCase();
     return branchAllocationEmployees.filter((employee) => {
-      const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
-      const employeeBranchNormalized = employee.branch.trim().toLowerCase();
-      const matchesAssignment = branchAllocationAssignedOnly
-        ? selectedBranchNormalized.length > 0 && employeeBranchNormalized === selectedBranchNormalized
-        : true;
-      if (!matchesAssignment) return false;
+      const isUnassigned = employee.branch.trim().length === 0;
+      if (!isUnassigned) return false;
       if (!query) return true;
       const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().toLowerCase();
       return (
         fullName.includes(query) ||
-        employee.id_number.toLowerCase().includes(query) ||
-        employee.branch.toLowerCase().includes(query)
+        employee.id_number.toLowerCase().includes(query)
       );
     });
-  }, [branchAllocationAssignedOnly, branchAllocationEmployees, branchAllocationSearchQuery, branchAllocationSelectedBranch]);
-  const branchAllocationFilteredIds = useMemo(
-    () => branchAllocationFilteredEmployees.map((employee) => employee.id),
-    [branchAllocationFilteredEmployees],
+  }, [branchAllocationEmployees, branchAllocationSearchQuery]);
+  const branchAllocationSelectedEmployees = useMemo(
+    () =>
+      branchAllocationEmployees
+        .filter((employee) => branchAllocationSelectedEmployeeIds.has(employee.id))
+        .sort((a, b) =>
+          `${a.employee_surname} ${a.employee_name}`.localeCompare(`${b.employee_surname} ${b.employee_name}`),
+        ),
+    [branchAllocationEmployees, branchAllocationSelectedEmployeeIds],
   );
-  const branchAllocationSelectableCount = branchAllocationFilteredIds.length;
+  const branchAllocationPendingChanges = useMemo(() => {
+    const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
+    if (!selectedBranchNormalized) {
+      return {
+        employeeIdsToAssign: [] as string[],
+        totalChanges: 0,
+      };
+    }
+
+    const selectedEmployeeIds = Array.from(branchAllocationSelectedEmployeeIds);
+    const currentlyAssignedToSelectedBranch = new Set(
+      branchAllocationEmployees
+        .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
+        .map((employee) => employee.id),
+    );
+    const employeeIdsToAssign = selectedEmployeeIds.filter((employeeId) => !currentlyAssignedToSelectedBranch.has(employeeId));
+    return {
+      employeeIdsToAssign,
+      totalChanges: employeeIdsToAssign.length,
+    };
+  }, [
+    branchAllocationEmployees,
+    branchAllocationSelectedBranch,
+    branchAllocationSelectedEmployeeIds,
+  ]);
+  const filteredAllocatedBranches = useMemo(
+    () =>
+      allocatedBranches.filter((value) =>
+        value.toLowerCase().includes(allocatedBranchSearchQuery.trim().toLowerCase()),
+      ),
+    [allocatedBranchSearchQuery, allocatedBranches],
+  );
+  const filteredAllocatedBranchEmployees = useMemo(() => {
+    const selectedBranchNormalized = selectedAllocatedBranchToEdit?.trim().toLowerCase() ?? "";
+    if (!selectedBranchNormalized) return [];
+    const query = allocatedBranchEmployeesSearchQuery.trim().toLowerCase();
+    return branchAllocationEmployees
+      .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
+      .filter((employee) => {
+        if (!query) return true;
+        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().toLowerCase();
+        return fullName.includes(query) || employee.id_number.toLowerCase().includes(query);
+      })
+      .sort((a, b) => {
+        const aName = `${a.employee_surname} ${a.employee_name}`.trim().toLowerCase();
+        const bName = `${b.employee_surname} ${b.employee_name}`.trim().toLowerCase();
+        return aName.localeCompare(bName);
+      });
+  }, [allocatedBranchEmployeesSearchQuery, branchAllocationEmployees, selectedAllocatedBranchToEdit]);
 
   const setGroupLoading = useCallback((group: ProfileDataGroup, value: boolean) => {
     setTabLoading((prev) => {
@@ -709,6 +766,18 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     const source = sourceBranchForm ?? branchForm;
     const normalizedName = source.name.trim().replace(/\s+/g, " ");
     if (!normalizedName) return false;
+    const normalizedAddressLine1 = source.address_line1.trim();
+    const normalizedCity = source.city.trim();
+    const normalizedProvince = source.province.trim();
+    const normalizedAreaCode = source.area_code.trim();
+    if (!normalizedAddressLine1 || !normalizedCity || !normalizedProvince || !normalizedAreaCode) {
+      toast({
+        title: "Missing required fields",
+        description: "Address line 1, city, province, and area code are required.",
+        variant: "destructive",
+      });
+      return false;
+    }
     const duplicateExists = branchSettings.branches.some(
       (value) => value.name.toLowerCase() === normalizedName.toLowerCase(),
     );
@@ -725,11 +794,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       ...branchSettings.branches,
       {
         name: normalizedName,
-        address_line1: source.address_line1.trim(),
+        address_line1: normalizedAddressLine1,
         address_line2: source.address_line2.trim(),
-        city: source.city.trim(),
-        province: source.province.trim(),
-        area_code: source.area_code.trim(),
+        city: normalizedCity,
+        province: normalizedProvince,
+        area_code: normalizedAreaCode,
       },
     ];
 
@@ -801,10 +870,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!selectedBranchToEdit) return;
     const originalName = selectedBranchToEdit.trim();
     const normalizedName = branchEditDraft.name.trim().replace(/\s+/g, " ");
+    const normalizedAddressLine1 = branchEditDraft.address_line1.trim();
+    const normalizedCity = branchEditDraft.city.trim();
+    const normalizedProvince = branchEditDraft.province.trim();
+    const normalizedAreaCode = branchEditDraft.area_code.trim();
     if (!normalizedName) {
       toast({
         title: "Missing branch name",
         description: "Branch name is required.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!normalizedAddressLine1 || !normalizedCity || !normalizedProvince || !normalizedAreaCode) {
+      toast({
+        title: "Missing required fields",
+        description: "Address line 1, city, province, and area code are required.",
         variant: "destructive",
       });
       return;
@@ -828,11 +909,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       if (item.name !== originalName) return item;
       return {
         name: normalizedName,
-        address_line1: branchEditDraft.address_line1.trim(),
+        address_line1: normalizedAddressLine1,
         address_line2: branchEditDraft.address_line2.trim(),
-        city: branchEditDraft.city.trim(),
-        province: branchEditDraft.province.trim(),
-        area_code: branchEditDraft.area_code.trim(),
+        city: normalizedCity,
+        province: normalizedProvince,
+        area_code: normalizedAreaCode,
       };
     });
 
@@ -1564,6 +1645,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (branchEditMode) {
       handleCancelBranchAction();
     }
+    if (allocatedBranchEditMode) {
+      clearAllocatedBranchEditMode();
+    }
     if (onClose) {
       onClose();
       return;
@@ -1575,15 +1659,23 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (settingsTab === "companySetup" && branchEditMode && nextTab !== "companySetup") {
       handleCancelBranchAction();
     }
+    if (settingsTab === "companySetup" && allocatedBranchEditMode && nextTab !== "companySetup") {
+      clearAllocatedBranchEditMode();
+    }
     setSettingsTab(nextTab);
     void ensureTabDataLoaded(nextTab);
   };
 
   const handleCompanySetupClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!branchEditMode) return;
+    if (showEditBranchForm || isAllocatedBranchEmployeesOpen) return;
+    if (!branchEditMode && !allocatedBranchEditMode) return;
     const target = event.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest('[data-branch-edit-allowed="true"]')) return;
+    if (branchEditMode && target.closest('[data-branch-edit-allowed="true"]')) return;
+    if (allocatedBranchEditMode && target.closest('[data-allocated-branch-edit-allowed="true"]')) return;
+
+    event.preventDefault();
+    event.stopPropagation();
 
     const now = Date.now();
     if (now - branchEditBlockedToastAtRef.current < 1200) return;
@@ -1718,9 +1810,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setIsBranchAllocationOpen(open);
     if (!open) {
       setBranchAllocationSearchQuery("");
+      setBranchAllocationSearchFocused(false);
       setBranchAllocationSelectedBranch("");
       setBranchAllocationSelectedEmployeeIds(new Set());
-      setBranchAllocationAssignedOnly(false);
       setBranchAllocationSubmitting(false);
       return;
     }
@@ -1728,20 +1820,94 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     void fetchAllocatedBranches();
   };
 
-  useEffect(() => {
-    if (!branchAllocationAssignedOnly) return;
-    const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
-    if (!selectedBranchNormalized) {
-      setBranchAllocationSelectedEmployeeIds(new Set());
+  function clearAllocatedBranchEditMode() {
+    setAllocatedBranchEditMode(false);
+    setSelectedAllocatedBranchToEdit(null);
+    setIsAllocatedBranchEmployeesOpen(false);
+    setAllocatedBranchEmployeesSearchQuery("");
+    setAllocatedBranchEmployeesSearchFocused(false);
+    setAllocatedBranchSelectedEmployeeIds(new Set());
+    setAllocatedBranchRemoveSubmitting(false);
+  }
+
+  const handleAllocatedBranchEmployeesDialogChange = (open: boolean) => {
+    setIsAllocatedBranchEmployeesOpen(open);
+    if (!open) {
+      setAllocatedBranchEmployeesSearchQuery("");
+      setAllocatedBranchEmployeesSearchFocused(false);
+      setAllocatedBranchSelectedEmployeeIds(new Set());
+      setAllocatedBranchRemoveSubmitting(false);
       return;
     }
-    const assignedIds = branchAllocationEmployees
-      .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
-      .map((employee) => employee.id);
-    setBranchAllocationSelectedEmployeeIds(new Set(assignedIds));
-  }, [branchAllocationAssignedOnly, branchAllocationEmployees, branchAllocationSelectedBranch]);
+    void fetchBranchAllocationEmployees();
+  };
+
+  const handleOpenAllocatedBranchEmployees = (branchName: string) => {
+    setSelectedAllocatedBranchToEdit(branchName);
+    setAllocatedBranchEmployeesSearchQuery("");
+    setAllocatedBranchEmployeesSearchFocused(false);
+    setAllocatedBranchSelectedEmployeeIds(new Set());
+    setAllocatedBranchRemoveSubmitting(false);
+    setIsAllocatedBranchEmployeesOpen(true);
+    void fetchBranchAllocationEmployees();
+  };
+
+  const toggleAllocatedBranchEmployeeSelection = (employeeId: string) => {
+    setAllocatedBranchSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveAllocatedBranchEmployees = async () => {
+    if (!user) return;
+    if (!selectedAllocatedBranchToEdit) return;
+    const selectedEmployeeIds = Array.from(allocatedBranchSelectedEmployeeIds);
+    if (selectedEmployeeIds.length === 0) return;
+
+    const confirmed = confirm(
+      `Are you sure you want to remove ${selectedEmployeeIds.length} employee${
+        selectedEmployeeIds.length === 1 ? "" : "s"
+      } from "${selectedAllocatedBranchToEdit}"?`,
+    );
+    if (!confirmed) return;
+
+    setAllocatedBranchRemoveSubmitting(true);
+    const { error } = await (supabase as any)
+      .from("employees")
+      .update({ branch: null } as any)
+      .eq("company_id", user.id)
+      .eq("branch", selectedAllocatedBranchToEdit)
+      .in("id", selectedEmployeeIds);
+
+    if (error) {
+      toast({
+        title: "Remove failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      setAllocatedBranchRemoveSubmitting(false);
+      return;
+    }
+
+    toast({
+      title: "Employees removed",
+      description: `Removed ${selectedEmployeeIds.length} employee${
+        selectedEmployeeIds.length === 1 ? "" : "s"
+      } from ${selectedAllocatedBranchToEdit}.`,
+    });
+    clearAllocatedBranchEditMode();
+    void fetchBranchAllocationEmployees();
+    void fetchAllocatedBranches();
+  };
 
   const toggleBranchAllocationEmployeeSelection = (employeeId: string) => {
+    if (!branchAllocationSelectedBranch.trim()) return;
     setBranchAllocationSelectedEmployeeIds((prev) => {
       const next = new Set(prev);
       if (next.has(employeeId)) {
@@ -1753,43 +1919,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     });
   };
 
-  const selectAllFilteredBranchAllocationEmployees = () => {
-    setBranchAllocationSelectedEmployeeIds((prev) => {
-      const next = new Set(prev);
-      for (const employeeId of branchAllocationFilteredIds) {
-        next.add(employeeId);
-      }
-      return next;
-    });
-  };
-
-  const clearFilteredBranchAllocationEmployees = () => {
-    setBranchAllocationSelectedEmployeeIds((prev) => {
-      const next = new Set(prev);
-      for (const employeeId of branchAllocationFilteredIds) {
-        next.delete(employeeId);
-      }
-      return next;
-    });
-  };
-
   const handleBranchAllocationApply = async () => {
     if (!user) return;
     if (!branchAllocationSelectedBranch) return;
 
-    const selectedBranchNormalized = branchAllocationSelectedBranch.trim().toLowerCase();
-    const selectedEmployeeIds = Array.from(branchAllocationSelectedEmployeeIds);
-    const currentlyAssignedToSelectedBranch = new Set(
-      branchAllocationEmployees
-        .filter((employee) => employee.branch.trim().toLowerCase() === selectedBranchNormalized)
-        .map((employee) => employee.id),
-    );
-    const selectedSet = new Set(selectedEmployeeIds);
-    const employeeIdsToAssign = selectedEmployeeIds.filter((employeeId) => !currentlyAssignedToSelectedBranch.has(employeeId));
-    const employeeIdsToUnassign = branchAllocationAssignedOnly
-      ? Array.from(currentlyAssignedToSelectedBranch).filter((employeeId) => !selectedSet.has(employeeId))
-      : [];
-    const totalChanges = employeeIdsToAssign.length + employeeIdsToUnassign.length;
+    const { employeeIdsToAssign, totalChanges } = branchAllocationPendingChanges;
 
     if (totalChanges === 0) {
       toast({
@@ -1801,8 +1935,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
     const confirmed = confirm(
       `Save branch allocation updates for "${branchAllocationSelectedBranch}"?\n\n` +
-      `Assign: ${employeeIdsToAssign.length}\n` +
-      `Unassign: ${employeeIdsToUnassign.length}`,
+      `Assign: ${employeeIdsToAssign.length}`,
     );
     if (!confirmed) return;
 
@@ -1825,35 +1958,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       }
     }
 
-    if (employeeIdsToUnassign.length > 0) {
-      const { error: unassignError } = await (supabase as any)
-        .from("employees")
-        .update({ branch: null } as any)
-        .eq("company_id", user.id)
-        .eq("branch", branchAllocationSelectedBranch)
-        .in("id", employeeIdsToUnassign);
-      if (unassignError) {
-        toast({
-          title: "Save failed",
-          description: getSafeErrorMessage(unassignError),
-          variant: "destructive",
-        });
-        setBranchAllocationSubmitting(false);
-        return;
-      }
-    }
-
     toast({
       title: "Branch allocation saved",
-      description: `Assigned ${employeeIdsToAssign.length} and unassigned ${employeeIdsToUnassign.length} employee${
-        totalChanges === 1 ? "" : "s"
-      } for ${branchAllocationSelectedBranch}.`,
+      description: `Assigned ${employeeIdsToAssign.length} employee${employeeIdsToAssign.length === 1 ? "" : "s"} to ${branchAllocationSelectedBranch}.`,
     });
     setBranchAllocationSelectedEmployeeIds(new Set());
     setBranchAllocationSearchQuery("");
     void fetchBranchAllocationEmployees();
     void fetchAllocatedBranches();
     setBranchAllocationSubmitting(false);
+    setIsBranchAllocationOpen(false);
   };
 
   useEffect(() => {
@@ -2479,6 +2593,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               setBranchEditMode(false);
                               setSelectedBranchName(null);
                               setBranchForm(emptyBranchForm);
+                              clearAllocatedBranchEditMode();
                               handleBranchAllocationDialogChange(false);
                             }
                           }}
@@ -2495,10 +2610,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               <div className="grid grid-cols-[340px_1fr] items-center gap-2">
                                 <div className="relative">
                                   <Input
-                                    className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400"
+                                    data-branch-edit-allowed="true"
+                                    className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400 focus:border-blue-600 focus-visible:!border-blue-600"
                                     placeholder="Search branches"
                                     value={branchSearchQuery}
-                                    disabled={branchEditMode}
                                     onChange={(e) => setBranchSearchQuery(e.target.value)}
                                     onFocus={() => setBranchSearchFocused(true)}
                                     onBlur={() => setBranchSearchFocused(false)}
@@ -2626,38 +2741,106 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Branch Allocation</h4>
                             <div className="h-[0.5px] w-full bg-blue-600" />
                           </div>
-                          <div className="-mt-[12px] flex items-center justify-end">
-                            <Button
-                              type="button"
-                              onClick={() => handleBranchAllocationDialogChange(true)}
-                              disabled={branchNames.length === 0}
-                              className="h-7 min-w-[88px] rounded border-[0.5px] border-blue-600 bg-white px-3 text-[10px] text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
-                            >
-                              Allocate
-                            </Button>
+                          <div className="-mt-[12px] grid grid-cols-[340px_1fr] items-center gap-2">
+                            <div className="relative">
+                              <Input
+                                data-allocated-branch-edit-allowed="true"
+                                className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400 focus:border-blue-600 focus-visible:!border-blue-600"
+                                placeholder="Search allocated branches"
+                                value={allocatedBranchSearchQuery}
+                                disabled={branchNames.length === 0}
+                                onChange={(e) => setAllocatedBranchSearchQuery(e.target.value)}
+                                onFocus={() => setAllocatedBranchSearchFocused(true)}
+                                onBlur={() => setAllocatedBranchSearchFocused(false)}
+                              />
+                              {!allocatedBranchSearchFocused ? (
+                                <Search className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                              ) : null}
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                data-allocated-branch-edit-allowed="true"
+                                type="button"
+                                onClick={() => {
+                                  if (allocatedBranchEditMode) {
+                                    clearAllocatedBranchEditMode();
+                                    return;
+                                  }
+                                  setAllocatedBranchEditMode(true);
+                                  setSelectedAllocatedBranchToEdit(null);
+                                  void fetchBranchAllocationEmployees();
+                                }}
+                                disabled={(!allocatedBranchEditMode && allocatedBranches.length === 0) || branchAllocationLoading}
+                                className={`h-7 w-[64px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] ${
+                                  allocatedBranchEditMode
+                                    ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white"
+                                    : "border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                                }`}
+                              >
+                                {allocatedBranchEditMode ? "Cancel" : "Edit"}
+                              </Button>
+                              <Button
+                                type="button"
+                                onClick={() => handleBranchAllocationDialogChange(true)}
+                                disabled={branchNames.length === 0 || allocatedBranchEditMode}
+                                className="h-7 min-w-[88px] rounded border-[0.5px] border-blue-600 bg-white px-3 text-[10px] text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
+                              >
+                                Allocate
+                              </Button>
+                            </div>
                           </div>
-                          <div className="-mt-3 relative rounded border border-slate-300 bg-white px-3 pb-2 pt-3">
-                            <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-500">
+                          <div
+                            data-allocated-branch-edit-allowed="true"
+                            className={`-mt-3 relative rounded border bg-white px-3 pb-2 pt-3 ${
+                              allocatedBranchEditMode ? "border-blue-600" : "border-slate-300"
+                            }`}
+                          >
+                            <span
+                              className={`pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none ${
+                                allocatedBranchEditMode ? "text-slate-900" : "text-slate-500"
+                              }`}
+                            >
                               Allocated Branches
                             </span>
                             <div className="max-h-[130px] overflow-y-auto pt-1">
-                              {allocatedBranches.length > 0 ? (
+                              {filteredAllocatedBranches.length > 0 ? (
                                 <div className="flex flex-wrap gap-2">
-                                  {allocatedBranches.map((allocatedBranch) => (
+                                  {filteredAllocatedBranches.map((allocatedBranch) => (
                                     <Badge
+                                      data-allocated-branch-edit-allowed="true"
                                       key={allocatedBranch}
                                       variant="outline"
-                                      className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-[10px] leading-none !font-normal text-blue-700 hover:bg-blue-50"
+                                      className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
+                                        allocatedBranchEditMode
+                                          ? selectedAllocatedBranchToEdit === allocatedBranch
+                                            ? "cursor-pointer border-blue-600 bg-blue-600 text-white"
+                                            : "cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                          : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-50"
+                                      }`}
+                                      onClick={
+                                        allocatedBranchEditMode
+                                          ? () => handleOpenAllocatedBranchEmployees(allocatedBranch)
+                                          : undefined
+                                      }
                                     >
                                       <span>{allocatedBranch}</span>
                                     </Badge>
                                   ))}
                                 </div>
                               ) : (
-                                <p className="text-[10px] text-slate-500">No branches allocated to employees yet.</p>
+                                <p className="text-[10px] text-slate-500">
+                                  {allocatedBranches.length === 0
+                                    ? "No branches have been allocated yet."
+                                    : "No branches match your search."}
+                                </p>
                               )}
                             </div>
                           </div>
+                          {allocatedBranchEditMode ? (
+                            <p className="mt-[-18px] text-[10px] text-slate-500">
+                              Please select an allocated branch to view its employees.
+                            </p>
+                          ) : null}
                           {branchNames.length === 0 ? (
                             <p className="text-[10px] text-slate-500">
                               Add at least one branch before allocating employees.
@@ -2694,23 +2877,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         </div>
                         <div className="mt-[46px] bg-white">
                       <form
-                        onSubmit={(event) => {
+                        onSubmit={async (event) => {
                           event.preventDefault();
                           const draft = { ...branchForm };
+                          const added = await handleAddBranch(draft);
+                          if (!added) return;
                           setShowBranchForm(false);
                           setBranchForm(emptyBranchForm);
-                          void handleAddBranch(draft);
                         }}
                         className="space-y-4 px-6 pb-6 pt-[26px]"
                       >
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                           <div className="relative w-full max-w-none">
                             <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                              Branch Name <span className="text-red-600">*</span>
+                              Branch Name
                             </span>
                             <Input
                               className={subuserModalInputClass}
-                              placeholder="Please insert branch name"
+                              placeholder="Please insert a short branch name."
                               value={branchForm.name}
                               onChange={(e) => setBranchForm((prev) => ({ ...prev, name: e.target.value }))}
                             />
@@ -2812,7 +2996,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <Button
                             type="submit"
                             className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
-                            disabled={branchForm.name.trim().length === 0 || branchSaving}
+                            disabled={
+                              branchForm.name.trim().length === 0 ||
+                              branchForm.address_line1.trim().length === 0 ||
+                              branchForm.city.trim().length === 0 ||
+                              branchForm.province.trim().length === 0 ||
+                              branchForm.area_code.trim().length === 0 ||
+                              branchSaving
+                            }
                           >
                             Add Branch
                           </Button>
@@ -2828,8 +3019,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     onOpenChange={(open) => {
                       setShowEditBranchForm(open);
                       if (!open) {
-                        setSelectedBranchToEdit(null);
-                        setBranchEditDraft(emptyBranchForm);
+                        handleCancelBranchAction();
                       }
                     }}
                   >
@@ -2860,7 +3050,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
                           <div className="relative w-full max-w-none">
                             <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                              Branch Name <span className="text-red-600">*</span>
+                              Branch Name
                             </span>
                             <Input
                               className={subuserModalInputClass}
@@ -2958,19 +3148,37 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             variant="outline"
                             className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
                             onClick={() => {
-                              setSelectedBranchToEdit(null);
-                              setBranchEditDraft(emptyBranchForm);
+                              const original = selectedBranchToEdit
+                                ? branchSettings.branches.find((item) => item.name === selectedBranchToEdit) ?? null
+                                : null;
+                              if (!original) return;
+                              setBranchEditDraft({
+                                name: original.name,
+                                address_line1: original.address_line1,
+                                address_line2: original.address_line2,
+                                city: original.city,
+                                province: original.province,
+                                area_code: original.area_code,
+                              });
                             }}
                           >
-                            Cancel
+                            Reset
                           </Button>
                           <Button
                             type="submit"
                             className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
-                            disabled={!selectedBranchToEdit || branchEditDraft.name.trim().length === 0 || branchSaving}
+                            disabled={
+                              !selectedBranchToEdit ||
+                              branchEditDraft.name.trim().length === 0 ||
+                              branchEditDraft.address_line1.trim().length === 0 ||
+                              branchEditDraft.city.trim().length === 0 ||
+                              branchEditDraft.province.trim().length === 0 ||
+                              branchEditDraft.area_code.trim().length === 0 ||
+                              branchSaving
+                            }
                           >
                             {branchSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Apply
+                            Save
                           </Button>
                         </div>
                       </form>
@@ -2997,20 +3205,35 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           </DialogClose>
                         </div>
                         <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
-                          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr]">
+                          <div className="mb-1 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
                             <div className="relative">
-                              <span className={floatingLabelClass}>Branch <span className="text-red-600">*</span></span>
+                              <Input
+                                className={`${subuserModalInputClass} ${branchAllocationSearchFocused ? "!border-blue-600" : ""} pr-7 !focus:border-blue-600 !focus-visible:border-blue-600`}
+                                placeholder={branchAllocationSearchFocused ? "" : "Search unassigned employees"}
+                                value={branchAllocationSearchQuery}
+                                onChange={(event) => setBranchAllocationSearchQuery(event.target.value)}
+                                onFocus={() => setBranchAllocationSearchFocused(true)}
+                                onBlur={() => setBranchAllocationSearchFocused(false)}
+                              />
+                              {!branchAllocationSearchFocused ? (
+                                <Search className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                              ) : null}
+                            </div>
+                            <div className="relative">
                               <Select
                                 value={branchAllocationSelectedBranch}
-                                onValueChange={setBranchAllocationSelectedBranch}
+                                onValueChange={(value) => {
+                                  setBranchAllocationSelectedBranch(value);
+                                  setBranchAllocationSelectedEmployeeIds(new Set());
+                                }}
                               >
                                 <SelectTrigger
                                   aria-label="Select branch for allocation"
-                                  className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
+                                  className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:rounded-b-none data-[state=open]:bg-blue-600 data-[state=open]:text-white !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0"
                                 >
-                                  <SelectValue placeholder="Select branch" />
+                                  <SelectValue placeholder="Select Branch" />
                                 </SelectTrigger>
-                                <SelectContent className="text-[11px]">
+                                <SelectContent className="rounded text-[11px]">
                                   {branchNames.map((branchName) => (
                                     <SelectItem
                                       key={branchName}
@@ -3023,47 +3246,18 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="relative">
-                              <span className={floatingLabelClass}>Search employees</span>
-                              <Input
-                                className={subuserModalInputClass}
-                                placeholder="Search by name, surname, ID number, or current branch"
-                                value={branchAllocationSearchQuery}
-                                onChange={(event) => setBranchAllocationSearchQuery(event.target.value)}
-                              />
-                            </div>
                           </div>
 
                           <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                id="branch-allocation-unassigned-only"
-                                className="-mt-0.5 scale-90 data-[state=checked]:!bg-blue-600 data-[state=unchecked]:!bg-slate-300"
-                                checked={branchAllocationAssignedOnly}
-                                onCheckedChange={(checked) => setBranchAllocationAssignedOnly(Boolean(checked))}
-                              />
-                              <Label htmlFor="branch-allocation-unassigned-only" className="text-[10px] text-slate-600">
-                                Show assigned only
-                              </Label>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={selectAllFilteredBranchAllocationEmployees}
-                                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
-                                disabled={branchAllocationSelectableCount === 0 || branchAllocationLoading}
-                              >
-                                Select all filtered
-                              </button>
-                              <span className="text-slate-300">|</span>
-                              <button
-                                type="button"
-                                onClick={clearFilteredBranchAllocationEmployees}
-                                className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
-                                disabled={branchAllocationSelectedEmployeeIds.size === 0 || branchAllocationLoading}
-                              >
-                                Clear filtered
-                              </button>
+                            <div className="text-[10px] text-slate-600">
+                              {branchAllocationSelectedBranch
+                                ? (
+                                  <>
+                                    Please select employees who will be assigned to{" "}
+                                    <span className="underline">{branchAllocationSelectedBranch}</span>.
+                                  </>
+                                )
+                                : "Please select a branch to start assigning employees."}
                             </div>
                           </div>
 
@@ -3080,12 +3274,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               <div className="divide-y divide-slate-100">
                                 {branchAllocationFilteredEmployees.map((employee) => {
                                   const isSelected = branchAllocationSelectedEmployeeIds.has(employee.id);
+                                  const hasSelectedBranch = branchAllocationSelectedBranch.trim().length > 0;
                                   const employeeName = `${employee.employee_name} ${employee.employee_surname}`.trim() || "Unnamed employee";
                                   return (
                                     <div
                                       key={employee.id}
-                                      onClick={() => toggleBranchAllocationEmployeeSelection(employee.id)}
+                                      onClick={() => {
+                                        if (!hasSelectedBranch) return;
+                                        toggleBranchAllocationEmployeeSelection(employee.id);
+                                      }}
                                       onKeyDown={(event) => {
+                                        if (!hasSelectedBranch) return;
                                         if (event.key === "Enter" || event.key === " ") {
                                           event.preventDefault();
                                           toggleBranchAllocationEmployeeSelection(employee.id);
@@ -3093,14 +3292,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       }}
                                       role="button"
                                       tabIndex={0}
-                                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 ${
-                                        isSelected ? "bg-blue-50/70" : "bg-white"
+                                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
+                                        !hasSelectedBranch
+                                          ? "cursor-not-allowed bg-slate-50/70"
+                                          : `cursor-pointer hover:bg-slate-50 ${isSelected ? "bg-blue-50/70" : "bg-white"}`
                                       }`}
                                     >
                                       <div className="flex min-w-0 items-center gap-2">
                                         <input
                                           type="checkbox"
                                           checked={isSelected}
+                                          disabled={!hasSelectedBranch}
                                           readOnly
                                           className="pointer-events-none h-3.5 w-3.5 accent-blue-600"
                                         />
@@ -3120,16 +3322,46 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               </div>
                             )}
                           </div>
+                          {branchAllocationSelectedEmployees.length > 0 ? (
+                            <div className="mt-2 max-h-[130px] overflow-y-auto rounded border border-slate-300 bg-white px-3 py-2">
+                              <div className="flex flex-wrap gap-2">
+                                {branchAllocationSelectedEmployees.map((employee) => {
+                                  const firstInitial = employee.employee_name.trim().charAt(0).toUpperCase();
+                                  const surname = employee.employee_surname.trim();
+                                  const idPart = employee.id_number ? ` (${employee.id_number})` : " (No ID number)";
+                                  const employeeName =
+                                    firstInitial && surname ? `${firstInitial}. ${surname}${idPart}` : `Unnamed employee${idPart}`;
+                                  return (
+                                    <Badge
+                                      key={employee.id}
+                                      variant="outline"
+                                      className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10px] leading-none !font-normal text-blue-700 hover:bg-blue-100"
+                                    >
+                                      <span className="max-w-[210px] truncate">{employeeName}</span>
+                                      <button
+                                        type="button"
+                                        className="inline-flex items-center text-blue-700 hover:text-blue-900"
+                                        onClick={() => toggleBranchAllocationEmployeeSelection(employee.id)}
+                                        aria-label={`Remove ${employeeName}`}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
 
                           <div className="flex items-center justify-center gap-2 pt-4">
                             <Button
                               type="button"
                               variant="outline"
                               className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
-                              onClick={() => handleBranchAllocationDialogChange(false)}
-                              disabled={branchAllocationSubmitting}
+                              onClick={() => setBranchAllocationSelectedEmployeeIds(new Set())}
+                              disabled={branchAllocationSubmitting || branchAllocationSelectedEmployeeIds.size === 0}
                             >
-                              Cancel
+                              Clear
                             </Button>
                             <Button
                               type="button"
@@ -3139,11 +3371,125 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 branchAllocationSubmitting ||
                                 branchAllocationLoading ||
                                 !branchAllocationSelectedBranch ||
-                                branchAllocationSelectedEmployeeIds.size === 0
+                                branchAllocationPendingChanges.totalChanges === 0
                               }
                             >
                               {branchAllocationSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                               Save
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={isAllocatedBranchEmployeesOpen} onOpenChange={handleAllocatedBranchEmployeesDialogChange}>
+                    <DialogContent
+                      className="w-[94vw] max-w-[620px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
+                      onCloseAutoFocus={(event) => event.preventDefault()}
+                    >
+                      <div className="relative">
+                        <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                          <div className="flex items-center gap-2 pl-2">
+                            <Users className="h-4 w-4 text-white" />
+                            <DialogTitle className="text-sm font-semibold text-white">Edit Branch Allocation</DialogTitle>
+                          </div>
+                          <DialogClose asChild>
+                            <button type="button" className="text-white hover:text-white/80" aria-label="Close allocated employees popup">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </DialogClose>
+                        </div>
+                        <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
+                          <div className="relative">
+                            <Input
+                              className={`${subuserModalInputClass} ${allocatedBranchEmployeesSearchFocused ? "!border-blue-600" : ""} pr-7 !focus:border-blue-600 !focus-visible:border-blue-600`}
+                              placeholder={
+                                allocatedBranchEmployeesSearchFocused
+                                  ? ""
+                                  : selectedAllocatedBranchToEdit
+                                    ? `Search employees at ${selectedAllocatedBranchToEdit}`
+                                    : "Search employees"
+                              }
+                              value={allocatedBranchEmployeesSearchQuery}
+                              onChange={(event) => setAllocatedBranchEmployeesSearchQuery(event.target.value)}
+                              onFocus={() => setAllocatedBranchEmployeesSearchFocused(true)}
+                              onBlur={() => setAllocatedBranchEmployeesSearchFocused(false)}
+                            />
+                            {!allocatedBranchEmployeesSearchFocused ? (
+                              <Search className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                            ) : null}
+                          </div>
+
+                          <div className="mt-3 max-h-[340px] overflow-y-auto rounded border border-slate-300 bg-white">
+                            {branchAllocationLoading ? (
+                              <div className="flex items-center justify-center py-10">
+                                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                              </div>
+                            ) : filteredAllocatedBranchEmployees.length === 0 ? (
+                              <div className="px-3 py-8 text-center text-[10px] text-slate-500">
+                                {selectedAllocatedBranchToEdit
+                                  ? "No employees match your current search."
+                                  : "Please select a branch first."}
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-slate-100">
+                                {filteredAllocatedBranchEmployees.map((employee) => {
+                                  const isSelected = allocatedBranchSelectedEmployeeIds.has(employee.id);
+                                  const employeeName = `${employee.employee_name} ${employee.employee_surname}`.trim() || "Unnamed employee";
+                                  return (
+                                    <div
+                                      key={employee.id}
+                                      onClick={() => toggleAllocatedBranchEmployeeSelection(employee.id)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                          event.preventDefault();
+                                          toggleAllocatedBranchEmployeeSelection(employee.id);
+                                        }
+                                      }}
+                                      role="button"
+                                      tabIndex={0}
+                                      className={`flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 ${
+                                        isSelected ? "bg-blue-50/70" : "bg-white"
+                                      }`}
+                                    >
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          readOnly
+                                          className="pointer-events-none h-3.5 w-3.5 accent-blue-600"
+                                        />
+                                        <div className="min-w-0">
+                                          <p className="truncate text-[11px] font-medium text-slate-800">
+                                            {employeeName}
+                                            {employee.id_number ? ` (${employee.id_number})` : " (No ID number)"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <span className="shrink-0 rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700">
+                                        Allocated
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-center gap-2 pt-6">
+                            <Button
+                              type="button"
+                              className="h-[28px] min-w-[110px] rounded bg-red-600 px-3 text-xs text-white hover:bg-red-700 disabled:bg-slate-300 disabled:text-white"
+                              onClick={handleRemoveAllocatedBranchEmployees}
+                              disabled={
+                                allocatedBranchRemoveSubmitting ||
+                                branchAllocationLoading ||
+                                allocatedBranchSelectedEmployeeIds.size === 0
+                              }
+                            >
+                              {allocatedBranchRemoveSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Remove
                             </Button>
                           </div>
                         </div>

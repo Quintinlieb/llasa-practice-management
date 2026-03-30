@@ -24,6 +24,7 @@ import {
   calculateAgeFromDob,
   type PermanentContractFormData,
 } from "@/lib/validation";
+import { detectLogoLayout, getPdfLogoTargetHeight, type LogoLayout } from "@/lib/logoLayout";
 import type { Tables } from "@/integrations/supabase/types";
 
 type ServiceCertificateFormState = {
@@ -31,6 +32,7 @@ type ServiceCertificateFormState = {
   age: string;
   companyLogoDataUrl: string;
   logoPlacement: "center";
+  logoLayout: LogoLayout | null;
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
@@ -72,6 +74,7 @@ type ServiceCertificateData = PermanentContractFormData & {
   idType: "id" | "passport";
   companyLogoDataUrl: string;
   logoPlacement: "center";
+  logoLayout: LogoLayout | null;
   letterheadThemeColors: string[];
   issuer: string;
   hearingDate: string;
@@ -90,7 +93,10 @@ type ServiceCertificateData = PermanentContractFormData & {
 type SlimProfile = Pick<
   Tables<"profiles">,
   "id" | "company_name" | "company_type" | "registration_number" | "physical_address" | "company_contact" | "company_email"
->;
+> & {
+  company_logo_data_url?: string | null;
+  company_logo_layout?: "vertical" | "horizontal" | null;
+};
 type SlimEmployee = {
   id: string;
   id_number: string | null;
@@ -715,6 +721,7 @@ const ServiceCertificateGenerator = ({
     age: "",
     companyLogoDataUrl: "",
     logoPlacement: "center",
+    logoLayout: null,
     letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     issuer: "",
     hearingDate: "",
@@ -864,11 +871,23 @@ const ServiceCertificateGenerator = ({
 
   const fetchProfile = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
+    const baseProfileSelect =
+      "id, company_name, company_type, registration_number, physical_address, company_contact, company_email";
+    const profileSelectWithLogo = `${baseProfileSelect}, company_logo_data_url, company_logo_layout`;
+    const withLogo = await (supabase as any)
       .from("profiles")
-      .select("id, company_name, company_type, registration_number, physical_address, company_contact, company_email")
+      .select(profileSelectWithLogo)
       .eq("id", user.id)
       .maybeSingle();
+    const fallbackWithoutLogo = withLogo.error
+      ? await (supabase as any)
+          .from("profiles")
+          .select(baseProfileSelect)
+          .eq("id", user.id)
+          .maybeSingle()
+      : null;
+    const data = withLogo.error ? fallbackWithoutLogo?.data : withLogo.data;
+    const error = withLogo.error ? fallbackWithoutLogo?.error : withLogo.error;
     if (error) {
       console.warn("Unable to load profile", error);
       return;
@@ -901,11 +920,19 @@ const ServiceCertificateGenerator = ({
 
   useEffect(() => {
     if (profile) {
+      const storedLogo = (profile.company_logo_data_url || "").trim();
+      const storedLogoLayoutRaw = (profile.company_logo_layout || "").trim().toLowerCase();
+      const storedLogoLayout: LogoLayout | null =
+        storedLogoLayoutRaw === "vertical" || storedLogoLayoutRaw === "horizontal"
+          ? storedLogoLayoutRaw
+          : null;
       setFormData((prev) => ({
         ...prev,
         workplace: prev.workplace || profile.physical_address || "",
         employerContact: prev.employerContact || profile.company_contact || "",
         employerEmail: prev.employerEmail || profile.company_email || "",
+        companyLogoDataUrl: prev.companyLogoDataUrl || storedLogo,
+        logoLayout: prev.companyLogoDataUrl || !storedLogo ? prev.logoLayout : storedLogoLayout,
       }));
     }
   }, [profile]);
@@ -1056,7 +1083,8 @@ const ServiceCertificateGenerator = ({
       employeeId: "",
       age: "",
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
       issuer: "",
       hearingDate: "",
@@ -1338,7 +1366,8 @@ const ServiceCertificateGenerator = ({
       employerContact: profile?.company_contact || "",
       employerEmail: profile?.company_email || "",
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     setCompanyLogoPreview("");
@@ -1715,7 +1744,8 @@ const ServiceCertificateGenerator = ({
       if (!result) return;
       const trimmedResult = await trimLogoWhitespace(result);
       setCompanyLogoPreview(trimmedResult);
-      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult, logoPlacement: "center" }));
+      const detectedLayout = (await detectLogoLayout(trimmedResult)) ?? "horizontal";
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult, logoPlacement: "center", logoLayout: detectedLayout }));
     };
     reader.onerror = () => {
       toast({
@@ -1732,7 +1762,8 @@ const ServiceCertificateGenerator = ({
     setFormData((prev) => ({
       ...prev,
       companyLogoDataUrl: "",
-      logoPlacement: "center",
+    logoPlacement: "center",
+    logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     if (companyLogoInputRef.current) {
@@ -1808,6 +1839,7 @@ const ServiceCertificateGenerator = ({
       newEndDate: "",
       companyLogoDataUrl: formData.companyLogoDataUrl,
       logoPlacement: formData.logoPlacement,
+      logoLayout: formData.logoLayout,
       letterheadThemeColors: sanitizeThemeColors(formData.letterheadThemeColors),
       issuer: formData.issuer,
       hearingDate: formData.hearingDate,
@@ -1998,20 +2030,14 @@ const ServiceCertificateGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const stackedLogoMaxHeight = 24;
-        const targetLogoHeight = imageRatio < 1 ? stackedLogoMaxHeight : 20;
-        const maxLogoWidth = imageRatio < 1 ? 52 : 60;
+        const targetLogoHeight = getPdfLogoTargetHeight(data.logoLayout);
+        const maxLogoWidth = 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
         if (logoWidth > maxLogoWidth) {
           const scale = maxLogoWidth / logoWidth;
           logoWidth = maxLogoWidth;
           logoHeight *= scale;
-        }
-        if (imageRatio < 1 && logoHeight > stackedLogoMaxHeight) {
-          const scale = stackedLogoMaxHeight / logoHeight;
-          logoHeight = stackedLogoMaxHeight;
-          logoWidth *= scale;
         }
         const logoTop = Math.max(6, headerTop - 10);
         logoTopForBalance = logoTop;
@@ -2757,7 +2783,7 @@ const ServiceCertificateGenerator = ({
               {activeStep === 0 && (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className="space-y-1.5">
                       <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
                       <Input
                         id="companyName"
@@ -2766,7 +2792,7 @@ const ServiceCertificateGenerator = ({
                         className={getNoticeModalInputClass(Boolean(profile?.company_name))}
                       />
                     </div>
-                    <div className="space-y-1.5 md:col-span-2">
+                    <div className="space-y-1.5">
                       <Label htmlFor="registrationNumber" className={modalFieldLabelClass}>Registration number</Label>
                       <Input
                         id="registrationNumber"
@@ -2845,7 +2871,7 @@ const ServiceCertificateGenerator = ({
                         >
                           {companyLogoPreview || formData.companyLogoDataUrl ? "Change logo" : "Upload logo"}
                         </Button>
-                        {companyLogoPreview ? (
+                        {companyLogoPreview || formData.companyLogoDataUrl ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -3916,6 +3942,10 @@ const ServiceCertificateGenerator = ({
 };
 
 export default ServiceCertificateGenerator;
+
+
+
+
 
 
 

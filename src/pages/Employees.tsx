@@ -1402,17 +1402,18 @@ const Employees = () => {
     });
     return Array.from(grouped.entries());
   }, []);
-  const branchOptions = useMemo(() => {
-    const normalized = companyBranches
+  const allocatedBranchNames = useMemo(() => {
+    const normalized = branch
+      .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-    const unique = Array.from(new Set(normalized));
-    const currentBranch = branch.trim();
-    if (currentBranch && !unique.some((value) => value.toLowerCase() === currentBranch.toLowerCase())) {
-      unique.unshift(currentBranch);
-    }
-    return unique;
-  }, [branch, companyBranches]);
+    return Array.from(new Set(normalized));
+  }, [branch]);
+  const allocatedBranchDisplayValue = useMemo(() => {
+    if (allocatedBranchNames.length === 0) return "Unassigned";
+    if (allocatedBranchNames.length === 1) return allocatedBranchNames[0];
+    return `${allocatedBranchNames.length} branches`;
+  }, [allocatedBranchNames]);
 
   const fetchCompanyBranches = useCallback(async () => {
     if (!user) return;
@@ -8452,38 +8453,35 @@ const Employees = () => {
           </div>
           {companyBranchesEnabled && (
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branch</Label>
-              <Select
-                value={branch || "__none"}
-                onValueChange={(value) => setBranch(value === "__none" ? "" : value)}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                    return;
-                  }
-                }}
-                disabled={!isEditMode || branchOptions.length === 0}
-              >
-                <SelectTrigger
-                  className={employeeDropdownTriggerClass}
-                  disabled={!isEditMode || branchOptions.length === 0}
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branches</Label>
+              {allocatedBranchNames.length > 1 ? (
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`${fieldInputClass} ml-auto flex w-full max-w-[320px] items-center justify-between rounded border-slate-200 bg-white px-3 text-[11px] text-slate-700`}
+                      >
+                        <span className="truncate">{allocatedBranchDisplayValue}</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[220px] rounded text-[10px]">
+                      <div className="space-y-1">
+                        {allocatedBranchNames.map((branchName) => (
+                          <p key={branchName} className="leading-tight text-slate-700">
+                            {branchName}
+                          </p>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <div
+                  className={`${fieldInputClass} ml-auto flex w-full max-w-[320px] items-center justify-between rounded border-slate-200 bg-white px-3 text-[11px] text-slate-700`}
                 >
-                  <SelectValue placeholder={branchOptions.length === 0 ? "No branches configured" : "Select branch"} />
-                </SelectTrigger>
-                <SelectContent className="text-[11px]">
-                  <SelectItem value="__none" className={employeeDropdownSelectItemClass}>
-                    None
-                  </SelectItem>
-                  {branchOptions.map((option) => (
-                    <SelectItem
-                      key={option}
-                      value={option}
-                      className={employeeDropdownSelectItemClass}
-                    >
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <span className="truncate">{allocatedBranchDisplayValue}</span>
+                </div>
+              )}
             </div>
           )}
           <div className="flex items-center gap-3">

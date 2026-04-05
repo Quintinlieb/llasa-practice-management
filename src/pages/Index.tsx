@@ -19,6 +19,7 @@ import {
   Download,
   ChevronDown,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -93,29 +94,37 @@ const featureCards = [
   },
 ];
 
-const steps = [
+type HowItWorksStep = {
+  title: string;
+  copy: string;
+  step: string;
+  imageSrc?: string;
+  icon?: LucideIcon;
+};
+
+const steps: HowItWorksStep[] = [
   {
     title: "Add employees",
     copy: "Capture employee details once and keep everything organised in one place.",
-    icon: Users,
+    imageSrc: "/add-employees-icon-illustration.png",
     step: "01",
   },
   {
     title: "Choose your document",
     copy: "Select from a library of HR documents or processes you need to draft.",
-    icon: FileText,
+    imageSrc: "/choose-document-icon-illustration.png",
     step: "02",
   },
   {
     title: "Complete the details",
     copy: "Fill in the required information through a simple guided workflow.",
-    icon: Sparkles,
+    imageSrc: "/complete-details-icon-illustration.png",
     step: "03",
   },
   {
     title: "Review and download",
     copy: "Make final edits and download a beautiful, ready-to-use, compliant document instantly.",
-    icon: Download,
+    imageSrc: "/review-download-icon-illustration.png",
     step: "04",
   },
 ];
@@ -310,7 +319,7 @@ const Index = () => {
       </header>
 
       <main>
-        <section className="relative overflow-hidden bg-slate-50 lg:-mb-48">
+        <section className="relative overflow-hidden bg-slate-50 lg:-mb-[157px]">
           <div className="absolute inset-0 bg-slate-50" />
           <div className="relative z-10 mx-auto -mt-5 grid max-w-7xl items-center gap-12 px-6 pb-0 pt-0 text-center sm:pt-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,720px)] lg:text-left">
             <div>
@@ -357,32 +366,22 @@ const Index = () => {
               </div>
             </div>
             <div className="relative mx-auto w-full max-w-2xl lg:ml-auto lg:mr-0 lg:max-w-none">
-              <div className="pointer-events-none absolute -bottom-44 -top-6 right-0 hidden w-[42%] overflow-hidden lg:block">
-                <div className="absolute right-6 top-0 h-[42%] w-16 -skew-x-[30deg] bg-[#dbe6f4]/50" />
-                <div className="absolute right-28 top-[8%] h-[42%] w-16 -skew-x-[30deg] bg-[#dfe9f6]/46" />
-
-                <div className="absolute right-20 top-[38%] h-[42%] w-16 -skew-x-[30deg] bg-[#d9e4f3]/50" />
-                <div className="absolute right-42 top-[46%] h-[42%] w-16 -skew-x-[30deg] bg-[#dce7f5]/46" />
-
-                <div className="absolute right-34 top-[74%] h-[42%] w-16 -skew-x-[30deg] bg-[#d7e3f2]/48" />
-                <div className="absolute right-56 top-[82%] h-[42%] w-16 -skew-x-[30deg] bg-[#dbe6f4]/42" />
-              </div>
               <img
                 src="/hero-zappir-3.png"
                 alt="Zappir HR document automation illustration"
                 className="relative z-10 mx-auto w-full max-w-[720px] -translate-y-[20px] lg:translate-x-[83px] lg:-translate-y-[20px]"
               />
-              <p className="absolute bottom-[135px] left-[calc(50%+15px)] z-20 -translate-x-1/2 -translate-y-[20px] whitespace-nowrap text-center text-xs text-slate-500">
+              <p className="absolute bottom-[135px] left-1/2 z-20 -ml-[60px] -translate-x-1/2 -translate-y-[23px] whitespace-nowrap text-center text-xs text-slate-500">
                 Trusted by 1000+ South African users
               </p>
             </div>
           </div>
         </section>
 
-        <div className="relative z-20 px-6 lg:-mt-8 lg:h-[460px]">
+        <div className="relative z-20 px-6 lg:-mt-8 lg:h-[260px]">
           <div
             id="how"
-            className="mx-auto max-w-5xl rounded-[28px] bg-white px-6 py-12 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.28)] sm:px-10 sm:py-14 lg:absolute lg:left-1/2 lg:top-[100px] lg:w-[calc(100%-3rem)] lg:-translate-x-1/2"
+            className="mx-auto max-w-5xl rounded-[28px] bg-white px-6 py-12 shadow-[0_24px_68px_-24px_rgba(15,23,42,0.32),0_-12px_32px_-24px_rgba(15,23,42,0.2)] sm:px-10 sm:py-14 lg:absolute lg:left-1/2 lg:top-[180px] lg:w-[calc(100%-3rem)] lg:-translate-x-1/2"
           >
             <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
               <div>
@@ -400,11 +399,29 @@ const Index = () => {
 
             <div className="mt-14 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
               {steps.map((step) => (
-                <article key={step.title} className="max-w-sm">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-                    <step.icon className="h-6 w-6" />
-                  </span>
-                  <h3 className="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
+                <article key={step.title} className={`${step.imageSrc ? "-mt-[25px]" : ""} max-w-sm`}>
+                  {step.imageSrc ? (
+                    <img
+                      src={step.imageSrc}
+                      alt={`${step.title} icon`}
+                      className={`${
+                        step.step === "02"
+                          ? "-ml-[31px]"
+                          : step.step === "03"
+                            ? "-ml-[35px]"
+                            : step.step === "04"
+                              ? "-ml-[30px]"
+                              : "-ml-[26px]"
+                      } block h-32 w-32 object-contain`}
+                    />
+                  ) : step.icon ? (
+                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                      <step.icon className="h-6 w-6" />
+                    </span>
+                  ) : null}
+                  <h3 className={`${step.imageSrc ? "mt-[-17px]" : "mt-2"} text-lg font-semibold text-slate-900`}>
+                    {step.title}
+                  </h3>
                   <p className="mt-3 text-xs leading-6 text-slate-600">{step.copy}</p>
                 </article>
               ))}
@@ -412,31 +429,106 @@ const Index = () => {
           </div>
         </div>
 
-        <section id="features" className="bg-white px-6 pb-16 pt-16 lg:pt-24 text-center">
+        <section className="bg-white px-6 pb-16 pt-16 lg:pt-[474px] text-center">
+          <div className="mx-auto max-w-6xl pt-[50px]">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Why us</p>
+            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">A better way to manage HR</h2>
+
+            <div className="mt-14 grid gap-6 md:grid-cols-2">
+              <Card className="rounded-3xl border-0 bg-blue-50/85 px-8 pt-8 pb-5 text-left shadow-sm">
+                <div className="flex items-end gap-2">
+                  <p className="text-5xl font-bold leading-none tracking-tight text-blue-600">1,000x</p>
+                  <p className="pb-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-900">faster</p>
+                </div>
+                <p className="mt-8 max-w-sm text-lg font-semibold leading-tight text-slate-900">
+                  What usually takes 2-3 days now takes 2-3 minutes
+                </p>
+              </Card>
+
+              <Card className="rounded-3xl border-0 bg-blue-50/85 p-8 text-left shadow-sm">
+                <h3 className="max-w-sm text-lg font-semibold leading-tight text-slate-900">
+                  No more high consulting and legal fees for drafting legal documents
+                </h3>
+                <div className="mt-6 flex items-center gap-4">
+                  <span className="inline-flex h-[52px] w-[52px] items-center justify-center rounded-lg bg-blue-600 text-white">
+                    <Icon icon="mdi:piggy-bank-outline" className="h-8 w-8" />
+                  </span>
+                  <span className="ml-4 inline-flex flex-col items-center justify-center gap-1 text-slate-400">
+                    <span className="relative block h-4 w-16">
+                      <span className="absolute left-[7px] right-0 top-1/2 h-px -translate-y-1/2 bg-slate-400" />
+                      <span className="absolute left-0 top-1/2 h-0 w-0 -translate-y-1/2 border-y-[4px] border-y-transparent border-r-[7px] border-r-slate-400" />
+                    </span>
+                    <span className="relative block h-4 w-16">
+                      <span className="absolute left-0 right-[7px] top-1/2 h-px -translate-y-1/2 bg-slate-400" />
+                      <span className="absolute right-0 top-1/2 h-0 w-0 -translate-y-1/2 border-y-[4px] border-y-transparent border-l-[7px] border-l-slate-400" />
+                    </span>
+                  </span>
+                  <img
+                    src="/zappir_logo_black(1).png"
+                    alt="Zappir logo"
+                    className="ml-4 h-10 w-auto object-contain"
+                  />
+                </div>
+              </Card>
+            </div>
+
+            <Card className="mt-6 rounded-3xl border-0 bg-blue-50/85 p-8 text-left shadow-sm">
+              <div className="grid gap-8 md:grid-cols-[320px_minmax(0,1fr)] md:items-end">
+                <div>
+                  <h3 className="text-3xl font-bold leading-tight text-slate-900">No admin overload</h3>
+                  <p className="mt-4 max-w-xs text-sm leading-6 text-slate-500">
+                    Generate consistent, compliant documents without getting buried in repetitive manual HR work.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-white p-6">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-xs text-slate-400">Summary</p>
+                      <p className="mt-1 text-4xl font-semibold text-slate-900">R1,876,580</p>
+                    </div>
+                    <p className="text-xs text-slate-500">6 Months</p>
+                  </div>
+                  <div className="mt-6 h-36 rounded-xl bg-gradient-to-b from-blue-100/80 to-white" />
+                  <div className="mt-4 grid grid-cols-6 text-center text-xs text-slate-400">
+                    <span>Jan</span>
+                    <span>Feb</span>
+                    <span>Mar</span>
+                    <span>Apr</span>
+                    <span>May</span>
+                    <span>Jun</span>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </section>
+
+        <section id="features" className="bg-slate-950 px-6 pb-16 pt-16 lg:pt-24 text-center text-white">
           <div className="mx-auto max-w-6xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Features</p>
-          <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">Features</p>
+          <h2 className="mt-4 text-3xl font-bold text-white sm:text-4xl">
             Everything you need to manage HR docs
           </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
+          <p className="mx-auto mt-3 max-w-2xl text-base text-slate-300">
             From contracts to compliance, nudoc handles the paperwork so you can focus on your people.
           </p>
 
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {featureCards.map((feature) => (
-              <Card key={feature.title} className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
+              <Card key={feature.title} className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-left text-white">
                 <div className="flex items-center justify-between">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600/20 text-blue-300">
                     <feature.icon className="h-6 w-6" />
                   </span>
                   {feature.badge && (
-                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-600">
+                    <Badge variant="outline" className="border-blue-300/30 bg-blue-500/10 text-blue-200">
                       {feature.badge}
                     </Badge>
                   )}
                 </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">{feature.title}</h3>
-                <p className="mt-2 text-sm text-slate-600">{feature.copy}</p>
+                <h3 className="mt-4 text-lg font-semibold text-white">{feature.title}</h3>
+                <p className="mt-2 text-sm text-slate-300">{feature.copy}</p>
               </Card>
             ))}
           </div>

@@ -175,6 +175,38 @@ All colors MUST be HSL.
   animation: pulseSlow 2.8s ease-in-out infinite;
 }
 
+.logo-marquee {
+  position: relative;
+  overflow: hidden;
+}
+
+.logo-marquee::before,
+.logo-marquee::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  height: 100%;
+  width: 64px;
+  pointer-events: none;
+}
+
+.logo-marquee::before {
+  left: 0;
+  background: linear-gradient(to right, #fff 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.logo-marquee::after {
+  right: 0;
+  background: linear-gradient(to left, #fff 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.logo-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: logoMarquee 34s linear infinite;
+}
+
 @keyframes float {
   0%,
   100% {
@@ -204,6 +236,15 @@ All colors MUST be HSL.
   50% {
     transform: scale(1.04);
     box-shadow: 0 10px 30px -10px hsla(var(--primary), 0.35);
+  }
+}
+
+@keyframes logoMarquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }
 

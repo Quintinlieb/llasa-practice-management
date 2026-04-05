@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Icon } from "@iconify/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
   MessageSquare,
   Lock,
   Scale,
+  Timer,
   Download,
   ChevronDown,
 } from "lucide-react";
@@ -25,27 +27,21 @@ const navLinks = [
   { label: "FAQ", href: "#faq" },
 ];
 
-const trustItems = [
-  {
-    title: "3 min to PDF",
-    copy: "From blank to compliant document",
-    icon: Sparkles,
-  },
-  {
-    title: "SA labour aligned",
-    copy: "BCEA, LRA & sectoral compliance",
-    icon: Shield,
-  },
-  {
-    title: "Audit-ready",
-    copy: "Full document history & trails",
-    icon: FileText,
-  },
-  {
-    title: "No legal speak",
-    copy: "Plain language, clear terms",
-    icon: MessageSquare,
-  },
+const clientLogos = [
+  { src: "/logo-citybug.png", alt: "Citybug", imageClassName: "object-contain scale-95" },
+  { src: "/logo-east-rand-dental-studio.png", alt: "East Rand Dental Studio", imageClassName: "object-contain scale-95" },
+  { src: "/logo-malamala.png", alt: "MalaMala", imageClassName: "object-cover scale-100" },
+  { src: "/logo-romans-pizza.jpg", alt: "Roman's Pizza" },
+  { src: "/logo-superspar.png", alt: "SUPERSPAR" },
+  { src: "/logo-iveco.png", alt: "IVECO", imageClassName: "object-contain scale-125" },
+  { src: "/logo-caltex.png", alt: "Caltex", imageClassName: "object-contain scale-[0.85]" },
+  { src: "/logo-wimpy.png", alt: "Wimpy" },
+];
+
+const heroInfoCards = [
+  { title: "Cloud Based", iconify: "ic:outline-cloud" },
+  { title: "Legally Compliant", icon: Scale },
+  { title: "Quick Results", icon: Timer },
 ];
 
 const featureCards = [
@@ -99,26 +95,26 @@ const featureCards = [
 
 const steps = [
   {
-    title: "Add your employee",
-    copy: "Enter basic details or import from an existing profile. Takes 30 seconds.",
+    title: "Add employees",
+    copy: "Capture employee details once and keep everything organised in one place.",
     icon: Users,
     step: "01",
   },
   {
     title: "Choose your document",
-    copy: "Select from contracts, policies, letters, or forms. All SA-compliant templates.",
+    copy: "Select from a library of HR documents or processes you need to draft.",
     icon: FileText,
     step: "02",
   },
   {
-    title: "Answer guided questions",
-    copy: "Simple prompts fill in the blanks. No legal jargon, just plain questions.",
+    title: "Complete the details",
+    copy: "Fill in the required information through a simple guided workflow.",
     icon: Sparkles,
     step: "03",
   },
   {
-    title: "Download & send",
-    copy: "Preview instantly, download as PDF, or send for e-signature.",
+    title: "Review and download",
+    copy: "Make final edits and download a beautiful, ready-to-use, compliant document instantly.",
     icon: Download,
     step: "04",
   },
@@ -240,6 +236,7 @@ const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
+  const [heroEmailFocused, setHeroEmailFocused] = useState(false);
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
@@ -260,7 +257,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-40 bg-slate-50/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex flex-1 items-center gap-3">
             <img src="/zappir_logo_black(1).png" alt="zappir logo" className="h-8 w-auto" />
@@ -313,84 +310,110 @@ const Index = () => {
       </header>
 
       <main>
-        <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-100 via-slate-50 to-slate-50" />
-          <div className="relative mx-auto max-w-5xl px-6 pb-16 pt-16 text-center sm:pt-24">
-            <div className="mx-auto mb-6 w-fit rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">
-              Built for South Africa
-            </div>
-            <h1 className="relative mx-auto max-w-4xl text-4xl font-bold leading-tight text-slate-900 sm:text-5xl lg:text-6xl">
-              <span className="relative z-10 block">
-                HR paperwork{" "}
-                <span className="underline decoration-blue-600 decoration-2 underline-offset-4">shouldn’t</span>
-              </span>
-              <span className="relative z-10 inline-block">slow you down!</span>
-            </h1>
-            <p className="mx-auto mt-5 max-w-3xl text-lg text-slate-600 sm:text-xl">
-              Generate legally compliant documents instantly and avoid the delays and high costs of labour consultants or lawyers.
-            </p>
-            <div className="mt-14 flex flex-wrap justify-center gap-3">
-              <Link to="/auth?new=1">
-                <Button className="h-12 rounded-full bg-blue-600 px-8 text-base text-white hover:bg-blue-700">
-                  Get started free <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-              <Button variant="outline" className="h-12 rounded-full px-7 text-base text-slate-700">
-                Book a demo
-              </Button>
-            </div>
-            <p className="mt-6 text-sm text-slate-500">Trusted by 1000+ South Africa users</p>
-          </div>
-        </section>
-
-        <section className="border-y border-slate-200 bg-white">
-          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 py-12 text-center md:grid-cols-4">
-            {trustItems.map((item) => (
-              <div key={item.title} className="space-y-3">
-                <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-                  <item.icon className="h-6 w-6" />
+        <section className="relative overflow-hidden bg-slate-50 lg:-mb-48">
+          <div className="absolute inset-0 bg-slate-50" />
+          <div className="relative z-10 mx-auto -mt-5 grid max-w-7xl items-center gap-12 px-6 pb-0 pt-0 text-center sm:pt-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,720px)] lg:text-left">
+            <div>
+              <h1 className="relative mx-auto max-w-4xl text-5xl font-bold leading-tight text-slate-900 sm:text-6xl lg:mx-0 lg:text-6xl">
+                <span className="relative z-10 block">
+                  <span className="block">HR paperwork</span>
+                  <span className="mt-1 block underline decoration-blue-600 decoration-2 underline-offset-4">shouldn’t</span>
                 </span>
-                <div>
-                  <p className="text-base font-semibold text-slate-900">{item.title}</p>
-                  <p className="text-sm text-slate-500">{item.copy}</p>
+                <span className="relative z-10 inline-block">slow you down!</span>
+              </h1>
+              <p className="mx-auto mt-5 max-w-3xl text-sm text-slate-600 sm:text-base lg:mx-0">
+                Get your HR documents done in seconds without relying on expensive consultants or lawyers. Simple, reliable and ready when you are.
+              </p>
+              <div className="mt-12 flex flex-wrap justify-center gap-3 lg:justify-start">
+                <div className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5">
+                  <input
+                    type="email"
+                    placeholder={heroEmailFocused ? "" : "Your business email"}
+                    onFocus={() => setHeroEmailFocused(true)}
+                    onBlur={() => setHeroEmailFocused(false)}
+                    className="h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                  />
+                  <Button type="button" className="h-10 rounded-xl bg-blue-600 px-5 text-sm text-white hover:bg-blue-700">
+                    Get Started <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
-            ))}
+              <div className="mt-10 flex flex-wrap justify-center gap-2 lg:justify-start">
+                {heroInfoCards.map((card) => (
+                  <div
+                    key={card.title}
+                    className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left"
+                  >
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+                      {card.iconify ? (
+                        <Icon icon={card.iconify} className="h-4 w-4" />
+                      ) : (
+                        <card.icon className="h-4 w-4" strokeWidth={card.title === "Legally Compliant" ? 1.5 : 2} />
+                      )}
+                    </span>
+                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-700">{card.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="relative mx-auto w-full max-w-2xl lg:ml-auto lg:mr-0 lg:max-w-none">
+              <div className="pointer-events-none absolute -bottom-44 -top-6 right-0 hidden w-[42%] overflow-hidden lg:block">
+                <div className="absolute right-6 top-0 h-[42%] w-16 -skew-x-[30deg] bg-[#dbe6f4]/50" />
+                <div className="absolute right-28 top-[8%] h-[42%] w-16 -skew-x-[30deg] bg-[#dfe9f6]/46" />
+
+                <div className="absolute right-20 top-[38%] h-[42%] w-16 -skew-x-[30deg] bg-[#d9e4f3]/50" />
+                <div className="absolute right-42 top-[46%] h-[42%] w-16 -skew-x-[30deg] bg-[#dce7f5]/46" />
+
+                <div className="absolute right-34 top-[74%] h-[42%] w-16 -skew-x-[30deg] bg-[#d7e3f2]/48" />
+                <div className="absolute right-56 top-[82%] h-[42%] w-16 -skew-x-[30deg] bg-[#dbe6f4]/42" />
+              </div>
+              <img
+                src="/hero-zappir-3.png"
+                alt="Zappir HR document automation illustration"
+                className="relative z-10 mx-auto w-full max-w-[720px] -translate-y-[20px] lg:translate-x-[83px] lg:-translate-y-[20px]"
+              />
+              <p className="absolute bottom-[135px] left-[calc(50%+15px)] z-20 -translate-x-1/2 -translate-y-[20px] whitespace-nowrap text-center text-xs text-slate-500">
+                Trusted by 1000+ South African users
+              </p>
+            </div>
           </div>
         </section>
 
-        <section id="how" className="bg-slate-50 px-6 py-16">
-          <div className="mx-auto max-w-6xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">How it works</p>
-            <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
-              From blank to compliant in four steps
-            </h2>
-            <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
-              No templates to decipher. No lawyers to consult. Just answer simple questions and get professional documents.
-            </p>
-            <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="relative z-20 px-6 lg:-mt-8 lg:h-[460px]">
+          <div
+            id="how"
+            className="mx-auto max-w-5xl rounded-[28px] bg-white px-6 py-12 shadow-[0_22px_60px_-24px_rgba(15,23,42,0.28)] sm:px-10 sm:py-14 lg:absolute lg:left-1/2 lg:top-[100px] lg:w-[calc(100%-3rem)] lg:-translate-x-1/2"
+          >
+            <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
+              <div>
+                <p className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-600">
+                  How it works
+                </p>
+                <h2 className="mt-3 max-w-xl text-2xl font-semibold leading-tight text-slate-900 sm:text-4xl">
+                  Simple steps to generate documents
+                </h2>
+              </div>
+              <p className="max-w-md text-xs leading-6 text-slate-600 lg:mt-9 lg:justify-self-end">
+                Every step is built to simplify your process, guiding you from employee setup to document generation in a way that is fast, structured and easy to follow. Just simple tools that work when you need them.
+              </p>
+            </div>
+
+            <div className="mt-14 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
               {steps.map((step) => (
-                <Card key={step.title} className="relative rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
-                  <span className="absolute -top-6 right-6 text-5xl font-bold text-slate-100">{step.step}</span>
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <article key={step.title} className="max-w-sm">
+                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
                     <step.icon className="h-6 w-6" />
                   </span>
                   <h3 className="mt-4 text-lg font-semibold text-slate-900">{step.title}</h3>
-                  <p className="mt-2 text-sm text-slate-600">{step.copy}</p>
-                </Card>
+                  <p className="mt-3 text-xs leading-6 text-slate-600">{step.copy}</p>
+                </article>
               ))}
             </div>
-            <div className="mt-10 flex justify-center">
-              <Link to="/try-it-out">
-                <Button className="h-11 rounded-full bg-blue-600 px-6 text-white hover:bg-blue-700">
-                  Try it out <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
           </div>
-        </section>
+        </div>
 
-        <section id="features" className="mx-auto max-w-6xl px-6 py-16 text-center">
+        <section id="features" className="bg-white px-6 pb-16 pt-16 lg:pt-24 text-center">
+          <div className="mx-auto max-w-6xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Features</p>
           <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">
             Everything you need to manage HR docs
@@ -416,6 +439,26 @@ const Index = () => {
                 <p className="mt-2 text-sm text-slate-600">{feature.copy}</p>
               </Card>
             ))}
+          </div>
+          </div>
+        </section>
+
+        <section className="border-y border-slate-200 bg-white">
+          <div className="logo-marquee mx-auto max-w-7xl px-6 py-8">
+            <div className="logo-marquee-track">
+              {[...clientLogos, ...clientLogos].map((logo, index) => (
+                <div
+                  key={`${logo.alt}-${index}`}
+                  className="mx-8 flex h-14 w-40 shrink-0 items-center justify-center overflow-hidden"
+                >
+                  <img
+                    src={logo.src}
+                    alt={logo.alt}
+                    className={`h-full w-full grayscale ${logo.imageClassName ?? "object-contain"}`}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 

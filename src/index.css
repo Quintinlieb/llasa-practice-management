@@ -207,6 +207,50 @@ All colors MUST be HSL.
   animation: logoMarquee 34s linear infinite;
 }
 
+.pill-carousel-edge {
+  overflow: hidden;
+}
+
+.pill-carousel-edge::before,
+.pill-carousel-edge::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  z-index: 10;
+  height: 100%;
+  width: 84px;
+  pointer-events: none;
+}
+
+.pill-carousel-edge::before {
+  left: 0;
+  background: linear-gradient(to right, #f8fafc 0%, rgba(248, 250, 252, 0) 100%);
+}
+
+.pill-carousel-edge::after {
+  right: 0;
+  background: linear-gradient(to left, #f8fafc 0%, rgba(248, 250, 252, 0) 100%);
+}
+
+.pill-carousel-row {
+  overflow: hidden;
+}
+
+.pill-carousel-track {
+  display: flex;
+  width: max-content;
+  gap: 0.75rem;
+  will-change: transform;
+}
+
+.pill-carousel-track-left {
+  animation: pillCarouselLeft 96s linear infinite;
+}
+
+.pill-carousel-track-right {
+  animation: pillCarouselRight 96s linear infinite;
+}
+
 @keyframes float {
   0%,
   100% {
@@ -245,6 +289,24 @@ All colors MUST be HSL.
   }
   to {
     transform: translateX(-50%);
+  }
+}
+
+@keyframes pillCarouselLeft {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-33.3333%);
+  }
+}
+
+@keyframes pillCarouselRight {
+  from {
+    transform: translateX(-33.3333%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 

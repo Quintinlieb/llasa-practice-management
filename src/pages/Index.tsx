@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,11 @@ import {
   Check,
   Shield,
   FileText,
-  Sparkles,
   Users,
   Calendar,
   MessageSquare,
   Lock,
   Scale,
-  Timer,
   Download,
   ChevronDown,
 } from "lucide-react";
@@ -39,10 +37,47 @@ const clientLogos = [
   { src: "/logo-wimpy.png", alt: "Wimpy" },
 ];
 
-const heroInfoCards = [
-  { title: "Cloud Based", iconify: "ic:outline-cloud" },
-  { title: "Legally Compliant", icon: Scale },
-  { title: "Quick Results", icon: Timer },
+const featurePills = [
+  "Save Time",
+  "Contracts",
+  "Dashboard",
+  "Employee Search",
+  "Practical",
+  "PDF Export",
+  "Warnings",
+  "Automation",
+  "Employee Profiles",
+  "Addendums",
+  "Easy to Use",
+  "Service Certificates",
+  "Chat",
+  "Termination Letters",
+  "Productive",
+  "Compliance Tracking",
+  "Employee Records",
+  "Innovative",
+  "Suspension Notices",
+  "Self Help",
+  "HR Assistant",
+  "Document Preview",
+  "Bulk Import",
+  "Save Money",
+  "Secure Storage",
+  "Hearing Notices",
+  "Profile Updates",
+  "Upcoming Events",
+  "Document Drafting",
+];
+
+const rotatePills = (items: string[], offset: number) => [
+  ...items.slice(offset),
+  ...items.slice(0, offset),
+];
+
+const pillRows = [
+  featurePills,
+  rotatePills(featurePills, 10),
+  rotatePills(featurePills, 20),
 ];
 
 const featureCards = [
@@ -152,44 +187,51 @@ const employerCards = [
 
 const pricingPlans = [
   {
-    name: "Starter",
-    subtitle: "For small teams getting started",
-    monthly: 299,
+    name: "Free",
+    subtitle: "Test free for seven days",
+    monthly: 0,
     features: [
-      "Up to 10 employees",
-      "Core document templates",
-      "PDF download",
-      "Email support",
-      "Basic compliance tracking",
+      "Single user",
+      "Dashboard insights",
+      "Limited employees",
+      "Generate HR documents",
+      "Document storage",
+      "AI drafting assistant",
+      "Workforce reports",
     ],
   },
   {
-    name: "Business",
-    subtitle: "For growing companies",
-    monthly: 799,
+    name: "Pro",
+    subtitle: "Full access to all features",
+    monthly: 450,
     badge: "Most popular",
     features: [
+      "Unlimited subusers",
+      "Dashboard insights",
       "Unlimited employees",
-      "All document templates",
-      "HR assistant chat",
-      "Compliance dashboard",
-      "Team collaboration",
-      "Audit trails",
-      "Priority support",
+      "Generate HR documents",
+      "Document storage",
+      "Legal chatbot",
+      "AI drafting assistant",
+      "Branch management",
+      "Workforce reports",
+      "Customer Support",
     ],
     featured: true,
   },
   {
-    name: "Domestic",
-    subtitle: "For household employers",
-    monthly: 99,
+    name: "Light",
+    subtitle: "Ideal for start ups or small companies",
+    monthly: 250,
     features: [
-      "Up to 3 employees",
-      "Domestic contracts",
-      "Payslip generator",
-      "Leave tracking",
-      "UIF compliance",
-      "Email support",
+      "Limited users",
+      "Dashboard insights",
+      "Up to 10 Employees",
+      "Generate HR documents",
+      "Document storage",
+      "AI drafting assistant",
+      "Workforce reports",
+      "Customer Support",
     ],
   },
 ];
@@ -245,7 +287,8 @@ const formatPrice = (value: number) => `R${value.toLocaleString("en-ZA")}`;
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
-  const [heroEmailFocused, setHeroEmailFocused] = useState(false);
+  const howSectionOffsetPx = -80;
+  const howSectionOffsetStyle = { "--how-section-offset": `${howSectionOffsetPx}px` } as CSSProperties;
 
   useEffect(() => {
     const previous = document.documentElement.style.scrollBehavior;
@@ -265,11 +308,11 @@ const Index = () => {
   const annualPrice = (monthly: number) => Math.round(monthly * 12 * 0.9);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-40 bg-slate-50/90 backdrop-blur">
+    <div className="min-h-screen bg-white text-slate-900">
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex flex-1 items-center gap-3">
-            <img src="/zappir_logo_black(1).png" alt="zappir logo" className="h-8 w-auto" />
+            <img src="/zappir_logo_black(1).png" alt="zappir logo" className="h-[30px] w-auto" />
           </div>
           <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-600 md:flex">
             {navLinks.map((item) => (
@@ -279,11 +322,16 @@ const Index = () => {
             ))}
           </nav>
           <div className="hidden flex-1 items-center justify-end gap-3 md:flex">
-            <Link to="/auth?login=1" className="text-sm font-medium text-slate-600 hover:text-blue-700">
+            <Link
+              to="/auth?login=1"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-slate-100 px-4 text-sm font-medium text-slate-600 hover:bg-[#e7ebf2] hover:text-slate-900"
+            >
               Sign in
             </Link>
             <Link to="/auth?new=1">
-              <Button className="rounded-full bg-blue-600 px-5 text-white hover:bg-blue-700">Get started</Button>
+              <Button className="h-9 rounded-md bg-blue-600 px-5 text-sm font-medium text-white hover:bg-blue-700">
+                Sign Up
+              </Button>
             </Link>
           </div>
           <button
@@ -319,69 +367,114 @@ const Index = () => {
       </header>
 
       <main>
-        <section className="relative overflow-hidden bg-slate-50 lg:-mb-[157px]">
-          <div className="absolute inset-0 bg-slate-50" />
-          <div className="relative z-10 mx-auto -mt-5 grid max-w-7xl items-center gap-12 px-6 pb-0 pt-0 text-center sm:pt-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,720px)] lg:text-left">
-            <div>
-              <h1 className="relative mx-auto max-w-4xl text-5xl font-bold leading-tight text-slate-900 sm:text-6xl lg:mx-0 lg:text-6xl">
+        <section className="relative overflow-visible bg-white lg:-mb-[157px]">
+          <div className="absolute inset-0 bg-white" />
+          <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-12 px-6 pb-0 pt-[20px] text-center sm:pt-[20px] lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,520px)] lg:pt-[24px] lg:text-left">
+            <div className="relative top-[20px] mt-[30px]">
+              <p className="mx-auto inline-flex rounded-full border border-slate-300 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-900 transition-colors duration-200 hover:border-blue-600 hover:outline hover:outline-1 hover:outline-blue-600 hover:shadow-[0_0_0_2px_rgba(37,99,235,0.12)] lg:mx-0">
+                Industrial Relations Information System
+              </p>
+              <h1 className="relative mx-auto mt-[22px] max-w-4xl text-[2.8rem] font-bold leading-tight text-slate-900 sm:text-[3.25rem] lg:mx-0 lg:text-[3.35rem]">
                 <span className="relative z-10 block">
                   <span className="block">HR paperwork</span>
                   <span className="mt-1 block underline decoration-blue-600 decoration-2 underline-offset-4">shouldn’t</span>
                 </span>
-                <span className="relative z-10 inline-block">slow you down!</span>
+                <span className="relative z-10 mt-0 block">slow you down!</span>
               </h1>
-              <p className="mx-auto mt-5 max-w-3xl text-sm text-slate-600 sm:text-base lg:mx-0">
-                Get your HR documents done in seconds without relying on expensive consultants or lawyers. Simple, reliable and ready when you are.
-              </p>
-              <div className="mt-12 flex flex-wrap justify-center gap-3 lg:justify-start">
-                <div className="flex w-full max-w-md items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5">
-                  <input
-                    type="email"
-                    placeholder={heroEmailFocused ? "" : "Your business email"}
-                    onFocus={() => setHeroEmailFocused(true)}
-                    onBlur={() => setHeroEmailFocused(false)}
-                    className="h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
-                  />
-                  <Button type="button" className="h-10 rounded-xl bg-blue-600 px-5 text-sm text-white hover:bg-blue-700">
-                    Get Started <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </div>
+              <div className="mx-auto mt-5 max-w-3xl space-y-2 text-left lg:mx-0">
+                <p className="flex items-start gap-3 text-base text-slate-700">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                  <span><span className="font-semibold text-slate-900">Save money.</span> Avoid high drafting costs of lawyers and consultants.</span>
+                </p>
+                <p className="flex items-start gap-3 text-base text-slate-700">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                  <span><span className="font-semibold text-slate-900">Save time.</span> Generate compliant HR documents in minutes.</span>
+                </p>
+                <p className="flex items-start gap-3 text-base text-slate-700">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                  <span><span className="font-semibold text-slate-900">Cloud based.</span> Access your workspace anywhere, anytime.</span>
+                </p>
               </div>
-              <div className="mt-10 flex flex-wrap justify-center gap-2 lg:justify-start">
-                {heroInfoCards.map((card) => (
-                  <div
-                    key={card.title}
-                    className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left"
-                  >
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
-                      {card.iconify ? (
-                        <Icon icon={card.iconify} className="h-4 w-4" />
-                      ) : (
-                        <card.icon className="h-4 w-4" strokeWidth={card.title === "Legally Compliant" ? 1.5 : 2} />
-                      )}
-                    </span>
-                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-700">{card.title}</span>
-                  </div>
-                ))}
+              <div className="mt-[42px] flex flex-wrap justify-center gap-3 lg:justify-start">
+                <Button type="button" className="h-12 rounded-xl bg-blue-600 px-7 text-base text-white hover:bg-blue-700">
+                  Get Started FREE!
+                </Button>
+                <div className="flex h-12 flex-col justify-center text-left text-xs leading-4 text-slate-600">
+                  <span>7 days free.</span>
+                  <span>No credit card.</span>
+                </div>
               </div>
             </div>
             <div className="relative mx-auto w-full max-w-2xl lg:ml-auto lg:mr-0 lg:max-w-none">
-              <img
-                src="/hero-zappir-3.png"
-                alt="Zappir HR document automation illustration"
-                className="relative z-10 mx-auto w-full max-w-[720px] -translate-y-[20px] lg:translate-x-[83px] lg:-translate-y-[20px]"
-              />
-              <p className="absolute bottom-[135px] left-1/2 z-20 -ml-[60px] -translate-x-1/2 -translate-y-[23px] whitespace-nowrap text-center text-xs text-slate-500">
+              <div className="relative z-10 mx-auto w-full max-w-[700px] translate-y-[50px] lg:translate-x-[83px] lg:translate-y-[50px] lg:scale-100">
+                <img
+                  src="/zappir_hero_image.png"
+                  alt="Zappir HR document automation illustration"
+                  className="block w-full"
+                />
+              </div>
+              <p
+                className="absolute bottom-[135px] left-1/2 z-20 whitespace-nowrap text-center text-xs text-slate-500"
+                style={{ transform: "translate(calc(-50% - 54px), 181px)" }}
+              >
                 Trusted by 1000+ South African users
               </p>
             </div>
           </div>
         </section>
 
-        <div className="relative z-20 px-6 lg:-mt-8 lg:h-[260px]">
+        <section className="relative top-[20px] z-20 mt-[212px] bg-slate-50 py-3">
+          <div className="mx-auto max-w-7xl px-6">
+            <div className="pill-carousel-edge relative">
+              <div className="space-y-3">
+                <div className="pill-carousel-row">
+                  <div className="pill-carousel-track pill-carousel-track-left">
+                    {[...pillRows[0], ...pillRows[0], ...pillRows[0]].map((pill, index) => (
+                      <span
+                        key={`pill-row-1-${pill}-${index}`}
+                        className="inline-flex cursor-default whitespace-nowrap rounded-full border-[1.5px] [border-style:dashed] border-slate-300 bg-white px-4 py-1.5 text-xs font-normal text-slate-600 transition-colors duration-200 hover:border-blue-600"
+                      >
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="pill-carousel-row">
+                  <div className="pill-carousel-track pill-carousel-track-right">
+                    {[...pillRows[1], ...pillRows[1], ...pillRows[1]].map((pill, index) => (
+                      <span
+                        key={`pill-row-2-${pill}-${index}`}
+                        className="inline-flex cursor-default whitespace-nowrap rounded-full border-[1.5px] [border-style:dashed] border-slate-300 bg-white px-4 py-1.5 text-xs font-normal text-slate-600 transition-colors duration-200 hover:border-blue-600"
+                      >
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="pill-carousel-row">
+                  <div className="pill-carousel-track pill-carousel-track-left">
+                    {[...pillRows[2], ...pillRows[2], ...pillRows[2]].map((pill, index) => (
+                      <span
+                        key={`pill-row-3-${pill}-${index}`}
+                        className="inline-flex cursor-default whitespace-nowrap rounded-full border-[1.5px] [border-style:dashed] border-slate-300 bg-white px-4 py-1.5 text-xs font-normal text-slate-600 transition-colors duration-200 hover:border-blue-600"
+                      >
+                        {pill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div
+          className="relative z-20 mt-8 px-6 sm:mt-10 lg:mt-12 lg:h-[calc(320px+var(--how-section-offset))]"
+          style={howSectionOffsetStyle}
+        >
           <div
             id="how"
-            className="mx-auto max-w-5xl rounded-[28px] bg-white px-6 py-12 shadow-[0_24px_68px_-24px_rgba(15,23,42,0.32),0_-12px_32px_-24px_rgba(15,23,42,0.2)] sm:px-10 sm:py-14 lg:absolute lg:left-1/2 lg:top-[180px] lg:w-[calc(100%-3rem)] lg:-translate-x-1/2"
+            className="mx-auto max-w-6xl cursor-default rounded-[28px] border border-transparent bg-white px-6 py-12 shadow-[0_24px_68px_-24px_rgba(15,23,42,0.32),0_-12px_32px_-24px_rgba(15,23,42,0.2)] transition-[box-shadow,border-color] duration-300 hover:border-blue-500 hover:shadow-[0_26px_70px_-22px_rgba(37,99,235,0.4),0_-10px_30px_-20px_rgba(37,99,235,0.28)] sm:px-10 sm:py-14 lg:absolute lg:left-1/2 lg:top-[calc(180px+var(--how-section-offset))] lg:w-[calc(100%-3rem)] lg:-translate-x-1/2"
           >
             <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
               <div>
@@ -399,7 +492,7 @@ const Index = () => {
 
             <div className="mt-14 grid gap-10 md:grid-cols-2 lg:grid-cols-4">
               {steps.map((step) => (
-                <article key={step.title} className={`${step.imageSrc ? "-mt-[25px]" : ""} max-w-sm`}>
+                <article key={step.title} className={`group ${step.imageSrc ? "-mt-[25px]" : ""} max-w-sm rounded-2xl border border-transparent p-4 transition-shadow duration-300 hover:shadow-[0_14px_34px_-12px_rgba(148,163,184,0.38)]`}>
                   {step.imageSrc ? (
                     <img
                       src={step.imageSrc}
@@ -412,7 +505,7 @@ const Index = () => {
                             : step.step === "04"
                               ? "-ml-[30px]"
                               : "-ml-[26px]"
-                      } block h-32 w-32 object-contain`}
+                      } block h-32 w-32 object-contain transition-transform duration-300 group-hover:scale-110`}
                     />
                   ) : step.icon ? (
                     <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
@@ -422,7 +515,7 @@ const Index = () => {
                   <h3 className={`${step.imageSrc ? "mt-[-17px]" : "mt-2"} text-lg font-semibold text-slate-900`}>
                     {step.title}
                   </h3>
-                  <p className="mt-3 text-xs leading-6 text-slate-600">{step.copy}</p>
+                  <p className="mt-3 text-xs leading-6 text-slate-600 transition-colors duration-150 ease-out group-hover:text-slate-900">{step.copy}</p>
                 </article>
               ))}
             </div>
@@ -644,7 +737,7 @@ const Index = () => {
                   key={plan.name}
                   className={`relative rounded-2xl border ${
                     plan.featured ? "border-blue-200 shadow-xl" : "border-slate-200"
-                  } bg-white p-8 text-left`}
+                  } flex h-full flex-col bg-white p-8 text-left`}
                 >
                   {plan.badge && (
                     <span className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold text-white">
@@ -667,10 +760,10 @@ const Index = () => {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-8">
+                  <div className="mt-auto pt-8">
                     <Link to="/auth?new=1">
                       <Button
-                        className={`h-11 w-full rounded-full ${
+                        className={`h-11 w-full rounded-xl ${
                           plan.featured ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-50 text-slate-900 hover:bg-slate-100"
                         }`}
                       >

@@ -21,6 +21,7 @@ type DocumentKey =
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
   | "serviceCertificate"
+  | "acknowledgementOfDebt"
   | "permanentContract"
   | "temporaryContract"
   | "addendum"
@@ -89,6 +90,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
   incapacityIllHealthHearingNotice: lazyDocumentComponent(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   serviceCertificate: lazyDocumentComponent(() => import("./ServiceCertificateGenerator")),
+  acknowledgementOfDebt: lazyDocumentComponent(() => import("./AcknowledgementOfDebtGenerator")),
   permanentContract: lazyDocumentComponent(() => import("./PermanentContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
@@ -148,6 +150,7 @@ const documentCategories: DocumentCategory[] = [
     icon: ChartBarIcon,
     items: [
       { id: "serviceCertificate", label: "Certificate of Service", active: true },
+      { id: "acknowledgementOfDebt", label: "Acknowledgement of Debt", active: true },
     ],
   },
 ];
@@ -283,6 +286,8 @@ const Documents = () => {
         ? "Incapacity Hearing (Ill health)"
       : modalDocument === "serviceCertificate"
         ? "Certificate of Service"
+      : modalDocument === "acknowledgementOfDebt"
+        ? "Acknowledgement of Debt"
       : modalDocument === "addendum"
         ? "Addendum"
         : modalDocument === "poorPerformanceTermination"
@@ -312,6 +317,7 @@ const Documents = () => {
     modalDocument === "incapacityPerformanceHearingNotice" ||
     modalDocument === "incapacityIllHealthHearingNotice" ||
     modalDocument === "serviceCertificate" ||
+    modalDocument === "acknowledgementOfDebt" ||
     modalDocument === "addendum" ||
     modalDocument === "noticeTermination" ||
     modalDocument === "illHealthTermination" ||
@@ -339,6 +345,8 @@ const Documents = () => {
                 ? "Notice Details"
               : modalDocument === "serviceCertificate"
                 ? "Certificate Details"
+              : modalDocument === "acknowledgementOfDebt"
+                ? "Debt Details"
               : modalDocument === "addendum"
                 ? "Addendum Details"
               : modalDocument === "noticeTermination" ||
@@ -633,6 +641,8 @@ const Documents = () => {
       ? incapacityIllHealthHearingActiveNotes
       : modalDocument === "serviceCertificate"
       ? incapacityIllHealthHearingActiveNotes
+      : modalDocument === "acknowledgementOfDebt"
+      ? incapacityIllHealthHearingActiveNotes
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
@@ -655,6 +665,7 @@ const Documents = () => {
       selectedDocument !== "incapacityPerformanceHearingNotice" &&
       selectedDocument !== "incapacityIllHealthHearingNotice" &&
       selectedDocument !== "serviceCertificate" &&
+      selectedDocument !== "acknowledgementOfDebt" &&
       selectedDocument !== "addendum" &&
       selectedDocument !== "noticeTermination" &&
       selectedDocument !== "illHealthTermination" &&
@@ -727,6 +738,7 @@ const Documents = () => {
                                         item.id === "incapacityPerformanceHearingNotice" ||
                                         item.id === "incapacityIllHealthHearingNotice" ||
                                         item.id === "serviceCertificate" ||
+                                        item.id === "acknowledgementOfDebt" ||
                                         item.id === "addendum" ||
                                         item.id === "noticeTermination" ||
                                         item.id === "illHealthTermination" ||
@@ -784,6 +796,7 @@ const Documents = () => {
             selectedDocument !== "incapacityPerformanceHearingNotice" &&
             selectedDocument !== "incapacityIllHealthHearingNotice" &&
             selectedDocument !== "serviceCertificate" &&
+            selectedDocument !== "acknowledgementOfDebt" &&
             selectedDocument !== "addendum" &&
             selectedDocument !== "noticeTermination" &&
             selectedDocument !== "illHealthTermination" &&
@@ -986,6 +999,7 @@ const Documents = () => {
             || modalDocument === "incapacityPerformanceHearingNotice"
             || modalDocument === "incapacityIllHealthHearingNotice"
             || modalDocument === "serviceCertificate"
+            || modalDocument === "acknowledgementOfDebt"
             || modalDocument === "addendum"
             || modalDocument === "noticeTermination"
             || modalDocument === "illHealthTermination"
@@ -1008,6 +1022,7 @@ const Documents = () => {
           modalDocument === "incapacityPerformanceHearingNotice" ||
           modalDocument === "incapacityIllHealthHearingNotice" ||
           modalDocument === "serviceCertificate" ||
+          modalDocument === "acknowledgementOfDebt" ||
           modalDocument === "addendum" ||
           modalDocument === "noticeTermination" ||
           modalDocument === "illHealthTermination" ||
@@ -1038,6 +1053,8 @@ const Documents = () => {
                           ? "Notices"
                         : modalDocument === "serviceCertificate"
                           ? "Other"
+                        : modalDocument === "acknowledgementOfDebt"
+                          ? "Other"
                         : modalDocument === "noticeTermination" ||
                           modalDocument === "illHealthTermination" ||
                           modalDocument === "abscondmentTermination" ||
@@ -1064,6 +1081,8 @@ const Documents = () => {
                           ? "Incapacity Hearing (Ill health)"
                         : modalDocument === "serviceCertificate"
                           ? "Certificate of Service"
+                        : modalDocument === "acknowledgementOfDebt"
+                          ? "Acknowledgement of Debt"
                         : modalDocument === "illHealthTermination"
                           ? "Ill Health"
                         : modalDocument === "abscondmentTermination"

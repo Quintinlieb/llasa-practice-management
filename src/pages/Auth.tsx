@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Info, Eye, EyeOff, X, Home, Building2, Mail } from "lucide-react";
+import { Info, Eye, EyeOff, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -35,7 +35,6 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [heroLoaded, setHeroLoaded] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
   const [accountType, setAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
@@ -53,15 +52,37 @@ const Auth = () => {
     const params = new URLSearchParams(location.search);
     const forceSignup = params.get("new") === "1";
     const forceLogin = params.get("login") === "1";
-    if (!forceSignup && !forceLogin) {
+    if (forceSignup) {
+      setIsLogin(false);
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setAccountType(null);
+      setSelectedAccountType(null);
+      setAcceptedTerms(false);
+      return;
+    }
+
+    if (!forceLogin) {
       setIsLogin(draft.isLogin);
     }
-    setEmail(draft.email);
-    setPassword(draft.password);
-    setConfirmPassword(draft.confirmPassword);
-    setAccountType(draft.accountType);
-    setSelectedAccountType(draft.accountType);
-    setAcceptedTerms(draft.acceptedTerms);
+
+    if (forceLogin || draft.isLogin) {
+      setEmail(draft.email);
+      setPassword(draft.password);
+      setConfirmPassword("");
+      setAccountType(null);
+      setSelectedAccountType(null);
+      setAcceptedTerms(false);
+      return;
+    }
+
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setAccountType(null);
+    setSelectedAccountType(null);
+    setAcceptedTerms(false);
   }, [location.search]);
 
   useEffect(() => {
@@ -269,6 +290,13 @@ const Auth = () => {
     password.trim().length > 0 &&
     confirmPassword.trim().length > 0 &&
     acceptedTerms;
+  const signupFieldClass =
+    "h-[34px] rounded border-[1.75px] border-slate-300 bg-white text-[11px] font-medium text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-blue-400 focus:border-blue-600 focus-visible:border-blue-600 ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
+  const accountTypeSelectTriggerClass =
+    `${signupFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs data-[state=open]:border-blue-600 data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:outline-none`;
+  const accountTypeSelectContentClass = "!rounded";
+  const accountTypeSelectItemClass =
+    "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
 
   const authFormContent = (
     <div className="w-full max-w-md space-y-4">
@@ -286,7 +314,7 @@ const Auth = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="pt-6 space-y-4">
+      <form onSubmit={handleSubmit} className="pt-6 space-y-4" autoComplete={isLogin ? "on" : "off"}>
         {!isLogin && !accountType && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -301,11 +329,9 @@ const Auth = () => {
                 }`}
               >
                 <div className="flex h-full flex-col items-center justify-center text-center">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                    <Home className="h-6 w-6" />
-                  </span>
-                  <p className="mt-3 text-sm font-semibold text-slate-900">Domestic</p>
-                  <p className="mt-1 text-xs text-slate-600">Ideal for private households.</p>
+                  <p className="mt-3 text-4xl font-semibold text-slate-900">Lite</p>
+                  <div className="mt-3 w-16 border-t-2 border-blue-600" aria-hidden="true" />
+                  <p className="mt-5 mb-3 text-xs text-slate-600">Ideal for startups and small businesses.</p>
                 </div>
               </button>
               <button
@@ -319,11 +345,9 @@ const Auth = () => {
                 }`}
               >
                 <div className="flex h-full flex-col items-center justify-center text-center">
-                  <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-                    <Building2 className="h-6 w-6" />
-                  </span>
-                  <p className="mt-3 text-sm font-semibold text-slate-900">Business</p>
-                  <p className="mt-1 text-xs text-slate-600">Best for corporate companies.</p>
+                  <p className="mt-3 text-4xl font-semibold text-slate-900">Pro</p>
+                  <div className="mt-3 w-16 border-t-2 border-blue-600" aria-hidden="true" />
+                  <p className="mt-5 mb-3 text-xs text-slate-600">Best for established organisations from small to large.</p>
                 </div>
               </button>
             </div>
@@ -359,13 +383,13 @@ const Auth = () => {
                 >
                   <SelectTrigger
                     id="accountType"
-                    className="h-11 group-hover:border-blue-600"
+                    className={accountTypeSelectTriggerClass}
                   >
                     <SelectValue placeholder="Select account type" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="domestic">Domestic</SelectItem>
-                    <SelectItem value="business">Business</SelectItem>
+                  <SelectContent className={`w-[var(--radix-select-trigger-width)] ${accountTypeSelectContentClass}`}>
+                    <SelectItem value="domestic" className={accountTypeSelectItemClass}>Lite</SelectItem>
+                    <SelectItem value="business" className={accountTypeSelectItemClass}>Pro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -378,8 +402,9 @@ const Auth = () => {
                 placeholder="Type your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete={isLogin ? "username" : "off"}
                 required
-                className="h-11 group-hover:border-blue-600"
+                className={isLogin ? "h-11 group-hover:border-blue-600" : signupFieldClass}
               />
             </div>
             <div className="space-y-2">
@@ -390,7 +415,7 @@ const Auth = () => {
                     <div className="relative group inline-flex items-center gap-2 cursor-help text-[11px] text-muted-foreground">
                       <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                       <span className="font-medium">Password requirements</span>
-                      <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded-md border border-blue-600 bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+                      <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded border border-blue-600 bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
                         <p className="mb-1 font-medium text-blue-600">Include:</p>
                         <ul className="space-y-0.5 list-disc list-inside">
                           <li>At least 8 characters</li>
@@ -410,9 +435,14 @@ const Auth = () => {
                     placeholder="Type your password"
                     value={password}
                     onChange={handlePasswordChange}
+                    autoComplete={isLogin ? "current-password" : "new-password"}
                     required
                     minLength={isLogin ? 6 : 8}
-                    className={passwordError && !isLogin ? "h-11 border-destructive pr-10 group-hover:border-blue-600" : "h-11 pr-10 group-hover:border-blue-600"}
+                    className={
+                      isLogin
+                        ? "h-11 pr-10 group-hover:border-blue-600"
+                        : `${signupFieldClass} pr-10 ${passwordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`
+                    }
                   />
                   <button
                     type="button"
@@ -451,12 +481,13 @@ const Auth = () => {
                       <Input
                         id="confirmPassword"
                         type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Confirm password"
+                        placeholder="Retype your password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
                         required
                         minLength={8}
-                        className={confirmPasswordError ? "h-11 border-destructive pr-10 group-hover:border-blue-600" : "h-11 pr-10 group-hover:border-blue-600"}
+                        className={`${signupFieldClass} pr-10 ${confirmPasswordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`}
                       />
                       <button
                         type="button"
@@ -533,73 +564,29 @@ const Auth = () => {
     </div>
   );
 
-  if (isLogin) {
-    return (
-      <div className="min-h-screen bg-slate-100">
-        <header className="border-b border-slate-800 bg-[#3b4454]">
-          <div className="mx-auto flex h-11 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-            <Link to="/" className="inline-flex items-center" aria-label="Go to website landing page">
-              <img
-                src="/zappir_logo_white&blue(1).png"
-                alt="Zappir"
-                className="h-6 w-auto"
-              />
-            </Link>
-            <a href="mailto:support@zappir.co.za" className="group inline-flex items-center gap-1.5 text-xs text-slate-100 hover:text-white">
-              <span>Support queries:</span>
-              <Mail className="h-3.5 w-3.5" />
-              <span className="group-hover:underline">support@zappir.co.za</span>
-            </a>
-          </div>
-        </header>
-        <main className="flex min-h-[calc(100vh-44px)] items-center justify-center px-6 py-12">
-          <section className="w-full max-w-md px-2 py-2">
-            {authFormContent}
-          </section>
-        </main>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-black">
-      <div className="min-h-screen grid lg:grid-cols-2">
-        <section className="relative hidden lg:flex">
-          <div className="absolute inset-0 bg-black">
+    <div className="min-h-screen bg-slate-100">
+      <header className="border-b border-slate-800 bg-[#3b4454]">
+        <div className="mx-auto flex h-11 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+          <Link to="/" className="inline-flex items-center" aria-label="Go to website landing page">
             <img
-              src="/AuthImage.png"
-              alt="Team collaborating"
-              loading="eager"
-              decoding="async"
-              fetchPriority="high"
-              onLoad={() => setHeroLoaded(true)}
-              onError={() => setHeroLoaded(true)}
-              className={`h-full w-full object-cover opacity-[0.28] transition-opacity duration-300 ${heroLoaded ? "opacity-[0.28]" : "opacity-0"}`}
-              style={{ objectPosition: "20% center" }}
+              src="/zappir_logo_white&blue(1).png"
+              alt="Zappir"
+              className="h-6 w-auto"
             />
-          </div>
-          <div className="relative z-10 flex h-full w-full flex-col items-center justify-center p-14 text-white">
-            <img src="/zappir_logo_white&blue(1).png" alt="Zappir logo" className="mx-auto h-auto w-56" />
-            <p className="mt-10 max-w-lg text-center text-[0.8125rem] text-white/80">
-              Welcome to Nudoc\u2122. A secure and reliable platform that simplifies the drafting and storage of your most important HR documents.
-            </p>
-          </div>
-        </section>
-
-        <section className="relative flex items-center justify-center bg-white px-6 py-12 sm:px-10">
-          <div className="absolute right-6 top-6">
-            <Link
-              to="/"
-              aria-label="Close and return home"
-              tabIndex={-1}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:text-blue-600 hover:ring-1 hover:ring-blue-500"
-            >
-              <X className="h-4 w-4" />
-            </Link>
-          </div>
+          </Link>
+          <a href="mailto:support@zappir.co.za" className="group inline-flex items-center gap-1.5 text-xs text-slate-100 hover:text-white">
+            <span>Support queries:</span>
+            <Mail className="h-3.5 w-3.5" />
+            <span className="group-hover:underline">support@zappir.co.za</span>
+          </a>
+        </div>
+      </header>
+      <main className="flex min-h-[calc(100vh-44px)] items-center justify-center px-6 py-12">
+        <section className="w-full max-w-md px-2 py-2">
           {authFormContent}
         </section>
-      </div>
+      </main>
     </div>
   );
 };

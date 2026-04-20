@@ -7,7 +7,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
-import DemoPermanentContractGenerator from "./pages/DemoPermanentContractGenerator";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import CompanySetup from "./pages/CompanySetup";
@@ -36,7 +35,6 @@ const AppRoutes = () => {
     <>
       <Routes location={backgroundLocation ?? location}>
         <Route path="/" element={<Index />} />
-        <Route path="/try-it-out" element={<DemoPermanentContractGenerator />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/account-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />

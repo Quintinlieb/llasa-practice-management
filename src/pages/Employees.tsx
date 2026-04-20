@@ -330,7 +330,8 @@ type DocumentKey =
   | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
   | "incapacityIllHealthHearingNotice"
-  | "serviceCertificate";
+  | "serviceCertificate"
+  | "acknowledgementOfDebt";
 
 type ConductOffence = {
   category: "Minor" | "Serious" | "Dismissible";
@@ -1098,6 +1099,12 @@ const documentOptions: DocumentOption[] = [
     path: "/documents/other/certificate-of-service",
     active: true,
   },
+  {
+    category: "Other",
+    label: "Acknowledgement of Debt",
+    path: "/documents/other/acknowledgement-of-debt",
+    active: true,
+  },
 ];
 
 const documentPathToKey: Record<string, DocumentKey> = {
@@ -1118,6 +1125,7 @@ const documentPathToKey: Record<string, DocumentKey> = {
   "/documents/notices/precautionary-suspension": "precautionarySuspensionNotice",
   "/documents/notices/contemplated-retrenchment": "contemplatedRetrenchmentNotice",
   "/documents/other/certificate-of-service": "serviceCertificate",
+  "/documents/other/acknowledgement-of-debt": "acknowledgementOfDebt",
 };
 
 const Employees = () => {

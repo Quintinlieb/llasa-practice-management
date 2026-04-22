@@ -351,6 +351,18 @@ const Auth = () => {
                 </div>
               </button>
             </div>
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAccountType("trial");
+                  setAccountType("trial");
+                }}
+                className="text-xs text-slate-500 transition-colors hover:text-blue-600 hover:underline"
+              >
+                Try FREE for 7 days!
+              </button>
+            </div>
             <div className="pt-6">
               <Button
                 type="button"
@@ -376,7 +388,7 @@ const Auth = () => {
                 <Select
                   value={accountType ?? ""}
                   onValueChange={(value) => {
-                    const nextValue = value as "domestic" | "business";
+                    const nextValue = value as "trial" | "domestic" | "business";
                     setAccountType(nextValue);
                     setSelectedAccountType(nextValue);
                   }}
@@ -388,8 +400,9 @@ const Auth = () => {
                     <SelectValue placeholder="Select account type" />
                   </SelectTrigger>
                   <SelectContent className={`w-[var(--radix-select-trigger-width)] ${accountTypeSelectContentClass}`}>
+                    <SelectItem value="trial" className={accountTypeSelectItemClass}>Free (7 days)</SelectItem>
                     <SelectItem value="domestic" className={accountTypeSelectItemClass}>Lite</SelectItem>
-                    <SelectItem value="business" className={accountTypeSelectItemClass}>Pro</SelectItem>
+                    <SelectItem value="business" className={accountTypeSelectItemClass}>Pro (Recommended)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -568,7 +581,7 @@ const Auth = () => {
     <div className="min-h-screen bg-slate-100">
       <header className="border-b border-slate-800 bg-[#3b4454]">
         <div className="mx-auto flex h-11 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link to="/" className="inline-flex items-center" aria-label="Go to website landing page">
+          <Link to="/landing" className="inline-flex items-center" aria-label="Go to website landing page">
             <img
               src="/zappir_logo_white&blue(1).png"
               alt="Zappir"

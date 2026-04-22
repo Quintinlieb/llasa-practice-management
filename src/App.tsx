@@ -34,7 +34,8 @@ const AppRoutes = () => {
   return (
     <>
       <Routes location={backgroundLocation ?? location}>
-        <Route path="/" element={<Index />} />
+        <Route path="/" element={<Navigate to="/auth?login=1" replace />} />
+        <Route path="/landing" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/account-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />

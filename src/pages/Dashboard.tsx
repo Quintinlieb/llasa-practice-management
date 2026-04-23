@@ -528,7 +528,7 @@ const Dashboard = () => {
   if (loading || busy) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <img src="/zappir_thumbnail_blue.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
+        <img src="/llasa_thumbnail.png" alt="Loading" className="h-12 w-12 animate-spin" style={{ animationDuration: "2s" }} />
       </div>
     );
   }

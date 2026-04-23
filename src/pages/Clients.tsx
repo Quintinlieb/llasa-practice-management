@@ -494,7 +494,7 @@ const createBlankAddForm = (): AddEmployeeFormState => ({
 
 const createAddFormFromEmployee = (employee: Employee): AddEmployeeFormState => {
   const idNumber = (employee.id_number ?? "").trim();
-  const membershipPeriod = (employee.contract_type ?? "").trim();
+  const paymentCycle = (employee.contract_type ?? "").trim();
   const parsedMemberTypes = ((employee.department ?? employee.job_title ?? "") as string)
     .split(",")
     .map((value) => value.trim())
@@ -511,11 +511,11 @@ const createAddFormFromEmployee = (employee: Employee): AddEmployeeFormState => 
     cellNumber: (employee.cell_number ?? "").trim(),
     email: (employee.email ?? "").trim(),
     memberTypes: parsedMemberTypes,
-    contractType: membershipPeriodOptions.includes(membershipPeriod as (typeof membershipPeriodOptions)[number])
-      ? membershipPeriod
+    contractType: paymentCycleOptions.includes(paymentCycle as (typeof paymentCycleOptions)[number])
+      ? paymentCycle
       : "",
     startDate: (employee.start_date ?? "").trim(),
-    endDate: (employee.end_date ?? "").trim(),
+    endDate: addMonthsToIsoDate((employee.start_date ?? "").trim(), 12),
     salaryType: coerceEnumValue(employee.salary_type, salaryTypeOptions),
     basicSalary: (employee.basic_salary ?? "").trim(),
     physicalAddressLine1: (employee.physical_address_line1 ?? "").trim(),
@@ -537,6 +537,15 @@ const formatInputDate = (date: Date | null) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const addMonthsToIsoDate = (isoDate: string, months: number) => {
+  if (!isoDate) return "";
+  const parsed = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const renewal = new Date(parsed);
+  renewal.setMonth(renewal.getMonth() + months);
+  return renewal.toISOString().slice(0, 10);
 };
 
 const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileFormData => {
@@ -615,6 +624,33 @@ const sanitizeSalaryInput = (value: string) => {
 };
 
 const removeWhitespace = (value: string) => value.replace(/\s+/g, "");
+
+const getRegistrationDigits = (value: string) => value.replace(/\D/g, "").slice(0, 12);
+const formatRegistrationNumberInput = (value: string) => {
+  const digits = getRegistrationDigits(value);
+  if (digits.length === 0) return "";
+  if (digits.length < 4) return digits;
+
+  const firstPart = digits.slice(0, 4);
+  const secondPart = digits.slice(4, 10);
+  const thirdPart = digits.slice(10, 12);
+
+  if (digits.length === 4) return `${firstPart}/`;
+  if (digits.length < 10) return `${firstPart}/${secondPart}`;
+  if (digits.length === 10) return `${firstPart}/${secondPart}/`;
+  return `${firstPart}/${secondPart}/${thirdPart}`;
+};
+const formatRegistrationNumberMaskDisplay = (value: string) => {
+  return formatRegistrationNumberInput(value);
+};
+const getRegistrationNumberCaretPosition = (value: string) => {
+  const digitCount = getRegistrationDigits(value).length;
+  if (digitCount < 4) return digitCount;
+  if (digitCount === 4) return 5;
+  if (digitCount < 10) return digitCount + 1;
+  if (digitCount === 10) return 12;
+  return Math.min(digitCount + 2, 14);
+};
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
   const name = (companyName || "").trim();
@@ -968,13 +1004,7 @@ const membershipTypeAcronyms: Record<(typeof membershipTypeOptions)[number], str
   "Health and Safety": "HS",
 };
 
-const membershipPeriodOptions = [
-  "1 month",
-  "3 months",
-  "6 months",
-  "12 months",
-  "24 months",
-] as const;
+const paymentCycleOptions = ["Monthly", "Annual"] as const;
 
 const getStoragePathFromUrl = (url?: string) => {
   if (!url) return "";
@@ -1192,6 +1222,8 @@ const Employees = () => {
   const [activeEditSection, setActiveEditSection] = useState<ProfileSectionKey | null>(null);
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [addForm, setAddForm] = useState<AddEmployeeFormState>(createBlankAddForm());
+  const [isRegistrationNumberFocused, setIsRegistrationNumberFocused] = useState(false);
+  const registrationNumberInputRef = useRef<HTMLInputElement | null>(null);
   const [addFormStep, setAddFormStep] = useState<1 | 2 | 3>(1);
   const [rehireEmployeeId, setRehireEmployeeId] = useState<string | null>(null);
   const [isAddFormSubmitRequested, setIsAddFormSubmitRequested] = useState(false);
@@ -1340,12 +1372,12 @@ const Employees = () => {
     postalAddress: null,
   });
   const isAddFormRegistrationNumberComplete = addForm.registrationNumber.trim().length > 0;
-  const isAddFormIdNumberComplete = addForm.idNumber.trim().length > 0;
   const isAddFormStepOneComplete =
     addForm.employeeName.trim().length > 0 &&
-    addForm.employeeSurname.trim().length > 0 &&
     isAddFormRegistrationNumberComplete &&
-    isAddFormIdNumberComplete;
+    addForm.gender.trim().length > 0 &&
+    addForm.race.trim().length > 0 &&
+    addForm.cellNumber.trim().length > 0;
   const isAddFormStepTwoComplete =
     addForm.employeeNumber.trim().length > 0 &&
     addForm.contractType.trim().length > 0 &&
@@ -1373,6 +1405,8 @@ const Employees = () => {
     "cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
   const membershipDropdownItemClass =
     "cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
+  const addModalSelectItemClass =
+    "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const employeeDropdownMenuItemWithGapClass = `gap-2 ${employeeDropdownMenuItemClass}`;
   const newClientDropdownItemStyle =
     "!rounded-none gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
@@ -1384,14 +1418,12 @@ const Employees = () => {
   const exportButtonStyle2 = `${toolbarButtonStyle2Base} text-slate-500 hover:text-[#3eca44] disabled:text-slate-300`;
   const filterButtonStyle2 = `${toolbarButtonStyle2Base} text-slate-700 hover:text-[#3eca44]`;
   const addModalDropdownToneClass =
-    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
-  const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300`;
+    "bg-white border-slate-300 hover:border-slate-500 data-[state=open]:border-black data-[state=open]:bg-white";
+  const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 !focus:!border-black !focus-visible:!border-black`;
   const addModalFieldSelectTriggerClass =
-    `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-400 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
-  const getAddModalInputClass = (isComplete: boolean) =>
-    `${addModalFieldInputClass} ${isComplete ? "!border-emerald-500" : ""}`;
-  const getAddModalSelectTriggerClass = (isComplete: boolean) =>
-    `${addModalFieldSelectTriggerClass} ${isComplete ? "!border-emerald-500" : ""}`;
+    `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 !focus:!border-black !focus-visible:!border-black data-[state=open]:!border-black !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
+  const getAddModalInputClass = (_isComplete: boolean) => addModalFieldInputClass;
+  const getAddModalSelectTriggerClass = (_isComplete: boolean) => addModalFieldSelectTriggerClass;
   const isReadOnlyTab =
     activeTab === "discipline" || activeTab === "contracts" || activeTab === "licences" || activeTab === "education";
   const isSouthAfricanNationality = (profileForm.nationality || "").trim().toLowerCase() === "south african";
@@ -1998,6 +2030,16 @@ const Employees = () => {
     genderFilter !== "all" ||
     raceFilter !== "all" ||
     nationalityFilter !== "all";
+
+  useEffect(() => {
+    if (!isRegistrationNumberFocused) return;
+    const input = registrationNumberInputRef.current;
+    if (!input) return;
+    const position = getRegistrationNumberCaretPosition(addForm.registrationNumber);
+    requestAnimationFrame(() => {
+      input.setSelectionRange(position, position);
+    });
+  }, [isRegistrationNumberFocused, addForm.registrationNumber]);
 
   const handleDocumentCategorySelect = (path: string, targetEmployeeOverride?: Employee | null) => {
     const targetEmployee = targetEmployeeOverride || selectedEmployee;
@@ -4831,18 +4873,19 @@ const Employees = () => {
      if (!isAddFormSubmitRequested) return;
      setIsAddFormSubmitRequested(false);
      if (!isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete) return;
-     setIsLoading(true);
+    setIsLoading(true);
     try {
       const selectedMemberTypes = addForm.memberTypes.join(", ");
+      const normalizedTradingAs = addForm.employeeSurname.trim() || addForm.employeeName.trim();
       const validatedBasic = employeeBasicSchema.parse({
         employeeName: addForm.employeeName,
-        employeeSurname: addForm.employeeSurname,
+        employeeSurname: normalizedTradingAs,
         idNumber: addForm.idNumber,
         employeeNumber: addForm.employeeNumber,
       });
       const validatedProfile = employeeProfileSchema.parse({
         employeeName: addForm.employeeName,
-        employeeSurname: addForm.employeeSurname,
+        employeeSurname: normalizedTradingAs,
         idNumber: addForm.idNumber,
         dateOfBirth: "",
         startDate: addForm.startDate,
@@ -4988,6 +5031,7 @@ const Employees = () => {
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
       setRehireEmployeeId(null);
+      setIsRegistrationNumberFocused(false);
       setIsAddFormSubmitRequested(false);
       setIsAddDialogOpen(false);
       await fetchEmployees();
@@ -5633,6 +5677,7 @@ const Employees = () => {
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
       setRehireEmployeeId(null);
+      setIsRegistrationNumberFocused(false);
       setIsAddFormSubmitRequested(false);
       requestAnimationFrame(() => {
         (document.activeElement as HTMLElement | null)?.blur?.();
@@ -9707,7 +9752,7 @@ const Employees = () => {
             {isEmployeesLoading ? (
               <div className="flex items-center justify-center pt-[210px] pb-10">
                 <img
-                  src="/zappir_thumbnail_blue.png"
+                  src="/llasa_thumbnail.png"
                   alt="Loading"
                   className="h-12 w-12 animate-spin"
                   style={{ animationDuration: "2s" }}
@@ -10069,13 +10114,13 @@ const Employees = () => {
                           <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
                           <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
                           {(isAddFormStepOneComplete || addFormStep > 1) && (
-                            <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-blue-600" />
+                            <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />
                           )}
                           {(isAddFormStepTwoComplete || addFormStep > 2) && (
-                            <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-blue-600" />
+                            <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />
                           )}
                           {[
-                            { step: 1 as const, label: "Basic Details" },
+                            { step: 1 as const, label: "Client Details" },
                             { step: 2 as const, label: "Membership" },
                             { step: 3 as const, label: "Address" },
                           ].map((item) => {
@@ -10095,9 +10140,9 @@ const Employees = () => {
                                 <span
                                   className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
                                     isComplete
-                                      ? "bg-blue-600 text-white"
+                                      ? "bg-[#3eca44] text-white"
                                       : isActive
-                                        ? "bg-blue-600 text-white"
+                                        ? "bg-[#3eca44] text-white"
                                         : "bg-slate-500 text-white"
                                   }`}
                                 >
@@ -10120,7 +10165,7 @@ const Employees = () => {
                               <Input
                                 id="employeeName"
                                 className={getAddModalInputClass(addForm.employeeName.trim().length > 0)}
-                                placeholder="Please insert registered name"
+                                placeholder="Insert company registered name"
                                 value={addForm.employeeName}
                                 onChange={(e) => setAddForm((prev) => ({ ...prev, employeeName: e.target.value }))}
                               />
@@ -10128,9 +10173,9 @@ const Employees = () => {
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                Trading as <span className="text-red-600">*</span>
+                                Trading as
                               </span>
-                              <Input id="employeeSurname" className={getAddModalInputClass(addForm.employeeSurname.trim().length > 0)} placeholder="Please insert trading as" value={addForm.employeeSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeSurname: e.target.value }))} />
+                              <Input id="employeeSurname" className={getAddModalInputClass(addForm.employeeSurname.trim().length > 0)} placeholder="Insert trading name" value={addForm.employeeSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeSurname: e.target.value }))} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
@@ -10139,28 +10184,102 @@ const Employees = () => {
                               </span>
                               <Input
                                 id="registrationNumber"
+                                ref={registrationNumberInputRef}
                                 className={getAddModalInputClass(isAddFormRegistrationNumberComplete)}
-                                value={addForm.registrationNumber}
-                                onChange={(e) => setAddForm((prev) => ({ ...prev, registrationNumber: e.target.value }))}
-                                placeholder="Please insert registration number"
+                                value={
+                                  isRegistrationNumberFocused || addForm.registrationNumber.trim().length > 0
+                                    ? formatRegistrationNumberMaskDisplay(addForm.registrationNumber)
+                                    : ""
+                                }
+                                onChange={(e) =>
+                                  setAddForm((prev) => ({
+                                    ...prev,
+                                    registrationNumber: formatRegistrationNumberInput(e.target.value),
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  const currentDigits = getRegistrationDigits(addForm.registrationNumber);
+                                  const isDigitKey = /^\d$/.test(e.key);
+                                  if (isDigitKey) {
+                                    e.preventDefault();
+                                    if (currentDigits.length >= 12) return;
+                                    const nextDigits = `${currentDigits}${e.key}`;
+                                    setAddForm((prev) => ({
+                                      ...prev,
+                                      registrationNumber: formatRegistrationNumberInput(nextDigits),
+                                    }));
+                                    return;
+                                  }
+
+                                  if (e.key === "Backspace") {
+                                    e.preventDefault();
+                                    const nextDigits = currentDigits.slice(0, -1);
+                                    setAddForm((prev) => ({
+                                      ...prev,
+                                      registrationNumber: formatRegistrationNumberInput(nextDigits),
+                                    }));
+                                    return;
+                                  }
+
+                                  if (e.key === "Delete") {
+                                    e.preventDefault();
+                                    return;
+                                  }
+
+                                  if (e.key === "Tab") return;
+                                  if (e.ctrlKey || e.metaKey) return;
+                                  e.preventDefault();
+                                }}
+                                onPaste={(e) => {
+                                  e.preventDefault();
+                                  const pastedDigits = getRegistrationDigits(e.clipboardData.getData("text"));
+                                  setAddForm((prev) => ({
+                                    ...prev,
+                                    registrationNumber: formatRegistrationNumberInput(pastedDigits),
+                                  }));
+                                }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  setIsRegistrationNumberFocused(true);
+                                  registrationNumberInputRef.current?.focus();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const position = getRegistrationNumberCaretPosition(addForm.registrationNumber);
+                                  registrationNumberInputRef.current?.setSelectionRange(position, position);
+                                }}
+                                onFocus={() => {
+                                  setIsRegistrationNumberFocused(true);
+                                  const position = getRegistrationNumberCaretPosition(addForm.registrationNumber);
+                                  requestAnimationFrame(() => {
+                                    registrationNumberInputRef.current?.setSelectionRange(position, position);
+                                  });
+                                }}
+                                onSelect={() => {
+                                  const position = getRegistrationNumberCaretPosition(addForm.registrationNumber);
+                                  registrationNumberInputRef.current?.setSelectionRange(position, position);
+                                }}
+                                onBlur={() => setIsRegistrationNumberFocused(false)}
+                                placeholder="Insert company registration number"
+                                inputMode="numeric"
                               />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                VAT Number <span className="text-red-600">*</span>
+                                VAT Number
                               </span>
-                              <Input id="idNumber" className={getAddModalInputClass(isAddFormIdNumberComplete)} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: e.target.value }))} placeholder="Please insert VAT number" />
+                              <Input id="idNumber" className={getAddModalInputClass(addForm.idNumber.trim().length > 0)} value={addForm.idNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, idNumber: e.target.value }))} placeholder="Insert company vat number" />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                Owner
+                                Owner <span className="text-red-600">*</span>
                               </span>
                               <Input
                                 id="owner"
                                 className={getAddModalInputClass(addForm.gender.trim().length > 0)}
-                                placeholder="Please insert owner"
+                                placeholder="Insert owner's name and surname"
                                 value={addForm.gender}
                                 onChange={(e) => setAddForm((prev) => ({ ...prev, gender: e.target.value }))}
                               />
@@ -10168,12 +10287,12 @@ const Employees = () => {
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                Tell / Cell
+                                Tell / Cell <span className="text-red-600">*</span>
                               </span>
                               <Input
                                 id="tellCell"
                                 className={getAddModalInputClass(addForm.race.trim().length > 0)}
-                                placeholder="Please insert tell / cell"
+                                placeholder="Insert company contact number"
                                 value={addForm.race}
                                 onChange={(e) => setAddForm((prev) => ({ ...prev, race: e.target.value }))}
                               />
@@ -10181,9 +10300,9 @@ const Employees = () => {
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                Email
+                                Email <span className="text-red-600">*</span>
                               </span>
-                              <Input id="cellNumber" className={getAddModalInputClass(addForm.cellNumber.trim().length > 0)} placeholder="Please insert email" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: e.target.value }))} />
+                              <Input id="cellNumber" className={getAddModalInputClass(addForm.cellNumber.trim().length > 0)} placeholder="Insert company email" value={addForm.cellNumber} onChange={(e) => setAddForm((prev) => ({ ...prev, cellNumber: e.target.value }))} />
                             </div>
                           </div>
                         </div>
@@ -10222,7 +10341,13 @@ const Employees = () => {
                                 ref={addModalStartDateInputRef}
                                 type="date"
                                 value={addForm.startDate}
-                                onChange={(e) => setAddForm((prev) => ({ ...prev, startDate: e.target.value }))}
+                                onChange={(e) =>
+                                  setAddForm((prev) => ({
+                                    ...prev,
+                                    startDate: e.target.value,
+                                    endDate: addMonthsToIsoDate(e.target.value, 12),
+                                  }))
+                                }
                                 className="sr-only"
                                 aria-hidden="true"
                                 tabIndex={-1}
@@ -10231,57 +10356,40 @@ const Employees = () => {
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                Period <span className="text-red-600">*</span>
-                              </span>
-                              <Select
-                                value={addForm.contractType || undefined}
-                                onValueChange={(value) => setAddForm((prev) => ({ ...prev, contractType: value }))}
-                              >
-                                <SelectTrigger
-                                  id="membershipPeriod"
-                                  className={`${getAddModalSelectTriggerClass(addForm.contractType.trim().length > 0)} ${addModalDropdownToneClass}`}
-                                >
-                                  <SelectValue placeholder="Please select period" />
-                                </SelectTrigger>
-                                <SelectContent className="text-[11px]">
-                                  {membershipPeriodOptions.map((period) => (
-                                    <SelectItem key={period} value={period} className={employeeDropdownSelectItemClass}>
-                                      {period}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
-                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                End Date <span className="text-red-600">*</span>
+                                Membership Renewal Date <span className="text-red-600">*</span>
                               </span>
                               <Input
                                 id="endDate"
                                 className={getAddModalInputClass(addForm.endDate.trim().length > 0)}
                                 type="text"
                                 readOnly
-                                placeholder="Please select a date"
+                                placeholder="Auto-calculated from start date"
                                 value={addForm.endDate ? formatDisplayDate(addForm.endDate) : ""}
-                                onClick={() => openDatePicker(addModalEndDateInputRef.current)}
-                                onFocus={() => openDatePicker(addModalEndDateInputRef.current)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    openDatePicker(addModalEndDateInputRef.current);
-                                  }
-                                }}
                               />
-                              <input
-                                ref={addModalEndDateInputRef}
-                                type="date"
-                                value={addForm.endDate}
-                                onChange={(e) => setAddForm((prev) => ({ ...prev, endDate: e.target.value }))}
-                                className="sr-only"
-                                aria-hidden="true"
-                                tabIndex={-1}
-                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                Payment Cycle <span className="text-red-600">*</span>
+                              </span>
+                              <Select
+                                value={addForm.contractType || undefined}
+                                onValueChange={(value) => setAddForm((prev) => ({ ...prev, contractType: value }))}
+                              >
+                                <SelectTrigger
+                                  id="paymentCycle"
+                                  className={`${getAddModalSelectTriggerClass(addForm.contractType.trim().length > 0)} ${addModalDropdownToneClass}`}
+                                >
+                                  <SelectValue placeholder="Please select payment cycle" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  {paymentCycleOptions.map((cycle) => (
+                                    <SelectItem key={cycle} value={cycle} className={addModalSelectItemClass}>
+                                      {cycle}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
@@ -10374,12 +10482,12 @@ const Employees = () => {
                                     Province <span className="text-red-600">*</span>
                                   </span>
                                   <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddEmployeeFormState["province"] }))}>
-                                    <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} ${addModalDropdownToneClass}`}>
-                                      <SelectValue placeholder="Please select province" />
-                                    </SelectTrigger>
-                                    <SelectContent className="text-[11px]">
-                                      {southAfricanProvinces.map((province) => (
-                                        <SelectItem key={province} value={province} className={employeeDropdownSelectItemClass}>
+                                  <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} ${addModalDropdownToneClass}`}>
+                                    <SelectValue placeholder="Please select province" />
+                                  </SelectTrigger>
+                                  <SelectContent className="text-[11px]">
+                                    {southAfricanProvinces.map((province) => (
+                                        <SelectItem key={province} value={province} className={addModalSelectItemClass}>
                                           {province}
                                         </SelectItem>
                                       ))}
@@ -10406,7 +10514,7 @@ const Employees = () => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                              className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#3eca44] hover:bg-transparent hover:text-[#3eca44]"
                               onClick={() => setAddFormStep((prev) => (prev === 1 ? prev : ((prev - 1) as 1 | 2 | 3)))}
                             >
                               Back
@@ -10427,7 +10535,7 @@ const Employees = () => {
                           {addFormStep < 3 ? (
                             <Button
                               type="button"
-                              className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                              className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                               onClick={handleAddFormNext}
                               disabled={(addFormStep === 1 && !isAddFormStepOneComplete) || (addFormStep === 2 && !isAddFormStepTwoComplete)}
                             >
@@ -10436,7 +10544,7 @@ const Employees = () => {
                           ) : (
                             <Button
                               type="submit"
-                              className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                              className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                               onClick={() => setIsAddFormSubmitRequested(true)}
                               disabled={isLoading || !isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete}
                             >

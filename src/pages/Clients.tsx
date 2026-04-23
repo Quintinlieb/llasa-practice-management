@@ -58,9 +58,8 @@ import {
   Trash2,
   Upload,
   FilePlus,
+  FolderOpen,
   Paperclip,
-  Eye,
-  EyeOff,
   Download,
   Search,
   Pencil,
@@ -82,6 +81,7 @@ import {
   Calendar,
   BadgeCheck,
   BriefcaseBusiness,
+  Camera,
   LogOut,
   TriangleAlert,
 } from "lucide-react";
@@ -96,9 +96,9 @@ import {
   EMPLOYEE_NUMBER_MAX_LENGTH,
   contractTypes,
   citizenshipStatusOptions,
-  employeeBasicSchema,
   employeeImportSchema,
   employeeProfileSchema,
+  sanitizeText,
   sanitizeEmployeeNumber,
   nationalityOptions,
   genderOptions,
@@ -106,7 +106,6 @@ import {
   southAfricanProvinces,
   type EmployeeProfileFormData,
 } from "@/lib/validation";
-import { maskSAIdNumber } from "@/lib/idMasking";
 import { extractDobFromId } from "@/lib/validation";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 // Supabase types do not include employee_warnings; cast to any for those calls to avoid type errors.
@@ -121,12 +120,9 @@ const licenceTable = () => (supabase as any).from("employee_licences");
 const educationTable = () => (supabase as any).from("employee_education");
 // Supabase types do not include employee_termination_documents; cast to any for those calls to avoid type errors.
 const terminationDocumentTable = () => (supabase as any).from("employee_termination_documents");
-const employeeTableSelectColumns =
-  "id, employee_name, employee_surname, id_number, status, start_date, contract_type, job_title, cell_number, nationality, gender, race";
-const employeeSelectColumnsBase =
-  "id, company_id, employee_name, employee_surname, id_number, status, start_date, end_date, contract_type, probation_period, retirement_age, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
-const employeeSelectColumnsWithTermination =
-  "id, company_id, employee_name, employee_surname, id_number, status, termination_reason, previous_job_title, terminated_at, start_date, end_date, contract_type, probation_period, retirement_age, union_member, trade_union, department, branch, reporting_to, occupational_level, salary_type, basic_salary, work_email, work_cell_number, gender, race, nationality, citizenship_status, employee_number, job_title, physical_address_line1, physical_address_line2, city, province, area_code, postal_address_line1, postal_address_line2, postal_city, postal_province, postal_area_code, cell_number, email, emergency_contact_name, emergency_contact_number, income_tax_number, created_at";
+const employeeTableSelectColumns = "*";
+const employeeSelectColumnsBase = "*";
+const employeeSelectColumnsWithTermination = "*";
 
 type Employee = Tables<"employees"> & {
   status?: string | null;
@@ -168,6 +164,20 @@ type Employee = Tables<"employees"> & {
   email?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_number?: string | null;
+  registration_number?: string | null;
+  registered_name?: string | null;
+  trading_as?: string | null;
+  trading_name?: string | null;
+  vat_number?: string | null;
+  company_type?: string | null;
+  payment_cycle?: string | null;
+  renewal_date?: string | null;
+  client_number?: string | null;
+  member_types?: string[] | string | null;
+  company_logo_url?: string | null;
+  owner?: string | null;
+  tel_cell?: string | null;
+  client_email?: string | null;
   termination_reason?: string | null;
   previous_job_title?: string | null;
   terminated_at?: string | null;
@@ -212,6 +222,20 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   email?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_number?: string | null;
+  registration_number?: string | null;
+  registered_name?: string | null;
+  trading_as?: string | null;
+  trading_name?: string | null;
+  vat_number?: string | null;
+  company_type?: string | null;
+  payment_cycle?: string | null;
+  renewal_date?: string | null;
+  client_number?: string | null;
+  member_types?: string[] | string | null;
+  company_logo_url?: string | null;
+  owner?: string | null;
+  tel_cell?: string | null;
+  client_email?: string | null;
   termination_reason?: string | null;
   previous_job_title?: string | null;
   terminated_at?: string | null;
@@ -384,10 +408,13 @@ const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]
 const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
 const normalizeEmployeeNumber = (value?: string | null) => (value || "").trim().toLowerCase();
 const normalizeIdNumberValue = (value?: string | null) => (value || "").replace(/\s+/g, "").trim().toLowerCase();
+const normalizeRegistrationNumberValue = (value?: string | null) =>
+  formatRegistrationNumberInput((value || "").replace(/\s+/g, "")).trim().toLowerCase();
 
 const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
 const retirementAgeOptions = ["55", "60", "65", "70"] as const;
 const dateToday = () => new Date().toISOString().split("T")[0];
+const companyTypeOptions = ["Holding", "Subsidiary"] as const;
 const MISCONDUCT_TYPES = [
   // Minor
   "Unauthorised absenteeism",
@@ -493,29 +520,32 @@ const createBlankAddForm = (): AddEmployeeFormState => ({
 });
 
 const createAddFormFromEmployee = (employee: Employee): AddEmployeeFormState => {
-  const idNumber = (employee.id_number ?? "").trim();
-  const paymentCycle = (employee.contract_type ?? "").trim();
-  const parsedMemberTypes = ((employee.department ?? employee.job_title ?? "") as string)
-    .split(",")
-    .map((value) => value.trim())
+  const dynamic = employee as Record<string, unknown>;
+  const idNumber = ((dynamic.vat_number as string | undefined) ?? employee.id_number ?? "").trim();
+  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? employee.contract_type ?? "").trim();
+  const parsedMemberTypes = normalizeMemberTypes(employee.member_types ?? employee.department ?? employee.job_title)
     .filter((value) => membershipTypeOptions.includes(value as (typeof membershipTypeOptions)[number]));
 
   return {
-    employeeName: (employee.employee_name ?? "").trim(),
-    employeeSurname: (employee.employee_surname ?? "").trim(),
-    registrationNumber: (employee.income_tax_number ?? "").trim(),
+    employeeName:
+      ((dynamic.registered_name as string | undefined) ?? (dynamic.company_name as string | undefined) ?? employee.employee_name ?? "").trim(),
+    employeeSurname:
+      ((dynamic.trading_name as string | undefined) ?? (dynamic.trading_as as string | undefined) ?? employee.employee_surname ?? "").trim(),
+    registrationNumber: (employee.registration_number ?? employee.income_tax_number ?? "").trim(),
     idNumber,
-    employeeNumber: cleanEmployeeNumberInput(employee.employee_number),
-    gender: (employee.gender ?? "").trim(),
-    race: (employee.race ?? "").trim(),
-    cellNumber: (employee.cell_number ?? "").trim(),
-    email: (employee.email ?? "").trim(),
+    employeeNumber: cleanEmployeeNumberInput((dynamic.client_number as string | undefined) ?? employee.employee_number),
+    gender: (employee.owner ?? employee.gender ?? "").trim(),
+    race: (employee.tel_cell ?? employee.race ?? "").trim(),
+    cellNumber: (employee.client_email ?? employee.email ?? employee.cell_number ?? "").trim(),
+    email: (employee.client_email ?? employee.email ?? "").trim(),
     memberTypes: parsedMemberTypes,
     contractType: paymentCycleOptions.includes(paymentCycle as (typeof paymentCycleOptions)[number])
       ? paymentCycle
       : "",
     startDate: (employee.start_date ?? "").trim(),
-    endDate: addMonthsToIsoDate((employee.start_date ?? "").trim(), 12),
+    endDate:
+      ((dynamic.renewal_date as string | undefined) ?? "").trim() ||
+      addMonthsToIsoDate((employee.start_date ?? "").trim(), 12),
     salaryType: coerceEnumValue(employee.salary_type, salaryTypeOptions),
     basicSalary: (employee.basic_salary ?? "").trim(),
     physicalAddressLine1: (employee.physical_address_line1 ?? "").trim(),
@@ -549,29 +579,53 @@ const addMonthsToIsoDate = (isoDate: string, months: number) => {
 };
 
 const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileFormData => {
+  const dynamic = (employee ?? {}) as Record<string, unknown>;
+  const registeredName =
+    ((dynamic.registered_name as string | undefined) ??
+      (dynamic.company_name as string | undefined) ??
+      employee?.employee_name ??
+      "").trim();
+  const tradingName =
+    ((dynamic.trading_as as string | undefined) ??
+      (dynamic.trading_name as string | undefined) ??
+      employee?.employee_surname ??
+      "").trim();
+  const vatNumber = ((dynamic.vat_number as string | undefined) ?? employee?.id_number ?? "").trim();
+  const registrationNumber = (employee?.registration_number ?? employee?.income_tax_number ?? "").trim();
+  const companyType = ((dynamic.company_type as string | undefined) ?? employee?.citizenship_status ?? "").trim();
+  const ownerName = ((dynamic.owner as string | undefined) ?? employee?.gender ?? "").trim();
+  const ownerNumber = ((dynamic.tel_cell as string | undefined) ?? employee?.race ?? "").trim();
+  const ownerEmail =
+    ((dynamic.client_email as string | undefined) ??
+      employee?.email ??
+      employee?.cell_number ??
+      "").trim();
+  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? employee?.contract_type ?? "").trim();
+  const renewalDate = ((dynamic.renewal_date as string | undefined) ?? employee?.end_date ?? "").trim();
+  const clientNumber = ((dynamic.client_number as string | undefined) ?? employee?.employee_number ?? "").trim();
   const nationality = (employee?.nationality ?? "").trim() || DEFAULT_NATIONALITY;
   const isSouthAfrican = nationality.toLowerCase() === "south african";
   const storedDob = employee?.date_of_birth ?? "";
   const derivedDob =
     storedDob ||
-    (isSouthAfrican ? formatInputDate(extractDobFromId(employee?.id_number ?? "")) : "");
+    (isSouthAfrican ? formatInputDate(extractDobFromId(vatNumber)) : "");
 
   return {
-    employeeName: employee?.employee_name ?? "",
-    employeeSurname: employee?.employee_surname ?? "",
-    idNumber: employee?.id_number ?? "",
+    employeeName: registeredName,
+    employeeSurname: tradingName,
+    idNumber: vatNumber,
     dateOfBirth: derivedDob,
     startDate: employee?.start_date ?? "",
     contractType:
-      (coerceEnumValue(employee?.contract_type, contractTypes) as EmployeeProfileFormData["contractType"]) ??
+      (coerceEnumValue(paymentCycle, contractTypes) as EmployeeProfileFormData["contractType"]) ??
       "Permanent",
-    endDate: employee?.end_date ?? "",
+    endDate: renewalDate,
     nationality,
-    gender: (employee?.gender ?? "") as EmployeeProfileFormData["gender"],
+    gender: ownerName as EmployeeProfileFormData["gender"],
     disabilityStatus: employee?.disability_status ?? false,
-    citizenshipStatus: employee?.citizenship_status ?? "",
-    race: (employee?.race ?? "") as EmployeeProfileFormData["race"],
-    employeeNumber: cleanEmployeeNumberInput(employee?.employee_number),
+    citizenshipStatus: companyType,
+    race: ownerNumber as EmployeeProfileFormData["race"],
+    employeeNumber: cleanEmployeeNumberInput(clientNumber),
     jobTitle: employee?.job_title ?? "",
     physicalAddressLine1: employee?.physical_address_line1 ?? "",
     physicalAddressLine2: employee?.physical_address_line2 ?? "",
@@ -586,11 +640,11 @@ const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileForm
       southAfricanProvinces,
     ) as EmployeeProfileFormData["postalProvince"],
     postalAreaCode: employee?.postal_area_code ?? "",
-    cellNumber: employee?.cell_number ?? "",
-    email: employee?.email ?? "",
+    cellNumber: ownerEmail,
+    email: ownerEmail,
     emergencyContactName: employee?.emergency_contact_name ?? "",
     emergencyContactNumber: employee?.emergency_contact_number ?? "",
-    incomeTaxNumber: employee?.income_tax_number ?? "",
+    incomeTaxNumber: registrationNumber,
   };
 };
 
@@ -669,6 +723,58 @@ const normalizeSalaryForStorage = (value: string) => {
   const integerPart = rawIntegerPart.length > 0 ? rawIntegerPart : "0";
   const decimalPart = rawDecimalPart.padEnd(2, "0").slice(0, 2);
   return `${integerPart}.${decimalPart}`;
+};
+
+const getClientDisplayName = (employee: Partial<Employee>) => {
+  const dynamic = employee as Record<string, unknown>;
+  const tradingName =
+    (dynamic.trading_name as string | undefined)?.trim() ||
+    (dynamic.trading_as as string | undefined)?.trim() ||
+    (employee.employee_surname ?? "").trim();
+  const registeredName =
+    (dynamic.registered_name as string | undefined)?.trim() ||
+    (dynamic.company_name as string | undefined)?.trim() ||
+    (employee.employee_name ?? "").trim();
+  return tradingName || registeredName || "Client";
+};
+
+const getClientRegisteredName = (employee: Partial<Employee>) => {
+  const dynamic = employee as Record<string, unknown>;
+  return (
+    (dynamic.registered_name as string | undefined)?.trim() ||
+    (dynamic.company_name as string | undefined)?.trim() ||
+    (employee.employee_name ?? "").trim() ||
+    getClientDisplayName(employee)
+  );
+};
+
+const getClientTradingName = (employee: Partial<Employee>) => {
+  const dynamic = employee as Record<string, unknown>;
+  return (
+    (dynamic.trading_name as string | undefined)?.trim() ||
+    (dynamic.trading_as as string | undefined)?.trim() ||
+    (employee.employee_surname ?? "").trim()
+  );
+};
+
+const normalizeMemberTypes = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item).trim())
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const formatMemberTypesDisplay = (value: unknown): string => {
+  const values = normalizeMemberTypes(value);
+  return values.length > 0 ? values.join(", ") : "";
 };
 
 const getDisplayFileNameFromPath = (path?: string | null, fallback = "document.pdf") => {
@@ -1003,6 +1109,42 @@ const membershipTypeAcronyms: Record<(typeof membershipTypeOptions)[number], str
   Payroll: "PR",
   "Health and Safety": "HS",
 };
+const membershipServiceSelectionOptions = ["Yes", "No"] as const;
+const membershipStatusOptions = ["Active", "Suspended", "Cancelled", "Pending"] as const;
+type ClientStatusValue = (typeof membershipStatusOptions)[number] | (typeof employmentStatusOptions)[number] | "";
+type MembershipServiceSelection = (typeof membershipServiceSelectionOptions)[number];
+
+const createDefaultMembershipServiceSelections = (): Record<(typeof membershipTypeOptions)[number], MembershipServiceSelection> =>
+  membershipTypeOptions.reduce(
+    (acc, service) => {
+      acc[service] = "No";
+      return acc;
+    },
+    {} as Record<(typeof membershipTypeOptions)[number], MembershipServiceSelection>,
+  );
+
+const createMembershipServiceSelectionsFromEmployee = (employee?: Partial<Employee> | null) => {
+  const selectedServices = new Set(
+    normalizeMemberTypes(employee?.member_types ?? employee?.department ?? employee?.job_title),
+  );
+  return membershipTypeOptions.reduce(
+    (acc, service) => {
+      acc[service] = selectedServices.has(service) ? "Yes" : "No";
+      return acc;
+    },
+    createDefaultMembershipServiceSelections(),
+  );
+};
+
+const getDisplayMembershipStatus = (value?: string | null): ClientStatusValue => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (normalized === "active") return "Active";
+  if (normalized === "inactive") return "Inactive";
+  if (normalized === "suspended") return "Suspended";
+  if (normalized === "cancelled") return "Cancelled";
+  if (normalized === "pending") return "Pending";
+  return "";
+};
 
 const paymentCycleOptions = ["Monthly", "Annual"] as const;
 
@@ -1028,6 +1170,17 @@ const getIdDocumentStoragePathFromUrl = (url?: string) => {
   const idx = url.indexOf(marker);
   if (idx === -1) return url;
   return url.slice(idx + marker.length);
+};
+
+const getClientLogoStoragePathFromUrl = (url?: string | null) => {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    const marker = "/client-logos/";
+    const idx = url.indexOf(marker);
+    if (idx === -1) return "";
+    return url.slice(idx + marker.length);
+  }
+  return url;
 };
 
 const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issueDate: string) => {
@@ -1220,7 +1373,6 @@ const Employees = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
   const [activeEditSection, setActiveEditSection] = useState<ProfileSectionKey | null>(null);
-  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [addForm, setAddForm] = useState<AddEmployeeFormState>(createBlankAddForm());
   const [isRegistrationNumberFocused, setIsRegistrationNumberFocused] = useState(false);
   const registrationNumberInputRef = useRef<HTMLInputElement | null>(null);
@@ -1228,6 +1380,9 @@ const Employees = () => {
   const [rehireEmployeeId, setRehireEmployeeId] = useState<string | null>(null);
   const [isAddFormSubmitRequested, setIsAddFormSubmitRequested] = useState(false);
   const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
+  const [serviceSelections, setServiceSelections] = useState<
+    Record<(typeof membershipTypeOptions)[number], MembershipServiceSelection>
+  >(createDefaultMembershipServiceSelections());
   const [isWarningDialogOpen, setIsWarningDialogOpen] = useState(false);
   const [warningForm, setWarningForm] = useState<WarningFormState>({
     misconductTypes: [],
@@ -1257,6 +1412,8 @@ const Employees = () => {
   const [pendingIdDocumentName, setPendingIdDocumentName] = useState("");
   const [isIdDocumentMarkedForRemoval, setIsIdDocumentMarkedForRemoval] = useState(false);
   const [isIdDocumentUploading, setIsIdDocumentUploading] = useState(false);
+  const [isClientLogoUploading, setIsClientLogoUploading] = useState(false);
+  const [clientLogoPreviewByEmployee, setClientLogoPreviewByEmployee] = useState<Record<string, string>>({});
   const [terminationDocumentByEmployee, setTerminationDocumentByEmployee] = useState<Record<string, EmployeeTerminationDocument | null>>({});
   const [pendingTerminationDocumentFile, setPendingTerminationDocumentFile] = useState<File | null>(null);
   const [pendingTerminationDocumentName, setPendingTerminationDocumentName] = useState("");
@@ -1284,7 +1441,7 @@ const Employees = () => {
   const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
   const [hasLoadedConductOffences, setHasLoadedConductOffences] = useState(false);
   const [employmentStatus, setEmploymentStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
-  const [employeeStatus, setEmployeeStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
+  const [employeeStatus, setEmployeeStatus] = useState<ClientStatusValue>("");
   const [probationPeriod, setProbationPeriod] = useState("");
   const [retirementAge, setRetirementAge] = useState<(typeof retirementAgeOptions)[number]>("65");
   const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
@@ -1346,6 +1503,7 @@ const Employees = () => {
   const terminateModalDateInputRef = useRef<HTMLInputElement | null>(null);
   const terminateModalDocumentInputRef = useRef<HTMLInputElement | null>(null);
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
+  const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDocumentFileInputRef = useRef<HTMLInputElement | null>(null);
   const licenceFileInputRefs = useRef<Record<LicenceCategory, HTMLInputElement | null>>({
@@ -1406,7 +1564,7 @@ const Employees = () => {
   const membershipDropdownItemClass =
     "cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const addModalSelectItemClass =
-    "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
+    "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
   const employeeDropdownMenuItemWithGapClass = `gap-2 ${employeeDropdownMenuItemClass}`;
   const newClientDropdownItemStyle =
     "!rounded-none gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
@@ -1419,9 +1577,9 @@ const Employees = () => {
   const filterButtonStyle2 = `${toolbarButtonStyle2Base} text-slate-700 hover:text-[#3eca44]`;
   const addModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-slate-500 data-[state=open]:border-black data-[state=open]:bg-white";
-  const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 !focus:!border-black !focus-visible:!border-black`;
+  const addModalFieldInputClass = `${fieldInputClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black`;
   const addModalFieldSelectTriggerClass =
-    `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 !focus:!border-black !focus-visible:!border-black data-[state=open]:!border-black !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
+    `${fieldSelectTriggerClass} !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black data-[state=open]:!border-black !ring-0 !ring-offset-0 !outline-none !shadow-none focus:!ring-0 focus:!ring-offset-0 focus:!shadow-none focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!shadow-none focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none`;
   const getAddModalInputClass = (_isComplete: boolean) => addModalFieldInputClass;
   const getAddModalSelectTriggerClass = (_isComplete: boolean) => addModalFieldSelectTriggerClass;
   const isReadOnlyTab =
@@ -1430,6 +1588,10 @@ const Employees = () => {
 
   const originalProfile = useMemo(
     () => (selectedEmployee ? createProfileFormFromEmployee(selectedEmployee) : null),
+    [selectedEmployee],
+  );
+  const originalServiceSelections = useMemo(
+    () => createMembershipServiceSelectionsFromEmployee(selectedEmployee),
     [selectedEmployee],
   );
   const originalProbationPeriod = useMemo(
@@ -1457,6 +1619,10 @@ const Employees = () => {
       .map((emp) => `${(emp.employee_name ?? "").trim()} ${(emp.employee_surname ?? "").trim()}`.trim())
       .filter(Boolean);
   }, [allEmployees, employees]);
+
+  useEffect(() => {
+    setServiceSelections(createMembershipServiceSelectionsFromEmployee(selectedEmployee));
+  }, [selectedEmployee]);
   const [originalDepartment, setOriginalDepartment] = useState("");
   const [originalBranch, setOriginalBranch] = useState("");
   const [originalReportingTo, setOriginalReportingTo] = useState("");
@@ -1595,16 +1761,7 @@ const Employees = () => {
   }, [user, fetchCompanyBranches]);
 
   useEffect(() => {
-    const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
-    if (nextStatus === "inactive") {
-      setEmployeeStatus("Inactive");
-      return;
-    }
-    if (nextStatus === "active") {
-      setEmployeeStatus("Active");
-      return;
-    }
-    setEmployeeStatus("");
+    setEmployeeStatus(getDisplayMembershipStatus((selectedEmployee as any)?.status));
   }, [selectedEmployee]);
 
   const updateEmployeeStatus = useCallback(
@@ -1840,17 +1997,12 @@ const Employees = () => {
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
       statutory: compare(["incomeTaxNumber"]),
       employmentStatus:
-        compare(["startDate", "contractType", "endDate", "employeeNumber"]) ||
-        probationPeriod !== originalProbationPeriod ||
-        retirementAge !== originalRetirementAge ||
-        !!pendingEmploymentContractFile ||
-        isEmploymentContractMarkedForRemoval,
+        compare(["startDate", "endDate", "employeeNumber"]) ||
+        employeeStatus !== getDisplayMembershipStatus((selectedEmployee as any)?.status),
       employmentOrg:
-        compare(["jobTitle"]) ||
-        department !== originalDepartment ||
-        branch !== originalBranch ||
-        reportingTo !== originalReportingTo ||
-        occupationalLevel !== originalOccupationalLevel,
+        membershipTypeOptions.some(
+          (service) => serviceSelections[service] !== originalServiceSelections[service],
+        ),
       employmentRemuneration:
         salaryType !== originalSalaryType || basicSalary !== originalBasicSalary,
       employmentWorkContact:
@@ -1899,10 +2051,12 @@ const Employees = () => {
     originalUnionMember,
     tradeUnion,
     originalTradeUnion,
+    employeeStatus,
+    selectedEmployee,
+    serviceSelections,
+    originalServiceSelections,
     pendingIdDocumentFile,
     isIdDocumentMarkedForRemoval,
-    pendingEmploymentContractFile,
-    isEmploymentContractMarkedForRemoval,
   ]);
 
   const profileSchemaBase = useMemo(() => {
@@ -1915,9 +2069,9 @@ const Employees = () => {
       profileSchemaBase.pick({
         employeeName: true,
         employeeSurname: true,
+        incomeTaxNumber: true,
         idNumber: true,
-        nationality: true,
-        dateOfBirth: true,
+        citizenshipStatus: true,
       }),
     [profileSchemaBase],
   );
@@ -1925,10 +2079,9 @@ const Employees = () => {
   const equitySectionSchema = useMemo(
     () =>
       profileSchemaBase.pick({
-        race: true,
         gender: true,
-        disabilityStatus: true,
-        citizenshipStatus: true,
+        race: true,
+        cellNumber: true,
       }),
     [profileSchemaBase],
   );
@@ -1936,10 +2089,11 @@ const Employees = () => {
   const contactSectionSchema = useMemo(
     () =>
       profileSchemaBase.pick({
-        cellNumber: true,
-        email: true,
-        emergencyContactName: true,
-        emergencyContactNumber: true,
+        physicalAddressLine1: true,
+        physicalAddressLine2: true,
+        city: true,
+        province: true,
+        areaCode: true,
       }),
     [profileSchemaBase],
   );
@@ -1947,7 +2101,11 @@ const Employees = () => {
   const statutorySectionSchema = useMemo(
     () =>
       profileSchemaBase.pick({
-        incomeTaxNumber: true,
+        postalAddressLine1: true,
+        postalAddressLine2: true,
+        postalCity: true,
+        postalProvince: true,
+        postalAreaCode: true,
       }),
     [profileSchemaBase],
   );
@@ -4045,9 +4203,9 @@ const Employees = () => {
     equity: "Employment Equity",
     contact: "Contact Information",
     statutory: "Statutory Information",
-    employmentStatus: "Employment Status",
-    employmentOrg: "Organisational Details",
-    employmentRemuneration: "Remuneration Information",
+    employmentStatus: "Membership Details",
+    employmentOrg: "Service Selection",
+    employmentRemuneration: "Billing Terms",
     employmentWorkContact: "Work Contact Information",
     employmentUnion: "Union Association",
     homeAddress: "Home Address",
@@ -4095,8 +4253,110 @@ const Employees = () => {
     [activeEditSection, guardEditSession, isEditMode],
   );
 
+  const resolveClientLogoUrl = useCallback(
+    (employee: Employee | null) => {
+      if (!employee) return "";
+      const cached = clientLogoPreviewByEmployee[employee.id];
+      if (cached) return cached;
+      const dynamic = employee as Record<string, unknown>;
+      const rawLogoValue = ((dynamic.company_logo_url as string | undefined) ?? "").trim();
+      if (!rawLogoValue) return "";
+      if (rawLogoValue.startsWith("http://") || rawLogoValue.startsWith("https://")) {
+        return rawLogoValue;
+      }
+      const { data } = supabase.storage.from("client-logos").getPublicUrl(rawLogoValue);
+      return data.publicUrl || "";
+    },
+    [clientLogoPreviewByEmployee],
+  );
+
+  const handleClientLogoFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file || !selectedEmployee || !user) return;
+      if (!file.type.startsWith("image/")) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload an image file for the client logo.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const safeName = file.name.replace(/\s+/g, "_");
+      const storagePath = `${selectedEmployee.id}/${Date.now()}-${safeName}`;
+      const dynamic = selectedEmployee as Record<string, unknown>;
+      const existingLogoPath = getClientLogoStoragePathFromUrl(
+        (dynamic.company_logo_url as string | undefined) ?? selectedEmployee.company_logo_url ?? "",
+      );
+
+      setIsClientLogoUploading(true);
+      try {
+        const { error: uploadError } = await supabase.storage.from("client-logos").upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type || "image/png",
+        });
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from("client-logos").getPublicUrl(storagePath);
+        const nextLogoUrl = data.publicUrl || "";
+        setClientLogoPreviewByEmployee((prev) => ({
+          ...prev,
+          [selectedEmployee.id]: nextLogoUrl,
+        }));
+
+        const logoPatch = { company_logo_url: storagePath } as EmployeeUpdate;
+        const { error: updateError } = await supabase
+          .from("employees")
+          .update(logoPatch as unknown as TablesInsert<"employees">)
+          .eq("id", selectedEmployee.id)
+          .eq("company_id", user.id);
+
+        if (updateError) {
+          const message = (updateError as { message?: string } | null)?.message ?? "";
+          if (!message.toLowerCase().includes("company_logo_url")) {
+            throw updateError;
+          }
+          toast({
+            title: "Logo uploaded",
+            description: "Logo uploaded, but the `company_logo_url` column is missing on employees.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const updatedEmployee = { ...selectedEmployee, ...logoPatch } as Employee;
+        setSelectedEmployee(updatedEmployee);
+        setEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
+        setFilteredEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
+        setAllEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
+
+        if (existingLogoPath && existingLogoPath !== storagePath) {
+          await supabase.storage.from("client-logos").remove([existingLogoPath]);
+        }
+
+        toast({
+          title: "Logo updated",
+          description: "Client logo has been uploaded successfully.",
+        });
+      } catch (error: unknown) {
+        toast({
+          title: "Unable to upload logo",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+      } finally {
+        setIsClientLogoUploading(false);
+      }
+    },
+    [selectedEmployee, toast, user],
+  );
+
   const renderProfilePanel = () => {
     if (!selectedEmployee) return null;
+    const clientLogoUrl = resolveClientLogoUrl(selectedEmployee);
 
     return (
       <div className="flex h-full flex-col bg-[#f7f9fb] overflow-hidden">
@@ -4105,7 +4365,7 @@ const Employees = () => {
           <div className="flex items-center gap-2">
             <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
               <Menu className="h-3.5 w-3.5 -ml-1" />
-              <span className="font-semibold text-slate-700">Client Profile</span>
+              <span className="font-semibold text-slate-700">Client File</span>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -4154,23 +4414,49 @@ const Employees = () => {
           <aside className="h-full min-h-0 space-y-4 overflow-y-auto pr-1">
 
             <div className="rounded-sm border border-slate-300 bg-white overflow-hidden">
-              <div className="relative bg-slate-100">
-                <img
-                  src="/employee_profile_background.png"
-                  alt="Client profile background"
-                  className="h-36 w-full object-cover"
-                  loading="lazy"
+              <div className="relative mx-5 mt-5 rounded-sm border border-slate-200 bg-slate-50">
+                <input
+                  ref={clientLogoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => void handleClientLogoFileChange(event)}
                 />
-                <div className="absolute left-5 bottom-0 translate-y-1/2">
-                  <div className="rounded-full border-[3px] border-white shadow-lg">
+                <div className="flex h-32 items-center justify-center p-3">
+                  {clientLogoUrl ? (
                     <img
-                      src={(profileForm.gender || "").toLowerCase().startsWith("f") ? "/female_avatar(1).png" : "/male_avatar(1).png"}
-                      alt="Client avatar"
-                      className="h-20 w-20 rounded-full object-cover"
+                      src={clientLogoUrl}
+                      alt="Client logo"
+                      className="max-h-full max-w-full object-contain"
                       loading="lazy"
                     />
-                  </div>
+                  ) : (
+                    <div className="rounded-full border-[3px] border-white shadow-lg">
+                      <img
+                        src={(profileForm.gender || "").toLowerCase().startsWith("f") ? "/female_avatar(1).png" : "/male_avatar(1).png"}
+                        alt="Client logo"
+                        className="h-20 w-20 rounded-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
                 </div>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="absolute right-2 top-2 h-7 w-7 rounded-full border-slate-300 bg-white text-slate-700 hover:border-[#3eca44] hover:text-[#2f9f35]"
+                  onClick={() => clientLogoFileInputRef.current?.click()}
+                  disabled={isClientLogoUploading}
+                  aria-label={isClientLogoUploading ? "Uploading logo" : "Upload or change logo"}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center justify-center pt-2 pb-2">
+                {isClientLogoUploading ? (
+                  <p className="text-[10px] font-medium text-slate-500">Uploading logo...</p>
+                ) : null}
               </div>
 
               <div className="pl-5 pr-2 pt-2 min-h-[28px]">
@@ -4208,7 +4494,7 @@ const Employees = () => {
                 ) : null}
               </div>
 
-              <div className="px-5 pb-4 pt-6">
+              <div className="px-5 pb-4 pt-4">
 
               <div className="space-y-1">
                 <div className="flex items-baseline gap-3.5">
@@ -4345,150 +4631,60 @@ const Employees = () => {
               <TabsList className="h-8 w-full flex-wrap justify-start items-center gap-0 bg-transparent px-0 py-0 shadow-none">
                 <TabsTrigger
                   value="personal"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
                     guardEditSession(event);
                   }}
                 >
-                  Personal
+                  Client
                 </TabsTrigger>
                 <TabsTrigger
                   value="employment"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
                     guardEditSession(event);
                   }}
                 >
-                  Employment
+                  Membership
                 </TabsTrigger>
                 <TabsTrigger
                   value="address"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
                     guardEditSession(event);
                   }}
                 >
-                  Address
+                  Notes
                 </TabsTrigger>
                 <TabsTrigger
                   value="discipline"
-                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                   onPointerDown={(event) => {
                     guardEditSession(event);
                   }}
                 >
-                  Warnings
+                  Attendances
                 </TabsTrigger>
-                <DropdownMenu open={isLicencesTabMenuOpen} onOpenChange={setIsLicencesTabMenuOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onPointerDown={(event) => {
-                        guardEditSession(event);
-                      }}
-                      className={`rounded-t-sm border-b-[3px] px-3 h-8 inline-flex items-center justify-center text-center text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
-                        activeTab === "licences"
-                          ? "bg-blue-600 border-transparent text-white hover:bg-blue-600 hover:text-white"
-                          : isLicencesTabMenuOpen
-                            ? "border-transparent bg-transparent text-blue-600 underline underline-offset-2 decoration-blue-600 hover:bg-transparent hover:text-blue-600"
-                            : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
-                      }`}
-                    >
-                      <span>Licences</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="text-[11px]">
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("licences");
-                        setLicencesViewFilter("driving");
-                        setIsLicencesTabMenuOpen(false);
-                      }}
-                    >
-                      Driving Licence(s)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("licences");
-                        setLicencesViewFilter("firearmSecurity");
-                        setIsLicencesTabMenuOpen(false);
-                      }}
-                    >
-                      Firearm & Security
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("licences");
-                        setLicencesViewFilter("marineAviation");
-                        setIsLicencesTabMenuOpen(false);
-                      }}
-                    >
-                      Marine & Aviation
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu open={isEducationTabMenuOpen} onOpenChange={setIsEducationTabMenuOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onPointerDown={(event) => {
-                        guardEditSession(event);
-                      }}
-                      className={`rounded-t-sm border-b-[3px] px-3 h-8 inline-flex items-center justify-center text-center text-xs font-medium leading-none shadow-none !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 ${
-                        activeTab === "education"
-                          ? "bg-blue-600 border-transparent text-white hover:bg-blue-600 hover:text-white"
-                          : isEducationTabMenuOpen
-                            ? "border-transparent bg-transparent text-blue-600 underline underline-offset-2 decoration-blue-600 hover:bg-transparent hover:text-blue-600"
-                            : "border-transparent bg-transparent text-slate-500 hover:bg-transparent hover:text-blue-600"
-                      }`}
-                    >
-                      <span>Education</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="text-[11px]">
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("education");
-                        setEducationViewFilter("academic");
-                        setIsEducationTabMenuOpen(false);
-                      }}
-                    >
-                      Academic Qualifications
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("education");
-                        setEducationViewFilter("trade");
-                        setIsEducationTabMenuOpen(false);
-                      }}
-                    >
-                      Trade Qualifications
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className={employeeDropdownMenuItemClass}
-                      onSelect={(event) => {
-                        if (!guardEditSession(event)) return;
-                        setActiveTab("education");
-                        setEducationViewFilter("training");
-                        setIsEducationTabMenuOpen(false);
-                      }}
-                    >
-                      Training Certificates
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <TabsTrigger
+                  value="licences"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  onPointerDown={(event) => {
+                    if (!guardEditSession(event)) return;
+                    setLicencesViewFilter("driving");
+                  }}
+                >
+                  Cases
+                </TabsTrigger>
+                <TabsTrigger
+                  value="education"
+                  className="rounded-t-sm border-b-[3px] border-transparent px-4 h-8 flex items-center text-left text-xs font-medium leading-none text-slate-500 data-[state=inactive]:hover:text-[#3eca44] data-[state=active]:bg-[#3eca44] data-[state=active]:border-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
+                  onPointerDown={(event) => {
+                    if (!guardEditSession(event)) return;
+                    setEducationViewFilter("academic");
+                  }}
+                >
+                  Documents
+                </TabsTrigger>
               </TabsList>
               </div>
               <div className="flex min-h-0 flex-1 flex-col px-0">
@@ -4546,36 +4742,22 @@ const Employees = () => {
       .select(employeeTableSelectColumns)
       .eq("company_id", user.id);
 
-    if (contractFilter !== "all") {
-      query = query.ilike("contract_type", contractFilter);
-    }
     if (employeeStatusFilter === "inactive") {
       query = query.eq("status", "inactive");
     } else {
       query = query.or("status.is.null,status.eq.active");
     }
-    if (genderFilter !== "all") {
-      query = query.ilike("gender", genderFilter);
-    }
-    if (raceFilter !== "all") {
-      query = query.ilike("race", raceFilter);
-    }
-    if (nationalityFilter === "RSA") {
-      query = query.ilike("nationality", "south african");
-    } else if (nationalityFilter === "Other") {
-      query = query.or("nationality.is.null,nationality.not.ilike.south african");
-    }
 
     if (queryText.length > 0) {
       const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
       query = query.or(
-        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
+        `registration_number.ilike.%${escaped}%,owner.ilike.%${escaped}%,tel_cell.ilike.%${escaped}%,client_email.ilike.%${escaped}%`,
       );
     }
 
     const { data, error } = await query
-      .order("employee_name", { ascending: true, nullsFirst: false })
-      .order("employee_surname", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false, nullsFirst: false })
       .range(from, to);
 
     if (error) {
@@ -4594,24 +4776,14 @@ const Employees = () => {
       return;
     }
 
-    const sorted = pageRows.sort((a, b) => {
-      const nameA = `${a.employee_name ?? ""} ${a.employee_surname ?? ""}`.trim().toLowerCase();
-      const nameB = `${b.employee_name ?? ""} ${b.employee_surname ?? ""}`.trim().toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-
-    setEmployees(sorted);
-    setFilteredEmployees(sorted);
+    setEmployees(pageRows);
+    setFilteredEmployees(pageRows);
   }, [
     toast,
     user,
     currentPage,
     searchQuery,
     employeeStatusFilter,
-    contractFilter,
-    genderFilter,
-    raceFilter,
-    nationalityFilter,
   ]);
 
   const fetchEmployeesCount = useCallback(async () => {
@@ -4622,30 +4794,16 @@ const Employees = () => {
       .select("id", { count: "exact", head: true })
       .eq("company_id", user.id);
 
-    if (contractFilter !== "all") {
-      query = query.ilike("contract_type", contractFilter);
-    }
     if (employeeStatusFilter === "inactive") {
       query = query.eq("status", "inactive");
     } else {
       query = query.or("status.is.null,status.eq.active");
     }
-    if (genderFilter !== "all") {
-      query = query.ilike("gender", genderFilter);
-    }
-    if (raceFilter !== "all") {
-      query = query.ilike("race", raceFilter);
-    }
-    if (nationalityFilter === "RSA") {
-      query = query.ilike("nationality", "south african");
-    } else if (nationalityFilter === "Other") {
-      query = query.or("nationality.is.null,nationality.not.ilike.south african");
-    }
 
     if (queryText.length > 0) {
       const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
       query = query.or(
-        `employee_name.ilike.%${escaped}%,employee_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,employee_number.ilike.%${escaped}%,job_title.ilike.%${escaped}%,branch.ilike.%${escaped}%`,
+        `registration_number.ilike.%${escaped}%,owner.ilike.%${escaped}%,tel_cell.ilike.%${escaped}%,client_email.ilike.%${escaped}%`,
       );
     }
 
@@ -4670,10 +4828,6 @@ const Employees = () => {
     user,
     searchQuery,
     employeeStatusFilter,
-    contractFilter,
-    genderFilter,
-    raceFilter,
-    nationalityFilter,
   ]);
 
   const fetchAllEmployees = useCallback(async () => {
@@ -4684,8 +4838,8 @@ const Employees = () => {
         .from("employees")
         .select(selectColumns)
         .eq("company_id", user.id)
-        .order("employee_name", { ascending: true, nullsFirst: false })
-        .order("employee_surname", { ascending: true, nullsFirst: false });
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: false, nullsFirst: false });
 
     let { data, error } = await runAllEmployeesQuery(employeeSelectColumnsWithTermination);
     if (error) {
@@ -4875,122 +5029,179 @@ const Employees = () => {
      if (!isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete) return;
     setIsLoading(true);
     try {
-      const selectedMemberTypes = addForm.memberTypes.join(", ");
-      const normalizedTradingAs = addForm.employeeSurname.trim() || addForm.employeeName.trim();
-      const validatedBasic = employeeBasicSchema.parse({
-        employeeName: addForm.employeeName,
-        employeeSurname: normalizedTradingAs,
-        idNumber: addForm.idNumber,
-        employeeNumber: addForm.employeeNumber,
-      });
-      const validatedProfile = employeeProfileSchema.parse({
-        employeeName: addForm.employeeName,
-        employeeSurname: normalizedTradingAs,
-        idNumber: addForm.idNumber,
-        dateOfBirth: "",
-        startDate: addForm.startDate,
-        contractType: addForm.contractType,
-        endDate: addForm.endDate,
-        gender: addForm.gender,
-        disabilityStatus: false,
-        citizenshipStatus: "",
-        race: addForm.race,
-        nationality: "Other",
-        employeeNumber: addForm.employeeNumber,
-        jobTitle: selectedMemberTypes,
-        physicalAddressLine1: addForm.physicalAddressLine1,
-        physicalAddressLine2: addForm.physicalAddressLine2,
-        city: addForm.city,
-        province: addForm.province,
-        areaCode: addForm.areaCode,
-        postalAddressLine1: addForm.postalAddressLine1,
-        postalAddressLine2: addForm.postalAddressLine2,
-        postalCity: addForm.postalCity,
-        postalProvince: addForm.postalProvince,
-        postalAreaCode: addForm.postalAreaCode,
-        cellNumber: addForm.cellNumber,
-        email: addForm.email,
-        emergencyContactName: "",
-        emergencyContactNumber: "",
-        incomeTaxNumber: "",
-      });
-      const normalizedNumber = normalizeEmployeeNumber(validatedBasic.employeeNumber);
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      const selectedMemberTypes = addForm.memberTypes
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const sanitizedRegisteredName = sanitizeText(addForm.employeeName);
+      const sanitizedTradingAsInput = sanitizeText(addForm.employeeSurname);
+      const sanitizedTradingAs = sanitizedTradingAsInput || sanitizedRegisteredName;
+      const sanitizedIdNumber = sanitizeText(addForm.idNumber);
+      const sanitizedRegistrationNumber = formatRegistrationNumberInput(addForm.registrationNumber.trim());
+      const sanitizedEmployeeNumber = sanitizeEmployeeNumber(addForm.employeeNumber);
+      const sanitizedStartDate = addForm.startDate.trim();
+      const sanitizedEndDate = addForm.endDate.trim();
+      const sanitizedContractType = sanitizeText(addForm.contractType);
+      const sanitizedOwner = sanitizeText(addForm.gender);
+      const sanitizedTellCell = sanitizeText(addForm.race);
+      const sanitizedCompanyEmail = sanitizeText(addForm.cellNumber);
+      const sanitizedAddressLine1 = sanitizeText(addForm.physicalAddressLine1);
+      const sanitizedAddressLine2 = sanitizeText(addForm.physicalAddressLine2);
+      const sanitizedCity = sanitizeText(addForm.city);
+      const sanitizedProvince = addForm.province.trim();
+      const sanitizedAreaCode = sanitizeText(addForm.areaCode);
+      const sanitizedPostalAddressLine1 = sanitizeText(addForm.postalAddressLine1);
+      const sanitizedPostalAddressLine2 = sanitizeText(addForm.postalAddressLine2);
+      const sanitizedPostalCity = sanitizeText(addForm.postalCity);
+      const sanitizedPostalProvince = addForm.postalProvince.trim();
+      const sanitizedPostalAreaCode = sanitizeText(addForm.postalAreaCode);
+
+      if (sanitizedRegisteredName.length < 2 || sanitizedRegisteredName.length > 100) {
+        throw new Error("Registered name must be between 2 and 100 characters.");
+      }
+      if (sanitizedTradingAs.length < 2 || sanitizedTradingAs.length > 100) {
+        throw new Error("Trading as must be between 2 and 100 characters.");
+      }
+      if (!sanitizedEmployeeNumber || sanitizedEmployeeNumber.length > EMPLOYEE_NUMBER_MAX_LENGTH) {
+        throw new Error(`Client number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers.`);
+      }
+      if (!dateRegex.test(sanitizedStartDate) || !dateRegex.test(sanitizedEndDate)) {
+        throw new Error("Please select valid dates for start date and membership renewal date.");
+      }
+      if (!sanitizedContractType) {
+        throw new Error("Please select a payment cycle.");
+      }
+      if (!southAfricanProvinces.includes(sanitizedProvince as (typeof southAfricanProvinces)[number])) {
+        throw new Error("Please select a valid province.");
+      }
+
+      const normalizedNumber = normalizeEmployeeNumber(sanitizedEmployeeNumber);
       const duplicate = normalizedNumber
         ? employees.find(
-            (emp) =>
-              normalizeEmployeeNumber(emp.employee_number) === normalizedNumber &&
-              (!rehireEmployeeId || emp.id !== rehireEmployeeId),
+            (emp) => {
+              const dynamic = emp as Record<string, unknown>;
+              const existingClientNumber =
+                (dynamic.client_number as string | undefined) ?? emp.employee_number ?? "";
+              return (
+                normalizeEmployeeNumber(existingClientNumber) === normalizedNumber &&
+                (!rehireEmployeeId || emp.id !== rehireEmployeeId)
+              );
+            },
           )
         : undefined;
       if (duplicate) {
         toast({
           title: "Duplicate client number",
-          description: `You already allocated that client number to ${duplicate.employee_name ?? "Client"} ${duplicate.employee_surname ?? ""}. Please choose a different client number.`,
+          description: `You already allocated that client number to ${getClientDisplayName(duplicate)}. Please choose a different client number.`,
           variant: "destructive",
         });
         return;
       }
-      const normalizedIdNumber = normalizeIdNumberValue(validatedBasic.idNumber);
-      const duplicateIdEmployee = normalizedIdNumber
+      const normalizedRegistrationNumber = normalizeRegistrationNumberValue(sanitizedRegistrationNumber);
+      const duplicateRegistrationEmployee = normalizedRegistrationNumber
         ? employees.find(
             (emp) =>
-              normalizeIdNumberValue(emp.id_number) === normalizedIdNumber &&
+              normalizeRegistrationNumberValue(
+                emp.registration_number ?? ((emp as Record<string, unknown>).registration_number as string | null) ?? "",
+              ) ===
+                normalizedRegistrationNumber &&
               (!rehireEmployeeId || emp.id !== rehireEmployeeId),
           )
         : undefined;
-      if (duplicateIdEmployee) {
+      if (duplicateRegistrationEmployee) {
         toast({
-          title: "Duplicate ID/passport number",
-          description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Client"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
+          title: "Duplicate registration number",
+          description: `That registration number is already allocated to ${getClientDisplayName(duplicateRegistrationEmployee)}. Please use a different registration number.`,
           variant: "destructive",
         });
         return;
       }
-      const endDateValue = validatedProfile.endDate || null;
-      const addPayload: EmployeeInsert = {
+
+      const basePayload: Record<string, unknown> = {
         company_id: user.id,
-        employee_name: validatedBasic.employeeName,
-        employee_surname: validatedBasic.employeeSurname,
-        id_number: validatedBasic.idNumber || null,
-        employee_number: validatedBasic.employeeNumber || null,
-        job_title: validatedProfile.jobTitle || null,
-        department: validatedProfile.jobTitle || null,
-        contract_type: validatedProfile.contractType || null,
-        start_date: validatedProfile.startDate || null,
-        end_date: endDateValue,
-        nationality: validatedProfile.nationality || null,
-        gender: validatedProfile.gender || null,
-        race: validatedProfile.race || null,
-        cell_number: validatedProfile.cellNumber || null,
-        email: validatedProfile.email || null,
-        salary_type: addForm.salaryType || null,
-        basic_salary: addForm.basicSalary.trim() || null,
-        physical_address_line1: validatedProfile.physicalAddressLine1 || null,
-        physical_address_line2: validatedProfile.physicalAddressLine2 || null,
-        city: validatedProfile.city || null,
-        province: validatedProfile.province || null,
-        area_code: validatedProfile.areaCode || null,
-        postal_address_line1: validatedProfile.postalAddressLine1 || null,
-        postal_address_line2: validatedProfile.postalAddressLine2 || null,
-        postal_city: validatedProfile.postalCity || null,
-        postal_province: validatedProfile.postalProvince || null,
-        postal_area_code: validatedProfile.postalAreaCode || null,
-        income_tax_number: addForm.registrationNumber.trim() || null,
+        member_types: selectedMemberTypes.length > 0 ? selectedMemberTypes : null,
+        start_date: sanitizedStartDate || null,
+        owner: sanitizedOwner || null,
+        tel_cell: sanitizedTellCell || null,
+        client_email: sanitizedCompanyEmail || sanitizeText(addForm.email) || null,
+        physical_address_line1: sanitizedAddressLine1 || null,
+        physical_address_line2: sanitizedAddressLine2 || null,
+        city: sanitizedCity || null,
+        province: sanitizedProvince || null,
+        area_code: sanitizedAreaCode || null,
+        postal_address_line1: sanitizedPostalAddressLine1 || null,
+        postal_address_line2: sanitizedPostalAddressLine2 || null,
+        postal_city: sanitizedPostalCity || null,
+        postal_province: sanitizedPostalProvince || null,
+        postal_area_code: sanitizedPostalAreaCode || null,
+        registration_number: sanitizedRegistrationNumber || null,
       };
+      const optionalPopupPayload: Record<string, unknown> = {
+        registered_name: sanitizedRegisteredName || null,
+        trading_name: sanitizedTradingAsInput || null,
+        trading_as: sanitizedTradingAsInput || null,
+        client_number: sanitizedEmployeeNumber || null,
+        payment_cycle: sanitizedContractType || null,
+        renewal_date: sanitizedEndDate || null,
+        vat_number: sanitizedIdNumber || null,
+      };
+      const createClientPayload = (): Record<string, unknown> => {
+        const payload: Record<string, unknown> = { ...basePayload };
+        for (const [key, value] of Object.entries(optionalPopupPayload)) {
+          if (value !== null && value !== "") payload[key] = value;
+        }
+        return payload;
+      };
+      const getMissingColumnName = (error: unknown) => {
+        const message = (error as { message?: string } | null)?.message ?? "";
+        const match = message.match(/'([^']+)' column/);
+        return match?.[1] ?? null;
+      };
+      const runEmployeesWrite = async (mode: "insert" | "update") => {
+        const payload = createClientPayload();
+        const triedMissingColumns = new Set<string>();
+        // Retry by pruning unknown optional columns so runtime stays compatible with evolving schema.
+        while (true) {
+          if (mode === "update") {
+            const { error } = await supabase
+              .from("employees")
+              .update({ ...payload, status: "active" } as any)
+              .eq("id", rehireEmployeeId)
+              .eq("company_id", user.id);
+            if (!error) return payload;
+            const missingColumn = getMissingColumnName(error);
+            if (
+              missingColumn &&
+              Object.prototype.hasOwnProperty.call(payload, missingColumn) &&
+              !Object.prototype.hasOwnProperty.call(basePayload, missingColumn) &&
+              !triedMissingColumns.has(missingColumn)
+            ) {
+              delete payload[missingColumn];
+              triedMissingColumns.add(missingColumn);
+              continue;
+            }
+            throw error;
+          }
+
+          const { error } = await supabase.from("employees").insert(payload as any);
+          if (!error) return payload;
+          const missingColumn = getMissingColumnName(error);
+          if (
+            missingColumn &&
+            Object.prototype.hasOwnProperty.call(payload, missingColumn) &&
+            !Object.prototype.hasOwnProperty.call(basePayload, missingColumn) &&
+            !triedMissingColumns.has(missingColumn)
+          ) {
+            delete payload[missingColumn];
+            triedMissingColumns.add(missingColumn);
+            continue;
+          }
+          throw error;
+        }
+      };
+      let persistedPayload: Record<string, unknown> = {};
       if (rehireEmployeeId) {
-        const rehirePayload: EmployeeUpdate = {
-          ...addPayload,
-          status: "active",
-          termination_reason: null,
-          previous_job_title: null,
-          terminated_at: null,
-        };
-        const { error } = await supabase
-          .from("employees")
-          .update(rehirePayload as unknown as TablesInsert<"employees">)
-          .eq("id", rehireEmployeeId)
-          .eq("company_id", user.id);
-        if (error) throw error;
+        persistedPayload = await runEmployeesWrite("update");
 
         const { data: existingTerminationDocs } = await terminationDocumentTable()
           .select("id, file_url")
@@ -5018,10 +5229,7 @@ const Employees = () => {
           description: "Client rehired successfully!",
         });
       } else {
-        const { error } = await supabase
-          .from("employees")
-          .insert(addPayload as TablesInsert<"employees">);
-        if (error) throw error;
+        persistedPayload = await runEmployeesWrite("insert");
 
         toast({
           title: "Success",
@@ -5040,7 +5248,7 @@ const Employees = () => {
           prev
             ? ({
                 ...prev,
-                ...addPayload,
+                ...persistedPayload,
                 status: "active",
                 termination_reason: null,
                 previous_job_title: null,
@@ -6264,13 +6472,12 @@ const Employees = () => {
       const identityFieldKeys: Array<keyof EmployeeProfileFormData> = [
         "employeeName",
         "employeeSurname",
+        "incomeTaxNumber",
         "idNumber",
-        "nationality",
-        "dateOfBirth",
+        "citizenshipStatus",
       ];
       const employmentStatusFieldKeys: Array<keyof EmployeeProfileFormData> = [
         "startDate",
-        "contractType",
         "endDate",
         "employeeNumber",
       ];
@@ -6281,8 +6488,7 @@ const Employees = () => {
       const hasEmploymentStatusFieldChanges =
         section === "employmentStatus" && !!originalProfile
           ? employmentStatusFieldKeys.some((key) => profileForm[key] !== originalProfile[key]) ||
-            probationPeriod !== originalProbationPeriod ||
-            retirementAge !== originalRetirementAge
+            employeeStatus !== getDisplayMembershipStatus((selectedEmployee as any)?.status)
           : false;
       const isEmploymentSection =
         section === "employmentStatus" ||
@@ -6310,7 +6516,7 @@ const Employees = () => {
         case "employmentWorkContact":
         case "employmentUnion":
           validated = employmentSectionSchema.parse(profileForm);
-          if (validated.contractType === "Temporary" && !validated.endDate) {
+          if (section === "employmentStatus" && validated.contractType === "Temporary" && !validated.endDate) {
             throw new Error("End date is required for temporary contracts");
           }
           break;
@@ -6339,9 +6545,15 @@ const Employees = () => {
         const normalizedNumber = normalizeEmployeeNumber(finalEmployeeNumber);
         const duplicate = normalizedNumber
           ? employees.find(
-              (emp) =>
-                emp.id !== selectedEmployee.id &&
-                normalizeEmployeeNumber(emp.employee_number) === normalizedNumber,
+              (emp) => {
+                const dynamic = emp as Record<string, unknown>;
+                const existingClientNumber =
+                  (dynamic.client_number as string | undefined) ?? emp.employee_number ?? "";
+                return (
+                  emp.id !== selectedEmployee.id &&
+                  normalizeEmployeeNumber(existingClientNumber) === normalizedNumber
+                );
+              },
             )
           : undefined;
         if (duplicate) {
@@ -6358,9 +6570,15 @@ const Employees = () => {
         const normalizedIdNumber = normalizeIdNumberValue(validated.idNumber);
         const duplicateIdEmployee = normalizedIdNumber
           ? employees.find(
-              (emp) =>
-                emp.id !== selectedEmployee.id &&
-                normalizeIdNumberValue(emp.id_number) === normalizedIdNumber,
+              (emp) => {
+                const dynamic = emp as Record<string, unknown>;
+                const existingVatNumber =
+                  (dynamic.vat_number as string | undefined) ?? emp.id_number ?? "";
+                return (
+                  emp.id !== selectedEmployee.id &&
+                  normalizeIdNumberValue(existingVatNumber) === normalizedIdNumber
+                );
+              },
             )
           : undefined;
         if (duplicateIdEmployee) {
@@ -6415,53 +6633,76 @@ const Employees = () => {
           : isEmploymentSection
             ? null
             : undefined;
+      const selectedMemberTypes = membershipTypeOptions.filter((service) => serviceSelections[service] === "Yes");
+      const normalizedStatus = employeeStatus.trim().toLowerCase() || null;
 
       const updatePayload: EmployeeUpdate =
         section === "identity"
           ? {
-              employee_name: validated.employeeName,
-              employee_surname: validated.employeeSurname,
-              id_number: validated.idNumber || null,
-              nationality: validated.nationality,
-              date_of_birth: validated.dateOfBirth || null,
+              registered_name: validated.employeeName || null,
+              trading_as: validated.employeeSurname || null,
+              trading_name: validated.employeeSurname || null,
+              registration_number: validated.incomeTaxNumber || null,
+              vat_number: validated.idNumber || null,
+              company_type: validated.citizenshipStatus || null,
             }
           : section === "equity"
             ? {
-                race: validated.race,
-                gender: validated.gender,
-                disability_status: validated.disabilityStatus ?? false,
-                citizenship_status: validated.citizenshipStatus || null,
+                owner: validated.gender || null,
+                tel_cell: validated.race || null,
+                client_email: validated.cellNumber || null,
               }
-            : section === "statutory"
-              ? {
-                  income_tax_number: validated.incomeTaxNumber || null,
-                }
             : section === "contact"
               ? {
-                  cell_number: validated.cellNumber || null,
-                  email: validated.email || null,
-                  emergency_contact_name: validated.emergencyContactName || null,
-                  emergency_contact_number: validated.emergencyContactNumber || null,
+                  physical_address_line1: validated.physicalAddressLine1 || null,
+                  physical_address_line2: validated.physicalAddressLine2 || null,
+                  city: validated.city || null,
+                  province: validated.province || "",
+                  area_code: validated.areaCode || null,
                 }
-              : isEmploymentSection
+            : section === "statutory"
+              ? {
+                  postal_address_line1: validated.postalAddressLine1 || null,
+                  postal_address_line2: validated.postalAddressLine2 || null,
+                  postal_city: validated.postalCity || null,
+                  postal_province: validated.postalProvince || null,
+                  postal_area_code: validated.postalAreaCode || null,
+                }
+            : isEmploymentSection
                 ? {
-                    start_date: validated.startDate,
-                    contract_type: validated.contractType,
-                    end_date: endDateValue ?? null,
-                    employee_number: validated.employeeNumber || null,
-                    job_title: validated.jobTitle || null,
-                    probation_period: probationPeriod || null,
-                    retirement_age: Number.parseInt(retirementAge || "65", 10) || 65,
-                    union_member: unionMember || null,
-                    trade_union: unionMember === "Yes" ? tradeUnion || null : null,
-                    department: department || null,
-                    branch: branch || null,
-                    reporting_to: reportingTo || null,
-                    occupational_level: occupationalLevel || null,
-                    salary_type: salaryType || null,
-                    basic_salary: normalizeSalaryForStorage(basicSalary) || null,
-                    work_email: workEmail || null,
-                    work_cell_number: workCellNumber || null,
+                    ...(section === "employmentStatus"
+                      ? {
+                          start_date: validated.startDate,
+                          end_date: validated.endDate || endDateValue || null,
+                          employee_number: validated.employeeNumber || null,
+                          client_number: validated.employeeNumber || null,
+                          renewal_date: validated.endDate || endDateValue || null,
+                          status: normalizedStatus,
+                        }
+                      : {}),
+                    ...(section === "employmentOrg"
+                      ? {
+                          member_types: selectedMemberTypes.length > 0 ? selectedMemberTypes : null,
+                        }
+                      : {}),
+                    ...(section === "employmentRemuneration"
+                      ? {
+                          salary_type: salaryType || null,
+                          basic_salary: normalizeSalaryForStorage(basicSalary) || null,
+                        }
+                      : {}),
+                    ...(section === "employmentWorkContact"
+                      ? {
+                          work_email: workEmail || null,
+                          work_cell_number: workCellNumber || null,
+                        }
+                      : {}),
+                    ...(section === "employmentUnion"
+                      ? {
+                          union_member: unionMember || null,
+                          trade_union: unionMember === "Yes" ? tradeUnion || null : null,
+                        }
+                      : {}),
                   }
                 : section === "homeAddress"
                   ? {
@@ -6497,6 +6738,7 @@ const Employees = () => {
       };
 
       setSelectedEmployee(updatedEmployee);
+      setEmployeeStatus(getDisplayMembershipStatus((updatedEmployee as any).status));
       setProfileForm(createProfileFormFromEmployee(updatedEmployee));
       setProbationPeriod(updatedEmployee.probation_period ?? "");
       setRetirementAge(
@@ -6569,14 +6811,8 @@ const Employees = () => {
     setBasicSalary(selectedEmployee.basic_salary ?? "");
     setWorkEmail(selectedEmployee.work_email ?? "");
     setWorkCellNumber(selectedEmployee.work_cell_number ?? "");
-    const nextStatus = ((selectedEmployee as any)?.status ?? "").toString().toLowerCase();
-    if (nextStatus === "inactive") {
-      setEmployeeStatus("Inactive");
-    } else if (nextStatus === "active") {
-      setEmployeeStatus("Active");
-    } else {
-      setEmployeeStatus("");
-    }
+    setEmployeeStatus(getDisplayMembershipStatus((selectedEmployee as any)?.status));
+    setServiceSelections(createMembershipServiceSelectionsFromEmployee(selectedEmployee));
     setPendingIdDocumentFile(null);
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(false);
@@ -6638,7 +6874,7 @@ const Employees = () => {
           className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("identity")}`}
         >
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">Identity Information</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Company Identity</h3>
             <div className="flex items-center gap-2">
               {isEditMode && activeEditSection === "identity" && (
                 <Button
@@ -6675,7 +6911,7 @@ const Employees = () => {
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Name</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Registered Name</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
@@ -6692,7 +6928,7 @@ const Employees = () => {
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Surname</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Trading As</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
@@ -6709,14 +6945,28 @@ const Employees = () => {
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
-                {isSouthAfricanNationality ? "ID Number" : "Passport Number"}
-              </Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Registration Number</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.incomeTaxNumber}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    incomeTaxNumber: removeWhitespace(e.target.value),
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>VAT Number</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
                 value={profileForm.idNumber}
-                maxLength={isSouthAfricanNationality ? 13 : 30}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
@@ -6729,196 +6979,31 @@ const Employees = () => {
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Nationality</Label>
-              <Popover
-                open={nationalityOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                  return;
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Company Type</Label>
+              <Select
+                value={profileForm.citizenshipStatus || ""}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    citizenshipStatus: value,
+                  }))
                 }
-                  setNationalityOpen(open);
-                  if (open) {
-                    setNationalityQuery("");
-                  }
-                }}
               >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    className={employeeDropdownTriggerClass}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                    }}
-                  >
-                    <span className="truncate">{profileForm.nationality || "Select nationality"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder="Type nationality..."
-                      value={nationalityQuery}
-                      onValueChange={setNationalityQuery}
-                    />
-                    <CommandList>
-                      <CommandEmpty>No nationality found.</CommandEmpty>
-                      <CommandGroup>
-                        {nationalityOptions
-                          .filter((option) =>
-                            option.toLowerCase().includes(nationalityQuery.trim().toLowerCase()),
-                          )
-                          .map((option) => (
-                            <CommandItem
-                              key={option}
-                              value={option}
-                              className={employeeDropdownCommandItemClass}
-                              onSelect={(value) => {
-                                setProfileForm((prev) => ({
-                                  ...prev,
-                                  nationality: value,
-                                }));
-                                setNationalityOpen(false);
-                              }}
-                            >
-                              <span>{option}</span>
-                              {profileForm.nationality === option && (
-                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                              )}
-                            </CommandItem>
-                          ))}
-                        {nationalityQuery.trim().length > 0 &&
-                          !nationalityOptions.some(
-                            (option) => option.toLowerCase() === nationalityQuery.trim().toLowerCase(),
-                          ) && (
-                            <CommandItem
-                              value={nationalityQuery.trim()}
-                              className={employeeDropdownCommandItemClass}
-                              onSelect={(value) => {
-                                setProfileForm((prev) => ({
-                                  ...prev,
-                                  nationality: value,
-                                }));
-                                setNationalityOpen(false);
-                              }}
-                            >
-                              <span>Use "{nationalityQuery.trim()}"</span>
-                              {profileForm.nationality === nationalityQuery.trim() && (
-                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                              )}
-                            </CommandItem>
-                          )}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
-                {isSouthAfricanNationality ? "Date of Birth (Auto)" : "Date of Birth"}
-              </Label>
-              <div className="ml-auto w-full max-w-[320px]">
-                <Input
-                  className={`${fieldInputClass} w-full`}
-                  type="text"
-                  readOnly
-                  placeholder={isSouthAfricanNationality ? "Auto from ID" : "Please insert"}
-                  value={profileForm.dateOfBirth ? formatDisplayDate(profileForm.dateOfBirth) : ""}
-                  onFocus={() => {
-                    enableEditMode();
-                    if (isDobReadOnly || !isEditMode) return;
-                    openDatePicker(dateOfBirthInputRef.current);
-                  }}
-                  onMouseDown={enableEditMode}
-                  onClick={() => {
-                    if (isDobReadOnly || !isEditMode) return;
-                    openDatePicker(dateOfBirthInputRef.current);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (isDobReadOnly || !isEditMode) return;
-                      openDatePicker(dateOfBirthInputRef.current);
-                    }
-                  }}
-                />
-                <input
-                  ref={dateOfBirthInputRef}
-                  type="date"
-                  value={profileForm.dateOfBirth}
-                  readOnly={isDobReadOnly}
-                  onChange={(e) =>
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      dateOfBirth: e.target.value,
-                    }))
-                  }
-                  className="sr-only"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-3" style={{ marginTop: "13px" }}>
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
-                {hasEffectiveIdDocument ? "ID/Passport Document" : "Upload ID/Passport"}
-              </Label>
-              <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
-                {isEditMode && !hasEffectiveIdDocument && (
-                  <>
-                    <input
-                      ref={idPassportFileInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      className="hidden"
-                      onChange={handleIdPassportFileChange}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
-                      onClick={() => idPassportFileInputRef.current?.click()}
-                      disabled={isIdDocumentUploading}
-                    >
-                      <Upload className="mr-1 h-3 w-3" />
-                      {isIdDocumentUploading ? "Uploading..." : "Upload"}
-                    </Button>
-                  </>
-                )}
-                {pendingIdDocumentName ? (
-                  <span className="max-w-[180px] truncate text-[11px] font-semibold text-amber-700" title={pendingIdDocumentName}>
-                    {pendingIdDocumentName}
-                  </span>
-                ) : hasEffectiveIdDocument && idDocumentForSelectedEmployee ? (
-                  <button
-                    type="button"
-                    className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
-                    onClick={() => void handleOpenIdDocument(idDocumentForSelectedEmployee)}
-                    title={idDocumentForSelectedEmployee.fileName}
-                  >
-                    {idDocumentForSelectedEmployee.fileName}
-                  </button>
-                ) : (
-                  <span className="text-[11px] font-semibold text-slate-500">--</span>
-                )}
-                {isEditMode && hasEffectiveIdDocument && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
-                    onClick={handleMarkIdDocumentForRemoval}
-                    disabled={isIdDocumentUploading}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
+                <SelectTrigger
+                  className={employeeDropdownTriggerClass}
+                  showIcon={isEditMode}
+                  onPointerDown={handleSelectPointerDown}
+                >
+                  <SelectValue placeholder="Please select" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {companyTypeOptions.map((option) => (
+                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
@@ -6930,7 +7015,7 @@ const Employees = () => {
           className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("equity")}`}
         >
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">Employment Equity Information</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Contacts</h3>
             <div className="flex items-center gap-2">
               {isEditMode && activeEditSection === "equity" && (
                 <Button
@@ -6969,196 +7054,56 @@ const Employees = () => {
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Race</Label>
-              <Popover
-                open={raceOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                  return;
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Owner</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.gender}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    gender: e.target.value,
+                  }))
                 }
-                  setRaceOpen(open);
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    className={employeeDropdownTriggerClass}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                    }}
-                  >
-                    <span className="truncate">{profileForm.race || "Select race"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandList>
-                      <CommandGroup>
-                        {raceOptions.map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setProfileForm((prev) => ({
-                                ...prev,
-                                race: value as EmployeeProfileFormData["race"],
-                              }));
-                              setRaceOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {profileForm.race === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Gender</Label>
-              <Popover
-                open={genderOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                  return;
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Owner Number</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.race}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    race: removeWhitespace(e.target.value),
+                  }))
                 }
-                  setGenderOpen(open);
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    className={employeeDropdownTriggerClass}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                    }}
-                  >
-                    <span className="truncate">{profileForm.gender || "Select gender"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandList>
-                      <CommandGroup>
-                        {genderOptions.map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setProfileForm((prev) => ({
-                                ...prev,
-                                gender: value as EmployeeProfileFormData["gender"],
-                              }));
-                              setGenderOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {profileForm.gender === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Disability Status</Label>
-              <div className="ml-auto flex w-full max-w-[320px] items-center gap-3">
-                <Switch
-                  className="data-[state=unchecked]:bg-blue-100 data-[state=checked]:bg-blue-500"
-                  checked={!!profileForm.disabilityStatus}
-                  disabled={!isEditMode}
-                  onCheckedChange={(checked) =>
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      disabilityStatus: checked,
-                    }))
-                  }
-                />
-                <span className="text-[11px] text-slate-700">
-                  {profileForm.disabilityStatus ? "Yes" : "No"}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Citizenship Status</Label>
-              <Popover
-                open={citizenshipOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                  return;
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Owner Email</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                type="email"
+                value={profileForm.cellNumber}
+                placeholder="Please insert"
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    cellNumber: e.target.value,
+                  }))
                 }
-                  setCitizenshipOpen(open);
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    className={employeeDropdownTriggerClass}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                    }}
-                  >
-                    <span className="truncate">
-                      {profileForm.citizenshipStatus || "Select status"}
-                    </span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandList>
-                      <CommandGroup>
-                        {citizenshipStatusOptions.map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setProfileForm((prev) => ({
-                                ...prev,
-                                citizenshipStatus: value,
-                              }));
-                              setCitizenshipOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {profileForm.citizenshipStatus === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              />
             </div>
           </div>
         </div>
@@ -7170,7 +7115,7 @@ const Employees = () => {
           className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("contact")}`}
         >
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">Contact Information</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Physical Address</h3>
             <div className="flex items-center gap-2">
               {isEditMode && activeEditSection === "contact" && (
                 <Button
@@ -7207,28 +7152,27 @@ const Employees = () => {
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Cell Number</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Address Line 1</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                value={profileForm.cellNumber}
                 placeholder="Please insert"
+                value={profileForm.physicalAddressLine1}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    cellNumber: removeWhitespace(e.target.value),
+                    physicalAddressLine1: e.target.value,
                   }))
                 }
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Email</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Address Line 2</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-                type="email"
-                value={profileForm.email}
+                value={profileForm.physicalAddressLine2}
                 placeholder="Please insert"
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
@@ -7236,41 +7180,72 @@ const Employees = () => {
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    email: e.target.value,
+                    physicalAddressLine2: e.target.value,
                   }))
                 }
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Emergency Contact Name</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>City</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
-                value={profileForm.emergencyContactName}
+                value={profileForm.city}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    emergencyContactName: e.target.value,
+                    city: e.target.value,
                   }))
                 }
               />
             </div>
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Emergency Contact Number</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Province</Label>
+              <Select
+                value={profileForm.province}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    province: value as EmployeeProfileFormData["province"],
+                  }))
+                }
+              >
+                <SelectTrigger
+                  className={employeeDropdownTriggerClass}
+                  showIcon={isEditMode}
+                  onPointerDown={handleSelectPointerDown}
+                >
+                  <SelectValue placeholder="Please select" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {southAfricanProvinces.map((province) => (
+                    <SelectItem
+                      key={province}
+                      value={province}
+                      className={employeeDropdownSelectItemClass}
+                    >
+                      {province}
+                    </SelectItem>
+                  ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Area Code</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
-                value={profileForm.emergencyContactNumber}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
+                value={profileForm.areaCode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    emergencyContactNumber: removeWhitespace(e.target.value),
+                    areaCode: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -7281,10 +7256,31 @@ const Employees = () => {
           ref={(el) => {
             sectionRefs.current.statutory = el;
           }}
-          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("statutory")}`}
-        >
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-900">Statutory Information</h3>
+        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("statutory")}`}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold text-slate-900">Postal Address</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px] text-slate-900 rounded-[5px] hover:bg-transparent hover:text-slate-900 hover:border-blue-600"
+              disabled={!isEditMode}
+              onClick={() =>
+                setProfileForm((prev) => ({
+                  ...prev,
+                  postalAddressLine1: prev.physicalAddressLine1,
+                  postalAddressLine2: prev.physicalAddressLine2,
+                  postalCity: prev.city,
+                  postalProvince: prev.province,
+                  postalAreaCode: prev.areaCode,
+                }))
+              }
+            >
+              Copy from physical
+            </Button>
+          </div>
             <div className="flex items-center gap-2">
               {isEditMode && activeEditSection === "statutory" && (
                 <Button
@@ -7323,18 +7319,100 @@ const Employees = () => {
           </div>
           <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Income Tax Number</Label>
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Address Line 1</Label>
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
-                value={profileForm.incomeTaxNumber}
+                value={profileForm.postalAddressLine1}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    incomeTaxNumber: removeWhitespace(e.target.value),
+                    postalAddressLine1: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Address Line 2</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.postalAddressLine2}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalAddressLine2: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>City</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.postalCity}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalCity: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Province</Label>
+              <Select
+                value={profileForm.postalProvince}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalProvince: value as EmployeeProfileFormData["postalProvince"],
+                  }))
+                }
+              >
+                <SelectTrigger
+                  className={employeeDropdownTriggerClass}
+                  showIcon={isEditMode}
+                  onPointerDown={handleSelectPointerDown}
+                >
+                  <SelectValue placeholder="Please select" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {southAfricanProvinces.map((province) => (
+                    <SelectItem
+                      key={province}
+                      value={province}
+                      className={employeeDropdownSelectItemClass}
+                    >
+                      {province}
+                    </SelectItem>
+                  ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Area Code</Label>
+              <Input
+                className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
+                placeholder="Please insert"
+                value={profileForm.postalAreaCode}
+                readOnly={!isEditMode}
+                onFocus={enableEditMode}
+                onMouseDown={enableEditMode}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    postalAreaCode: removeWhitespace(e.target.value),
                   }))
                 }
               />
@@ -8003,7 +8081,7 @@ const Employees = () => {
       >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-slate-900">Employment Status</h4>
+            <h4 className="text-sm font-semibold text-slate-900">Membership Details</h4>
           </div>
           <div className="flex items-center gap-2">
             {isEditMode && activeEditSection === "employmentStatus" && (
@@ -8043,47 +8121,7 @@ const Employees = () => {
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Client Status</Label>
-            <Select
-              value={employeeStatus}
-              onValueChange={(value) => {
-                if (value === "Active") {
-                  void updateEmployeeStatus("active");
-                }
-              }}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-              }}
-              disabled={!isEditMode}
-            >
-            <SelectTrigger
-                className={employeeDropdownTriggerClass}
-                disabled={!isEditMode}
-              >
-                <SelectValue placeholder="Active" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {employmentStatusOptions.map((option) => (
-                  <SelectItem
-                    key={option}
-                    value={option}
-                    className={employeeDropdownSelectItemClass}
-                    onSelect={() => {
-                      if (option === "Active") {
-                        void updateEmployeeStatus("active");
-                      }
-                    }}
-                  >
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Client Number</Label>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Member Number</Label>
             <Input
               className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
               value={profileForm.employeeNumber}
@@ -8094,68 +8132,6 @@ const Employees = () => {
               onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
               placeholder="Please insert"
             />
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Contract Type</Label>
-            <Popover
-              open={contractTypeOpen}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-                setContractTypeOpen(open);
-                if (open) {
-                  setContractTypeQuery("");
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  className={employeeDropdownTriggerClass}
-                  onPointerDown={(event) => {
-                    if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                  }}
-                  disabled={!isEditMode}
-                >
-                  <span className="truncate">{profileForm.contractType || "Select contract type"}</span>
-                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                </Button>
-              </PopoverTrigger>
-            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-              <Command shouldFilter={false}>
-                <CommandList>
-                  <CommandGroup>
-                    {contractTypes.map((option) => (
-                      <CommandItem
-                        key={option}
-                        value={option}
-                        className={employeeDropdownCommandItemClass}
-                        onSelect={(value) => {
-                          setProfileForm((prev) => ({
-                            ...prev,
-                            contractType: value as EmployeeProfileFormData["contractType"],
-                            endDate: value === "Temporary" ? prev.endDate : "",
-                          }));
-                          setContractTypeOpen(false);
-                        }}
-                      >
-                        <span>{option}</span>
-                        {profileForm.contractType === option && (
-                          <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                        )}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-            </Popover>
           </div>
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Start Date</Label>
@@ -8200,56 +8176,54 @@ const Employees = () => {
               />
             </div>
           </div>
-          {profileForm.contractType === "Temporary" && (
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>End Date</Label>
-              <div className="ml-auto w-full max-w-[320px]">
-                <Input
-                  className={`${fieldInputClass} w-full`}
-                  type="text"
-                  readOnly
-                  placeholder="Please select a date"
-                  value={profileForm.endDate ? formatDisplayDate(profileForm.endDate) : ""}
-                  onFocus={() => {
-                    enableEditMode();
+          <div className="flex items-center gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Renewal Date</Label>
+            <div className="ml-auto w-full max-w-[320px]">
+              <Input
+                className={`${fieldInputClass} w-full`}
+                type="text"
+                readOnly
+                placeholder="Please select a date"
+                value={profileForm.endDate ? formatDisplayDate(profileForm.endDate) : ""}
+                onFocus={() => {
+                  enableEditMode();
+                  if (!isEditMode) return;
+                  openDatePicker(endDateInputRef.current);
+                }}
+                onMouseDown={enableEditMode}
+                onClick={() => {
+                  if (!isEditMode) return;
+                  openDatePicker(endDateInputRef.current);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
                     if (!isEditMode) return;
                     openDatePicker(endDateInputRef.current);
-                  }}
-                  onMouseDown={enableEditMode}
-                  onClick={() => {
-                    if (!isEditMode) return;
-                    openDatePicker(endDateInputRef.current);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (!isEditMode) return;
-                      openDatePicker(endDateInputRef.current);
-                    }
-                  }}
-                />
-                <input
-                  ref={endDateInputRef}
-                  type="date"
-                  value={profileForm.endDate}
-                  onChange={(e) =>
-                    setProfileForm((prev) => ({
-                      ...prev,
-                      endDate: e.target.value,
-                    }))
                   }
-                  className="sr-only"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                />
-              </div>
+                }}
+              />
+              <input
+                ref={endDateInputRef}
+                type="date"
+                value={profileForm.endDate}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    endDate: e.target.value,
+                  }))
+                }
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
             </div>
-          )}
+          </div>
           <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Probation Period</Label>
+            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Status</Label>
             <Select
-              value={probationPeriod}
-              onValueChange={(value) => setProbationPeriod(value)}
+              value={employeeStatus}
+              onValueChange={(value) => setEmployeeStatus(value as (typeof membershipStatusOptions)[number])}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
                   return;
@@ -8257,133 +8231,17 @@ const Employees = () => {
               }}
               disabled={!isEditMode}
             >
-              <SelectTrigger
-                className={employeeDropdownTriggerClass}
-                disabled={!isEditMode}
-              >
-                <SelectValue placeholder="Select period" />
+              <SelectTrigger className={employeeDropdownTriggerClass} disabled={!isEditMode}>
+                <SelectValue placeholder="Please select" />
               </SelectTrigger>
               <SelectContent className="text-[11px]">
-                <SelectItem
-                  value="No probation"
-                  className={employeeDropdownSelectItemClass}
-                >
-                  No probation
-                </SelectItem>
-                {Array.from({ length: 12 }, (_, idx) => {
-                  const months = idx + 1;
-                  return (
-                    <SelectItem
-                      key={months}
-                      value={`${months} ${months === 1 ? "month" : "months"}`}
-                      className={employeeDropdownSelectItemClass}
-                    >
-                      {months} {months === 1 ? "month" : "months"}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Probation End</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              value={formatDisplayDate(
-                computeProbationEndDate(profileForm.startDate, probationPeriod),
-              )}
-              readOnly
-              disabled
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Retirement Age</Label>
-            <Select
-              value={retirementAge}
-              onValueChange={(value) => setRetirementAge(value as (typeof retirementAgeOptions)[number])}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-              }}
-              disabled={!isEditMode}
-            >
-              <SelectTrigger
-                className={employeeDropdownTriggerClass}
-                disabled={!isEditMode}
-              >
-                <SelectValue placeholder="Select retirement age" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {retirementAgeOptions.map((option) => (
-                  <SelectItem
-                    key={option}
-                    value={option}
-                    className={employeeDropdownSelectItemClass}
-                  >
+                {membershipStatusOptions.map((option) => (
+                  <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
                     {option}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="flex items-center gap-3" style={{ transform: "translateY(5px)" }}>
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>
-              {hasEffectiveEmploymentContract ? "Employment Contract" : "Upload Contract"}
-            </Label>
-            <div className="ml-auto flex w-full max-w-[320px] items-center justify-start gap-2">
-              {isEditMode && !hasEffectiveEmploymentContract && (
-                <>
-                  <input
-                    ref={employmentContractFileInputRef}
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    className="hidden"
-                    onChange={handleEmploymentContractFileChange}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
-                    onClick={() => employmentContractFileInputRef.current?.click()}
-                    disabled={isEmploymentContractUploading}
-                  >
-                    <Upload className="mr-1 h-3 w-3" />
-                    {isEmploymentContractUploading ? "Uploading..." : "Upload"}
-                  </Button>
-                </>
-              )}
-              {pendingEmploymentContractName ? (
-                <span
-                  className="max-w-[180px] truncate text-[11px] font-semibold text-amber-700"
-                  title={pendingEmploymentContractName}
-                >
-                  {pendingEmploymentContractName}
-                </span>
-              ) : hasEffectiveEmploymentContract && activeContractForSelectedEmployee ? (
-                <button
-                  type="button"
-                  className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
-                  onClick={() => void handleOpenContract(activeContractForSelectedEmployee)}
-                  title={activeContractForSelectedEmployee.fileName}
-                >
-                  {activeContractForSelectedEmployee.fileName}
-                </button>
-              ) : (
-                <span className="text-[11px] font-semibold text-slate-500">--</span>
-              )}
-              {isEditMode && hasEffectiveEmploymentContract && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
-                  onClick={handleMarkEmploymentContractForRemoval}
-                  disabled={isEmploymentContractUploading}
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
           </div>
         </div>
       </div>
@@ -8395,7 +8253,7 @@ const Employees = () => {
         className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentOrg")}`}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-slate-900">Organisational Details</h4>
+          <h4 className="text-sm font-semibold text-slate-900">Service Selection</h4>
           <div className="flex items-center gap-2">
             {isEditMode && activeEditSection === "employmentOrg" && (
               <Button
@@ -8433,242 +8291,37 @@ const Employees = () => {
           </div>
         </div>
         <div className="mt-3 space-y-2">
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Job Title</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              value={profileForm.jobTitle}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  jobTitle: e.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Department</Label>
-            <Popover
-              open={departmentOpen}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
+          {membershipTypeOptions.map((service) => (
+            <div key={service} className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>{service}</Label>
+              <Select
+                value={serviceSelections[service]}
+                onValueChange={(value) =>
+                  setServiceSelections((prev) => ({
+                    ...prev,
+                    [service]: value as MembershipServiceSelection,
+                  }))
                 }
-                setDepartmentOpen(open);
-                if (open) {
-                  setDepartmentQuery("");
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  className={employeeDropdownTriggerClass}
-                  onPointerDown={(event) => {
-                    if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                  }}
-                  disabled={!isEditMode}
-                >
-                  <span className="truncate">{department || "Select department"}</span>
-                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Type department..."
-                    value={departmentQuery}
-                    onValueChange={setDepartmentQuery}
-                  />
-                  <CommandList>
-                    <CommandEmpty>No department found.</CommandEmpty>
-                    <CommandGroup>
-                      {departmentOptions
-                        .filter((option) =>
-                          option.toLowerCase().includes(departmentQuery.trim().toLowerCase()),
-                        )
-                        .map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setDepartment(value as (typeof departmentOptions)[number]);
-                              setDepartmentOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {department === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      {departmentQuery.trim().length > 0 &&
-                        !departmentOptions.some(
-                          (option) => option.toLowerCase() === departmentQuery.trim().toLowerCase(),
-                        ) && (
-                          <CommandItem
-                            value={departmentQuery.trim()}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setDepartment(value as (typeof departmentOptions)[number]);
-                              setDepartmentOpen(false);
-                            }}
-                          >
-                            <span>Use "{departmentQuery.trim()}"</span>
-                            {department === departmentQuery.trim() && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        )}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-          {companyBranchesEnabled && (
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Branches</Label>
-              {allocatedBranchNames.length > 1 ? (
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div
-                        className={`${fieldInputClass} ml-auto flex w-full max-w-[320px] items-center justify-between rounded border-slate-200 bg-white px-3 text-[11px] text-slate-700`}
-                      >
-                        <span className="truncate">{allocatedBranchDisplayValue}</span>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[220px] rounded text-[10px]">
-                      <div className="space-y-1">
-                        {allocatedBranchNames.map((branchName) => (
-                          <p key={branchName} className="leading-tight text-slate-700">
-                            {branchName}
-                          </p>
-                        ))}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <div
-                  className={`${fieldInputClass} ml-auto flex w-full max-w-[320px] items-center justify-between rounded border-slate-200 bg-white px-3 text-[11px] text-slate-700`}
-                >
-                  <span className="truncate">{allocatedBranchDisplayValue}</span>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Reporting To</Label>
-            <Popover
-              open={reportingToOpen}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-                setReportingToOpen(open);
-                if (open) {
-                  setReportingToQuery("");
-                }
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  className={employeeDropdownTriggerClass}
-                  onPointerDown={(event) => {
-                    if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                  }}
-                  disabled={!isEditMode}
-                >
-                  <span className="truncate">{reportingTo || "Select client"}</span>
-                  <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder="Type client name..."
-                    value={reportingToQuery}
-                    onValueChange={setReportingToQuery}
-                  />
-                  <CommandList>
-                    <CommandEmpty>No client found.</CommandEmpty>
-                    <CommandGroup>
-                      {reportingToOptions
-                        .filter((option) =>
-                          option.toLowerCase().includes(reportingToQuery.trim().toLowerCase()),
-                        )
-                        .map((option) => (
-                          <CommandItem
-                            key={option}
-                            value={option}
-                            className={employeeDropdownCommandItemClass}
-                            onSelect={(value) => {
-                              setReportingTo(value);
-                              setReportingToOpen(false);
-                            }}
-                          >
-                            <span>{option}</span>
-                            {reportingTo === option && (
-                              <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                            )}
-                          </CommandItem>
-                        ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Occupational Level</Label>
-            <Select
-              value={occupationalLevel}
-              onValueChange={(value) =>
-                setOccupationalLevel(value as (typeof occupationalLevelOptions)[number])
-              }
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-              }}
-            >
-              <SelectTrigger
-                className={employeeDropdownTriggerClass}
+                onOpenChange={(open) => {
+                  if (open && !isEditMode) {
+                    return;
+                  }
+                }}
                 disabled={!isEditMode}
               >
-                <SelectValue placeholder="Select occupational level" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {occupationalLevelOptions.map((option) => (
-                  <SelectItem
-                    key={option}
-                    value={option}
-                    className={employeeDropdownSelectItemClass}
-                  >
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                <SelectTrigger className={employeeDropdownTriggerClass} disabled={!isEditMode}>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {membershipServiceSelectionOptions.map((option) => (
+                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -8679,7 +8332,7 @@ const Employees = () => {
         className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentRemuneration")}`}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-slate-900">Remuneration Information</h4>
+          <h4 className="text-sm font-semibold text-slate-900">Billing Terms</h4>
           <div className="flex items-center gap-2">
             {isEditMode && activeEditSection === "employmentRemuneration" && (
               <Button
@@ -8766,251 +8419,6 @@ const Employees = () => {
         </div>
       </div>
 
-      <div
-        ref={(el) => {
-          sectionRefs.current.employmentWorkContact = el;
-        }}
-        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentWorkContact")}`}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-slate-900">Work Contact Information</h4>
-          <div className="flex items-center gap-2">
-            {isEditMode && activeEditSection === "employmentWorkContact" && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
-                onClick={handleSectionCancel}
-                disabled={isProfileSaving}
-              >
-                Cancel
-              </Button>
-            )}
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (isEditMode && activeEditSection === "employmentWorkContact" && !isProfileSaving) {
-                  void handleSectionSave("employmentWorkContact");
-                  return;
-                }
-                handleSectionInteract("employmentWorkContact", event);
-              }}
-              aria-label={
-                isEditMode && activeEditSection === "employmentWorkContact"
-                  ? "Save work contact details"
-                  : "Edit work contact details"
-              }
-            >
-              {isEditMode && activeEditSection === "employmentWorkContact" ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
-        </div>
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Work Email</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              value={workEmail}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setWorkEmail(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Work Cell Number</Label>
-            <Input
-              className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              placeholder="Please insert"
-              value={workCellNumber}
-              readOnly={!isEditMode}
-              onFocus={enableEditMode}
-              onMouseDown={enableEditMode}
-              onChange={(e) => setWorkCellNumber(removeWhitespace(e.target.value))}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div
-        ref={(el) => {
-          sectionRefs.current.employmentUnion = el;
-        }}
-        className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("employmentUnion")}`}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-slate-900">Union Association</h4>
-          <div className="flex items-center gap-2">
-            {isEditMode && activeEditSection === "employmentUnion" && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
-                onClick={handleSectionCancel}
-                disabled={isProfileSaving}
-              >
-                Cancel
-              </Button>
-            )}
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
-              onClick={(event) => {
-                if (isEditMode && activeEditSection === "employmentUnion" && !isProfileSaving) {
-                  void handleSectionSave("employmentUnion");
-                  return;
-                }
-                handleSectionInteract("employmentUnion", event);
-              }}
-              aria-label={
-                isEditMode && activeEditSection === "employmentUnion" ? "Save union details" : "Edit union details"
-              }
-            >
-              {isEditMode && activeEditSection === "employmentUnion" ? (
-                <Save className="h-3.5 w-3.5" />
-              ) : (
-                <Pencil className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
-        </div>
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center gap-3">
-            <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Union Member</Label>
-            <Select
-              value={unionMember}
-              onValueChange={(value) => {
-                const nextValue = value as (typeof unionMemberOptions)[number];
-                setUnionMember(nextValue);
-                if (nextValue !== "Yes") {
-                  setTradeUnion("");
-                  return;
-                }
-                requestAnimationFrame(() => {
-                  tradeUnionTriggerRef.current?.focus();
-                });
-              }}
-              onOpenChange={(open) => {
-                if (open && !isEditMode) {
-                  return;
-                }
-              }}
-            >
-            <SelectTrigger
-                className={employeeDropdownTriggerClass}
-                disabled={!isEditMode}
-              >
-                <SelectValue placeholder="Select" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {unionMemberOptions.map((option) => (
-                  <SelectItem
-                    key={option}
-                    value={option}
-                    className={employeeDropdownSelectItemClass}
-                  >
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {unionMember === "Yes" && (
-            <div className="flex items-center gap-3">
-              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Trade Union</Label>
-              <Popover
-                open={tradeUnionOpen}
-                onOpenChange={(open) => {
-                  if (open && !isEditMode) {
-                  return;
-                }
-                  setTradeUnionOpen(open);
-                  if (open) {
-                    setTradeUnionQuery("");
-                  }
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    ref={tradeUnionTriggerRef}
-                    className={employeeDropdownTriggerClass}
-                    onPointerDown={(event) => {
-                      if (!isEditMode) {
-                        event.preventDefault();
-                        return;
-                      }
-                    }}
-                  >
-                    <span className="truncate">{tradeUnion || "Select trade union"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      placeholder="Type trade union..."
-                      value={tradeUnionQuery}
-                      onValueChange={setTradeUnionQuery}
-                    />
-                    <CommandList>
-                      <CommandEmpty>No trade union found.</CommandEmpty>
-                      <CommandGroup>
-                        {tradeUnionOptions
-                          .filter((option) =>
-                            option.toLowerCase().includes(tradeUnionQuery.trim().toLowerCase()),
-                          )
-                          .map((option) => (
-                            <CommandItem
-                              key={option}
-                              value={option}
-                              className={employeeDropdownCommandItemClass}
-                              onSelect={(value) => {
-                                setTradeUnion(value);
-                                setTradeUnionOpen(false);
-                              }}
-                            >
-                              <span>{option}</span>
-                              {tradeUnion === option && (
-                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                              )}
-                            </CommandItem>
-                          ))}
-                        {tradeUnionQuery.trim().length > 0 &&
-                          !tradeUnionOptions.some(
-                            (option) => option.toLowerCase() === tradeUnionQuery.trim().toLowerCase(),
-                          ) && (
-                            <CommandItem
-                              value={tradeUnionQuery.trim()}
-                              className={employeeDropdownCommandItemClass}
-                              onSelect={(value) => {
-                                setTradeUnion(value);
-                                setTradeUnionOpen(false);
-                              }}
-                            >
-                              <span>Use "{tradeUnionQuery.trim()}"</span>
-                              {tradeUnion === tradeUnionQuery.trim() && (
-                                <Check className="ml-auto h-3.5 w-3.5 text-blue-600" />
-                              )}
-                            </CommandItem>
-                          )}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
   };
@@ -9450,7 +8858,7 @@ const Employees = () => {
                   placeholder="Search clients..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-semibold shadow-sm transition-colors placeholder:!text-[11px] focus-visible:!border focus-visible:!border-blue-600 focus-visible:ring-0 group-hover:border-blue-600 dark:bg-background ${
+                  className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-semibold shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] dark:bg-background ${
                     searchQuery.trim().length > 0 ? "pr-20" : "pr-9"
                   }`}
                 />
@@ -9797,7 +9205,7 @@ const Employees = () => {
                 <div
                   className="relative overflow-hidden rounded-sm border border-slate-200"
                 >
-                  <div className="grid grid-cols-[0.4fr_2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                  <div className="grid grid-cols-[0.4fr_2fr_2fr_1.4fr_1.1fr_1.1fr_1.4fr_0.7fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                     <div className="flex items-center justify-center">
                       <Checkbox
                         indicator="x"
@@ -9810,16 +9218,16 @@ const Employees = () => {
                         }
                         onCheckedChange={() => toggleSelectAll()}
                         aria-label="Select all clients"
-                        className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                        className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                       />
                     </div>
-                    <div className="flex items-center leading-tight">Client</div>
-                    <div className="flex items-center gap-2 leading-tight">ID Number</div>
-                    <div className="flex items-center leading-tight">Contract Type</div>
-                    <div className="flex items-center leading-tight text-left">Start Date</div>
-                    <div className="flex items-center leading-tight">Job Title</div>
-                    <div className="flex items-center leading-tight text-left">Cell Number</div>
-                    <div className="flex items-center leading-tight text-left">Nationality</div>
+                    <div className="flex items-center leading-tight">Company Name</div>
+                    <div className="flex items-center leading-tight">Trading As</div>
+                    <div className="flex items-center gap-2 leading-tight">Registration Number</div>
+                    <div className="flex items-center leading-tight">Contact Person</div>
+                    <div className="flex items-center leading-tight text-left">Contact Number</div>
+                    <div className="flex items-center leading-tight text-left">Email</div>
+                    <div className="flex items-center leading-tight text-left">Status</div>
                     <div className="flex items-center justify-center leading-tight text-center">Actions</div>
                   </div>
                   <div
@@ -9830,81 +9238,51 @@ const Employees = () => {
                     {filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="grid grid-cols-[0.4fr_2fr_1.5fr_1.2fr_1fr_1.5fr_1.25fr_1fr_1fr] items-center gap-2 pl-1 pr-3 py-1 text-xs hover:bg-blue-50/70"
+                        className="grid grid-cols-[0.4fr_2fr_2fr_1.4fr_1.1fr_1.1fr_1.4fr_0.7fr_1fr] items-center gap-2 pl-1 pr-3 py-1 text-xs hover:bg-[#3eca44]/5"
                       >
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
                             checked={selectedEmployees.has(employee.id)}
                             onCheckedChange={() => toggleSelectEmployee(employee.id)}
-                            aria-label={`Select ${(employee.employee_name ?? "").trim()} ${(employee.employee_surname ?? "").trim()}`.trim()}
-                            className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                            aria-label={`Select ${getClientDisplayName(employee).toLowerCase()}`}
+                            className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
                         <div className="font-medium leading-tight">
                           <button
                             type="button"
                             onClick={() => void openProfileDialog(employee)}
-                            className="text-left hover:text-primary transition-colors"
+                            className="text-left text-slate-900 hover:text-slate-900 hover:underline transition-colors"
                           >
-                            {(employee.employee_name ?? "").trim()} {(employee.employee_surname ?? "").trim()}
+                            {getClientRegisteredName(employee)}
                           </button>
                         </div>
+                        <div className="leading-tight">{getClientTradingName(employee) || "--"}</div>
                         <div className="flex items-center gap-2 leading-tight">
-                          <span className="text-[11px] font-normal">
-                            {employee.id_number
-                              ? revealedIds.has(employee.id)
-                                ? employee.id_number
-                                : maskSAIdNumber(employee.id_number)
-                              : "N/A"}
+                          <span>
+                            {(employee.registration_number ?? employee.income_tax_number ?? "").trim()
+                              ? formatRegistrationNumberMaskDisplay(
+                                  (employee.registration_number ?? employee.income_tax_number ?? "").trim(),
+                                )
+                              : "--"}
                           </span>
-                          <TooltipProvider delayDuration={0} skipDelayDuration={0}>
-                            <Tooltip disableHoverableContent>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const next = new Set(revealedIds);
-                                    if (next.has(employee.id)) {
-                                      next.delete(employee.id);
-                                    } else {
-                                      next.add(employee.id);
-                                    }
-                                    setRevealedIds(next);
-                                  }}
-                                  className="h-6 w-6 p-0 hover:bg-transparent group"
-                                >
-                                  {revealedIds.has(employee.id) ? (
-                                    <EyeOff
-                                      className="h-2.5 w-2.5 text-slate-600 group-hover:text-blue-600"
-                                      strokeWidth={1.5}
-                                    />
-                                  ) : (
-                                    <Eye
-                                      className="h-2.5 w-2.5 text-slate-600 group-hover:text-blue-600"
-                                      strokeWidth={1.5}
-                                    />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="rounded">
-                                {revealedIds.has(employee.id) ? "Hide ID" : "Show full ID"}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
                         </div>
-                        <div className="leading-tight">{employee.contract_type?.trim() || "--"}</div>
-                        <div className="flex items-center leading-tight text-left">
-                          {formatDisplayDate(employee.start_date)}
-                        </div>
-                        <div className="leading-tight">{employee.job_title?.trim() || "--"}</div>
-                        <div className="flex items-center leading-tight text-left">
-                          {employee.cell_number?.trim() || "--"}
+                        <div className="leading-tight">
+                          {(employee.owner ?? employee.gender ?? "").trim() || "--"}
                         </div>
                         <div className="flex items-center leading-tight text-left">
-                          {employee.nationality?.trim() || "--"}
+                          {(employee.tel_cell ?? employee.race ?? employee.cell_number ?? "").trim() || "--"}
+                        </div>
+                        <div className="flex items-center leading-tight text-left">
+                          {(employee.client_email ?? employee.email ?? "").trim() || "--"}
+                        </div>
+                        <div className="flex items-center leading-tight text-left">
+                          {(employee.status ?? "").trim()
+                            ? (employee.status ?? "").trim().toLowerCase() === "inactive"
+                              ? "Inactive"
+                              : "Active"
+                            : "--"}
                         </div>
                         <div className="flex items-center justify-center">
                           <TooltipProvider delayDuration={0} skipDelayDuration={0}>
@@ -9915,13 +9293,13 @@ const Employees = () => {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => void openProfileDialog(employee)}
-                                    className="h-6 w-6 p-0 hover:text-primary hover:bg-muted/50 bg-transparent"
+                                    className="h-6 w-6 p-0 hover:text-[#3eca44] hover:bg-muted/50 bg-transparent"
                                   >
-                                    <Search className="h-3 w-3" strokeWidth={1.5} />
+                                    <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="rounded">
-                                  View Profile
+                                <TooltipContent side="top" className="rounded border border-slate-200 bg-white text-slate-700 text-[11px] shadow-[0_4px_12px_rgba(15,23,42,0.18)]">
+                                  Client File
                                 </TooltipContent>
                               </Tooltip>
                               <Tooltip disableHoverableContent>
@@ -9932,10 +9310,10 @@ const Employees = () => {
                                     onClick={() => setDocumentDialogEmployee(employee)}
                                     className="h-6 w-6 p-0 group hover:bg-muted/50 bg-transparent"
                                   >
-                                    <FilePlus className="h-3 w-3 transition-colors group-hover:text-primary" strokeWidth={1.5} />
+                                    <FilePlus className="h-3 w-3 transition-colors group-hover:text-[#3eca44]" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="rounded">
+                                <TooltipContent side="top" className="rounded border border-slate-200 bg-white text-slate-700 text-[11px] shadow-[0_4px_12px_rgba(15,23,42,0.18)]">
                                   Add Document
                                 </TooltipContent>
                               </Tooltip>
@@ -9950,7 +9328,7 @@ const Employees = () => {
                                     <Trash2 className="h-3 w-3 transition-colors group-hover:text-red-600" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent side="top" className="rounded">
+                                <TooltipContent side="top" className="rounded border border-slate-200 bg-white text-slate-700 text-[11px] shadow-[0_4px_12px_rgba(15,23,42,0.18)]">
                                   Delete Client
                                 </TooltipContent>
                               </Tooltip>
@@ -9962,8 +9340,8 @@ const Employees = () => {
                   </div>
                   {showScrollHint && (
                     <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                      <div className="relative rounded-sm border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-                        <span className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]" aria-hidden="true"></span>
+                      <div className="relative rounded-sm border border-[#3eca44]/30 bg-white/95 px-4 py-1 text-xs font-semibold text-[#2f9f35] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                        <span className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(62,202,68,0.28),0_-3px_10px_rgba(62,202,68,0.18)]" aria-hidden="true"></span>
                         <span className="relative">Scroll down</span>
                       </div>
                     </div>
@@ -9975,7 +9353,7 @@ const Employees = () => {
                       onClick={goToPreviousPage}
                       disabled={isFirstPage}
                       aria-label="Previous page"
-                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
+                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#3eca44] hover:bg-[#3eca44] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#3eca44]"
                     >
                       Previous
                     </Button>
@@ -9996,8 +9374,8 @@ const Employees = () => {
                                 onClick={() => setCurrentPage(pageNumber)}
                                 className={`h-7 min-w-7 rounded px-1.5 text-[10px] inline-flex items-center justify-center ${
                                   currentPage === pageNumber
-                                    ? "border border-blue-600 bg-white text-blue-600 hover:bg-blue-50 hover:text-blue-600"
-                                    : "border border-slate-300 bg-white text-blue-600 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-600"
+                                    ? "border border-[#3eca44] bg-white text-[#3eca44] hover:bg-[#3eca44]/10 hover:text-[#3eca44]"
+                                    : "border border-slate-300 bg-white text-[#3eca44] hover:border-[#3eca44] hover:bg-[#3eca44]/10 hover:text-[#3eca44]"
                                 }`}
                               >
                                 {pageNumber}
@@ -10012,7 +9390,7 @@ const Employees = () => {
                       onClick={goToNextPage}
                       disabled={isLastPage}
                       aria-label="Next page"
-                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
+                      className="h-7 w-20 rounded px-2 text-[10px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#3eca44] hover:bg-[#3eca44] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#3eca44]"
                     >
                       Next
                     </Button>
@@ -10453,8 +9831,6 @@ const Employees = () => {
 
                       {addFormStep === 3 && (
                         <div className="w-full space-y-5">
-                          <div className="rounded-sm border border-slate-200 bg-white p-3">
-                            <h4 className="mb-2 text-xs font-semibold text-slate-900">Home Address</h4>
                             <div className="space-y-4">
                               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                                <div className="relative w-full max-w-none">
                                   <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
@@ -10503,7 +9879,6 @@ const Employees = () => {
                                 </div>
                               </div>
                             </div>
-                          </div>
                         </div>
                       )}
                       </div>
@@ -11187,7 +10562,7 @@ const Employees = () => {
             <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
               <div className="flex items-center gap-2 pl-2">
                 <FilePlus className="h-4 w-4 text-white" />
-                <DialogTitle className="text-sm font-semibold text-white">New Document</DialogTitle>
+                <DialogTitle className="text-sm font-semibold text-white">Client File</DialogTitle>
               </div>
               <DialogClose asChild>
                 <button type="button" className="text-white hover:text-white/80">

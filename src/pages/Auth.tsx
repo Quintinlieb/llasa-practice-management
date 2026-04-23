@@ -291,18 +291,18 @@ const Auth = () => {
     confirmPassword.trim().length > 0 &&
     acceptedTerms;
   const signupFieldClass =
-    "h-[34px] rounded border-[1.75px] border-slate-300 bg-white text-[11px] font-medium text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-blue-400 focus:border-blue-600 focus-visible:border-blue-600 ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
+    "h-[34px] rounded border-[1.75px] border-slate-300 bg-white text-[11px] font-medium text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44] ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
   const accountTypeSelectTriggerClass =
-    `${signupFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs data-[state=open]:border-blue-600 data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:outline-none`;
+    `${signupFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs data-[state=open]:border-[#3eca44] data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:outline-none`;
   const accountTypeSelectContentClass = "!rounded";
   const accountTypeSelectItemClass =
-    "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#3eca44] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#3eca44] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
 
   const authFormContent = (
     <div className="w-full max-w-md space-y-4">
       <div className="text-center space-y-3">
         <div className="mx-auto flex items-center justify-center">
-          <img src="/zappir_thumbnail_blue.png" alt="Zappir thumbnail logo" className="h-12 w-12" />
+          <img src="/llasa_thumbnail.png" alt="LLASA thumbnail logo" className="h-12 w-12" />
         </div>
         <div className="space-y-1">
           <h1 className="text-[1.35rem] font-semibold text-foreground">
@@ -324,13 +324,13 @@ const Auth = () => {
                 aria-pressed={selectedAccountType === "domestic"}
                 className={`group h-40 rounded-xl border bg-white p-4 text-left shadow-sm transition flex flex-col justify-between ${
                   selectedAccountType === "domestic"
-                    ? "border-blue-500 ring-2 ring-blue-100"
-                    : "border-slate-200 hover:border-blue-500 hover:bg-blue-50/40"
+                    ? "border-[#3eca44] ring-2 ring-[#3eca44]/20"
+                    : "border-slate-200 hover:border-[#3eca44] hover:bg-[#3eca44]/10"
                 }`}
               >
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <p className="mt-3 text-4xl font-semibold text-slate-900">Lite</p>
-                  <div className="mt-3 w-16 border-t-2 border-blue-600" aria-hidden="true" />
+                  <div className="mt-3 w-16 border-t-2 border-[#3eca44]" aria-hidden="true" />
                   <p className="mt-5 mb-3 text-xs text-slate-600">Ideal for startups and small businesses.</p>
                 </div>
               </button>
@@ -340,13 +340,13 @@ const Auth = () => {
                 aria-pressed={selectedAccountType === "business"}
                 className={`group h-40 rounded-xl border bg-white p-4 text-left shadow-sm transition flex flex-col justify-between ${
                   selectedAccountType === "business"
-                    ? "border-blue-500 ring-2 ring-blue-100"
-                    : "border-slate-200 hover:border-blue-500 hover:bg-blue-50/40"
+                    ? "border-[#3eca44] ring-2 ring-[#3eca44]/20"
+                    : "border-slate-200 hover:border-[#3eca44] hover:bg-[#3eca44]/10"
                 }`}
               >
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <p className="mt-3 text-4xl font-semibold text-slate-900">Pro</p>
-                  <div className="mt-3 w-16 border-t-2 border-blue-600" aria-hidden="true" />
+                  <div className="mt-3 w-16 border-t-2 border-[#3eca44]" aria-hidden="true" />
                   <p className="mt-5 mb-3 text-xs text-slate-600">Best for established organisations from small to large.</p>
                 </div>
               </button>
@@ -358,7 +358,7 @@ const Auth = () => {
                   setSelectedAccountType("trial");
                   setAccountType("trial");
                 }}
-                className="text-xs text-slate-500 transition-colors hover:text-blue-600 hover:underline"
+                className="text-xs text-slate-500 transition-colors hover:text-[#3eca44] hover:underline"
               >
                 Try FREE for 7 days!
               </button>
@@ -366,7 +366,7 @@ const Auth = () => {
             <div className="pt-6">
               <Button
                 type="button"
-                className="w-full bg-blue-600 text-white hover:bg-blue-700"
+                className="w-full bg-[#3eca44] text-white hover:bg-[#3eca44]"
                 disabled={!selectedAccountType}
                 onClick={() => {
                   if (selectedAccountType) {
@@ -417,7 +417,7 @@ const Auth = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete={isLogin ? "username" : "off"}
                 required
-                className={isLogin ? "h-11 group-hover:border-blue-600" : signupFieldClass}
+                className={isLogin ? "h-11 group-hover:border-[#3eca44]" : signupFieldClass}
               />
             </div>
             <div className="space-y-2">
@@ -428,8 +428,8 @@ const Auth = () => {
                     <div className="relative group inline-flex items-center gap-2 cursor-help text-[11px] text-muted-foreground">
                       <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                       <span className="font-medium">Password requirements</span>
-                      <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded border border-blue-600 bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-                        <p className="mb-1 font-medium text-blue-600">Include:</p>
+                      <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded border border-[#3eca44] bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+                        <p className="mb-1 font-medium text-[#3eca44]">Include:</p>
                         <ul className="space-y-0.5 list-disc list-inside">
                           <li>At least 8 characters</li>
                           <li>One uppercase letter</li>
@@ -453,7 +453,7 @@ const Auth = () => {
                     minLength={isLogin ? 6 : 8}
                     className={
                       isLogin
-                        ? "h-11 pr-10 group-hover:border-blue-600"
+                        ? "h-11 pr-10 group-hover:border-[#3eca44]"
                         : `${signupFieldClass} pr-10 ${passwordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`
                     }
                   />
@@ -472,7 +472,7 @@ const Auth = () => {
                       type="button"
                       onClick={handleResetPassword}
                       tabIndex={-1}
-                      className="text-[11px] font-normal text-muted-foreground underline hover:text-blue-600 disabled:opacity-60"
+                      className="text-[11px] font-normal text-muted-foreground underline hover:text-[#3eca44] disabled:opacity-60"
                       disabled={isSendingReset || resetCooldownSeconds > 0}
                     >
                       {isSendingReset
@@ -524,13 +524,13 @@ const Auth = () => {
                     checked={acceptedTerms}
                     onChange={(e) => setAcceptedTerms(e.target.checked)}
                     required
-                    className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                    className="h-3 w-3 rounded border-slate-300 text-[#3eca44] focus:ring-[#3eca44]"
                   />
                   <label htmlFor="terms" className="text-xs text-muted-foreground">
                     I have read, understood, and agree to the{" "}
                     <Link
                       to="/terms"
-                      className="font-semibold text-inherit hover:text-blue-600 hover:underline"
+                      className="font-semibold text-inherit hover:text-[#3eca44] hover:underline"
                     >
                       Terms and Conditions
                     </Link>
@@ -542,7 +542,7 @@ const Auth = () => {
             <div className="pt-6">
               <Button
                 type="submit"
-                className="w-full bg-blue-600 text-white hover:bg-blue-700"
+                className="w-full bg-[#3eca44] text-white hover:bg-[#3eca44]"
                 disabled={isLoading || (isLogin ? false : !isSignupReady)}
               >
                   {isLoading ? "Please wait..." : isLogin ? "Sign in" : "Sign up"}
@@ -561,7 +561,7 @@ const Auth = () => {
               navigate("/auth?login=1", { replace: true });
             }
           }}
-          className="text-muted-foreground hover:text-blue-600 hover:underline"
+          className="text-muted-foreground hover:text-[#3eca44] hover:underline"
         >
           {isLogin ? (
             <>
@@ -583,8 +583,8 @@ const Auth = () => {
         <div className="mx-auto flex h-11 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link to="/landing" className="inline-flex items-center" aria-label="Go to website landing page">
             <img
-              src="/zappir_logo_white&blue(1).png"
-              alt="Zappir"
+              src="/llasa_logo_white_horizontal.png"
+              alt="LLASA"
               className="h-6 w-auto"
             />
           </Link>

@@ -1,4 +1,4 @@
-import { FolderOpen, Users, Home, Headset, Bell, Settings, LogOut, Bot } from "lucide-react";
+import { FolderOpen, Users, Home, Headset, Bell, Settings, LogOut } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
 import {
@@ -18,9 +18,8 @@ import { useAuth } from "@/hooks/useAuth";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
-  { title: "Employees", url: "/employees", icon: Users },
+  { title: "Clients", url: "/employees", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
-  { title: "Assistant", url: "/assistant", icon: Bot },
 ];
 
 type AppSidebarProps = {
@@ -63,17 +62,17 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
         >
           {!isCollapsed && (
             <img
-              src="/zappir_logo_white&blue(1).png"
-              alt="logo"
-              className="absolute left-6 top-[53%] h-6 w-auto -translate-y-1/2 object-contain"
+              src="/llasa_logo_white_horizontal.png"
+              alt="LLASA logo"
+              className="absolute left-6 top-[53%] h-8 w-auto -translate-y-1/2 object-contain"
               style={{ imageRendering: "crisp-edges" }}
             />
           )}
           {isCollapsed && (
             <img
-              src="/zappir_thumbnail_blue.png"
-              alt="logo"
-              className="absolute left-10 top-[55%] h-6 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
+              src="/llasa_thumbnail.png"
+              alt="LLASA thumbnail logo"
+              className="absolute left-10 top-[55%] h-8 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
               style={{ imageRendering: "crisp-edges" }}
             />
           )}
@@ -99,7 +98,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                           className={cn(
                             "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                             isActive &&
-                              "bg-[#010D1A] text-white border-b-2 border-blue-500 data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
+                              "bg-[#010D1A] text-white border-b-2 border-[#3eca44] data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
                           )}
                           data-collapsed={isCollapsed}
                         >
@@ -130,7 +129,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                   className={cn(
                     "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
                     location.pathname === "/settings" &&
-                      "bg-[#010D1A] text-white border-b-2 border-blue-500 data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
+                      "bg-[#010D1A] text-white border-b-2 border-[#3eca44] data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
                   )}
                   isActive={location.pathname === "/settings"}
                   data-collapsed={isCollapsed}

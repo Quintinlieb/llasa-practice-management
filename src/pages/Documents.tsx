@@ -490,7 +490,7 @@ const Documents = () => {
       "Capture the notice date, hearing date, hearing time, hearing location, and the applicable misconduct type(s).",
       "Each selected misconduct type requires a charge description before you can continue.",
       "A proper charge description should answer when, what, and how.",
-      "You can type the charge description manually or use Drafting Assistant to generate a draft and then review it.",
+      "Type each charge description manually and review it before continuing.",
     ],
     [
       "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
@@ -512,7 +512,7 @@ const Documents = () => {
       "Capture the notice date, hearing date, hearing time, hearing format, hearing location, and the applicable charge type(s).",
       "Each selected charge type requires a clear charge description before you can continue.",
       "A proper charge description should answer when, what, and how.",
-      "You can type the charge description manually or use Drafting Assistant to generate a draft and then review it.",
+      "Type each charge description manually and review it before continuing.",
     ],
     [
       "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",

@@ -10,12 +10,12 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, FileText, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search, Network, Info } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search, Network, Info } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { z } from "zod";
-import { companySetupBaseSchema, companySetupSchema, southAfricanProvinces } from "@/lib/validation";
+import { companySetupBaseSchema, southAfricanProvinces } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 
 const passwordSchema = z.string()
@@ -88,8 +88,22 @@ type BranchAllocationEmployee = {
   branchNames: string[];
 };
 
-type SettingsTab = "user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "plan" | "personalize";
+type SettingsTab = "user" | "subusers" | "company" | "companyAddress" | "companySetup" | "auth" | "personalize";
 type ProfileDataGroup = "user" | "company" | "branches" | "personalize";
+
+const DEFAULT_COMPANY_NAME = "The Labour Law Association South Africa CC";
+const DEFAULT_TRADING_AS = "LLASA";
+const DEFAULT_REGISTRATION_NUMBER = "2009/057603/23";
+const DEFAULT_VAT_NUMBER = "4660294549";
+const DEFAULT_REPRESENTATIVE_NAME = "Quintin";
+const DEFAULT_REPRESENTATIVE_SURNAME = "Liebenberg";
+const DEFAULT_COMPANY_CONTACT = "0137522977";
+const DEFAULT_COMPANY_EMAIL = "info@llasa.co.za";
+const DEFAULT_PHYSICAL_ADDRESS_LINE1 = "Office 03, Collfin House";
+const DEFAULT_PHYSICAL_ADDRESS_LINE2 = "11 Ferreira Street";
+const DEFAULT_CITY = "Nelspruit";
+const DEFAULT_PROVINCE = "Mpumalanga";
+const DEFAULT_AREA_CODE = "1201";
 
 const emptyUserDetails: UserDetailsForm = {
   user_name: "",
@@ -99,24 +113,24 @@ const emptyUserDetails: UserDetailsForm = {
 };
 
 const emptyCompanyDetails: CompanyDetailsForm = {
-  company_type: "",
-  company_name: "",
-  registration_number: "",
-  vat_number: "",
-  physical_address_line1: "",
-  physical_address_line2: "",
-  city: "",
-  province: "",
-  area_code: "",
-  postal_address_line1: "",
-  postal_address_line2: "",
-  postal_city: "",
-  postal_province: "",
-  postal_area_code: "",
-  representative_name: "",
-  representative_surname: "",
-  company_contact: "",
-  company_email: "",
+  company_type: DEFAULT_TRADING_AS,
+  company_name: DEFAULT_COMPANY_NAME,
+  registration_number: DEFAULT_REGISTRATION_NUMBER,
+  vat_number: DEFAULT_VAT_NUMBER,
+  physical_address_line1: DEFAULT_PHYSICAL_ADDRESS_LINE1,
+  physical_address_line2: DEFAULT_PHYSICAL_ADDRESS_LINE2,
+  city: DEFAULT_CITY,
+  province: DEFAULT_PROVINCE,
+  area_code: DEFAULT_AREA_CODE,
+  postal_address_line1: DEFAULT_PHYSICAL_ADDRESS_LINE1,
+  postal_address_line2: DEFAULT_PHYSICAL_ADDRESS_LINE2,
+  postal_city: DEFAULT_CITY,
+  postal_province: DEFAULT_PROVINCE,
+  postal_area_code: DEFAULT_AREA_CODE,
+  representative_name: DEFAULT_REPRESENTATIVE_NAME,
+  representative_surname: DEFAULT_REPRESENTATIVE_SURNAME,
+  company_contact: DEFAULT_COMPANY_CONTACT,
+  company_email: DEFAULT_COMPANY_EMAIL,
 };
 
 const emptyBranchSettings: BranchSettingsForm = {
@@ -183,7 +197,6 @@ const tabToProfileGroup: Record<SettingsTab, ProfileDataGroup | null> = {
   companyAddress: "company",
   companySetup: "branches",
   auth: null,
-  plan: null,
   personalize: "personalize",
 };
 
@@ -201,11 +214,10 @@ const emptyTabLoadingState: Record<SettingsTab, boolean> = {
   companyAddress: false,
   companySetup: false,
   auth: false,
-  plan: false,
   personalize: false,
 };
 
-const allSettingsTabs: SettingsTab[] = ["user", "subusers", "company", "companyAddress", "companySetup", "auth", "plan", "personalize"];
+const allSettingsTabs: SettingsTab[] = ["user", "subusers", "company", "companyAddress", "companySetup", "auth", "personalize"];
 
 const parseAddressParts = (address: string) => {
   const addressParts = (address || "")
@@ -370,11 +382,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "companySetup", label: "Company Setup", icon: SlidersHorizontal },
     { value: "auth", label: "Authentication", icon: Lock },
-    { value: "plan", label: "Subscription", icon: FileText },
     { value: "personalize", label: "Personalise", icon: Palette },
   ];
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600";
+  const companyProfileReadOnlyInputClass =
+    "bg-slate-100 text-slate-700 pointer-events-none cursor-default hover:border-slate-400 focus-visible:border-slate-400";
   const subuserModalInputClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300";
   const floatingLabelClass =
@@ -572,19 +585,35 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         if (error) throw error;
         if (!data) return;
 
-        const physicalAddress = parseAddressParts(data.physical_address || "");
-        const postalAddress = parsePostalAddressParts(data.postal_address || "");
+        const physicalAddress = data.physical_address
+          ? parseAddressParts(data.physical_address)
+          : {
+              physical_address_line1: DEFAULT_PHYSICAL_ADDRESS_LINE1,
+              physical_address_line2: DEFAULT_PHYSICAL_ADDRESS_LINE2,
+              city: DEFAULT_CITY,
+              province: DEFAULT_PROVINCE,
+              area_code: DEFAULT_AREA_CODE,
+            };
+        const postalAddress = data.postal_address
+          ? parsePostalAddressParts(data.postal_address)
+          : {
+              postal_address_line1: physicalAddress.physical_address_line1,
+              postal_address_line2: physicalAddress.physical_address_line2,
+              postal_city: physicalAddress.city,
+              postal_province: physicalAddress.province,
+              postal_area_code: physicalAddress.area_code,
+            };
         const nextCompanyDetails: CompanyDetailsForm = {
-          company_type: data.company_type ?? "",
-          company_name: data.company_name || "",
-          registration_number: data.registration_number || "",
-          vat_number: data.vat_number || "",
+          company_type: DEFAULT_TRADING_AS,
+          company_name: DEFAULT_COMPANY_NAME,
+          registration_number: DEFAULT_REGISTRATION_NUMBER,
+          vat_number: DEFAULT_VAT_NUMBER,
           ...physicalAddress,
           ...postalAddress,
-          representative_name: data.representative_name || "",
-          representative_surname: data.representative_surname || "",
-          company_contact: data.company_contact || "",
-          company_email: data.company_email || "",
+          representative_name: DEFAULT_REPRESENTATIVE_NAME,
+          representative_surname: DEFAULT_REPRESENTATIVE_SURNAME,
+          company_contact: DEFAULT_COMPANY_CONTACT,
+          company_email: DEFAULT_COMPANY_EMAIL,
         };
 
         setCompanyDetails(nextCompanyDetails);
@@ -1208,22 +1237,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         companyDetails.postal_area_code,
       ].filter(Boolean).join(", ");
 
-      const validated = companySetupSchema.parse({
-        companyType: companyDetails.company_type,
-        companyName: companyDetails.company_name,
-        registrationNumber: companyDetails.registration_number,
+      const validated = companySetupBaseSchema.parse({
         physicalAddressLine1: companyDetails.physical_address_line1,
         physicalAddressLine2: companyDetails.physical_address_line2,
         city: companyDetails.city,
         province: companyDetails.province,
         areaCode: companyDetails.area_code,
         postalAddress: postalAddress,
-        companyContact: companyDetails.company_contact,
-        companyEmail: companyDetails.company_email,
-        userName: companyDetails.representative_name,
-        userSurname: companyDetails.representative_surname,
-        userContact: companyDetails.company_contact,
-        userEmail: companyDetails.company_email
+        companyContact: DEFAULT_COMPANY_CONTACT,
+        companyEmail: DEFAULT_COMPANY_EMAIL,
+        userName: DEFAULT_REPRESENTATIVE_NAME,
+        userSurname: DEFAULT_REPRESENTATIVE_SURNAME,
+        userContact: DEFAULT_COMPANY_CONTACT,
+        userEmail: DEFAULT_COMPANY_EMAIL,
       });
 
       const physicalAddress = [
@@ -1237,24 +1263,36 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       const { error } = await supabase
         .from("profiles")
         .update({
-          company_type: validated.companyType,
-          company_name: validated.companyName,
-          registration_number: validated.registrationNumber,
-          vat_number: companyDetails.vat_number || null,
+          company_type: DEFAULT_TRADING_AS,
+          company_name: DEFAULT_COMPANY_NAME,
+          registration_number: DEFAULT_REGISTRATION_NUMBER,
+          vat_number: DEFAULT_VAT_NUMBER,
           physical_address: physicalAddress,
           postal_address: validated.postalAddress || "",
-          representative_name: validated.userName,
-          representative_surname: validated.userSurname,
+          representative_name: DEFAULT_REPRESENTATIVE_NAME,
+          representative_surname: DEFAULT_REPRESENTATIVE_SURNAME,
           company_contact: validated.companyContact,
-          company_email: validated.companyEmail
+          company_email: validated.companyEmail,
         })
         .eq("id", user.id);
 
       if (error) throw error;
 
-      setInitialCompanyDetails(companyDetails);
+      const nextCompanyDetails: CompanyDetailsForm = {
+        ...companyDetails,
+        company_type: DEFAULT_TRADING_AS,
+        company_name: DEFAULT_COMPANY_NAME,
+        registration_number: DEFAULT_REGISTRATION_NUMBER,
+        vat_number: DEFAULT_VAT_NUMBER,
+        representative_name: DEFAULT_REPRESENTATIVE_NAME,
+        representative_surname: DEFAULT_REPRESENTATIVE_SURNAME,
+        company_contact: DEFAULT_COMPANY_CONTACT,
+        company_email: DEFAULT_COMPANY_EMAIL,
+      };
+      setCompanyDetails(nextCompanyDetails);
+      setInitialCompanyDetails(nextCompanyDetails);
       const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
-      cached.companyDetails = companyDetails;
+      cached.companyDetails = nextCompanyDetails;
       cached.loadedGroups.add("company");
       settingsProfileCacheByUser.set(user.id, cached);
 
@@ -1310,17 +1348,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setPasswordData({ newPassword: "", confirmPassword: "" });
     }
     setSaving(false);
-  };
-
-  const handleCopyPhysicalToPostal = () => {
-    setCompanyDetails((prev) => ({
-      ...prev,
-      postal_address_line1: prev.physical_address_line1,
-      postal_address_line2: prev.physical_address_line2,
-      postal_city: prev.city,
-      postal_province: prev.province,
-      postal_area_code: prev.area_code,
-    }));
   };
 
   const cropPersonaliseLogoPadding = (dataUrl: string): Promise<string> =>
@@ -2068,16 +2095,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       key={tab.value}
                       type="button"
                       onClick={() => handleSettingsTabChange(tab.value)}
-                      className={`mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded px-4 py-3 text-left text-[10px] font-semibold transition-colors ${
+                      className={`group mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded px-4 py-3 text-left text-[10px] font-semibold transition-colors ${
                         isActive
-                          ? "bg-blue-50 text-blue-600"
-                          : "text-slate-500 hover:bg-slate-50 hover:text-black"
+                          ? "bg-[#e9f9eb] text-[#2f9f36]"
+                          : "text-slate-500 hover:text-black"
                       }`}
                     >
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                      <span
+                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center ${
+                          isActive ? "" : "group-hover:translate-x-[2px]"
+                        }`}
+                      >
                         <Icon className="h-4 w-4" />
                       </span>
-                      <span className="text-[10px] font-semibold leading-4">
+                      <span
+                        className={`text-[10px] font-semibold leading-4 ${
+                          isActive ? "" : "group-hover:translate-x-[2px]"
+                        }`}
+                      >
                         {tab.label}
                       </span>
                     </button>
@@ -2103,7 +2138,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Personal Information</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2129,7 +2164,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2195,7 +2230,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Information</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2203,38 +2238,20 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="company_name"
                       value={companyDetails.company_name}
-                      onChange={(e) =>
-                        setCompanyDetails({ ...companyDetails, company_name: e.target.value })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
-                    <span className={floatingLabelClass}>Company Type</span>
-                    <Select
+                    <span className={floatingLabelClass}>Trading as</span>
+                    <Input
+                      id="company_type"
                       value={companyDetails.company_type}
-                      onValueChange={(value) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          company_type: value,
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        id="company_type"
-                        aria-label="Company Type"
-                        className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
-                      >
-                        <SelectValue placeholder="Choose company type" />
-                      </SelectTrigger>
-                      <SelectContent className="text-[11px]">
-                        <SelectItem value="(Pty) Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Private Company (Pty) Ltd</SelectItem>
-                        <SelectItem value="Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Public Company Ltd</SelectItem>
-                        <SelectItem value="Inc" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Personal Liability Company Inc</SelectItem>
-                        <SelectItem value="NPC" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Non-Profit Company NPC</SelectItem>
-                        <SelectItem value="SOC Ltd" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">State-Owned Company SOC Ltd</SelectItem>
-                        <SelectItem value="CC" className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700">Close Corporation CC</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -2243,12 +2260,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="registration_number"
                       value={companyDetails.registration_number}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          registration_number: e.target.value,
-                        })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2256,15 +2270,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="vat_number"
                       value={companyDetails.vat_number}
-                      onChange={(e) =>
-                        setCompanyDetails({ ...companyDetails, vat_number: e.target.value })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Contact Information</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2272,12 +2286,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="company_contact"
                       value={companyDetails.company_contact}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          company_contact: e.target.value,
-                        })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2286,18 +2297,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       id="company_email"
                       type="email"
                       value={companyDetails.company_email}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          company_email: e.target.value,
-                        })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                 </div>
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Representative</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2305,12 +2313,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="representative_name"
                       value={companyDetails.representative_name}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          representative_name: e.target.value,
-                        })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2318,12 +2323,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="representative_surname"
                       value={companyDetails.representative_surname}
-                      onChange={(e) =>
-                        setCompanyDetails({
-                          ...companyDetails,
-                          representative_surname: e.target.value,
-                        })
-                      }
+                      readOnly
+                      tabIndex={-1}
+                      className={companyProfileReadOnlyInputClass}
                     />
                   </div>
                 </div>
@@ -2343,24 +2345,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-blue-600">Company Address</h3>
-                <p className="mb-2 text-[11px] text-slate-500">Update physical and postal address details.</p>
+                <p className="mb-2 text-[11px] text-slate-500">Physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <div className="grid grid-cols-2 gap-6 items-start">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Physical</h4>
-                    <div className="relative">
-                      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Postal</h4>
-                      <Button
-                        type="button"
-                        onClick={handleCopyPhysicalToPostal}
-                        className="absolute bottom-0 right-0 h-6 rounded border border-slate-400 bg-white px-2 text-[10px] font-medium text-slate-500 hover:border-blue-600 hover:bg-white hover:text-blue-600"
-                      >
-                        Copy from Physical
-                      </Button>
-                    </div>
+                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Postal</h4>
                   </div>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="flex flex-col gap-7">
                   <div className="grid grid-cols-2 gap-6 items-start">
@@ -2369,12 +2362,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="physical_address_line1"
                         value={companyDetails.physical_address_line1}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            physical_address_line1: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2382,12 +2372,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_address_line1"
                         value={companyDetails.postal_address_line1}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            postal_address_line1: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                   </div>
@@ -2397,12 +2384,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="physical_address_line2"
                         value={companyDetails.physical_address_line2}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            physical_address_line2: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2410,12 +2394,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_address_line2"
                         value={companyDetails.postal_address_line2}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            postal_address_line2: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                   </div>
@@ -2425,12 +2406,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="city"
                         value={companyDetails.city}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            city: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2438,77 +2416,32 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_city"
                         value={companyDetails.postal_city}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            postal_city: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-6 items-start">
                     <div className="relative w-full max-w-none">
                       <span className={floatingLabelClass}>Province</span>
-                      <Select
+                      <Input
+                        id="province"
                         value={companyDetails.province}
-                        onValueChange={(value) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            province: value,
-                          })
-                        }
-                      >
-                        <SelectTrigger
-                          id="province"
-                          aria-label="Province"
-                          className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
-                        >
-                          <SelectValue placeholder="Choose province" />
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          {southAfricanProvinces.map((province) => (
-                            <SelectItem
-                              key={province}
-                              value={province}
-                              className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                            >
-                              {province}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
+                      />
                     </div>
                     <div className="relative w-full max-w-none">
                       <span className={floatingLabelClass}>Province</span>
-                      <Select
+                      <Input
+                        id="postal_province"
                         value={companyDetails.postal_province}
-                        onValueChange={(value) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            postal_province: value,
-                          })
-                        }
-                      >
-                        <SelectTrigger
-                          id="postal_province"
-                          aria-label="Postal Province"
-                          className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
-                        >
-                          <SelectValue placeholder="Choose province" />
-                        </SelectTrigger>
-                        <SelectContent className="text-[11px]">
-                          {southAfricanProvinces.map((province) => (
-                            <SelectItem
-                              key={province}
-                              value={province}
-                              className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
-                            >
-                              {province}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-6 items-start">
@@ -2517,12 +2450,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="area_code"
                         value={companyDetails.area_code}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            area_code: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2530,12 +2460,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_area_code"
                         value={companyDetails.postal_area_code}
-                        onChange={(e) =>
-                          setCompanyDetails({
-                            ...companyDetails,
-                            postal_area_code: e.target.value,
-                          })
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        className={companyProfileReadOnlyInputClass}
                       />
                     </div>
                   </div>
@@ -2561,7 +2488,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Reset Password</h4>
-                  <div className="h-[0.5px] w-full bg-blue-600" />
+                  <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
                 <div className="grid max-w-[760px] grid-cols-2 gap-4">
                   <div className="relative w-full max-w-none">
@@ -2633,7 +2560,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <div className="flex flex-col gap-5">
                   <div className="space-y-1 pt-3">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Branches</h4>
-                    <div className="h-[0.5px] w-full bg-blue-600" />
+                    <div className="h-[0.5px] w-full bg-[#3eca44]" />
                   </div>
                   <div className="flex flex-col gap-7">
                       <div className="flex items-center gap-2">
@@ -2776,7 +2703,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
                           <div className="space-y-1 pt-3">
                             <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Branch Allocation</h4>
-                            <div className="h-[0.5px] w-full bg-blue-600" />
+                            <div className="h-[0.5px] w-full bg-[#3eca44]" />
                           </div>
                           <div className="-mt-[10px] grid grid-cols-[340px_1fr] items-center gap-2">
                             <div className="flex items-center gap-1">
@@ -3545,26 +3472,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               </div>
               )}
 
-              {settingsTab === "plan" && (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">Subscription Plan</h3>
-                <p className="mb-2 text-[11px] text-slate-500">Manage your subscription</p>
-              </div>
-              <div>
-                <div className="text-center py-12">
-                  <p className="text-muted-foreground mb-4">
-                    Subscription plans are coming soon!
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    You currently have access to all features. We'll notify you when subscription
-                    options become available.
-                  </p>
-                </div>
-              </div>
-            </div>
-              )}
-
               {settingsTab === "personalize" && (
                 <div className="flex h-full flex-col space-y-5">
                   <div className="space-y-1">
@@ -3574,7 +3481,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
                   <div className="space-y-1 pt-3">
                     <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Logo</h4>
-                    <div className="h-[0.5px] w-full bg-blue-600" />
+                    <div className="h-[0.5px] w-full bg-[#3eca44]" />
                   </div>
 
                   <div

@@ -531,6 +531,16 @@ export const employeeProfileSchema = z
           message: "Please select a valid citizenship status",
         },
       ),
+    industry: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
+    bargainingCouncil: z
+      .string()
+      .optional()
+      .or(z.literal(""))
+      .transform((val) => (val ? sanitizeText(val) : "")),
     race: z
       .string()
       .optional()

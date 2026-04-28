@@ -111,12 +111,12 @@ import { extractDobFromId } from "@/lib/validation";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 // Supabase types do not include client_warnings; cast to any for those calls to avoid type errors.
 const warningTable = () => (supabase as any).from("client_warnings");
-// Supabase types do not include client_contracts; cast to any for those calls to avoid type errors.
-const contractTable = () => (supabase as any).from("client_contracts");
+// Supabase types do not include membership_contracts; cast to any for those calls to avoid type errors.
+const contractTable = () => (supabase as any).from("membership_contracts");
 // Supabase types do not include client_id_documents; cast to any for those calls to avoid type errors.
 const idDocumentTable = () => (supabase as any).from("client_id_documents");
-// Supabase types do not include client_licences; cast to any for those calls to avoid type errors.
-const licenceTable = () => (supabase as any).from("client_licences");
+// Supabase types do not include employee_licences; cast to any for those calls to avoid type errors.
+const licenceTable = () => (supabase as any).from("employee_licences");
 // Supabase types do not include client_education; cast to any for those calls to avoid type errors.
 const educationTable = () => (supabase as any).from("client_education");
 // Supabase types do not include client_termination_documents; cast to any for those calls to avoid type errors.
@@ -135,6 +135,9 @@ const clientWriteAllowedColumns = new Set<string>([
   "client_name",
   "client_surname",
   "id_number",
+  "company_type",
+  "industry",
+  "bargaining_council",
   "client_number",
   "gender",
   "race",
@@ -263,9 +266,10 @@ type Client = Tables<"clients"> & {
   registration_number?: string | null;
   registered_name?: string | null;
   trading_as?: string | null;
-  trading_name?: string | null;
   vat_number?: string | null;
   company_type?: string | null;
+  industry?: string | null;
+  bargaining_council?: string | null;
   payment_cycle?: string | null;
   renewal_date?: string | null;
   client_number?: string | null;
@@ -320,9 +324,10 @@ type ClientInsert = TablesInsert<"clients"> & {
   registration_number?: string | null;
   registered_name?: string | null;
   trading_as?: string | null;
-  trading_name?: string | null;
   vat_number?: string | null;
   company_type?: string | null;
+  industry?: string | null;
+  bargaining_council?: string | null;
   payment_cycle?: string | null;
   renewal_date?: string | null;
   client_number?: string | null;
@@ -339,6 +344,7 @@ type ClientUpdate = Partial<Client>;
 type ClientTab = "personal" | "employment" | "address" | "licences" | "education" | "discipline" | "contracts";
 type ProfileSectionKey =
   | "identity"
+  | "companyStructure"
   | "equity"
   | "contact"
   | "statutory"
@@ -510,6 +516,51 @@ const DEFAULT_NATIONALITY: ClientProfileFormData["nationality"] = "South African
 const retirementAgeOptions = ["55", "60", "65", "70"] as const;
 const dateToday = () => new Date().toISOString().split("T")[0];
 const companyTypeOptions = ["Holding", "Subsidiary"] as const;
+const saIndustryOptions = [
+  "Agriculture, Forestry and Fishing",
+  "Mining and Quarrying",
+  "Manufacturing",
+  "Electricity, Gas and Water Supply",
+  "Construction",
+  "Wholesale and Retail Trade",
+  "Transport and Logistics",
+  "Information and Communication Technology",
+  "Financial and Insurance Activities",
+  "Real Estate Activities",
+  "Professional and Business Services",
+  "Administrative and Support Services",
+  "Public Administration and Defence",
+  "Education",
+  "Human Health and Social Work Activities",
+  "Arts, Entertainment and Recreation",
+  "Accommodation and Food Service Activities",
+  "Other Service Activities",
+] as const;
+const saBargainingCouncilOptions = [
+  "None",
+  "National Bargaining Council for the Electrical Industry of South Africa (NBCEI)",
+  "Metal and Engineering Industries Bargaining Council (MEIBC)",
+  "Motor Industry Bargaining Council (MIBCO)",
+  "National Bargaining Council for the Road Freight and Logistics Industry (NBCRFLI)",
+  "National Bargaining Council for the Private Security Sector (NBCPSS)",
+  "Bargaining Council for the Civil Engineering Industry (BCCEI)",
+  "South African Road Passenger Bargaining Council (SARPBAC)",
+  "National Textile Bargaining Council (NTBC)",
+  "National Bargaining Council for the Clothing Manufacturing Industry (NBC)",
+  "National Bargaining Council for the Leather Industry of South Africa (NBCLI)",
+  "National Bargaining Council for the Wood and Paper Sector (NBCWPS)",
+  "Bargaining Council for the Grain Industry (BCGI)",
+  "National Bargaining Council for the Hairdressing, Cosmetology, Beauty and Skincare Industry (HCSBC)",
+  "Motor Ferry Industry Bargaining Council of South Africa (MFIBC)",
+  "Bargaining Council for the New Tyre Manufacturing Industry (BCNTMI)",
+  "Transnet Bargaining Council (TBC)",
+  "South African Local Government Bargaining Council (SALGBC)",
+  "Education Labour Relations Council (ELRC)",
+  "General Public Service Sectoral Bargaining Council (GPSSBC)",
+  "Public Health and Social Development Sectoral Bargaining Council (PHSDSBC)",
+  "Public Service Co-ordinating Bargaining Council (PSCBC)",
+  "Safety and Security Sectoral Bargaining Council (SSSBC)",
+] as const;
 const MISCONDUCT_TYPES = [
   // Minor
   "Unauthorised absenteeism",
@@ -625,7 +676,7 @@ const createAddFormFromClient = (client: Client): AddClientFormState => {
     clientName:
       ((dynamic.registered_name as string | undefined) ?? (dynamic.company_name as string | undefined) ?? client.client_name ?? "").trim(),
     clientSurname:
-      ((dynamic.trading_name as string | undefined) ?? (dynamic.trading_as as string | undefined) ?? client.client_surname ?? "").trim(),
+      ((dynamic.trading_as as string | undefined) ?? client.client_surname ?? "").trim(),
     registrationNumber: (client.registration_number ?? client.income_tax_number ?? "").trim(),
     idNumber,
     clientNumber: cleanClientNumberInput((dynamic.client_number as string | undefined) ?? client.client_number),
@@ -681,10 +732,7 @@ const createProfileFormFromClient = (client?: Client): ClientProfileFormData => 
       client?.client_name ??
       "").trim();
   const tradingName =
-    ((dynamic.trading_as as string | undefined) ??
-      (dynamic.trading_name as string | undefined) ??
-      client?.client_surname ??
-      "").trim();
+    ((dynamic.trading_as as string | undefined) ?? client?.client_surname ?? "").trim();
   const vatNumber = ((dynamic.vat_number as string | undefined) ?? client?.id_number ?? "").trim();
   const registrationNumber = (client?.registration_number ?? client?.income_tax_number ?? "").trim();
   const companyType = ((dynamic.company_type as string | undefined) ?? client?.citizenship_status ?? "").trim();
@@ -695,6 +743,12 @@ const createProfileFormFromClient = (client?: Client): ClientProfileFormData => 
       client?.email ??
       client?.cell_number ??
       "").trim();
+  const industry = ((dynamic.industry as string | undefined) ?? client?.industry ?? "").trim();
+  const bargainingCouncil = (
+    (dynamic.bargaining_council as string | undefined) ??
+    client?.bargaining_council ??
+    ""
+  ).trim() || "None";
   const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? client?.contract_type ?? "").trim();
   const renewalDate = ((dynamic.renewal_date as string | undefined) ?? client?.end_date ?? "").trim();
   const clientNumber = ((dynamic.client_number as string | undefined) ?? client?.client_number ?? "").trim();
@@ -719,6 +773,8 @@ const createProfileFormFromClient = (client?: Client): ClientProfileFormData => 
     gender: ownerName as ClientProfileFormData["gender"],
     disabilityStatus: client?.disability_status ?? false,
     citizenshipStatus: companyType,
+    industry,
+    bargainingCouncil,
     race: ownerNumber as ClientProfileFormData["race"],
     clientNumber: cleanClientNumberInput(clientNumber),
     jobTitle: client?.job_title ?? "",
@@ -823,7 +879,6 @@ const normalizeSalaryForStorage = (value: string) => {
 const getClientDisplayName = (client: Partial<Client>) => {
   const dynamic = client as Record<string, unknown>;
   const tradingName =
-    (dynamic.trading_name as string | undefined)?.trim() ||
     (dynamic.trading_as as string | undefined)?.trim() ||
     (client.client_surname ?? "").trim();
   const registeredName =
@@ -846,11 +901,11 @@ const getClientRegisteredName = (client: Partial<Client>) => {
 const getClientTradingName = (client: Partial<Client>) => {
   const dynamic = client as Record<string, unknown>;
   return (
-    (dynamic.trading_name as string | undefined)?.trim() ||
     (dynamic.trading_as as string | undefined)?.trim() ||
     (client.client_surname ?? "").trim()
   );
 };
+const SLA_CONTRACT_TYPE = "Service Level Agreement (SLA)";
 
 const normalizeMemberTypes = (value: unknown): string[] => {
   if (Array.isArray(value)) {
@@ -1280,22 +1335,8 @@ const getClientLogoStoragePathFromUrl = (url?: string | null) => {
 
 const getClientLogoPathFromRecord = (record?: Record<string, unknown> | null) => {
   if (!record) return "";
-  const candidates = [
-    "company_logo_url",
-    "logo_url",
-    "logo_path",
-    "file_url",
-    "storage_path",
-    "path",
-    "url",
-  ] as const;
-  for (const key of candidates) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return "";
+  const value = record.storage_path;
+  return typeof value === "string" ? value.trim() : "";
 };
 
 const computeWarningExpiry = (warningType: ClientWarning["warningType"], issueDate: string) => {
@@ -1538,6 +1579,9 @@ const Clients = () => {
   const [pendingEmploymentContractName, setPendingEmploymentContractName] = useState("");
   const [isEmploymentContractMarkedForRemoval, setIsEmploymentContractMarkedForRemoval] = useState(false);
   const [isEmploymentContractUploading, setIsEmploymentContractUploading] = useState(false);
+  const [pendingSlaFile, setPendingSlaFile] = useState<File | null>(null);
+  const [pendingSlaFileName, setPendingSlaFileName] = useState("");
+  const [isSlaUploading, setIsSlaUploading] = useState(false);
   const [licencesByClient, setLicencesByClient] = useState<Record<string, ClientLicence[]>>({});
   const [licenceTypeSelection, setLicenceTypeSelection] = useState<Record<LicenceCategory, string>>({
     driving: "",
@@ -1575,6 +1619,8 @@ const Clients = () => {
   const [tradeUnionOpen, setTradeUnionOpen] = useState(false);
   const [tradeUnionQuery, setTradeUnionQuery] = useState("");
   const tradeUnionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [bargainingCouncilOpen, setBargainingCouncilOpen] = useState(false);
+  const [bargainingCouncilQuery, setBargainingCouncilQuery] = useState("");
   const warningMisconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const warningFileInputRef = useRef<HTMLInputElement | null>(null);
   const warningIssueDateInputRef = useRef<HTMLInputElement | null>(null);
@@ -1621,6 +1667,7 @@ const Clients = () => {
   const idPassportFileInputRef = useRef<HTMLInputElement | null>(null);
   const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const employmentContractFileInputRef = useRef<HTMLInputElement | null>(null);
+  const slaFileInputRef = useRef<HTMLInputElement | null>(null);
   const terminationDocumentFileInputRef = useRef<HTMLInputElement | null>(null);
   const licenceFileInputRefs = useRef<Record<LicenceCategory, HTMLInputElement | null>>({
     driving: null,
@@ -1634,6 +1681,7 @@ const Clients = () => {
   });
   const sectionRefs = useRef<Record<ProfileSectionKey, HTMLDivElement | null>>({
     identity: null,
+    companyStructure: null,
     equity: null,
     contact: null,
     statutory: null,
@@ -1672,11 +1720,11 @@ const Clients = () => {
   // UI contract: all dropdown triggers/items on Clients page must use these shared classes.
   const clientDropdownTriggerClass = `${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white !ring-0 !ring-offset-0 !outline-none focus:!ring-0 focus:!ring-offset-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!outline-none`;
   const clientDropdownCommandItemClass =
-    "text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
+    "w-full justify-start text-left text-[11px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const clientDropdownSelectItemClass =
-    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const clientDropdownMenuItemClass =
-    "cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
+    "cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const membershipDropdownItemClass =
     "cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const addModalSelectItemClass =
@@ -2089,6 +2137,7 @@ const Clients = () => {
     if (!originalProfile) {
       return {
         identity: false,
+        companyStructure: false,
         equity: false,
         contact: false,
         statutory: false,
@@ -2111,7 +2160,8 @@ const Clients = () => {
         "nationality",
         "dateOfBirth",
       ]) || !!pendingIdDocumentFile || isIdDocumentMarkedForRemoval,
-      equity: compare(["race", "gender", "disabilityStatus", "citizenshipStatus"]),
+      companyStructure: compare(["citizenshipStatus", "industry", "bargainingCouncil"]),
+      equity: compare(["race", "gender", "disabilityStatus"]),
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
       statutory: compare(["incomeTaxNumber"]),
       employmentStatus:
@@ -2178,6 +2228,11 @@ const Clients = () => {
   ]);
 
   const identitySectionSchema = useMemo(
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
+  );
+
+  const companyStructureSectionSchema = useMemo(
     () => ({ parse: (data: ClientProfileFormData) => data }),
     [],
   );
@@ -3315,6 +3370,106 @@ const Clients = () => {
     setActiveEditSection("employmentStatus");
   };
 
+  const uploadPendingSlaDocument = useCallback(
+    async (clientId: string) => {
+      if (!pendingSlaFile || !user) return;
+      setIsSlaUploading(true);
+      try {
+        const existingSla =
+          (contractsByClient[clientId] ?? []).find((contract) => contract.contractType === SLA_CONTRACT_TYPE) ?? null;
+        if (existingSla) {
+          const { error: deleteError } = await contractTable().delete().eq("id", existingSla.id).eq("company_id", user.id);
+          if (deleteError) throw deleteError;
+          const existingStoragePath = getContractStoragePathFromUrl(existingSla.fileUrl);
+          if (existingStoragePath) {
+            await supabase.storage.from("contracts").remove([existingStoragePath]);
+          }
+        }
+
+        const safeName = pendingSlaFile.name.replace(/\s+/g, "_");
+        const filePath = `${user.id}/sla/${clientId}-${Date.now()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingSlaFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: pendingSlaFile.type || "application/pdf",
+        });
+        if (uploadError) throw uploadError;
+
+        const { error: insertError } = await contractTable().insert({
+          company_id: user.id,
+          client_id: clientId,
+          contract_type: SLA_CONTRACT_TYPE,
+          issue_date: dateToday(),
+          file_url: filePath,
+          is_active: false,
+        });
+        if (insertError) throw insertError;
+
+        await fetchContracts(clientId);
+        setPendingSlaFile(null);
+        setPendingSlaFileName("");
+      } finally {
+        setIsSlaUploading(false);
+      }
+    },
+    [contractsByClient, fetchContracts, pendingSlaFile, user],
+  );
+
+  const handleSlaFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!isPdfFile(file.name)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PDF file.",
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+    setPendingSlaFile(file);
+    setPendingSlaFileName(file.name);
+    setActiveEditSection("employmentStatus");
+    event.target.value = "";
+  };
+
+  const handleRemoveSlaDocument = useCallback(async () => {
+    if (!selectedClient || !user) return;
+    const slaContract =
+      (contractsByClient[selectedClient.id] ?? []).find((contract) => contract.contractType === SLA_CONTRACT_TYPE) ?? null;
+    if (!slaContract) return;
+
+    const confirmed = confirm(
+      `Are you sure you want to delete ${slaContract.fileName} because it will be permanently removed from all databases.`,
+    );
+    if (!confirmed) return;
+
+    setIsSlaUploading(true);
+    try {
+      const { error: deleteError } = await contractTable().delete().eq("id", slaContract.id).eq("company_id", user.id);
+      if (deleteError) throw deleteError;
+      const storagePath = getContractStoragePathFromUrl(slaContract.fileUrl);
+      if (storagePath) {
+        await supabase.storage.from("contracts").remove([storagePath]);
+      }
+      await fetchContracts(selectedClient.id);
+      setPendingSlaFile(null);
+      setPendingSlaFileName("");
+      toast({
+        title: "SLA removed",
+        description: "The Service Level Agreement document has been removed.",
+      });
+    } catch (error: unknown) {
+      toast({
+        title: "Unable to remove SLA",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSlaUploading(false);
+    }
+  }, [contractsByClient, fetchContracts, selectedClient, toast, user]);
+
   const handleTerminationDocumentFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -3526,9 +3681,9 @@ const Clients = () => {
     async (clientId: string) => {
       if (!user) return;
       const { data, error } = await licenceTable()
-        .select("id, client_id, category, licence_type, file_name, file_url, uploaded_at")
+        .select("id, employee_id, category, licence_type, file_name, file_url, uploaded_at")
         .eq("company_id", user.id)
-        .eq("client_id", clientId)
+        .eq("employee_id", clientId)
         .order("uploaded_at", { ascending: false });
 
       if (error) {
@@ -3543,7 +3698,7 @@ const Clients = () => {
       const mapped: ClientLicence[] =
         (data ?? []).map((row: any) => ({
           id: row.id,
-          clientId: row.client_id,
+          clientId: row.employee_id,
           category: row.category as LicenceCategory,
           licenceType: row.licence_type || "",
           fileName: row.file_name || "document.pdf",
@@ -3672,7 +3827,7 @@ const Clients = () => {
 
       const { error: insertError } = await licenceTable().insert({
         company_id: user.id,
-        client_id: selectedClient.id,
+        employee_id: selectedClient.id,
         category,
         licence_type: selectedType,
         file_name: file.name,
@@ -4008,6 +4163,10 @@ const Clients = () => {
     () => (selectedClient ? contractsByClient[selectedClient.id] ?? [] : []),
     [selectedClient, contractsByClient],
   );
+  const slaContractForSelectedClient = useMemo(
+    () => contractsForSelectedClient.find((contract) => contract.contractType === SLA_CONTRACT_TYPE) ?? null,
+    [contractsForSelectedClient],
+  );
   const terminationDocumentForSelectedClient = useMemo(
     () => (selectedClient ? terminationDocumentByClient[selectedClient.id] ?? null : null),
     [selectedClient, terminationDocumentByClient],
@@ -4266,6 +4425,7 @@ const Clients = () => {
 
   const sectionTitles: Record<ProfileSectionKey, string> = {
     identity: "Identity",
+    companyStructure: "Company Structure",
     equity: "Employment Equity",
     contact: "Contact Information",
     statutory: "Statutory Information",
@@ -4319,25 +4479,19 @@ const Clients = () => {
     [activeEditSection, guardEditSession, isEditMode],
   );
 
-  const persistClientLogoPath = useCallback(async (clientId: string, storagePath: string) => {
-    const attempts: Array<{ payload: Record<string, unknown>; onConflict: string }> = [
-      { payload: { client_id: clientId, company_logo_url: storagePath }, onConflict: "client_id" },
-      { payload: { employee_id: clientId, company_logo_url: storagePath }, onConflict: "employee_id" },
-      { payload: { client_id: clientId, logo_url: storagePath }, onConflict: "client_id" },
-      { payload: { employee_id: clientId, logo_url: storagePath }, onConflict: "employee_id" },
-    ];
-
-    let lastError: unknown = null;
-    for (const attempt of attempts) {
-      const { error } = await clientLogoTable().upsert(attempt.payload, { onConflict: attempt.onConflict });
-      if (!error) return;
-      lastError = error;
-    }
-    throw lastError ?? new Error("Unable to save client logo record.");
+  const persistClientLogoPath = useCallback(async (clientId: string, companyId: string, storagePath: string) => {
+    const payload = {
+      client_id: clientId,
+      storage_path: storagePath,
+      company_id: companyId,
+      uploaded_by: companyId,
+    };
+    const { error } = await clientLogoTable().upsert(payload, { onConflict: "client_id" });
+    if (error) throw error;
   }, []);
 
   const removeClientLogoRecord = useCallback(async (clientId: string) => {
-    const filters: Array<"client_id" | "employee_id"> = ["client_id", "employee_id"];
+    const filters: Array<"client_id"> = ["client_id"];
     let success = false;
     for (const column of filters) {
       const { error } = await clientLogoTable().delete().eq(column, clientId);
@@ -4351,9 +4505,9 @@ const Clients = () => {
   }, []);
 
   const loadClientLogoPath = useCallback(async (clientId: string) => {
-    const filters: Array<"client_id" | "employee_id"> = ["client_id", "employee_id"];
+    const filters: Array<"client_id"> = ["client_id"];
     for (const column of filters) {
-      const { data, error } = await clientLogoTable().select("*").eq(column, clientId).limit(1);
+      const { data, error } = await clientLogoTable().select("storage_path").eq(column, clientId).limit(1);
       if (error) continue;
       const row = (Array.isArray(data) ? data[0] : null) as Record<string, unknown> | null;
       const path = getClientLogoPathFromRecord(row);
@@ -4376,14 +4530,7 @@ const Clients = () => {
         const { data } = supabase.storage.from("client-logos").getPublicUrl(mapped);
         return data.publicUrl || "";
       }
-      const dynamic = client as Record<string, unknown>;
-      const rawLogoValue = ((dynamic.company_logo_url as string | undefined) ?? "").trim();
-      if (!rawLogoValue) return "";
-      if (rawLogoValue.startsWith("http://") || rawLogoValue.startsWith("https://")) {
-        return rawLogoValue;
-      }
-      const { data } = supabase.storage.from("client-logos").getPublicUrl(rawLogoValue);
-      return data.publicUrl || "";
+      return "";
     },
     [clientLogoPathByClient, clientLogoPreviewByClient],
   );
@@ -4400,11 +4547,8 @@ const Clients = () => {
       if (!selectedClient || !user) return;
       const safeName = file.name.replace(/\s+/g, "_");
       const storagePath = `${selectedClient.id}/${Date.now()}-${safeName}`;
-      const dynamic = selectedClient as Record<string, unknown>;
       const mappedLogoPath = (clientLogoPathByClient[selectedClient.id] ?? "").trim();
-      const existingLogoPath = getClientLogoStoragePathFromUrl(
-        mappedLogoPath || (dynamic.company_logo_url as string | undefined) || selectedClient.company_logo_url || "",
-      );
+      const existingLogoPath = getClientLogoStoragePathFromUrl(mappedLogoPath);
 
       setIsClientLogoUploading(true);
       try {
@@ -4426,28 +4570,7 @@ const Clients = () => {
           [selectedClient.id]: storagePath,
         }));
 
-        await persistClientLogoPath(selectedClient.id, storagePath);
-
-        // Keep backward compatibility with schemas that still store the path on clients.
-        const logoPatch = { company_logo_url: storagePath } as ClientUpdate;
-        const { error: updateError } = await supabase
-          .from("clients")
-          .update(logoPatch as unknown as TablesInsert<"clients">)
-          .eq("id", selectedClient.id)
-          .eq("company_id", user.id);
-
-        if (updateError) {
-          const message = (updateError as { message?: string } | null)?.message ?? "";
-          if (!message.toLowerCase().includes("company_logo_url") && !message.toLowerCase().includes("column")) {
-            throw updateError;
-          }
-        }
-
-        const updatedClient = { ...selectedClient, ...logoPatch } as Client;
-        setSelectedClient(updatedClient);
-        setClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
-        setFilteredClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
-        setAllClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+        await persistClientLogoPath(selectedClient.id, user.id, storagePath);
 
         if (existingLogoPath && existingLogoPath !== storagePath) {
           await supabase.storage.from("client-logos").remove([existingLogoPath]);
@@ -4510,34 +4633,12 @@ const Clients = () => {
   const removeClientLogo = useCallback(async () => {
     if (!selectedClient || !user) return;
 
-    const dynamic = selectedClient as Record<string, unknown>;
     const mappedLogoPath = (clientLogoPathByClient[selectedClient.id] ?? "").trim();
-    const existingLogoPath = getClientLogoStoragePathFromUrl(
-      mappedLogoPath || (dynamic.company_logo_url as string | undefined) || selectedClient.company_logo_url || "",
-    );
-    const logoPatch = { company_logo_url: null } as ClientUpdate;
+    const existingLogoPath = getClientLogoStoragePathFromUrl(mappedLogoPath);
 
     setIsClientLogoUploading(true);
     try {
       await removeClientLogoRecord(selectedClient.id);
-
-      const { error } = await supabase
-        .from("clients")
-        .update(logoPatch as unknown as TablesInsert<"clients">)
-        .eq("id", selectedClient.id)
-        .eq("company_id", user.id);
-      if (error) {
-        const message = (error as { message?: string } | null)?.message ?? "";
-        if (!message.toLowerCase().includes("company_logo_url") && !message.toLowerCase().includes("column")) {
-          throw error;
-        }
-      }
-
-      const updatedClient = { ...selectedClient, ...logoPatch } as Client;
-      setSelectedClient(updatedClient);
-      setClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
-      setFilteredClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
-      setAllClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
       setClientLogoPreviewByClient((prev) => {
         const next = { ...prev };
         delete next[selectedClient.id];
@@ -4683,11 +4784,7 @@ const Clients = () => {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center justify-center pt-2 pb-2">
-                {isClientLogoUploading ? (
-                  <p className="text-[10px] font-medium text-slate-500">Uploading logo...</p>
-                ) : null}
-              </div>
+              <div className="pt-2 pb-2" />
 
               <div className="pl-5 pr-2 pt-2 min-h-[28px]">
                 {clientStatus !== "Inactive" ? (
@@ -5363,6 +5460,7 @@ const Clients = () => {
       };
       const optionalPopupPayload: Record<string, unknown> = {
         status: "active",
+        bargaining_council: "None",
       };
       const createClientPayload = (): Record<string, unknown> => {
         const payload: Record<string, unknown> = { ...basePayload };
@@ -6571,6 +6669,8 @@ const Clients = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setPendingSlaFile(null);
+    setPendingSlaFileName("");
     setLicenceTypeSelection({
       driving: "",
       firearmSecurity: "",
@@ -6640,6 +6740,8 @@ const Clients = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setPendingSlaFile(null);
+    setPendingSlaFileName("");
     setLicenceTypeSelection({
       driving: "",
       firearmSecurity: "",
@@ -6660,6 +6762,7 @@ const Clients = () => {
       const shouldRemoveIdDocument =
         section === "identity" && isIdDocumentMarkedForRemoval && !!idDocumentByClient[selectedClient.id];
       const shouldUploadEmploymentContract = section === "employmentStatus" && !!pendingEmploymentContractFile;
+      const shouldUploadSlaDocument = section === "employmentStatus" && !!pendingSlaFile;
       const shouldRemoveEmploymentContract =
         section === "employmentStatus" &&
         isEmploymentContractMarkedForRemoval &&
@@ -6669,7 +6772,6 @@ const Clients = () => {
         "clientSurname",
         "incomeTaxNumber",
         "idNumber",
-        "citizenshipStatus",
       ];
       const employmentStatusFieldKeys: Array<keyof ClientProfileFormData> = [
         "startDate",
@@ -6695,6 +6797,9 @@ const Clients = () => {
       switch (section) {
         case "identity":
           validated = identitySectionSchema.parse(profileForm);
+          break;
+        case "companyStructure":
+          validated = companyStructureSectionSchema.parse(profileForm);
           break;
         case "equity":
           validated = equitySectionSchema.parse(profileForm);
@@ -6805,13 +6910,16 @@ const Clients = () => {
       if (
         section === "employmentStatus" &&
         !hasEmploymentStatusFieldChanges &&
-        (shouldUploadEmploymentContract || shouldRemoveEmploymentContract)
+        (shouldUploadEmploymentContract || shouldRemoveEmploymentContract || shouldUploadSlaDocument)
       ) {
         if (shouldRemoveEmploymentContract) {
           await removeActiveEmploymentContract(selectedClient.id);
         }
         if (shouldUploadEmploymentContract) {
           await uploadPendingEmploymentContract(selectedClient.id);
+        }
+        if (shouldUploadSlaDocument) {
+          await uploadPendingSlaDocument(selectedClient.id);
         }
         toast({
           title: "Client updated",
@@ -6831,6 +6939,12 @@ const Clients = () => {
               client_surname: validated.clientSurname || null,
               id_number: validated.idNumber || null,
             }
+          : section === "companyStructure"
+            ? {
+                company_type: validated.citizenshipStatus || null,
+                industry: validated.industry || null,
+                bargaining_council: validated.bargainingCouncil || null,
+              }
           : section === "equity"
             ? {
                 gender: validated.gender || null,
@@ -6904,6 +7018,9 @@ const Clients = () => {
       if (shouldUploadEmploymentContract) {
         await uploadPendingEmploymentContract(selectedClient.id);
       }
+      if (shouldUploadSlaDocument) {
+        await uploadPendingSlaDocument(selectedClient.id);
+      }
       if (isEmploymentSection) {
         setOriginalDepartment(department);
         setOriginalBranch(branch);
@@ -6955,6 +7072,8 @@ const Clients = () => {
     setPendingEmploymentContractFile(null);
     setPendingEmploymentContractName("");
     setIsEmploymentContractMarkedForRemoval(false);
+    setPendingSlaFile(null);
+    setPendingSlaFileName("");
     setLicenceTypeSelection({
       driving: "",
       firearmSecurity: "",
@@ -7000,6 +7119,15 @@ const Clients = () => {
 
   const renderPersonalTab = () => {
     const isDobReadOnly = !isEditMode || isSouthAfricanNationality;
+    const normalizedBargainingCouncilQuery = bargainingCouncilQuery.trim().toLowerCase();
+    const filteredBargainingCouncilOptions = saBargainingCouncilOptions.filter((option) =>
+      option.toLowerCase().includes(normalizedBargainingCouncilQuery),
+    );
+    const canUseCustomBargainingCouncil =
+      bargainingCouncilQuery.trim().length > 0 &&
+      !saBargainingCouncilOptions.some(
+        (option) => option.toLowerCase() === bargainingCouncilQuery.trim().toLowerCase(),
+      );
 
     return (
       <div className="space-y-3">
@@ -7114,6 +7242,54 @@ const Clients = () => {
                 }
               />
             </div>
+          </div>
+        </div>
+
+        <div
+          ref={(el) => {
+            sectionRefs.current.companyStructure = el;
+          }}
+          className={`rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px] ${getSectionLockClass("companyStructure")}`}
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">Company Structure</h3>
+            <div className="flex items-center gap-2">
+              {isEditMode && activeEditSection === "companyStructure" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-semibold text-slate-500 hover:bg-transparent hover:text-slate-700"
+                  onClick={handleSectionCancel}
+                  disabled={isProfileSaving}
+                >
+                  Cancel
+                </Button>
+              )}
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600"
+                onClick={(event) => {
+                  if (isEditMode && activeEditSection === "companyStructure" && !isProfileSaving) {
+                    void handleSectionSave("companyStructure");
+                    return;
+                  }
+                  handleSectionInteract("companyStructure", event);
+                }}
+                aria-label={
+                  isEditMode && activeEditSection === "companyStructure"
+                    ? "Save company structure details"
+                    : "Edit company structure details"
+                }
+              >
+                {isEditMode && activeEditSection === "companyStructure" ? (
+                  <Save className="h-3.5 w-3.5" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 space-y-2">
             <div className="flex items-center gap-3">
               <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Company Type</Label>
               <Select
@@ -7141,6 +7317,126 @@ const Clients = () => {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Industry</Label>
+              <Select
+                value={profileForm.industry || ""}
+                onValueChange={(value) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    industry: value,
+                  }))
+                }
+              >
+                <SelectTrigger
+                  className={clientDropdownTriggerClass}
+                  showIcon={isEditMode}
+                  onPointerDown={handleSelectPointerDown}
+                >
+                  <SelectValue placeholder="Please select" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {saIndustryOptions.map((option) => (
+                    <SelectItem key={option} value={option} className={clientDropdownSelectItemClass}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Bargaining Council</Label>
+              <Popover
+                open={bargainingCouncilOpen}
+                onOpenChange={(open) => {
+                  if (!isEditMode) return;
+                  setBargainingCouncilOpen(open);
+                  if (!open) {
+                    setBargainingCouncilQuery("");
+                  }
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={`${clientDropdownTriggerClass} flex w-full items-center justify-between px-3 py-2 [&>span]:line-clamp-1`}
+                    onPointerDown={handleSelectPointerDown}
+                    disabled={!isEditMode}
+                  >
+                    <span className="truncate text-left">
+                      {profileForm.bargainingCouncil || "Please select"}
+                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-0" align="end">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      value={bargainingCouncilQuery}
+                      onValueChange={setBargainingCouncilQuery}
+                      placeholder="Search or type bargaining council..."
+                      className="h-8 text-[11px]"
+                    />
+                    <CommandList>
+                      <CommandEmpty className="py-3 text-center text-[11px] text-slate-500">
+                        No bargaining council found.
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {canUseCustomBargainingCouncil && (
+                          <CommandItem
+                            className={clientDropdownCommandItemClass}
+                            onSelect={() => {
+                              const customValue = bargainingCouncilQuery.trim();
+                              setProfileForm((prev) => ({ ...prev, bargainingCouncil: customValue }));
+                              setBargainingCouncilOpen(false);
+                              setBargainingCouncilQuery("");
+                            }}
+                          >
+                            Use "{bargainingCouncilQuery.trim()}"
+                          </CommandItem>
+                        )}
+                        {filteredBargainingCouncilOptions.map((option) => (
+                          <CommandItem
+                            key={option}
+                            value={option}
+                            className={`${clientDropdownCommandItemClass} bargaining-option`}
+                            onSelect={() => {
+                              setProfileForm((prev) => ({ ...prev, bargainingCouncil: option }));
+                              setBargainingCouncilOpen(false);
+                              setBargainingCouncilQuery("");
+                            }}
+                          >
+                            <span className="bargaining-option-label">{option}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <style>{`
+              .bargaining-option {
+                overflow: hidden;
+              }
+              .bargaining-option-label {
+                display: inline-block;
+                min-width: 100%;
+                white-space: nowrap;
+                transform: translateX(0);
+              }
+              .bargaining-option:hover .bargaining-option-label {
+                animation: bargaining-option-scroll 6s linear infinite alternate;
+              }
+              @keyframes bargaining-option-scroll {
+                from {
+                  transform: translateX(0);
+                }
+                to {
+                  transform: translateX(-45%);
+                }
+              }
+            `}</style>
           </div>
         </div>
 
@@ -8378,6 +8674,59 @@ const Clients = () => {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="flex items-start gap-3">
+            <Label className={`${fieldLabelClass} w-28 shrink-0 pt-1 text-left`}>Service Level Agreement (SLA)</Label>
+            <div className="ml-auto flex w-full max-w-[320px] flex-col gap-1">
+              <input
+                ref={slaFileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={handleSlaFileChange}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {isEditMode && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-8 rounded border-slate-200 bg-white px-3 text-[11px] text-slate-600 hover:bg-white hover:border-blue-500 hover:text-blue-600"
+                    disabled={isSlaUploading}
+                    onClick={() => slaFileInputRef.current?.click()}
+                  >
+                    <Upload className="mr-1 h-3 w-3" />
+                    {isSlaUploading ? "Uploading..." : "Upload"}
+                  </Button>
+                )}
+                {pendingSlaFileName ? (
+                  <span className="max-w-[170px] truncate text-[11px] font-semibold text-amber-700" title={pendingSlaFileName}>
+                    {pendingSlaFileName}
+                  </span>
+                ) : slaContractForSelectedClient ? (
+                  <button
+                    type="button"
+                    className="max-w-[170px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
+                    onClick={() => void handleOpenContract(slaContractForSelectedClient)}
+                    title={slaContractForSelectedClient.fileName}
+                  >
+                    {slaContractForSelectedClient.fileName}
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-semibold text-slate-500">--</span>
+                )}
+                {isEditMode && slaContractForSelectedClient && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 rounded px-3 text-[11px] text-slate-600 hover:bg-transparent hover:text-rose-600 hover:underline border-0 shadow-none"
+                    onClick={() => void handleRemoveSlaDocument()}
+                    disabled={isSlaUploading}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent, SyntheticEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -93,38 +94,134 @@ import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import {
-  EMPLOYEE_NUMBER_MAX_LENGTH,
+  CLIENT_NUMBER_MAX_LENGTH,
   contractTypes,
   citizenshipStatusOptions,
-  employeeImportSchema,
-  employeeProfileSchema,
+  clientImportSchema,
+  clientProfileSchema,
   sanitizeText,
-  sanitizeEmployeeNumber,
+  sanitizeClientNumber,
   nationalityOptions,
   genderOptions,
   raceOptions,
   southAfricanProvinces,
-  type EmployeeProfileFormData,
+  type ClientProfileFormData,
 } from "@/lib/validation";
 import { extractDobFromId } from "@/lib/validation";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
-// Supabase types do not include employee_warnings; cast to any for those calls to avoid type errors.
-const warningTable = () => (supabase as any).from("employee_warnings");
-// Supabase types do not include employee_contracts; cast to any for those calls to avoid type errors.
-const contractTable = () => (supabase as any).from("employee_contracts");
-// Supabase types do not include employee_id_documents; cast to any for those calls to avoid type errors.
-const idDocumentTable = () => (supabase as any).from("employee_id_documents");
-// Supabase types do not include employee_licences; cast to any for those calls to avoid type errors.
-const licenceTable = () => (supabase as any).from("employee_licences");
-// Supabase types do not include employee_education; cast to any for those calls to avoid type errors.
-const educationTable = () => (supabase as any).from("employee_education");
-// Supabase types do not include employee_termination_documents; cast to any for those calls to avoid type errors.
-const terminationDocumentTable = () => (supabase as any).from("employee_termination_documents");
-const employeeTableSelectColumns = "*";
-const employeeSelectColumnsBase = "*";
-const employeeSelectColumnsWithTermination = "*";
+// Supabase types do not include client_warnings; cast to any for those calls to avoid type errors.
+const warningTable = () => (supabase as any).from("client_warnings");
+// Supabase types do not include client_contracts; cast to any for those calls to avoid type errors.
+const contractTable = () => (supabase as any).from("client_contracts");
+// Supabase types do not include client_id_documents; cast to any for those calls to avoid type errors.
+const idDocumentTable = () => (supabase as any).from("client_id_documents");
+// Supabase types do not include client_licences; cast to any for those calls to avoid type errors.
+const licenceTable = () => (supabase as any).from("client_licences");
+// Supabase types do not include client_education; cast to any for those calls to avoid type errors.
+const educationTable = () => (supabase as any).from("client_education");
+// Supabase types do not include client_termination_documents; cast to any for those calls to avoid type errors.
+const terminationDocumentTable = () => (supabase as any).from("client_termination_documents");
+// Supabase types do not include client_logos; cast to any for those calls to avoid type errors.
+const clientLogoTable = () => (supabase as any).from("client_logos");
+const clientTableSelectColumns = "*";
+const clientSelectColumnsBase = "*";
+const clientSelectColumnsWithTermination = "*";
+const clientWriteAllowedColumns = new Set<string>([
+  "id",
+  "company_id",
+  "created_at",
+  "updated_at",
+  "status",
+  "client_name",
+  "client_surname",
+  "id_number",
+  "client_number",
+  "gender",
+  "race",
+  "cell_number",
+  "email",
+]);
 
-type Employee = Tables<"employees"> & {
+const pickClientWritePayload = (payload: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(payload).filter(([key, value]) => clientWriteAllowedColumns.has(key) && value !== undefined),
+  ) as Record<string, unknown>;
+
+const cropClientLogoPadding = (dataUrl: string): Promise<string> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const sourceWidth = img.naturalWidth || img.width;
+      const sourceHeight = img.naturalHeight || img.height;
+      if (!sourceWidth || !sourceHeight) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = sourceWidth;
+      canvas.height = sourceHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      context.drawImage(img, 0, 0, sourceWidth, sourceHeight);
+      const pixels = context.getImageData(0, 0, sourceWidth, sourceHeight).data;
+
+      let left = sourceWidth;
+      let top = sourceHeight;
+      let right = -1;
+      let bottom = -1;
+
+      for (let y = 0; y < sourceHeight; y++) {
+        for (let x = 0; x < sourceWidth; x++) {
+          const index = (y * sourceWidth + x) * 4;
+          const r = pixels[index];
+          const g = pixels[index + 1];
+          const b = pixels[index + 2];
+          const a = pixels[index + 3];
+
+          const isTransparent = a < 18;
+          const isNearWhite = r > 246 && g > 246 && b > 246;
+          if (isTransparent || isNearWhite) continue;
+
+          if (x < left) left = x;
+          if (y < top) top = y;
+          if (x > right) right = x;
+          if (y > bottom) bottom = y;
+        }
+      }
+
+      if (right < left || bottom < top) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const padding = Math.max(1, Math.round(Math.min(sourceWidth, sourceHeight) * 0.025));
+      const cropX = Math.max(0, left - padding);
+      const cropY = Math.max(0, top - padding);
+      const cropWidth = Math.min(sourceWidth - cropX, right - left + 1 + padding * 2);
+      const cropHeight = Math.min(sourceHeight - cropY, bottom - top + 1 + padding * 2);
+
+      const croppedCanvas = document.createElement("canvas");
+      croppedCanvas.width = cropWidth;
+      croppedCanvas.height = cropHeight;
+      const croppedContext = croppedCanvas.getContext("2d");
+      if (!croppedContext) {
+        resolve(dataUrl);
+        return;
+      }
+
+      croppedContext.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+      resolve(croppedCanvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+type Client = Tables<"clients"> & {
   status?: string | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -142,7 +239,6 @@ type Employee = Tables<"employees"> & {
   work_email?: string | null;
   work_cell_number?: string | null;
   nationality?: string | null;
-  employee_number?: string | null;
   job_title?: string | null;
   gender?: string | null;
   race?: string | null;
@@ -182,8 +278,7 @@ type Employee = Tables<"employees"> & {
   previous_job_title?: string | null;
   terminated_at?: string | null;
 };
-type EmployeeInsert = TablesInsert<"employees"> & {
-  employee_number?: string | null;
+type ClientInsert = TablesInsert<"clients"> & {
   contract_type?: string | null;
   job_title?: string | null;
   start_date?: string | null;
@@ -240,8 +335,8 @@ type EmployeeInsert = TablesInsert<"employees"> & {
   previous_job_title?: string | null;
   terminated_at?: string | null;
 };
-type EmployeeUpdate = Partial<Employee>;
-type EmployeeTab = "personal" | "employment" | "address" | "licences" | "education" | "discipline" | "contracts";
+type ClientUpdate = Partial<Client>;
+type ClientTab = "personal" | "employment" | "address" | "licences" | "education" | "discipline" | "contracts";
 type ProfileSectionKey =
   | "identity"
   | "equity"
@@ -254,7 +349,7 @@ type ProfileSectionKey =
   | "employmentUnion"
   | "homeAddress"
   | "postalAddress";
-type EmployeeWarning = {
+type ClientWarning = {
   id: string;
   misconductType: string;
   warningType: "First" | "Second" | "Serious" | "Final";
@@ -263,7 +358,7 @@ type EmployeeWarning = {
   fileName?: string;
   fileUrl?: string;
 };
-type EmployeeContract = {
+type ClientContract = {
   id: string;
   contractType: string;
   issueDate: string;
@@ -271,24 +366,24 @@ type EmployeeContract = {
   fileUrl?: string;
   isActive: boolean;
 };
-type EmployeeIdDocument = {
+type ClientIdDocument = {
   id: string;
-  employeeId: string;
+  clientId: string;
   fileName: string;
   fileUrl: string;
   uploadedAt: string;
 };
-type EmployeeTerminationDocument = {
+type ClientTerminationDocument = {
   id: string;
-  employeeId: string;
+  clientId: string;
   fileName: string;
   fileUrl: string;
   uploadedAt: string;
 };
 type LicenceCategory = "driving" | "firearmSecurity" | "marineAviation";
-type EmployeeLicence = {
+type ClientLicence = {
   id: string;
-  employeeId: string;
+  clientId: string;
   category: LicenceCategory;
   licenceType: string;
   fileName: string;
@@ -300,9 +395,9 @@ type LicencesViewFilter =
   | "firearmSecurity"
   | "marineAviation";
 type EducationCategory = "academic" | "trade" | "training";
-type EmployeeEducation = {
+type ClientEducation = {
   id: string;
-  employeeId: string;
+  clientId: string;
   category: EducationCategory;
   qualificationType: string;
   fileName: string;
@@ -315,19 +410,19 @@ type OffenceSection = {
   offences?: Array<{ name?: string; category?: string; first?: string }>;
 };
 type DeleteUndoState = {
-  deletedEmployees: Employee[];
+  deletedClients: Client[];
   expiresAt: number;
 };
 
 type WarningDeleteUndoState = {
-  warning: EmployeeWarning;
-  employeeId: string;
+  warning: ClientWarning;
+  clientId: string;
   storagePath?: string;
   expiresAt: number;
 };
 type TerminationUndoState = {
-  employeeId: string;
-  employeeBefore: Employee;
+  clientId: string;
+  clientBefore: Client;
   expiresAt: number;
 };
 
@@ -366,7 +461,7 @@ type ConductOffence = {
 
 type WarningFormState = {
   misconductTypes: string[];
-  warningType: EmployeeWarning["warningType"];
+  warningType: ClientWarning["warningType"];
   issueDate: string;
   fileName: string;
 };
@@ -374,12 +469,12 @@ type ContractFormState = {
   contractType: (typeof contractTypes)[number] | "";
   fileName: string;
 };
-type AddEmployeeFormState = {
-  employeeName: string;
-  employeeSurname: string;
+type AddClientFormState = {
+  clientName: string;
+  clientSurname: string;
   registrationNumber: string;
   idNumber: string;
-  employeeNumber: string;
+  clientNumber: string;
   gender: string;
   race: string;
   cellNumber: string;
@@ -405,13 +500,13 @@ type AddEmployeeFormState = {
 const coerceEnumValue = <T extends string>(value: unknown, options: readonly T[]): T | "" =>
   options.includes(value as T) ? (value as T) : "";
 
-const cleanEmployeeNumberInput = (value?: string | null) => sanitizeEmployeeNumber(value);
-const normalizeEmployeeNumber = (value?: string | null) => (value || "").trim().toLowerCase();
+const cleanClientNumberInput = (value?: string | null) => sanitizeClientNumber(value);
+const normalizeClientNumber = (value?: string | null) => (value || "").trim().toLowerCase();
 const normalizeIdNumberValue = (value?: string | null) => (value || "").replace(/\s+/g, "").trim().toLowerCase();
 const normalizeRegistrationNumberValue = (value?: string | null) =>
   formatRegistrationNumberInput((value || "").replace(/\s+/g, "")).trim().toLowerCase();
 
-const DEFAULT_NATIONALITY: EmployeeProfileFormData["nationality"] = "South African";
+const DEFAULT_NATIONALITY: ClientProfileFormData["nationality"] = "South African";
 const retirementAgeOptions = ["55", "60", "65", "70"] as const;
 const dateToday = () => new Date().toISOString().split("T")[0];
 const companyTypeOptions = ["Holding", "Subsidiary"] as const;
@@ -491,12 +586,12 @@ const MISCONDUCT_TYPES = [
 
 // Remove local error extraction - now using centralized error handling
 
-const createBlankAddForm = (): AddEmployeeFormState => ({
-  employeeName: "",
-  employeeSurname: "",
+const createBlankAddForm = (): AddClientFormState => ({
+  clientName: "",
+  clientSurname: "",
   registrationNumber: "",
   idNumber: "",
-  employeeNumber: "",
+  clientNumber: "",
   gender: "",
   race: "",
   cellNumber: "",
@@ -519,45 +614,45 @@ const createBlankAddForm = (): AddEmployeeFormState => ({
   postalAreaCode: "",
 });
 
-const createAddFormFromEmployee = (employee: Employee): AddEmployeeFormState => {
-  const dynamic = employee as Record<string, unknown>;
-  const idNumber = ((dynamic.vat_number as string | undefined) ?? employee.id_number ?? "").trim();
-  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? employee.contract_type ?? "").trim();
-  const parsedMemberTypes = normalizeMemberTypes(employee.member_types ?? employee.department ?? employee.job_title)
+const createAddFormFromClient = (client: Client): AddClientFormState => {
+  const dynamic = client as Record<string, unknown>;
+  const idNumber = ((dynamic.vat_number as string | undefined) ?? client.id_number ?? "").trim();
+  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? client.contract_type ?? "").trim();
+  const parsedMemberTypes = normalizeMemberTypes(client.member_types ?? client.department ?? client.job_title)
     .filter((value) => membershipTypeOptions.includes(value as (typeof membershipTypeOptions)[number]));
 
   return {
-    employeeName:
-      ((dynamic.registered_name as string | undefined) ?? (dynamic.company_name as string | undefined) ?? employee.employee_name ?? "").trim(),
-    employeeSurname:
-      ((dynamic.trading_name as string | undefined) ?? (dynamic.trading_as as string | undefined) ?? employee.employee_surname ?? "").trim(),
-    registrationNumber: (employee.registration_number ?? employee.income_tax_number ?? "").trim(),
+    clientName:
+      ((dynamic.registered_name as string | undefined) ?? (dynamic.company_name as string | undefined) ?? client.client_name ?? "").trim(),
+    clientSurname:
+      ((dynamic.trading_name as string | undefined) ?? (dynamic.trading_as as string | undefined) ?? client.client_surname ?? "").trim(),
+    registrationNumber: (client.registration_number ?? client.income_tax_number ?? "").trim(),
     idNumber,
-    employeeNumber: cleanEmployeeNumberInput((dynamic.client_number as string | undefined) ?? employee.employee_number),
-    gender: (employee.owner ?? employee.gender ?? "").trim(),
-    race: (employee.tel_cell ?? employee.race ?? "").trim(),
-    cellNumber: (employee.client_email ?? employee.email ?? employee.cell_number ?? "").trim(),
-    email: (employee.client_email ?? employee.email ?? "").trim(),
+    clientNumber: cleanClientNumberInput((dynamic.client_number as string | undefined) ?? client.client_number),
+    gender: (client.owner ?? client.gender ?? "").trim(),
+    race: (client.tel_cell ?? client.race ?? "").trim(),
+    cellNumber: (client.client_email ?? client.email ?? client.cell_number ?? "").trim(),
+    email: (client.client_email ?? client.email ?? "").trim(),
     memberTypes: parsedMemberTypes,
     contractType: paymentCycleOptions.includes(paymentCycle as (typeof paymentCycleOptions)[number])
       ? paymentCycle
       : "",
-    startDate: (employee.start_date ?? "").trim(),
+    startDate: (client.start_date ?? "").trim(),
     endDate:
       ((dynamic.renewal_date as string | undefined) ?? "").trim() ||
-      addMonthsToIsoDate((employee.start_date ?? "").trim(), 12),
-    salaryType: coerceEnumValue(employee.salary_type, salaryTypeOptions),
-    basicSalary: (employee.basic_salary ?? "").trim(),
-    physicalAddressLine1: (employee.physical_address_line1 ?? "").trim(),
-    physicalAddressLine2: (employee.physical_address_line2 ?? "").trim(),
-    city: (employee.city ?? "").trim(),
-    province: coerceEnumValue(employee.province, southAfricanProvinces),
-    areaCode: (employee.area_code ?? "").trim(),
-    postalAddressLine1: (employee.postal_address_line1 ?? "").trim(),
-    postalAddressLine2: (employee.postal_address_line2 ?? "").trim(),
-    postalCity: (employee.postal_city ?? "").trim(),
-    postalProvince: coerceEnumValue(employee.postal_province, southAfricanProvinces),
-    postalAreaCode: (employee.postal_area_code ?? "").trim(),
+      addMonthsToIsoDate((client.start_date ?? "").trim(), 12),
+    salaryType: coerceEnumValue(client.salary_type, salaryTypeOptions),
+    basicSalary: (client.basic_salary ?? "").trim(),
+    physicalAddressLine1: (client.physical_address_line1 ?? "").trim(),
+    physicalAddressLine2: (client.physical_address_line2 ?? "").trim(),
+    city: (client.city ?? "").trim(),
+    province: coerceEnumValue(client.province, southAfricanProvinces),
+    areaCode: (client.area_code ?? "").trim(),
+    postalAddressLine1: (client.postal_address_line1 ?? "").trim(),
+    postalAddressLine2: (client.postal_address_line2 ?? "").trim(),
+    postalCity: (client.postal_city ?? "").trim(),
+    postalProvince: coerceEnumValue(client.postal_province, southAfricanProvinces),
+    postalAreaCode: (client.postal_area_code ?? "").trim(),
   };
 };
 
@@ -578,72 +673,72 @@ const addMonthsToIsoDate = (isoDate: string, months: number) => {
   return renewal.toISOString().slice(0, 10);
 };
 
-const createProfileFormFromEmployee = (employee?: Employee): EmployeeProfileFormData => {
-  const dynamic = (employee ?? {}) as Record<string, unknown>;
+const createProfileFormFromClient = (client?: Client): ClientProfileFormData => {
+  const dynamic = (client ?? {}) as Record<string, unknown>;
   const registeredName =
     ((dynamic.registered_name as string | undefined) ??
       (dynamic.company_name as string | undefined) ??
-      employee?.employee_name ??
+      client?.client_name ??
       "").trim();
   const tradingName =
     ((dynamic.trading_as as string | undefined) ??
       (dynamic.trading_name as string | undefined) ??
-      employee?.employee_surname ??
+      client?.client_surname ??
       "").trim();
-  const vatNumber = ((dynamic.vat_number as string | undefined) ?? employee?.id_number ?? "").trim();
-  const registrationNumber = (employee?.registration_number ?? employee?.income_tax_number ?? "").trim();
-  const companyType = ((dynamic.company_type as string | undefined) ?? employee?.citizenship_status ?? "").trim();
-  const ownerName = ((dynamic.owner as string | undefined) ?? employee?.gender ?? "").trim();
-  const ownerNumber = ((dynamic.tel_cell as string | undefined) ?? employee?.race ?? "").trim();
+  const vatNumber = ((dynamic.vat_number as string | undefined) ?? client?.id_number ?? "").trim();
+  const registrationNumber = (client?.registration_number ?? client?.income_tax_number ?? "").trim();
+  const companyType = ((dynamic.company_type as string | undefined) ?? client?.citizenship_status ?? "").trim();
+  const ownerName = ((dynamic.owner as string | undefined) ?? client?.gender ?? "").trim();
+  const ownerNumber = ((dynamic.tel_cell as string | undefined) ?? client?.race ?? "").trim();
   const ownerEmail =
     ((dynamic.client_email as string | undefined) ??
-      employee?.email ??
-      employee?.cell_number ??
+      client?.email ??
+      client?.cell_number ??
       "").trim();
-  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? employee?.contract_type ?? "").trim();
-  const renewalDate = ((dynamic.renewal_date as string | undefined) ?? employee?.end_date ?? "").trim();
-  const clientNumber = ((dynamic.client_number as string | undefined) ?? employee?.employee_number ?? "").trim();
-  const nationality = (employee?.nationality ?? "").trim() || DEFAULT_NATIONALITY;
+  const paymentCycle = ((dynamic.payment_cycle as string | undefined) ?? client?.contract_type ?? "").trim();
+  const renewalDate = ((dynamic.renewal_date as string | undefined) ?? client?.end_date ?? "").trim();
+  const clientNumber = ((dynamic.client_number as string | undefined) ?? client?.client_number ?? "").trim();
+  const nationality = (client?.nationality ?? "").trim() || DEFAULT_NATIONALITY;
   const isSouthAfrican = nationality.toLowerCase() === "south african";
-  const storedDob = employee?.date_of_birth ?? "";
+  const storedDob = client?.date_of_birth ?? "";
   const derivedDob =
     storedDob ||
     (isSouthAfrican ? formatInputDate(extractDobFromId(vatNumber)) : "");
 
   return {
-    employeeName: registeredName,
-    employeeSurname: tradingName,
+    clientName: registeredName,
+    clientSurname: tradingName,
     idNumber: vatNumber,
     dateOfBirth: derivedDob,
-    startDate: employee?.start_date ?? "",
+    startDate: client?.start_date ?? "",
     contractType:
-      (coerceEnumValue(paymentCycle, contractTypes) as EmployeeProfileFormData["contractType"]) ??
+      (coerceEnumValue(paymentCycle, contractTypes) as ClientProfileFormData["contractType"]) ??
       "Permanent",
     endDate: renewalDate,
     nationality,
-    gender: ownerName as EmployeeProfileFormData["gender"],
-    disabilityStatus: employee?.disability_status ?? false,
+    gender: ownerName as ClientProfileFormData["gender"],
+    disabilityStatus: client?.disability_status ?? false,
     citizenshipStatus: companyType,
-    race: ownerNumber as EmployeeProfileFormData["race"],
-    employeeNumber: cleanEmployeeNumberInput(clientNumber),
-    jobTitle: employee?.job_title ?? "",
-    physicalAddressLine1: employee?.physical_address_line1 ?? "",
-    physicalAddressLine2: employee?.physical_address_line2 ?? "",
-    city: employee?.city ?? "",
-    province: coerceEnumValue(employee?.province, southAfricanProvinces) as EmployeeProfileFormData["province"],
-    areaCode: employee?.area_code ?? "",
-    postalAddressLine1: employee?.postal_address_line1 ?? "",
-    postalAddressLine2: employee?.postal_address_line2 ?? "",
-    postalCity: employee?.postal_city ?? "",
+    race: ownerNumber as ClientProfileFormData["race"],
+    clientNumber: cleanClientNumberInput(clientNumber),
+    jobTitle: client?.job_title ?? "",
+    physicalAddressLine1: client?.physical_address_line1 ?? "",
+    physicalAddressLine2: client?.physical_address_line2 ?? "",
+    city: client?.city ?? "",
+    province: coerceEnumValue(client?.province, southAfricanProvinces) as ClientProfileFormData["province"],
+    areaCode: client?.area_code ?? "",
+    postalAddressLine1: client?.postal_address_line1 ?? "",
+    postalAddressLine2: client?.postal_address_line2 ?? "",
+    postalCity: client?.postal_city ?? "",
     postalProvince: coerceEnumValue(
-      employee?.postal_province,
+      client?.postal_province,
       southAfricanProvinces,
-    ) as EmployeeProfileFormData["postalProvince"],
-    postalAreaCode: employee?.postal_area_code ?? "",
+    ) as ClientProfileFormData["postalProvince"],
+    postalAreaCode: client?.postal_area_code ?? "",
     cellNumber: ownerEmail,
     email: ownerEmail,
-    emergencyContactName: employee?.emergency_contact_name ?? "",
-    emergencyContactNumber: employee?.emergency_contact_number ?? "",
+    emergencyContactName: client?.emergency_contact_name ?? "",
+    emergencyContactNumber: client?.emergency_contact_number ?? "",
     incomeTaxNumber: registrationNumber,
   };
 };
@@ -725,35 +820,35 @@ const normalizeSalaryForStorage = (value: string) => {
   return `${integerPart}.${decimalPart}`;
 };
 
-const getClientDisplayName = (employee: Partial<Employee>) => {
-  const dynamic = employee as Record<string, unknown>;
+const getClientDisplayName = (client: Partial<Client>) => {
+  const dynamic = client as Record<string, unknown>;
   const tradingName =
     (dynamic.trading_name as string | undefined)?.trim() ||
     (dynamic.trading_as as string | undefined)?.trim() ||
-    (employee.employee_surname ?? "").trim();
+    (client.client_surname ?? "").trim();
   const registeredName =
     (dynamic.registered_name as string | undefined)?.trim() ||
     (dynamic.company_name as string | undefined)?.trim() ||
-    (employee.employee_name ?? "").trim();
+    (client.client_name ?? "").trim();
   return tradingName || registeredName || "Client";
 };
 
-const getClientRegisteredName = (employee: Partial<Employee>) => {
-  const dynamic = employee as Record<string, unknown>;
+const getClientRegisteredName = (client: Partial<Client>) => {
+  const dynamic = client as Record<string, unknown>;
   return (
     (dynamic.registered_name as string | undefined)?.trim() ||
     (dynamic.company_name as string | undefined)?.trim() ||
-    (employee.employee_name ?? "").trim() ||
-    getClientDisplayName(employee)
+    (client.client_name ?? "").trim() ||
+    getClientDisplayName(client)
   );
 };
 
-const getClientTradingName = (employee: Partial<Employee>) => {
-  const dynamic = employee as Record<string, unknown>;
+const getClientTradingName = (client: Partial<Client>) => {
+  const dynamic = client as Record<string, unknown>;
   return (
     (dynamic.trading_name as string | undefined)?.trim() ||
     (dynamic.trading_as as string | undefined)?.trim() ||
-    (employee.employee_surname ?? "").trim()
+    (client.client_surname ?? "").trim()
   );
 };
 
@@ -780,7 +875,7 @@ const formatMemberTypesDisplay = (value: unknown): string => {
 const getDisplayFileNameFromPath = (path?: string | null, fallback = "document.pdf") => {
   const raw = (path ?? "").split("/").pop() || "";
   if (!raw) return fallback;
-  // Stored contract paths use: <employeeUuid>-<timestamp>-<originalFileName>
+  // Stored contract paths use: <clientUuid>-<timestamp>-<originalFileName>
   const withPrefixRemoved = raw.replace(/^[0-9a-f-]{36}-\d+-/i, "");
   return withPrefixRemoved || raw;
 };
@@ -1082,14 +1177,14 @@ const educationTypesByCategory: Record<EducationCategory, readonly string[]> = {
     "Dangerous Goods Handling Training",
   ],
 };
-const warningValidityMonths: Record<EmployeeWarning["warningType"], number> = {
+const warningValidityMonths: Record<ClientWarning["warningType"], number> = {
   First: 6,
   Second: 6,
   Serious: 9,
   Final: 12,
 };
 
-const warningTypeLabels: Record<EmployeeWarning["warningType"], string> = {
+const warningTypeLabels: Record<ClientWarning["warningType"], string> = {
   First: "First Written Warning",
   Second: "Second Written Warning",
   Serious: "Serious Written Warning",
@@ -1123,9 +1218,9 @@ const createDefaultMembershipServiceSelections = (): Record<(typeof membershipTy
     {} as Record<(typeof membershipTypeOptions)[number], MembershipServiceSelection>,
   );
 
-const createMembershipServiceSelectionsFromEmployee = (employee?: Partial<Employee> | null) => {
+const createMembershipServiceSelectionsFromClient = (client?: Partial<Client> | null) => {
   const selectedServices = new Set(
-    normalizeMemberTypes(employee?.member_types ?? employee?.department ?? employee?.job_title),
+    normalizeMemberTypes(client?.member_types ?? client?.department ?? client?.job_title),
   );
   return membershipTypeOptions.reduce(
     (acc, service) => {
@@ -1183,7 +1278,27 @@ const getClientLogoStoragePathFromUrl = (url?: string | null) => {
   return url;
 };
 
-const computeWarningExpiry = (warningType: EmployeeWarning["warningType"], issueDate: string) => {
+const getClientLogoPathFromRecord = (record?: Record<string, unknown> | null) => {
+  if (!record) return "";
+  const candidates = [
+    "company_logo_url",
+    "logo_url",
+    "logo_path",
+    "file_url",
+    "storage_path",
+    "path",
+    "url",
+  ] as const;
+  for (const key of candidates) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+};
+
+const computeWarningExpiry = (warningType: ClientWarning["warningType"], issueDate: string) => {
   const months = warningValidityMonths[warningType] ?? 6;
   const base = new Date(issueDate);
   if (Number.isNaN(base.getTime())) {
@@ -1337,49 +1452,49 @@ const documentPathToKey: Record<string, DocumentKey> = {
   "/documents/other/acknowledgement-of-debt": "acknowledgementOfDebt",
 };
 
-const Employees = () => {
+const Clients = () => {
  const { user, loading } = useAuth();
  const location = useLocation();
  const navigate = useNavigate();
  const { toast } = useToast();
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
-  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [filteredClients, setFilteredClients] = useState<Client[]>([]);
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalEmployeeCount, setTotalEmployeeCount] = useState(0);
+  const [totalClientCount, setTotalClientCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const [employeeStatusFilter, setEmployeeStatusFilter] = useState<"active" | "inactive">("active");
+  const [clientStatusFilter, setClientStatusFilter] = useState<"active" | "inactive">("active");
   const [contractFilter, setContractFilter] = useState<"all" | "permanent" | "temporary">("all");
-  const [genderFilter, setGenderFilter] = useState<"all" | EmployeeProfileFormData["gender"]>("all");
-  const [raceFilter, setRaceFilter] = useState<"all" | EmployeeProfileFormData["race"]>("all");
+  const [genderFilter, setGenderFilter] = useState<"all" | ClientProfileFormData["gender"]>("all");
+  const [raceFilter, setRaceFilter] = useState<"all" | ClientProfileFormData["race"]>("all");
   const [nationalityFilter, setNationalityFilter] = useState<"all" | "RSA" | "Other">("all");
-  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
+  const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isNewEmployeeMenuOpen, setIsNewEmployeeMenuOpen] = useState(false);
+  const [isNewClientMenuOpen, setIsNewClientMenuOpen] = useState(false);
   const [isFiltersPanelOpen, setIsFiltersPanelOpen] = useState(false);
   const [expandedFilterSection, setExpandedFilterSection] = useState<
     "status" | "contract" | "gender" | "race" | "nationality" | null
   >(null);
   const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
  const [isProfilePanelOpen, setIsProfilePanelOpen] = useState(false);
-   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
    const [isLoading, setIsLoading] = useState(false);
-  const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
-  const [isExportingEmployeesPdf, setIsExportingEmployeesPdf] = useState(false);
-  const [isExportingEmployeesExcel, setIsExportingEmployeesExcel] = useState(false);
-  const [isAllEmployeesLoading, setIsAllEmployeesLoading] = useState(false);
+  const [isClientsLoading, setIsClientsLoading] = useState(false);
+  const [isExportingClientsPdf, setIsExportingClientsPdf] = useState(false);
+  const [isExportingClientsExcel, setIsExportingClientsExcel] = useState(false);
+  const [isAllClientsLoading, setIsAllClientsLoading] = useState(false);
    const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<EmployeeTab>("personal");
+  const [activeTab, setActiveTab] = useState<ClientTab>("personal");
   const [activeEditSection, setActiveEditSection] = useState<ProfileSectionKey | null>(null);
-  const [addForm, setAddForm] = useState<AddEmployeeFormState>(createBlankAddForm());
+  const [addForm, setAddForm] = useState<AddClientFormState>(createBlankAddForm());
   const [isRegistrationNumberFocused, setIsRegistrationNumberFocused] = useState(false);
   const registrationNumberInputRef = useRef<HTMLInputElement | null>(null);
   const [addFormStep, setAddFormStep] = useState<1 | 2 | 3>(1);
-  const [rehireEmployeeId, setRehireEmployeeId] = useState<string | null>(null);
+  const [rehireClientId, setRehireClientId] = useState<string | null>(null);
   const [isAddFormSubmitRequested, setIsAddFormSubmitRequested] = useState(false);
-  const [profileForm, setProfileForm] = useState<EmployeeProfileFormData>(createProfileFormFromEmployee());
+  const [profileForm, setProfileForm] = useState<ClientProfileFormData>(createProfileFormFromClient());
   const [serviceSelections, setServiceSelections] = useState<
     Record<(typeof membershipTypeOptions)[number], MembershipServiceSelection>
   >(createDefaultMembershipServiceSelections());
@@ -1392,8 +1507,8 @@ const Employees = () => {
   });
   const [warningFilter, setWarningFilter] = useState<"valid" | "expired">("valid");
   const [warningFile, setWarningFile] = useState<File | null>(null);
-  const [warningsByEmployee, setWarningsByEmployee] = useState<Record<string, EmployeeWarning[]>>({});
-  const [editingWarning, setEditingWarning] = useState<EmployeeWarning | null>(null);
+  const [warningsByClient, setWarningsByClient] = useState<Record<string, ClientWarning[]>>({});
+  const [editingWarning, setEditingWarning] = useState<ClientWarning | null>(null);
   const [isContractDialogOpen, setIsContractDialogOpen] = useState(false);
   const [contractForm, setContractForm] = useState<ContractFormState>({
     contractType: "",
@@ -1405,16 +1520,17 @@ const Employees = () => {
   const [isLicencesTabMenuOpen, setIsLicencesTabMenuOpen] = useState(false);
   const [isEducationTabMenuOpen, setIsEducationTabMenuOpen] = useState(false);
   const [contractFile, setContractFile] = useState<File | null>(null);
-  const [contractsByEmployee, setContractsByEmployee] = useState<Record<string, EmployeeContract[]>>({});
-  const [activeContractsByEmployee, setActiveContractsByEmployee] = useState<Record<string, boolean>>({});
-  const [idDocumentByEmployee, setIdDocumentByEmployee] = useState<Record<string, EmployeeIdDocument | null>>({});
+  const [contractsByClient, setContractsByClient] = useState<Record<string, ClientContract[]>>({});
+  const [activeContractsByClient, setActiveContractsByClient] = useState<Record<string, boolean>>({});
+  const [idDocumentByClient, setIdDocumentByClient] = useState<Record<string, ClientIdDocument | null>>({});
   const [pendingIdDocumentFile, setPendingIdDocumentFile] = useState<File | null>(null);
   const [pendingIdDocumentName, setPendingIdDocumentName] = useState("");
   const [isIdDocumentMarkedForRemoval, setIsIdDocumentMarkedForRemoval] = useState(false);
   const [isIdDocumentUploading, setIsIdDocumentUploading] = useState(false);
   const [isClientLogoUploading, setIsClientLogoUploading] = useState(false);
-  const [clientLogoPreviewByEmployee, setClientLogoPreviewByEmployee] = useState<Record<string, string>>({});
-  const [terminationDocumentByEmployee, setTerminationDocumentByEmployee] = useState<Record<string, EmployeeTerminationDocument | null>>({});
+  const [clientLogoPreviewByClient, setClientLogoPreviewByClient] = useState<Record<string, string>>({});
+  const [clientLogoPathByClient, setClientLogoPathByClient] = useState<Record<string, string>>({});
+  const [terminationDocumentByClient, setTerminationDocumentByClient] = useState<Record<string, ClientTerminationDocument | null>>({});
   const [pendingTerminationDocumentFile, setPendingTerminationDocumentFile] = useState<File | null>(null);
   const [pendingTerminationDocumentName, setPendingTerminationDocumentName] = useState("");
   const [isTerminationDocumentUploading, setIsTerminationDocumentUploading] = useState(false);
@@ -1422,13 +1538,13 @@ const Employees = () => {
   const [pendingEmploymentContractName, setPendingEmploymentContractName] = useState("");
   const [isEmploymentContractMarkedForRemoval, setIsEmploymentContractMarkedForRemoval] = useState(false);
   const [isEmploymentContractUploading, setIsEmploymentContractUploading] = useState(false);
-  const [licencesByEmployee, setLicencesByEmployee] = useState<Record<string, EmployeeLicence[]>>({});
+  const [licencesByClient, setLicencesByClient] = useState<Record<string, ClientLicence[]>>({});
   const [licenceTypeSelection, setLicenceTypeSelection] = useState<Record<LicenceCategory, string>>({
     driving: "",
     firearmSecurity: "",
     marineAviation: "",
   });
-  const [educationsByEmployee, setEducationsByEmployee] = useState<Record<string, EmployeeEducation[]>>({});
+  const [educationsByClient, setEducationsByClient] = useState<Record<string, ClientEducation[]>>({});
   const [educationTypeSelection, setEducationTypeSelection] = useState<Record<EducationCategory, string>>({
     academic: "",
     trade: "",
@@ -1438,10 +1554,10 @@ const Employees = () => {
   const [isMisconductPickerOpen, setIsMisconductPickerOpen] = useState(false);
   const [warningDraftMisconductTypes, setWarningDraftMisconductTypes] = useState<string[]>([]);
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
-  const [hasLoadedAllEmployees, setHasLoadedAllEmployees] = useState(false);
+  const [hasLoadedAllClients, setHasLoadedAllClients] = useState(false);
   const [hasLoadedConductOffences, setHasLoadedConductOffences] = useState(false);
   const [employmentStatus, setEmploymentStatus] = useState<(typeof employmentStatusOptions)[number] | "">("");
-  const [employeeStatus, setEmployeeStatus] = useState<ClientStatusValue>("");
+  const [clientStatus, setClientStatus] = useState<ClientStatusValue>("");
   const [probationPeriod, setProbationPeriod] = useState("");
   const [retirementAge, setRetirementAge] = useState<(typeof retirementAgeOptions)[number]>("65");
   const [department, setDepartment] = useState<(typeof departmentOptions)[number] | "">("");
@@ -1474,9 +1590,9 @@ const Employees = () => {
   const [reportingToOpen, setReportingToOpen] = useState(false);
   const [reportingToQuery, setReportingToQuery] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [documentDialogEmployee, setDocumentDialogEmployee] = useState<Employee | null>(null);
+  const [documentDialogClient, setDocumentDialogClient] = useState<Client | null>(null);
   const [selectedDocumentPath, setSelectedDocumentPath] = useState<string>("");
-  const newEmployeeMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const newClientMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [deleteUndo, setDeleteUndo] = useState<DeleteUndoState | null>(null);
@@ -1531,13 +1647,13 @@ const Employees = () => {
   });
   const isAddFormRegistrationNumberComplete = addForm.registrationNumber.trim().length > 0;
   const isAddFormStepOneComplete =
-    addForm.employeeName.trim().length > 0 &&
+    addForm.clientName.trim().length > 0 &&
     isAddFormRegistrationNumberComplete &&
     addForm.gender.trim().length > 0 &&
     addForm.race.trim().length > 0 &&
     addForm.cellNumber.trim().length > 0;
   const isAddFormStepTwoComplete =
-    addForm.employeeNumber.trim().length > 0 &&
+    addForm.clientNumber.trim().length > 0 &&
     addForm.contractType.trim().length > 0 &&
     addForm.startDate.trim().length > 0 &&
     addForm.endDate.trim().length > 0 &&
@@ -1553,19 +1669,19 @@ const Employees = () => {
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const fieldInputClass = baseFieldInputClass;
   const fieldSelectTriggerClass = `${fieldInputClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs`;
-  // UI contract: all dropdown triggers/items on Employees page must use these shared classes.
-  const employeeDropdownTriggerClass = `${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white !ring-0 !ring-offset-0 !outline-none focus:!ring-0 focus:!ring-offset-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!outline-none`;
-  const employeeDropdownCommandItemClass =
+  // UI contract: all dropdown triggers/items on Clients page must use these shared classes.
+  const clientDropdownTriggerClass = `${fieldSelectTriggerClass} w-full max-w-[320px] ml-auto bg-white border-slate-200 hover:border-blue-400 hover:bg-white hover:text-slate-700 data-[state=open]:border-slate-300 data-[state=open]:bg-white !ring-0 !ring-offset-0 !outline-none focus:!ring-0 focus:!ring-offset-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!outline-none`;
+  const clientDropdownCommandItemClass =
     "text-[11px] text-slate-700 data-[selected=true]:bg-blue-50/70 data-[selected=true]:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
-  const employeeDropdownSelectItemClass =
+  const clientDropdownSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
-  const employeeDropdownMenuItemClass =
+  const clientDropdownMenuItemClass =
     "cursor-pointer text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600";
   const membershipDropdownItemClass =
     "cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const addModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
-  const employeeDropdownMenuItemWithGapClass = `gap-2 ${employeeDropdownMenuItemClass}`;
+  const clientDropdownMenuItemWithGapClass = `gap-2 ${clientDropdownMenuItemClass}`;
   const newClientDropdownItemStyle =
     "!rounded-none gap-2 cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]";
   const newClientDropdownContentStyle = "w-36 text-[11px] !rounded-t-none !rounded-b-[4px] border-t-0 !p-0";
@@ -1587,42 +1703,42 @@ const Employees = () => {
   const isSouthAfricanNationality = (profileForm.nationality || "").trim().toLowerCase() === "south african";
 
   const originalProfile = useMemo(
-    () => (selectedEmployee ? createProfileFormFromEmployee(selectedEmployee) : null),
-    [selectedEmployee],
+    () => (selectedClient ? createProfileFormFromClient(selectedClient) : null),
+    [selectedClient],
   );
   const originalServiceSelections = useMemo(
-    () => createMembershipServiceSelectionsFromEmployee(selectedEmployee),
-    [selectedEmployee],
+    () => createMembershipServiceSelectionsFromClient(selectedClient),
+    [selectedClient],
   );
   const originalProbationPeriod = useMemo(
-    () => (selectedEmployee?.probation_period ?? ""),
-    [selectedEmployee],
+    () => (selectedClient?.probation_period ?? ""),
+    [selectedClient],
   );
   const originalRetirementAge = useMemo<(typeof retirementAgeOptions)[number]>(
     () => {
-      const value = (selectedEmployee?.retirement_age ?? 65).toString();
+      const value = (selectedClient?.retirement_age ?? 65).toString();
       return (retirementAgeOptions.find((option) => option === value) ?? "65");
     },
-    [selectedEmployee],
+    [selectedClient],
   );
   const originalUnionMember = useMemo(
-    () => ((selectedEmployee?.union_member ?? "") as (typeof unionMemberOptions)[number] | ""),
-    [selectedEmployee],
+    () => ((selectedClient?.union_member ?? "") as (typeof unionMemberOptions)[number] | ""),
+    [selectedClient],
   );
   const originalTradeUnion = useMemo(
-    () => (selectedEmployee?.trade_union ?? ""),
-    [selectedEmployee],
+    () => (selectedClient?.trade_union ?? ""),
+    [selectedClient],
   );
   const reportingToOptions = useMemo(() => {
-    const source = allEmployees.length > 0 ? allEmployees : employees;
+    const source = allClients.length > 0 ? allClients : clients;
     return source
-      .map((emp) => `${(emp.employee_name ?? "").trim()} ${(emp.employee_surname ?? "").trim()}`.trim())
+      .map((emp) => `${(emp.client_name ?? "").trim()} ${(emp.client_surname ?? "").trim()}`.trim())
       .filter(Boolean);
-  }, [allEmployees, employees]);
+  }, [allClients, clients]);
 
   useEffect(() => {
-    setServiceSelections(createMembershipServiceSelectionsFromEmployee(selectedEmployee));
-  }, [selectedEmployee]);
+    setServiceSelections(createMembershipServiceSelectionsFromClient(selectedClient));
+  }, [selectedClient]);
   const [originalDepartment, setOriginalDepartment] = useState("");
   const [originalBranch, setOriginalBranch] = useState("");
   const [originalReportingTo, setOriginalReportingTo] = useState("");
@@ -1731,18 +1847,18 @@ const Employees = () => {
   }, [toast, user]);
 
   useEffect(() => {
-    if (!selectedEmployee) return;
-    setOriginalDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
-    setOriginalBranch(selectedEmployee.branch ?? "");
-    setOriginalReportingTo(selectedEmployee.reporting_to ?? "");
+    if (!selectedClient) return;
+    setOriginalDepartment((selectedClient.department as (typeof departmentOptions)[number]) ?? "");
+    setOriginalBranch(selectedClient.branch ?? "");
+    setOriginalReportingTo(selectedClient.reporting_to ?? "");
     setOriginalOccupationalLevel(
-      (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      (selectedClient.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
-    setOriginalSalaryType((selectedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-    setOriginalBasicSalary(selectedEmployee.basic_salary ?? "");
-    setOriginalWorkEmail(selectedEmployee.work_email ?? "");
-    setOriginalWorkCellNumber(selectedEmployee.work_cell_number ?? "");
-  }, [selectedEmployee]);
+    setOriginalSalaryType((selectedClient.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setOriginalBasicSalary(selectedClient.basic_salary ?? "");
+    setOriginalWorkEmail(selectedClient.work_email ?? "");
+    setOriginalWorkCellNumber(selectedClient.work_cell_number ?? "");
+  }, [selectedClient]);
 
   useEffect(() => {
     if (!isSouthAfricanNationality) return;
@@ -1761,13 +1877,13 @@ const Employees = () => {
   }, [user, fetchCompanyBranches]);
 
   useEffect(() => {
-    setEmployeeStatus(getDisplayMembershipStatus((selectedEmployee as any)?.status));
-  }, [selectedEmployee]);
+    setClientStatus(getDisplayMembershipStatus((selectedClient as any)?.status));
+  }, [selectedClient]);
 
-  const updateEmployeeStatus = useCallback(
+  const updateClientStatus = useCallback(
     async (nextStatus: "active" | "inactive") => {
-      if (!selectedEmployee || !user) return;
-      const statusPatch: EmployeeUpdate =
+      if (!selectedClient || !user) return;
+      const statusPatch: ClientUpdate =
         nextStatus === "active"
           ? {
               status: nextStatus,
@@ -1778,9 +1894,9 @@ const Employees = () => {
           : { status: nextStatus };
 
       const { error } = await supabase
-        .from("employees")
-        .update(statusPatch as unknown as TablesInsert<"employees">)
-        .eq("id", selectedEmployee.id);
+        .from("clients")
+        .update(pickClientWritePayload(statusPatch as Record<string, unknown>) as unknown as TablesInsert<"clients">)
+        .eq("id", selectedClient.id);
       if (error) {
         toast({
           title: "Unable to update status",
@@ -1791,16 +1907,16 @@ const Employees = () => {
       }
 
       const displayStatus = nextStatus === "inactive" ? "Inactive" : "Active";
-      setEmployeeStatus(displayStatus);
-      setSelectedEmployee((prev) => (prev ? { ...prev, ...statusPatch } : prev));
-      setEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
+      setClientStatus(displayStatus);
+      setSelectedClient((prev) => (prev ? { ...prev, ...statusPatch } : prev));
+      setClients((prev) =>
+        prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...statusPatch } : emp)),
       );
-      setFilteredEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
+      setFilteredClients((prev) =>
+        prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...statusPatch } : emp)),
       );
-      setAllEmployees((prev) =>
-        prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...statusPatch } : emp)),
+      setAllClients((prev) =>
+        prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...statusPatch } : emp)),
       );
 
       toast({
@@ -1808,12 +1924,12 @@ const Employees = () => {
         description: `Status set to ${displayStatus}.`,
       });
     },
-    [selectedEmployee, user, toast],
+    [selectedClient, user, toast],
   );
 
   const handleTerminateWithReason = useCallback(
     async (reason: string, terminationDate: string) => {
-      if (!selectedEmployee || !user) return;
+      if (!selectedClient || !user) return;
       if (!reason.trim()) {
         toast({
           title: "Termination reason required",
@@ -1830,14 +1946,14 @@ const Employees = () => {
         });
         return false;
       }
-      const previousJobTitle = (profileForm.jobTitle || selectedEmployee.job_title || "").trim() || null;
+      const previousJobTitle = (profileForm.jobTitle || selectedClient.job_title || "").trim() || null;
 
-      const employmentClearPatch: EmployeeUpdate = {
+      const employmentClearPatch: ClientUpdate = {
         status: "inactive",
         termination_reason: reason,
         previous_job_title: previousJobTitle,
         terminated_at: terminationDate,
-        employee_number: null,
+        client_number: null,
         start_date: null,
         end_date: null,
         contract_type: null,
@@ -1859,22 +1975,24 @@ const Employees = () => {
         const { data: contractRows, error: contractsLoadError } = await contractTable()
           .select("id, file_url")
           .eq("company_id", user.id)
-          .eq("employee_id", selectedEmployee.id);
+          .eq("client_id", selectedClient.id);
 
         if (contractsLoadError) throw contractsLoadError;
 
-        const { error: employeeUpdateError } = await supabase
-          .from("employees")
-          .update(employmentClearPatch as unknown as TablesInsert<"employees">)
-          .eq("id", selectedEmployee.id);
+        const { error: clientUpdateError } = await supabase
+          .from("clients")
+          .update(
+            pickClientWritePayload(employmentClearPatch as Record<string, unknown>) as unknown as TablesInsert<"clients">,
+          )
+          .eq("id", selectedClient.id);
 
-        if (employeeUpdateError) throw employeeUpdateError;
+        if (clientUpdateError) throw clientUpdateError;
 
         if ((contractRows ?? []).length > 0) {
           const { error: deleteContractsError } = await contractTable()
             .delete()
             .eq("company_id", user.id)
-            .eq("employee_id", selectedEmployee.id);
+            .eq("client_id", selectedClient.id);
 
           if (deleteContractsError) throw deleteContractsError;
 
@@ -1887,10 +2005,10 @@ const Employees = () => {
           }
         }
 
-        const nextSelected = { ...selectedEmployee, ...employmentClearPatch } as Employee;
-        setEmployeeStatus("Inactive");
-        setSelectedEmployee(nextSelected);
-        setProfileForm(createProfileFormFromEmployee(nextSelected));
+        const nextSelected = { ...selectedClient, ...employmentClearPatch } as Client;
+        setClientStatus("Inactive");
+        setSelectedClient(nextSelected);
+        setProfileForm(createProfileFormFromClient(nextSelected));
         setProbationPeriod("");
         setRetirementAge("65");
         setUnionMember("");
@@ -1898,20 +2016,20 @@ const Employees = () => {
         setPendingEmploymentContractFile(null);
         setPendingEmploymentContractName("");
         setIsEmploymentContractMarkedForRemoval(false);
-        setContractsByEmployee((prev) => ({ ...prev, [selectedEmployee.id]: [] }));
-        setActiveContractsByEmployee((prev) => ({ ...prev, [selectedEmployee.id]: false }));
-        setEmployees((prev) =>
-          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        setContractsByClient((prev) => ({ ...prev, [selectedClient.id]: [] }));
+        setActiveContractsByClient((prev) => ({ ...prev, [selectedClient.id]: false }));
+        setClients((prev) =>
+          prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...employmentClearPatch } : emp)),
         );
-        setFilteredEmployees((prev) =>
-          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        setFilteredClients((prev) =>
+          prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...employmentClearPatch } : emp)),
         );
-        setAllEmployees((prev) =>
-          prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, ...employmentClearPatch } : emp)),
+        setAllClients((prev) =>
+          prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, ...employmentClearPatch } : emp)),
         );
         setTerminationUndo({
-          employeeId: selectedEmployee.id,
-          employeeBefore: selectedEmployee,
+          clientId: selectedClient.id,
+          clientBefore: selectedClient,
           expiresAt: Date.now() + 20000,
         });
 
@@ -1929,7 +2047,7 @@ const Employees = () => {
         return false;
       }
     },
-    [profileForm.jobTitle, selectedEmployee, toast, user],
+    [profileForm.jobTitle, selectedClient, toast, user],
   );
 
   const openTerminationDialog = useCallback(() => {
@@ -1962,7 +2080,7 @@ const Employees = () => {
 
   const isProfileDirty = useMemo(() => {
     if (!originalProfile) return false;
-    return (Object.keys(originalProfile) as Array<keyof EmployeeProfileFormData>).some(
+    return (Object.keys(originalProfile) as Array<keyof ClientProfileFormData>).some(
       (key) => profileForm[key] !== originalProfile[key],
     );
   }, [profileForm, originalProfile]);
@@ -1983,12 +2101,12 @@ const Employees = () => {
         postalAddress: false,
       };
     }
-    const compare = (keys: Array<keyof EmployeeProfileFormData>) =>
+    const compare = (keys: Array<keyof ClientProfileFormData>) =>
       keys.some((key) => profileForm[key] !== originalProfile[key]);
     return {
       identity: compare([
-        "employeeName",
-        "employeeSurname",
+        "clientName",
+        "clientSurname",
         "idNumber",
         "nationality",
         "dateOfBirth",
@@ -1997,8 +2115,8 @@ const Employees = () => {
       contact: compare(["cellNumber", "email", "emergencyContactName", "emergencyContactNumber"]),
       statutory: compare(["incomeTaxNumber"]),
       employmentStatus:
-        compare(["startDate", "endDate", "employeeNumber"]) ||
-        employeeStatus !== getDisplayMembershipStatus((selectedEmployee as any)?.status),
+        compare(["startDate", "endDate", "clientNumber"]) ||
+        clientStatus !== getDisplayMembershipStatus((selectedClient as any)?.status),
       employmentOrg:
         membershipTypeOptions.some(
           (service) => serviceSelections[service] !== originalServiceSelections[service],
@@ -2051,111 +2169,59 @@ const Employees = () => {
     originalUnionMember,
     tradeUnion,
     originalTradeUnion,
-    employeeStatus,
-    selectedEmployee,
+    clientStatus,
+    selectedClient,
     serviceSelections,
     originalServiceSelections,
     pendingIdDocumentFile,
     isIdDocumentMarkedForRemoval,
   ]);
 
-  const profileSchemaBase = useMemo(() => {
-    const schema = employeeProfileSchema as unknown as { _def?: { schema?: any } };
-    return schema?._def?.schema ?? employeeProfileSchema;
-  }, []);
-
   const identitySectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        employeeName: true,
-        employeeSurname: true,
-        incomeTaxNumber: true,
-        idNumber: true,
-        citizenshipStatus: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const equitySectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        gender: true,
-        race: true,
-        cellNumber: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const contactSectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        physicalAddressLine1: true,
-        physicalAddressLine2: true,
-        city: true,
-        province: true,
-        areaCode: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const statutorySectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        postalAddressLine1: true,
-        postalAddressLine2: true,
-        postalCity: true,
-        postalProvince: true,
-        postalAreaCode: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const employmentSectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        startDate: true,
-        contractType: true,
-        endDate: true,
-        jobTitle: true,
-        employeeNumber: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const homeAddressSectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        physicalAddressLine1: true,
-        physicalAddressLine2: true,
-        city: true,
-        province: true,
-        areaCode: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
   const postalAddressSectionSchema = useMemo(
-    () =>
-      profileSchemaBase.pick({
-        postalAddressLine1: true,
-        postalAddressLine2: true,
-        postalCity: true,
-        postalProvince: true,
-        postalAreaCode: true,
-      }),
-    [profileSchemaBase],
+    () => ({ parse: (data: ClientProfileFormData) => data }),
+    [],
   );
 
-  const totalPages = Math.max(1, Math.ceil(totalEmployeeCount / DEFAULT_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalClientCount / DEFAULT_PAGE_SIZE));
   const isFirstPage = currentPage === 1;
   const isLastPage = currentPage >= totalPages;
   const tableBottomPaddingPx = -42;
   const tableBodyResponsiveHeight = `calc(100dvh - var(--app-header-height,5rem) - ${320 + tableBottomPaddingPx}px)`;
-  const tableRangeStart = totalEmployeeCount === 0 ? 0 : (currentPage - 1) * DEFAULT_PAGE_SIZE + 1;
+  const tableRangeStart = totalClientCount === 0 ? 0 : (currentPage - 1) * DEFAULT_PAGE_SIZE + 1;
   const tableRangeEnd =
-    totalEmployeeCount === 0
+    totalClientCount === 0
       ? 0
-      : Math.min((currentPage - 1) * DEFAULT_PAGE_SIZE + filteredEmployees.length, totalEmployeeCount);
+      : Math.min((currentPage - 1) * DEFAULT_PAGE_SIZE + filteredClients.length, totalClientCount);
   const paginationItems = useMemo(() => {
     if (totalPages <= 5) {
       return Array.from({ length: totalPages }, (_, index) => index + 1) as Array<number | "...">;
@@ -2171,19 +2237,19 @@ const Employees = () => {
 
     return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
   }, [currentPage, totalPages]);
-  const activeEmployeeFilterCount =
-    Number(employeeStatusFilter !== "active") +
+  const activeClientFilterCount =
+    Number(clientStatusFilter !== "active") +
     Number(contractFilter !== "all") +
     Number(genderFilter !== "all") +
     Number(raceFilter !== "all") +
     Number(nationalityFilter !== "all");
-  const closeEmployeeFiltersPanel = () => {
+  const closeClientFiltersPanel = () => {
     setIsFiltersPanelOpen(false);
     setExpandedFilterSection(null);
   };
-  const hasEmployeeTableFiltersApplied =
+  const hasClientTableFiltersApplied =
     searchQuery.trim().length > 0 ||
-    employeeStatusFilter !== "active" ||
+    clientStatusFilter !== "active" ||
     contractFilter !== "all" ||
     genderFilter !== "all" ||
     raceFilter !== "all" ||
@@ -2199,20 +2265,20 @@ const Employees = () => {
     });
   }, [isRegistrationNumberFocused, addForm.registrationNumber]);
 
-  const handleDocumentCategorySelect = (path: string, targetEmployeeOverride?: Employee | null) => {
-    const targetEmployee = targetEmployeeOverride || selectedEmployee;
+  const handleDocumentCategorySelect = (path: string, targetClientOverride?: Client | null) => {
+    const targetClient = targetClientOverride || selectedClient;
     const selectedDocument = documentPathToKey[path];
     const state = {
-      ...(targetEmployee
+      ...(targetClient
         ? {
-            employeeName: (targetEmployee.employee_name ?? "").trim(),
-            employeeSurname: (targetEmployee.employee_surname ?? "").trim(),
-            employeeIdNumber: targetEmployee.id_number ?? "",
+            clientName: (targetClient.client_name ?? "").trim(),
+            clientSurname: (targetClient.client_surname ?? "").trim(),
+            clientIdNumber: targetClient.id_number ?? "",
           }
         : {}),
       ...(selectedDocument ? { selectedDocument } : {}),
     };
-    setDocumentDialogEmployee(null);
+    setDocumentDialogClient(null);
     if (selectedDocument) {
       navigate("/documents", { state });
       return;
@@ -2221,10 +2287,10 @@ const Employees = () => {
   };
 
   useEffect(() => {
-    if (documentDialogEmployee) {
+    if (documentDialogClient) {
       setSelectedDocumentPath("");
     }
-  }, [documentDialogEmployee]);
+  }, [documentDialogClient]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -2259,7 +2325,7 @@ const Employees = () => {
       el.removeEventListener("scroll", updateHint);
       window.removeEventListener("resize", updateHint);
     };
-  }, [filteredEmployees]);
+  }, [filteredClients]);
 
   const clearDeleteUndoTimers = useCallback(() => {
     if (deleteUndoTimeoutRef.current) {
@@ -2344,12 +2410,12 @@ const Employees = () => {
   );
 
   const handleUndoWarningDelete = async () => {
-    if (!warningDeleteUndo || !selectedEmployee || !user) return;
-    const { warning, employeeId } = warningDeleteUndo;
+    if (!warningDeleteUndo || !selectedClient || !user) return;
+    const { warning, clientId } = warningDeleteUndo;
     const { error } = await warningTable().insert({
       id: warning.id,
       company_id: user.id,
-      employee_id: employeeId,
+      client_id: clientId,
       misconduct_type: warning.misconductType,
       warning_type: warning.warningType,
       issue_date: warning.issueDate,
@@ -2364,11 +2430,11 @@ const Employees = () => {
       });
       return;
     }
-    setWarningsByEmployee((prev) => {
-      const existing = prev[employeeId] ?? [];
+    setWarningsByClient((prev) => {
+      const existing = prev[clientId] ?? [];
       return {
         ...prev,
-        [employeeId]: [warning, ...existing],
+        [clientId]: [warning, ...existing],
       };
     });
     clearWarningDeleteState();
@@ -2414,8 +2480,8 @@ const Employees = () => {
 
   const handleUndoTermination = useCallback(async () => {
     if (!terminationUndo || !user) return;
-    const { employeeBefore, employeeId } = terminationUndo;
-    const snapshot = employeeBefore as any;
+    const { clientBefore, clientId } = terminationUndo;
+    const snapshot = clientBefore as any;
     const {
       id: _id,
       company_id: _companyId,
@@ -2425,9 +2491,9 @@ const Employees = () => {
     } = snapshot;
 
     const { error } = await supabase
-      .from("employees")
-      .update(updatePayload as TablesInsert<"employees">)
-      .eq("id", employeeId)
+      .from("clients")
+      .update(pickClientWritePayload(updatePayload as Record<string, unknown>) as TablesInsert<"clients">)
+      .eq("id", clientId)
       .eq("company_id", user.id);
 
     if (error) {
@@ -2439,21 +2505,21 @@ const Employees = () => {
       return;
     }
 
-    const restored = employeeBefore;
-    setSelectedEmployee((prev) => (prev && prev.id === employeeId ? restored : prev));
-    setProfileForm((prev) => (selectedEmployee?.id === employeeId ? createProfileFormFromEmployee(restored) : prev));
-    setEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
-    setFilteredEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
-    setAllEmployees((prev) => prev.map((emp) => (emp.id === employeeId ? { ...emp, ...restored } : emp)));
+    const restored = clientBefore;
+    setSelectedClient((prev) => (prev && prev.id === clientId ? restored : prev));
+    setProfileForm((prev) => (selectedClient?.id === clientId ? createProfileFormFromClient(restored) : prev));
+    setClients((prev) => prev.map((emp) => (emp.id === clientId ? { ...emp, ...restored } : emp)));
+    setFilteredClients((prev) => prev.map((emp) => (emp.id === clientId ? { ...emp, ...restored } : emp)));
+    setAllClients((prev) => prev.map((emp) => (emp.id === clientId ? { ...emp, ...restored } : emp)));
 
     const restoredStatus = ((restored as any).status ?? "").toString().toLowerCase();
-    setEmployeeStatus(restoredStatus === "inactive" ? "Inactive" : "Active");
+    setClientStatus(restoredStatus === "inactive" ? "Inactive" : "Active");
     clearTerminationUndoState();
     toast({
       title: "Termination undone",
       description: "Client status and employment details were restored.",
     });
-  }, [clearTerminationUndoState, selectedEmployee?.id, terminationUndo, toast, user]);
+  }, [clearTerminationUndoState, selectedClient?.id, terminationUndo, toast, user]);
 
   useEffect(() => {
     if (terminationUndo) {
@@ -2470,17 +2536,17 @@ const Employees = () => {
   const isPdfFile = (fileName?: string) => fileName?.toLowerCase().endsWith(".pdf") ?? false;
 
   const canSaveWarning =
-    !!selectedEmployee &&
+    !!selectedClient &&
     warningForm.misconductTypes.length > 0 &&
     warningForm.issueDate.trim().length > 0 &&
     (editingWarning ? !!editingWarning.fileUrl : isPdfFile(warningForm.fileName) && !!warningFile);
   const fetchWarnings = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await warningTable()
         .select("id, misconduct_type, warning_type, issue_date, expiry_date, file_url")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("issue_date", { ascending: false });
 
       if (error) {
@@ -2492,7 +2558,7 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeWarning[] =
+      const mapped: ClientWarning[] =
         (data ?? []).map((row: any) => ({
           id: row.id,
           misconductType: row.misconduct_type,
@@ -2503,19 +2569,19 @@ const Employees = () => {
           fileUrl: row.file_url,
         })) ?? [];
 
-      setWarningsByEmployee((prev) => ({
+      setWarningsByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchWarnings(selectedEmployee.id);
+    if (selectedClient) {
+      fetchWarnings(selectedClient.id);
     }
-  }, [selectedEmployee, fetchWarnings]);
+  }, [selectedClient, fetchWarnings]);
 
   const resetWarningForm = () => {
     setWarningForm({
@@ -2533,7 +2599,7 @@ const Employees = () => {
 
   const handleSaveWarning = async () => {
     const isEditing = !!editingWarning;
-    if (!selectedEmployee || !user) {
+    if (!selectedClient || !user) {
       toast({
         title: "No client selected",
         description: "Select a client before adding a warning.",
@@ -2567,7 +2633,7 @@ const Employees = () => {
 
     if (!isEditing) {
       const safeName = warningFile!.name.replace(/\s+/g, "_");
-      const filePath = `${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+      const filePath = `${user.id}/${selectedClient.id}-${Date.now()}-${safeName}`;
 
       const { error: uploadError } = await supabase.storage.from("warnings").upload(filePath, warningFile!, {
         cacheControl: "3600",
@@ -2586,7 +2652,7 @@ const Employees = () => {
 
       const { error: insertError } = await warningTable().insert({
         company_id: user.id,
-        employee_id: selectedEmployee.id,
+        client_id: selectedClient.id,
         ...warningPayload,
         file_url: filePath,
       });
@@ -2622,7 +2688,7 @@ const Employees = () => {
 
     }
 
-    await fetchWarnings(selectedEmployee.id);
+    await fetchWarnings(selectedClient.id);
     resetWarningForm();
     setIsWarningDialogOpen(false);
     toast({
@@ -2669,7 +2735,7 @@ const Employees = () => {
   };
 
   const goToWarningGenerator = () => {
-    if (!selectedEmployee) {
+    if (!selectedClient) {
       toast({
         title: "No client selected",
         description: "Open a client profile before generating a warning.",
@@ -2680,26 +2746,26 @@ const Employees = () => {
 
     navigate("/documents/discipline/warnings", {
       state: {
-        employeeName: selectedEmployee.employee_name ?? "",
-        employeeSurname: selectedEmployee.employee_surname ?? "",
-        employeeIdNumber: selectedEmployee.id_number ?? "",
+        clientName: selectedClient.client_name ?? "",
+        clientSurname: selectedClient.client_surname ?? "",
+        clientIdNumber: selectedClient.id_number ?? "",
       },
     });
   };
 
   const handleDeleteWarning = async (warningId: string, fileUrl?: string) => {
-    if (!selectedEmployee || !user) return;
+    if (!selectedClient || !user) return;
     const confirmed = confirm("Are you sure you want to delete this warning?");
     if (!confirmed) return;
-    const existing = warningsByEmployee[selectedEmployee.id] ?? [];
+    const existing = warningsByClient[selectedClient.id] ?? [];
     const warning = existing.find((w) => w.id === warningId);
     if (!warning) return;
 
     // Optimistically remove from UI
     const next = existing.filter((w) => w.id !== warningId);
-    setWarningsByEmployee((prev) => ({
+    setWarningsByClient((prev) => ({
       ...prev,
-      [selectedEmployee.id]: next,
+      [selectedClient.id]: next,
     }));
 
     const storagePath = getStoragePathFromUrl(fileUrl);
@@ -2712,9 +2778,9 @@ const Employees = () => {
 
     if (deleteError) {
       // revert
-      setWarningsByEmployee((prev) => ({
+      setWarningsByClient((prev) => ({
         ...prev,
-        [selectedEmployee.id]: existing,
+        [selectedClient.id]: existing,
       }));
       toast({
         title: "Unable to delete warning",
@@ -2727,7 +2793,7 @@ const Employees = () => {
     const expiresAt = Date.now() + 20_000;
     startWarningDeleteTimers({
       warning,
-      employeeId: selectedEmployee.id,
+      clientId: selectedClient.id,
       storagePath,
       expiresAt,
     });
@@ -2738,7 +2804,7 @@ const Employees = () => {
     });
   };
 
-  const handleOpenWarning = async (warning: EmployeeWarning) => {
+  const handleOpenWarning = async (warning: ClientWarning) => {
     if (!warning.fileUrl) return;
     const storagePath = getStoragePathFromUrl(warning.fileUrl);
     const { data, error } = await supabase.storage
@@ -2755,7 +2821,7 @@ const Employees = () => {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
-  const handleEditWarning = (warning: EmployeeWarning) => {
+  const handleEditWarning = (warning: ClientWarning) => {
     setEditingWarning(warning);
     setWarningForm({
       misconductTypes: parseMisconductTypes(warning.misconductType),
@@ -2767,33 +2833,33 @@ const Employees = () => {
     setIsWarningDialogOpen(true);
   };
 
-  const warningsForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? warningsByEmployee[selectedEmployee.id] ?? [] : []),
-    [selectedEmployee, warningsByEmployee],
+  const warningsForSelectedClient = useMemo(
+    () => (selectedClient ? warningsByClient[selectedClient.id] ?? [] : []),
+    [selectedClient, warningsByClient],
   );
 
   const warningsByStatus = useMemo(() => {
     const todayISO = dateToday();
-    const isValid = (warning: EmployeeWarning) => warning.expiryDate && warning.expiryDate >= todayISO;
+    const isValid = (warning: ClientWarning) => warning.expiryDate && warning.expiryDate >= todayISO;
     return {
-      valid: warningsForSelectedEmployee.filter(isValid),
-      expired: warningsForSelectedEmployee.filter((w) => !isValid(w)),
+      valid: warningsForSelectedClient.filter(isValid),
+      expired: warningsForSelectedClient.filter((w) => !isValid(w)),
     };
-  }, [warningsForSelectedEmployee]);
+  }, [warningsForSelectedClient]);
 
   const canUploadContract =
-    !!selectedEmployee &&
+    !!selectedClient &&
     contractForm.contractType.trim().length > 0 &&
     isPdfFile(contractForm.fileName) &&
     !!contractFile;
 
   const fetchContracts = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await contractTable()
         .select("id, contract_type, issue_date, file_url, is_active")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("issue_date", { ascending: false });
 
       if (error) {
@@ -2805,7 +2871,7 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeContract[] =
+      const mapped: ClientContract[] =
         (data ?? []).map((row: any) => ({
           id: row.id,
           contractType: row.contract_type,
@@ -2815,27 +2881,27 @@ const Employees = () => {
           isActive: row.is_active ?? false,
         })) ?? [];
 
-      setContractsByEmployee((prev) => ({
+      setContractsByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
-  const fetchActiveContractsForEmployees = useCallback(
-    async (employeeIds: string[]) => {
+  const fetchActiveContractsForClients = useCallback(
+    async (clientIds: string[]) => {
       if (!user) return;
-      if (employeeIds.length === 0) {
-        setActiveContractsByEmployee({});
+      if (clientIds.length === 0) {
+        setActiveContractsByClient({});
         return;
       }
 
       const { data, error } = await contractTable()
-        .select("employee_id")
+        .select("client_id")
         .eq("company_id", user.id)
         .eq("is_active", true)
-        .in("employee_id", employeeIds);
+        .in("client_id", clientIds);
 
       if (error) {
         toast({
@@ -2846,29 +2912,29 @@ const Employees = () => {
         return;
       }
 
-      const activeIds = new Set((data ?? []).map((row: any) => row.employee_id));
+      const activeIds = new Set((data ?? []).map((row: any) => row.client_id));
       const next: Record<string, boolean> = {};
-      employeeIds.forEach((id) => {
+      clientIds.forEach((id) => {
         next[id] = activeIds.has(id);
       });
-      setActiveContractsByEmployee(next);
+      setActiveContractsByClient(next);
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchContracts(selectedEmployee.id);
+    if (selectedClient) {
+      fetchContracts(selectedClient.id);
     }
-  }, [selectedEmployee, fetchContracts]);
+  }, [selectedClient, fetchContracts]);
 
   const fetchIdDocument = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await idDocumentTable()
-        .select("id, employee_id, file_name, file_url, uploaded_at")
+        .select("id, client_id, file_name, file_url, uploaded_at")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("uploaded_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -2882,37 +2948,37 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeIdDocument | null = data
+      const mapped: ClientIdDocument | null = data
         ? {
             id: data.id,
-            employeeId: data.employee_id,
+            clientId: data.client_id,
             fileName: data.file_name || "document.pdf",
             fileUrl: data.file_url || "",
             uploadedAt: data.uploaded_at || "",
           }
         : null;
 
-      setIdDocumentByEmployee((prev) => ({
+      setIdDocumentByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchIdDocument(selectedEmployee.id);
+    if (selectedClient) {
+      fetchIdDocument(selectedClient.id);
     }
-  }, [fetchIdDocument, selectedEmployee]);
+  }, [fetchIdDocument, selectedClient]);
 
   const fetchTerminationDocument = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await terminationDocumentTable()
-        .select("id, employee_id, file_name, file_url, uploaded_at")
+        .select("id, client_id, file_name, file_url, uploaded_at")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("uploaded_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -2926,32 +2992,32 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeTerminationDocument | null = data
+      const mapped: ClientTerminationDocument | null = data
         ? {
             id: data.id,
-            employeeId: data.employee_id,
+            clientId: data.client_id,
             fileName: data.file_name || "document.pdf",
             fileUrl: data.file_url || "",
             uploadedAt: data.uploaded_at || "",
           }
         : null;
 
-      setTerminationDocumentByEmployee((prev) => ({
+      setTerminationDocumentByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchTerminationDocument(selectedEmployee.id);
+    if (selectedClient) {
+      fetchTerminationDocument(selectedClient.id);
     }
-  }, [fetchTerminationDocument, selectedEmployee]);
+  }, [fetchTerminationDocument, selectedClient]);
 
   const handleAddContract = async () => {
-    if (!selectedEmployee || !user) {
+    if (!selectedClient || !user) {
       toast({
         title: "No client selected",
         description: "Select a client before adding a contract.",
@@ -2969,7 +3035,7 @@ const Employees = () => {
     }
 
     const safeName = contractFile.name.replace(/\s+/g, "_");
-    const filePath = `${user.id}/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+    const filePath = `${user.id}/${selectedClient.id}-${Date.now()}-${safeName}`;
     const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, contractFile, {
       cacheControl: "3600",
       upsert: false,
@@ -2988,7 +3054,7 @@ const Employees = () => {
     const { data: inserted, error: insertError } = await contractTable()
       .insert({
         company_id: user.id,
-        employee_id: selectedEmployee.id,
+        client_id: selectedClient.id,
         contract_type: contractForm.contractType,
         issue_date: dateToday(),
         file_url: filePath,
@@ -3010,7 +3076,7 @@ const Employees = () => {
       const { error: deactivateError } = await contractTable()
         .update({ is_active: false })
         .eq("company_id", user.id)
-        .eq("employee_id", selectedEmployee.id)
+        .eq("client_id", selectedClient.id)
         .neq("id", inserted.id)
         .eq("is_active", true);
 
@@ -3023,8 +3089,8 @@ const Employees = () => {
       }
     }
 
-    await fetchContracts(selectedEmployee.id);
-    void fetchActiveContractsForEmployees(employees.map((employee) => employee.id));
+    await fetchContracts(selectedClient.id);
+    void fetchActiveContractsForClients(clients.map((client) => client.id));
     setContractForm({
       contractType: "",
       fileName: "",
@@ -3058,16 +3124,16 @@ const Employees = () => {
   };
 
   const handleDeleteContract = async (contractId: string, fileUrl?: string) => {
-    if (!selectedEmployee || !user) return;
+    if (!selectedClient || !user) return;
     const confirmed = confirm("Are you sure you want to delete this contract?");
     if (!confirmed) return;
-    const existing = contractsByEmployee[selectedEmployee.id] ?? [];
+    const existing = contractsByClient[selectedClient.id] ?? [];
     const contract = existing.find((item) => item.id === contractId);
     if (!contract) return;
 
-    setContractsByEmployee((prev) => ({
+    setContractsByClient((prev) => ({
       ...prev,
-      [selectedEmployee.id]: existing.filter((item) => item.id !== contractId),
+      [selectedClient.id]: existing.filter((item) => item.id !== contractId),
     }));
 
     const { error: deleteError } = await contractTable()
@@ -3076,9 +3142,9 @@ const Employees = () => {
       .eq("company_id", user.id);
 
     if (deleteError) {
-      setContractsByEmployee((prev) => ({
+      setContractsByClient((prev) => ({
         ...prev,
-        [selectedEmployee.id]: existing,
+        [selectedClient.id]: existing,
       }));
       toast({
         title: "Unable to delete contract",
@@ -3098,7 +3164,7 @@ const Employees = () => {
       description: "The contract has been removed.",
     });
 
-    void fetchActiveContractsForEmployees(employees.map((employee) => employee.id));
+    void fetchActiveContractsForClients(clients.map((client) => client.id));
   };
 
   const handleStartContractUpload = () => {
@@ -3115,7 +3181,7 @@ const Employees = () => {
     setIsContractDialogOpen(true);
   };
 
-  const handleOpenContract = async (contract: EmployeeContract) => {
+  const handleOpenContract = async (contract: ClientContract) => {
     if (!contract.fileUrl) return;
     const storagePath = getContractStoragePathFromUrl(contract.fileUrl);
     const { data, error } = await supabase.storage
@@ -3133,9 +3199,9 @@ const Employees = () => {
   };
 
   const removeActiveEmploymentContract = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
-      const existingContract = (contractsByEmployee[employeeId] ?? []).find((contract) => contract.isActive) ?? null;
+      const existingContract = (contractsByClient[clientId] ?? []).find((contract) => contract.isActive) ?? null;
       if (!existingContract) {
         setIsEmploymentContractMarkedForRemoval(false);
         return;
@@ -3155,22 +3221,22 @@ const Employees = () => {
         await supabase.storage.from("contracts").remove([storagePath]);
       }
 
-      setContractsByEmployee((prev) => ({
+      setContractsByClient((prev) => ({
         ...prev,
-        [employeeId]: (prev[employeeId] ?? []).filter((contract) => contract.id !== existingContract.id),
+        [clientId]: (prev[clientId] ?? []).filter((contract) => contract.id !== existingContract.id),
       }));
       setIsEmploymentContractMarkedForRemoval(false);
     },
-    [contractsByEmployee, user],
+    [contractsByClient, user],
   );
 
   const uploadPendingEmploymentContract = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!pendingEmploymentContractFile || !user) return;
       setIsEmploymentContractUploading(true);
       try {
         const safeName = pendingEmploymentContractFile.name.replace(/\s+/g, "_");
-        const filePath = `${user.id}/${employeeId}-${Date.now()}-${safeName}`;
+        const filePath = `${user.id}/${clientId}-${Date.now()}-${safeName}`;
         const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingEmploymentContractFile, {
           cacheControl: "3600",
           upsert: false,
@@ -3182,7 +3248,7 @@ const Employees = () => {
         const { data: inserted, error: insertError } = await contractTable()
           .insert({
             company_id: user.id,
-            employee_id: employeeId,
+            client_id: clientId,
             contract_type: profileForm.contractType || "Permanent",
             issue_date: dateToday(),
             file_url: filePath,
@@ -3197,14 +3263,14 @@ const Employees = () => {
           const { error: deactivateError } = await contractTable()
             .update({ is_active: false })
             .eq("company_id", user.id)
-            .eq("employee_id", employeeId)
+            .eq("client_id", clientId)
             .neq("id", inserted.id)
             .eq("is_active", true);
 
           if (deactivateError) throw deactivateError;
         }
 
-        await fetchContracts(employeeId);
+        await fetchContracts(clientId);
         setPendingEmploymentContractFile(null);
         setPendingEmploymentContractName("");
         setIsEmploymentContractMarkedForRemoval(false);
@@ -3235,9 +3301,9 @@ const Employees = () => {
   };
 
   const handleMarkEmploymentContractForRemoval = () => {
-    if (!selectedEmployee) return;
+    if (!selectedClient) return;
     const activeContract =
-      (contractsByEmployee[selectedEmployee.id] ?? []).find((contract) => contract.isActive) ?? null;
+      (contractsByClient[selectedClient.id] ?? []).find((contract) => contract.isActive) ?? null;
     if (!activeContract) return;
     const confirmed = confirm(
       `Are you sure you want to delete ${activeContract.fileName} because it will be permanently removed from all databases.`,
@@ -3264,20 +3330,20 @@ const Employees = () => {
     setPendingTerminationDocumentFile(file);
     setPendingTerminationDocumentName(file.name);
     event.target.value = "";
-    if (selectedEmployee) {
-      void uploadTerminationDocument(selectedEmployee.id, file);
+    if (selectedClient) {
+      void uploadTerminationDocument(selectedClient.id, file);
     }
   };
 
   const uploadTerminationDocument = useCallback(
-    async (employeeId: string, file?: File) => {
+    async (clientId: string, file?: File) => {
       if (!user) return;
       const uploadFile = file ?? pendingTerminationDocumentFile;
       if (!uploadFile) return;
 
       setIsTerminationDocumentUploading(true);
       try {
-        const existing = terminationDocumentByEmployee[employeeId] ?? null;
+        const existing = terminationDocumentByClient[clientId] ?? null;
         if (existing) {
           const { error: deleteExistingError } = await terminationDocumentTable()
             .delete()
@@ -3292,7 +3358,7 @@ const Employees = () => {
         }
 
         const safeName = uploadFile.name.replace(/\s+/g, "_");
-        const filePath = `${user.id}/termination-documents/${employeeId}-${Date.now()}-${safeName}`;
+        const filePath = `${user.id}/termination-documents/${clientId}-${Date.now()}-${safeName}`;
         const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, uploadFile, {
           cacheControl: "3600",
           upsert: false,
@@ -3303,13 +3369,13 @@ const Employees = () => {
 
         const { error: insertError } = await terminationDocumentTable().insert({
           company_id: user.id,
-          employee_id: employeeId,
+          client_id: clientId,
           file_name: uploadFile.name,
           file_url: filePath,
         });
         if (insertError) throw insertError;
 
-        await fetchTerminationDocument(employeeId);
+        await fetchTerminationDocument(clientId);
         setPendingTerminationDocumentFile(null);
         setPendingTerminationDocumentName("");
         toast({
@@ -3326,21 +3392,21 @@ const Employees = () => {
         setIsTerminationDocumentUploading(false);
       }
     },
-    [fetchTerminationDocument, pendingTerminationDocumentFile, terminationDocumentByEmployee, toast, user],
+    [fetchTerminationDocument, pendingTerminationDocumentFile, terminationDocumentByClient, toast, user],
   );
 
   const handleConfirmTerminate = useCallback(async () => {
-    if (!selectedEmployee) return;
-    const fullName = `${selectedEmployee.employee_name ?? ""} ${selectedEmployee.employee_surname ?? ""}`.trim() || "this client";
+    if (!selectedClient) return;
+    const fullName = `${selectedClient.client_name ?? ""} ${selectedClient.client_surname ?? ""}`.trim() || "this client";
     const confirmed = confirm(
       `Are you sure you want to terminate ${fullName}?\n\nThis action can be undone for 20 seconds.`,
     );
     if (!confirmed) return;
-    const employeeId = selectedEmployee.id;
+    const clientId = selectedClient.id;
     const ok = await handleTerminateWithReason(pendingTerminationReason, pendingTerminationDate);
     if (ok) {
       if (pendingTerminationDocumentFile) {
-        await uploadTerminationDocument(employeeId, pendingTerminationDocumentFile);
+        await uploadTerminationDocument(clientId, pendingTerminationDocumentFile);
       }
       setIsTerminateDialogOpen(false);
       setPendingTerminationReason("");
@@ -3351,11 +3417,11 @@ const Employees = () => {
     pendingTerminationDate,
     pendingTerminationReason,
     pendingTerminationDocumentFile,
-    selectedEmployee,
+    selectedClient,
     uploadTerminationDocument,
   ]);
 
-  const handleOpenTerminationDocument = async (document: EmployeeTerminationDocument) => {
+  const handleOpenTerminationDocument = async (document: ClientTerminationDocument) => {
     if (!document.fileUrl) return;
     const storagePath = getContractStoragePathFromUrl(document.fileUrl);
     const { data, error } = await supabase.storage
@@ -3373,8 +3439,8 @@ const Employees = () => {
   };
 
   const handleRemoveTerminationDocument = async () => {
-    if (!selectedEmployee || !user) return;
-    const existing = terminationDocumentByEmployee[selectedEmployee.id] ?? null;
+    if (!selectedClient || !user) return;
+    const existing = terminationDocumentByClient[selectedClient.id] ?? null;
     if (!existing) return;
     const confirmed = confirm(
       `Are you sure you want to delete ${existing.fileName} because it will be permanently removed from all databases.`,
@@ -3400,9 +3466,9 @@ const Employees = () => {
       await supabase.storage.from("contracts").remove([storagePath]);
     }
 
-    setTerminationDocumentByEmployee((prev) => ({
+    setTerminationDocumentByClient((prev) => ({
       ...prev,
-      [selectedEmployee.id]: null,
+      [selectedClient.id]: null,
     }));
     toast({
       title: "Termination document deleted",
@@ -3411,11 +3477,11 @@ const Employees = () => {
   };
 
   const handleTerminationDateChange = async (nextDate: string) => {
-    if (!selectedEmployee || !user) return;
+    if (!selectedClient || !user) return;
     const { error } = await supabase
-      .from("employees")
-      .update({ terminated_at: nextDate || null } as unknown as TablesInsert<"employees">)
-      .eq("id", selectedEmployee.id)
+      .from("clients")
+      .update(pickClientWritePayload({ terminated_at: nextDate || null }) as unknown as TablesInsert<"clients">)
+      .eq("id", selectedClient.id)
       .eq("company_id", user.id);
 
     if (error) {
@@ -3427,19 +3493,19 @@ const Employees = () => {
       return;
     }
 
-    setSelectedEmployee((prev) => (prev ? { ...prev, terminated_at: nextDate || null } : prev));
-    setEmployees((prev) =>
-      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    setSelectedClient((prev) => (prev ? { ...prev, terminated_at: nextDate || null } : prev));
+    setClients((prev) =>
+      prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, terminated_at: nextDate || null } : emp)),
     );
-    setFilteredEmployees((prev) =>
-      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    setFilteredClients((prev) =>
+      prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, terminated_at: nextDate || null } : emp)),
     );
-    setAllEmployees((prev) =>
-      prev.map((emp) => (emp.id === selectedEmployee.id ? { ...emp, terminated_at: nextDate || null } : emp)),
+    setAllClients((prev) =>
+      prev.map((emp) => (emp.id === selectedClient.id ? { ...emp, terminated_at: nextDate || null } : emp)),
     );
   };
 
-  const handleOpenIdDocument = async (document: EmployeeIdDocument) => {
+  const handleOpenIdDocument = async (document: ClientIdDocument) => {
     if (!document.fileUrl) return;
     const storagePath = getIdDocumentStoragePathFromUrl(document.fileUrl);
     const { data, error } = await supabase.storage
@@ -3457,12 +3523,12 @@ const Employees = () => {
   };
 
   const fetchLicences = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await licenceTable()
-        .select("id, employee_id, category, licence_type, file_name, file_url, uploaded_at")
+        .select("id, client_id, category, licence_type, file_name, file_url, uploaded_at")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("uploaded_at", { ascending: false });
 
       if (error) {
@@ -3474,10 +3540,10 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeLicence[] =
+      const mapped: ClientLicence[] =
         (data ?? []).map((row: any) => ({
           id: row.id,
-          employeeId: row.employee_id,
+          clientId: row.client_id,
           category: row.category as LicenceCategory,
           licenceType: row.licence_type || "",
           fileName: row.file_name || "document.pdf",
@@ -3485,21 +3551,21 @@ const Employees = () => {
           uploadedAt: row.uploaded_at || "",
         })) ?? [];
 
-      setLicencesByEmployee((prev) => ({
+      setLicencesByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchLicences(selectedEmployee.id);
+    if (selectedClient) {
+      fetchLicences(selectedClient.id);
     }
-  }, [fetchLicences, selectedEmployee]);
+  }, [fetchLicences, selectedClient]);
 
-  const handleOpenLicence = async (licence: EmployeeLicence) => {
+  const handleOpenLicence = async (licence: ClientLicence) => {
     if (!licence.fileUrl) return;
     const storagePath = getContractStoragePathFromUrl(licence.fileUrl);
     const { data, error } = await supabase.storage
@@ -3516,17 +3582,17 @@ const Employees = () => {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
-  const handleRemoveLicence = async (licence: EmployeeLicence) => {
-    if (!selectedEmployee || !user) return;
+  const handleRemoveLicence = async (licence: ClientLicence) => {
+    if (!selectedClient || !user) return;
     const confirmed = confirm(
       `Are you sure you want to delete ${licence.fileName} because it will be permanently removed from all databases.`,
     );
     if (!confirmed) return;
 
-    const existing = licencesByEmployee[selectedEmployee.id] ?? [];
-    setLicencesByEmployee((prev) => ({
+    const existing = licencesByClient[selectedClient.id] ?? [];
+    setLicencesByClient((prev) => ({
       ...prev,
-      [selectedEmployee.id]: existing.filter((item) => item.id !== licence.id),
+      [selectedClient.id]: existing.filter((item) => item.id !== licence.id),
     }));
 
     const { error: deleteError } = await licenceTable()
@@ -3535,9 +3601,9 @@ const Employees = () => {
       .eq("company_id", user.id);
 
     if (deleteError) {
-      setLicencesByEmployee((prev) => ({
+      setLicencesByClient((prev) => ({
         ...prev,
-        [selectedEmployee.id]: existing,
+        [selectedClient.id]: existing,
       }));
       toast({
         title: "Unable to delete licence",
@@ -3560,7 +3626,7 @@ const Employees = () => {
 
   const handleLicenceFileChange = async (category: LicenceCategory, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedEmployee || !user) return;
+    if (!file || !selectedClient || !user) return;
     const selectedType = licenceTypeSelection[category];
     if (!selectedType) {
       toast({
@@ -3582,7 +3648,7 @@ const Employees = () => {
     }
 
     try {
-      const existingSameType = (licencesByEmployee[selectedEmployee.id] ?? []).find(
+      const existingSameType = (licencesByClient[selectedClient.id] ?? []).find(
         (item) => item.category === category && item.licenceType === selectedType,
       );
       if (existingSameType) {
@@ -3596,7 +3662,7 @@ const Employees = () => {
       }
 
       const safeName = file.name.replace(/\s+/g, "_");
-      const filePath = `${user.id}/licences/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+      const filePath = `${user.id}/licences/${selectedClient.id}-${Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, file, {
         cacheControl: "3600",
         upsert: false,
@@ -3606,7 +3672,7 @@ const Employees = () => {
 
       const { error: insertError } = await licenceTable().insert({
         company_id: user.id,
-        employee_id: selectedEmployee.id,
+        client_id: selectedClient.id,
         category,
         licence_type: selectedType,
         file_name: file.name,
@@ -3615,7 +3681,7 @@ const Employees = () => {
       });
       if (insertError) throw insertError;
 
-      await fetchLicences(selectedEmployee.id);
+      await fetchLicences(selectedClient.id);
       setLicenceTypeSelection((prev) => ({ ...prev, [category]: "" }));
       toast({
         title: "Licence uploaded",
@@ -3633,12 +3699,12 @@ const Employees = () => {
   };
 
   const fetchEducations = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
       const { data, error } = await educationTable()
-        .select("id, employee_id, category, qualification_type, file_name, file_url, uploaded_at")
+        .select("id, client_id, category, qualification_type, file_name, file_url, uploaded_at")
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId)
+        .eq("client_id", clientId)
         .order("uploaded_at", { ascending: false });
 
       if (error) {
@@ -3650,10 +3716,10 @@ const Employees = () => {
         return;
       }
 
-      const mapped: EmployeeEducation[] =
+      const mapped: ClientEducation[] =
         (data ?? []).map((row: any) => ({
           id: row.id,
-          employeeId: row.employee_id,
+          clientId: row.client_id,
           category: row.category as EducationCategory,
           qualificationType: row.qualification_type || "",
           fileName: row.file_name || "document.pdf",
@@ -3661,21 +3727,21 @@ const Employees = () => {
           uploadedAt: row.uploaded_at || "",
         })) ?? [];
 
-      setEducationsByEmployee((prev) => ({
+      setEducationsByClient((prev) => ({
         ...prev,
-        [employeeId]: mapped,
+        [clientId]: mapped,
       }));
     },
     [toast, user],
   );
 
   useEffect(() => {
-    if (selectedEmployee) {
-      fetchEducations(selectedEmployee.id);
+    if (selectedClient) {
+      fetchEducations(selectedClient.id);
     }
-  }, [fetchEducations, selectedEmployee]);
+  }, [fetchEducations, selectedClient]);
 
-  const handleOpenEducation = async (education: EmployeeEducation) => {
+  const handleOpenEducation = async (education: ClientEducation) => {
     if (!education.fileUrl) return;
     const storagePath = getContractStoragePathFromUrl(education.fileUrl);
     const { data, error } = await supabase.storage
@@ -3692,17 +3758,17 @@ const Employees = () => {
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
-  const handleRemoveEducation = async (education: EmployeeEducation) => {
-    if (!selectedEmployee || !user) return;
+  const handleRemoveEducation = async (education: ClientEducation) => {
+    if (!selectedClient || !user) return;
     const confirmed = confirm(
       `Are you sure you want to delete ${education.fileName} because it will be permanently removed from all databases.`,
     );
     if (!confirmed) return;
 
-    const existing = educationsByEmployee[selectedEmployee.id] ?? [];
-    setEducationsByEmployee((prev) => ({
+    const existing = educationsByClient[selectedClient.id] ?? [];
+    setEducationsByClient((prev) => ({
       ...prev,
-      [selectedEmployee.id]: existing.filter((item) => item.id !== education.id),
+      [selectedClient.id]: existing.filter((item) => item.id !== education.id),
     }));
 
     const { error: deleteError } = await educationTable()
@@ -3711,9 +3777,9 @@ const Employees = () => {
       .eq("company_id", user.id);
 
     if (deleteError) {
-      setEducationsByEmployee((prev) => ({
+      setEducationsByClient((prev) => ({
         ...prev,
-        [selectedEmployee.id]: existing,
+        [selectedClient.id]: existing,
       }));
       toast({
         title: "Unable to delete education document",
@@ -3736,7 +3802,7 @@ const Employees = () => {
 
   const handleEducationFileChange = async (category: EducationCategory, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !selectedEmployee || !user) return;
+    if (!file || !selectedClient || !user) return;
     const selectedType = educationTypeSelection[category];
     if (!selectedType) {
       toast({
@@ -3758,7 +3824,7 @@ const Employees = () => {
     }
 
     try {
-      const existingSameType = (educationsByEmployee[selectedEmployee.id] ?? []).find(
+      const existingSameType = (educationsByClient[selectedClient.id] ?? []).find(
         (item) => item.category === category && item.qualificationType === selectedType,
       );
       if (existingSameType) {
@@ -3772,7 +3838,7 @@ const Employees = () => {
       }
 
       const safeName = file.name.replace(/\s+/g, "_");
-      const filePath = `${user.id}/education/${selectedEmployee.id}-${Date.now()}-${safeName}`;
+      const filePath = `${user.id}/education/${selectedClient.id}-${Date.now()}-${safeName}`;
       const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, file, {
         cacheControl: "3600",
         upsert: false,
@@ -3782,7 +3848,7 @@ const Employees = () => {
 
       const { error: insertError } = await educationTable().insert({
         company_id: user.id,
-        employee_id: selectedEmployee.id,
+        client_id: selectedClient.id,
         category,
         qualification_type: selectedType,
         file_name: file.name,
@@ -3791,7 +3857,7 @@ const Employees = () => {
       });
       if (insertError) throw insertError;
 
-      await fetchEducations(selectedEmployee.id);
+      await fetchEducations(selectedClient.id);
       setEducationTypeSelection((prev) => ({ ...prev, [category]: "" }));
       toast({
         title: "Education uploaded",
@@ -3809,9 +3875,9 @@ const Employees = () => {
   };
 
   const removeIdDocument = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!user) return;
-      const existingDocument = idDocumentByEmployee[employeeId];
+      const existingDocument = idDocumentByClient[clientId];
       if (!existingDocument) {
         setIsIdDocumentMarkedForRemoval(false);
         return;
@@ -3820,7 +3886,7 @@ const Employees = () => {
       const { error: deleteError } = await idDocumentTable()
         .delete()
         .eq("company_id", user.id)
-        .eq("employee_id", employeeId);
+        .eq("client_id", clientId);
 
       if (deleteError) {
         throw deleteError;
@@ -3830,23 +3896,23 @@ const Employees = () => {
         await supabase.storage.from("contracts").remove([getIdDocumentStoragePathFromUrl(existingDocument.fileUrl)]);
       }
 
-      setIdDocumentByEmployee((prev) => ({
+      setIdDocumentByClient((prev) => ({
         ...prev,
-        [employeeId]: null,
+        [clientId]: null,
       }));
       setIsIdDocumentMarkedForRemoval(false);
     },
-    [idDocumentByEmployee, user],
+    [idDocumentByClient, user],
   );
 
   const uploadPendingIdDocument = useCallback(
-    async (employeeId: string) => {
+    async (clientId: string) => {
       if (!pendingIdDocumentFile || !user) return;
       setIsIdDocumentUploading(true);
       try {
-        const existingDocument = idDocumentByEmployee[employeeId] ?? null;
+        const existingDocument = idDocumentByClient[clientId] ?? null;
         const safeName = pendingIdDocumentFile.name.replace(/\s+/g, "_");
-        const filePath = `${user.id}/id-passports/${employeeId}-${Date.now()}-${safeName}`;
+        const filePath = `${user.id}/id-passports/${clientId}-${Date.now()}-${safeName}`;
 
         const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingIdDocumentFile, {
           cacheControl: "3600",
@@ -3862,14 +3928,14 @@ const Employees = () => {
           .upsert(
             {
               company_id: user.id,
-              employee_id: employeeId,
+              client_id: clientId,
               file_name: pendingIdDocumentFile.name,
               file_url: filePath,
               uploaded_at: new Date().toISOString(),
             },
-            { onConflict: "employee_id" },
+            { onConflict: "client_id" },
           )
-          .select("id, employee_id, file_name, file_url, uploaded_at")
+          .select("id, client_id, file_name, file_url, uploaded_at")
           .single();
 
         if (error) {
@@ -3880,11 +3946,11 @@ const Employees = () => {
           await supabase.storage.from("contracts").remove([getIdDocumentStoragePathFromUrl(existingDocument.fileUrl)]);
         }
 
-        setIdDocumentByEmployee((prev) => ({
+        setIdDocumentByClient((prev) => ({
           ...prev,
-          [employeeId]: {
+          [clientId]: {
             id: data.id,
-            employeeId: data.employee_id,
+            clientId: data.client_id,
             fileName: data.file_name || pendingIdDocumentFile.name,
             fileUrl: data.file_url || filePath,
             uploadedAt: data.uploaded_at || new Date().toISOString(),
@@ -3896,7 +3962,7 @@ const Employees = () => {
         setIsIdDocumentUploading(false);
       }
     },
-    [idDocumentByEmployee, pendingIdDocumentFile, user],
+    [idDocumentByClient, pendingIdDocumentFile, user],
   );
 
   const handleIdPassportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -3924,9 +3990,9 @@ const Employees = () => {
   };
 
   const handleMarkIdDocumentForRemoval = () => {
-    if (!idDocumentForSelectedEmployee) return;
+    if (!idDocumentForSelectedClient) return;
     const confirmed = confirm(
-      `Are you sure you want to delete ${idDocumentForSelectedEmployee.fileName} because it will be permanently removed from all databases.`,
+      `Are you sure you want to delete ${idDocumentForSelectedClient.fileName} because it will be permanently removed from all databases.`,
     );
     if (!confirmed) return;
     setPendingIdDocumentFile(null);
@@ -3938,27 +4004,27 @@ const Employees = () => {
     setActiveEditSection("identity");
   };
 
-  const contractsForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? contractsByEmployee[selectedEmployee.id] ?? [] : []),
-    [selectedEmployee, contractsByEmployee],
+  const contractsForSelectedClient = useMemo(
+    () => (selectedClient ? contractsByClient[selectedClient.id] ?? [] : []),
+    [selectedClient, contractsByClient],
   );
-  const terminationDocumentForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? terminationDocumentByEmployee[selectedEmployee.id] ?? null : null),
-    [selectedEmployee, terminationDocumentByEmployee],
+  const terminationDocumentForSelectedClient = useMemo(
+    () => (selectedClient ? terminationDocumentByClient[selectedClient.id] ?? null : null),
+    [selectedClient, terminationDocumentByClient],
   );
-  const idDocumentForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? idDocumentByEmployee[selectedEmployee.id] ?? null : null),
-    [idDocumentByEmployee, selectedEmployee],
+  const idDocumentForSelectedClient = useMemo(
+    () => (selectedClient ? idDocumentByClient[selectedClient.id] ?? null : null),
+    [idDocumentByClient, selectedClient],
   );
-  const hasEffectiveIdDocument = !!idDocumentForSelectedEmployee && !isIdDocumentMarkedForRemoval;
+  const hasEffectiveIdDocument = !!idDocumentForSelectedClient && !isIdDocumentMarkedForRemoval;
 
   const profileCompletion = useMemo(() => {
     const derivedDob = isSouthAfricanNationality
       ? formatInputDate(extractDobFromId(profileForm.idNumber || ""))
       : profileForm.dateOfBirth;
     const fields = [
-      { label: "Name", value: profileForm.employeeName },
-      { label: "Surname", value: profileForm.employeeSurname },
+      { label: "Name", value: profileForm.clientName },
+      { label: "Surname", value: profileForm.clientSurname },
       { label: "ID Number", value: profileForm.idNumber },
       { label: "Date of Birth", value: derivedDob },
       { label: "Nationality", value: profileForm.nationality },
@@ -3974,7 +4040,7 @@ const Employees = () => {
       { label: "Start Date", value: profileForm.startDate },
       { label: "Contract Type", value: profileForm.contractType },
       { label: "Job Title", value: profileForm.jobTitle },
-      { label: "Client Number", value: profileForm.employeeNumber },
+      { label: "Client Number", value: profileForm.clientNumber },
       { label: "Probation Period", value: probationPeriod },
       { label: "Retirement Age", value: retirementAge },
       { label: "Department", value: department },
@@ -4024,7 +4090,7 @@ const Employees = () => {
     if (!postalComplete) {
       missingFields.push("Postal address");
     }
-    const hasContract = contractsForSelectedEmployee.length > 0;
+    const hasContract = contractsForSelectedClient.length > 0;
     const hasIdPassportDocument = hasEffectiveIdDocument;
     if (!hasIdPassportDocument) {
       missingFields.push("ID/Passport document");
@@ -4052,7 +4118,7 @@ const Employees = () => {
     };
   }, [
     profileForm,
-    contractsForSelectedEmployee,
+    contractsForSelectedClient,
     isSouthAfricanNationality,
     probationPeriod,
     retirementAge,
@@ -4069,24 +4135,24 @@ const Employees = () => {
 
   const contractsByStatus = useMemo(
     () => ({
-      active: contractsForSelectedEmployee.filter((contract) => contract.isActive),
-      inactive: contractsForSelectedEmployee.filter((contract) => !contract.isActive),
+      active: contractsForSelectedClient.filter((contract) => contract.isActive),
+      inactive: contractsForSelectedClient.filter((contract) => !contract.isActive),
     }),
-    [contractsForSelectedEmployee],
+    [contractsForSelectedClient],
   );
-  const activeContractForSelectedEmployee = useMemo(
+  const activeContractForSelectedClient = useMemo(
     () => contractsByStatus.active[0] ?? null,
     [contractsByStatus],
   );
   const hasEffectiveEmploymentContract =
-    !!activeContractForSelectedEmployee && !isEmploymentContractMarkedForRemoval;
-  const licencesForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? licencesByEmployee[selectedEmployee.id] ?? [] : []),
-    [licencesByEmployee, selectedEmployee],
+    !!activeContractForSelectedClient && !isEmploymentContractMarkedForRemoval;
+  const licencesForSelectedClient = useMemo(
+    () => (selectedClient ? licencesByClient[selectedClient.id] ?? [] : []),
+    [licencesByClient, selectedClient],
   );
-  const educationsForSelectedEmployee = useMemo(
-    () => (selectedEmployee ? educationsByEmployee[selectedEmployee.id] ?? [] : []),
-    [educationsByEmployee, selectedEmployee],
+  const educationsForSelectedClient = useMemo(
+    () => (selectedClient ? educationsByClient[selectedClient.id] ?? [] : []),
+    [educationsByClient, selectedClient],
   );
 
   const misconductOptions = useMemo(() => {
@@ -4111,55 +4177,55 @@ const Employees = () => {
     return misconductOptions.filter((type) => type.name.toLowerCase().includes(query));
   }, [misconductSearch, misconductOptions]);
 
-  const navigationEmployees = allEmployees.length > 0 ? allEmployees : employees;
+  const navigationClients = allClients.length > 0 ? allClients : clients;
 
-  const selectedEmployeeIndex = useMemo(() => {
-    if (!selectedEmployee) return -1;
-    return navigationEmployees.findIndex((employee) => employee.id === selectedEmployee.id);
-  }, [navigationEmployees, selectedEmployee]);
+  const selectedClientIndex = useMemo(() => {
+    if (!selectedClient) return -1;
+    return navigationClients.findIndex((client) => client.id === selectedClient.id);
+  }, [navigationClients, selectedClient]);
 
-  const hasPreviousEmployee = selectedEmployeeIndex > 0;
-  const hasNextEmployee =
-    selectedEmployeeIndex >= 0 && selectedEmployeeIndex < navigationEmployees.length - 1;
+  const hasPreviousClient = selectedClientIndex > 0;
+  const hasNextClient =
+    selectedClientIndex >= 0 && selectedClientIndex < navigationClients.length - 1;
 
-  const navigateToEmployee = useCallback(
+  const navigateToClient = useCallback(
     async (index: number) => {
-      const nextEmployee = navigationEmployees[index];
-      if (!nextEmployee) return;
-      let employeeForProfile = nextEmployee;
+      const nextClient = navigationClients[index];
+      if (!nextClient) return;
+      let clientForProfile = nextClient;
       if (user) {
         const { data } = await (supabase as any)
-          .from("employees")
-          .select(employeeSelectColumnsWithTermination)
+          .from("clients")
+          .select(clientSelectColumnsWithTermination)
           .eq("company_id", user.id)
-          .eq("id", nextEmployee.id)
+          .eq("id", nextClient.id)
           .maybeSingle();
         if (data) {
-          employeeForProfile = data as Employee;
+          clientForProfile = data as Client;
         }
       }
-      setSelectedEmployee(employeeForProfile);
-      setProfileForm(createProfileFormFromEmployee(employeeForProfile));
-      setProbationPeriod(employeeForProfile.probation_period ?? "");
+      setSelectedClient(clientForProfile);
+      setProfileForm(createProfileFormFromClient(clientForProfile));
+      setProbationPeriod(clientForProfile.probation_period ?? "");
       setRetirementAge(
-        retirementAgeOptions.find((option) => option === String(employeeForProfile.retirement_age ?? 65)) ?? "65",
+        retirementAgeOptions.find((option) => option === String(clientForProfile.retirement_age ?? 65)) ?? "65",
       );
-      setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
-      setTradeUnion(employeeForProfile.trade_union ?? "");
-      setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
-      setBranch(employeeForProfile.branch ?? "");
-      setReportingTo(employeeForProfile.reporting_to ?? "");
+      setUnionMember((clientForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
+      setTradeUnion(clientForProfile.trade_union ?? "");
+      setDepartment((clientForProfile.department as (typeof departmentOptions)[number]) ?? "");
+      setBranch(clientForProfile.branch ?? "");
+      setReportingTo(clientForProfile.reporting_to ?? "");
       setOccupationalLevel(
-        (employeeForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+        (clientForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
       );
-      setSalaryType((employeeForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-      setBasicSalary(employeeForProfile.basic_salary ?? "");
-      setWorkEmail(employeeForProfile.work_email ?? "");
-      setWorkCellNumber(employeeForProfile.work_cell_number ?? "");
+      setSalaryType((clientForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+      setBasicSalary(clientForProfile.basic_salary ?? "");
+      setWorkEmail(clientForProfile.work_email ?? "");
+      setWorkCellNumber(clientForProfile.work_cell_number ?? "");
       setActiveTab("personal");
       setIsEditMode(false);
     },
-    [navigationEmployees, user],
+    [navigationClients, user],
   );
 
   const toggleWarningMisconduct = (type: string) => {
@@ -4253,12 +4319,64 @@ const Employees = () => {
     [activeEditSection, guardEditSession, isEditMode],
   );
 
+  const persistClientLogoPath = useCallback(async (clientId: string, storagePath: string) => {
+    const attempts: Array<{ payload: Record<string, unknown>; onConflict: string }> = [
+      { payload: { client_id: clientId, company_logo_url: storagePath }, onConflict: "client_id" },
+      { payload: { employee_id: clientId, company_logo_url: storagePath }, onConflict: "employee_id" },
+      { payload: { client_id: clientId, logo_url: storagePath }, onConflict: "client_id" },
+      { payload: { employee_id: clientId, logo_url: storagePath }, onConflict: "employee_id" },
+    ];
+
+    let lastError: unknown = null;
+    for (const attempt of attempts) {
+      const { error } = await clientLogoTable().upsert(attempt.payload, { onConflict: attempt.onConflict });
+      if (!error) return;
+      lastError = error;
+    }
+    throw lastError ?? new Error("Unable to save client logo record.");
+  }, []);
+
+  const removeClientLogoRecord = useCallback(async (clientId: string) => {
+    const filters: Array<"client_id" | "employee_id"> = ["client_id", "employee_id"];
+    let success = false;
+    for (const column of filters) {
+      const { error } = await clientLogoTable().delete().eq(column, clientId);
+      if (!error) {
+        success = true;
+      }
+    }
+    if (!success) {
+      throw new Error("Unable to remove client logo record.");
+    }
+  }, []);
+
+  const loadClientLogoPath = useCallback(async (clientId: string) => {
+    const filters: Array<"client_id" | "employee_id"> = ["client_id", "employee_id"];
+    for (const column of filters) {
+      const { data, error } = await clientLogoTable().select("*").eq(column, clientId).limit(1);
+      if (error) continue;
+      const row = (Array.isArray(data) ? data[0] : null) as Record<string, unknown> | null;
+      const path = getClientLogoPathFromRecord(row);
+      setClientLogoPathByClient((prev) => ({ ...prev, [clientId]: path }));
+      return path;
+    }
+    return "";
+  }, []);
+
   const resolveClientLogoUrl = useCallback(
-    (employee: Employee | null) => {
-      if (!employee) return "";
-      const cached = clientLogoPreviewByEmployee[employee.id];
+    (client: Client | null) => {
+      if (!client) return "";
+      const cached = clientLogoPreviewByClient[client.id];
       if (cached) return cached;
-      const dynamic = employee as Record<string, unknown>;
+      const mapped = (clientLogoPathByClient[client.id] ?? "").trim();
+      if (mapped) {
+        if (mapped.startsWith("http://") || mapped.startsWith("https://")) {
+          return mapped;
+        }
+        const { data } = supabase.storage.from("client-logos").getPublicUrl(mapped);
+        return data.publicUrl || "";
+      }
+      const dynamic = client as Record<string, unknown>;
       const rawLogoValue = ((dynamic.company_logo_url as string | undefined) ?? "").trim();
       if (!rawLogoValue) return "";
       if (rawLogoValue.startsWith("http://") || rawLogoValue.startsWith("https://")) {
@@ -4267,28 +4385,25 @@ const Employees = () => {
       const { data } = supabase.storage.from("client-logos").getPublicUrl(rawLogoValue);
       return data.publicUrl || "";
     },
-    [clientLogoPreviewByEmployee],
+    [clientLogoPathByClient, clientLogoPreviewByClient],
   );
 
-  const handleClientLogoFileChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file || !selectedEmployee || !user) return;
-      if (!file.type.startsWith("image/")) {
-        toast({
-          title: "Invalid file type",
-          description: "Please upload an image file for the client logo.",
-          variant: "destructive",
-        });
-        return;
-      }
+  useEffect(() => {
+    if (!selectedClient?.id) return;
+    if (clientLogoPreviewByClient[selectedClient.id]) return;
+    if (Object.prototype.hasOwnProperty.call(clientLogoPathByClient, selectedClient.id)) return;
+    void loadClientLogoPath(selectedClient.id);
+  }, [clientLogoPathByClient, clientLogoPreviewByClient, loadClientLogoPath, selectedClient?.id]);
 
+  const uploadClientLogoFile = useCallback(
+    async (file: File) => {
+      if (!selectedClient || !user) return;
       const safeName = file.name.replace(/\s+/g, "_");
-      const storagePath = `${selectedEmployee.id}/${Date.now()}-${safeName}`;
-      const dynamic = selectedEmployee as Record<string, unknown>;
+      const storagePath = `${selectedClient.id}/${Date.now()}-${safeName}`;
+      const dynamic = selectedClient as Record<string, unknown>;
+      const mappedLogoPath = (clientLogoPathByClient[selectedClient.id] ?? "").trim();
       const existingLogoPath = getClientLogoStoragePathFromUrl(
-        (dynamic.company_logo_url as string | undefined) ?? selectedEmployee.company_logo_url ?? "",
+        mappedLogoPath || (dynamic.company_logo_url as string | undefined) || selectedClient.company_logo_url || "",
       );
 
       setIsClientLogoUploading(true);
@@ -4302,36 +4417,37 @@ const Employees = () => {
 
         const { data } = supabase.storage.from("client-logos").getPublicUrl(storagePath);
         const nextLogoUrl = data.publicUrl || "";
-        setClientLogoPreviewByEmployee((prev) => ({
+        setClientLogoPreviewByClient((prev) => ({
           ...prev,
-          [selectedEmployee.id]: nextLogoUrl,
+          [selectedClient.id]: nextLogoUrl,
+        }));
+        setClientLogoPathByClient((prev) => ({
+          ...prev,
+          [selectedClient.id]: storagePath,
         }));
 
-        const logoPatch = { company_logo_url: storagePath } as EmployeeUpdate;
+        await persistClientLogoPath(selectedClient.id, storagePath);
+
+        // Keep backward compatibility with schemas that still store the path on clients.
+        const logoPatch = { company_logo_url: storagePath } as ClientUpdate;
         const { error: updateError } = await supabase
-          .from("employees")
-          .update(logoPatch as unknown as TablesInsert<"employees">)
-          .eq("id", selectedEmployee.id)
+          .from("clients")
+          .update(logoPatch as unknown as TablesInsert<"clients">)
+          .eq("id", selectedClient.id)
           .eq("company_id", user.id);
 
         if (updateError) {
           const message = (updateError as { message?: string } | null)?.message ?? "";
-          if (!message.toLowerCase().includes("company_logo_url")) {
+          if (!message.toLowerCase().includes("company_logo_url") && !message.toLowerCase().includes("column")) {
             throw updateError;
           }
-          toast({
-            title: "Logo uploaded",
-            description: "Logo uploaded, but the `company_logo_url` column is missing on employees.",
-            variant: "destructive",
-          });
-          return;
         }
 
-        const updatedEmployee = { ...selectedEmployee, ...logoPatch } as Employee;
-        setSelectedEmployee(updatedEmployee);
-        setEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
-        setFilteredEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
-        setAllEmployees((prev) => prev.map((emp) => (emp.id === selectedEmployee.id ? updatedEmployee : emp)));
+        const updatedClient = { ...selectedClient, ...logoPatch } as Client;
+        setSelectedClient(updatedClient);
+        setClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+        setFilteredClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+        setAllClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
 
         if (existingLogoPath && existingLogoPath !== storagePath) {
           await supabase.storage.from("client-logos").remove([existingLogoPath]);
@@ -4351,12 +4467,110 @@ const Employees = () => {
         setIsClientLogoUploading(false);
       }
     },
-    [selectedEmployee, toast, user],
+    [clientLogoPathByClient, persistClientLogoPath, selectedClient, toast, user],
   );
 
+  const handleClientLogoFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file || !selectedClient || !user) return;
+      if (!file.type.startsWith("image/")) {
+        toast({
+          title: "Invalid file type",
+          description: "Please upload an image file for the client logo.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const source = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("Could not read selected image."));
+          reader.readAsDataURL(file);
+        });
+
+        const cleanedLogo = await cropClientLogoPadding(source);
+        const blob = await fetch(cleanedLogo).then((response) => response.blob());
+        const cleanedFile = new File([blob], file.name.replace(/\.[^.]+$/, ".png"), { type: "image/png" });
+        await uploadClientLogoFile(cleanedFile);
+      } catch (error: unknown) {
+        toast({
+          title: "Unable to prepare logo",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+      }
+    },
+    [selectedClient, toast, uploadClientLogoFile, user],
+  );
+
+  const removeClientLogo = useCallback(async () => {
+    if (!selectedClient || !user) return;
+
+    const dynamic = selectedClient as Record<string, unknown>;
+    const mappedLogoPath = (clientLogoPathByClient[selectedClient.id] ?? "").trim();
+    const existingLogoPath = getClientLogoStoragePathFromUrl(
+      mappedLogoPath || (dynamic.company_logo_url as string | undefined) || selectedClient.company_logo_url || "",
+    );
+    const logoPatch = { company_logo_url: null } as ClientUpdate;
+
+    setIsClientLogoUploading(true);
+    try {
+      await removeClientLogoRecord(selectedClient.id);
+
+      const { error } = await supabase
+        .from("clients")
+        .update(logoPatch as unknown as TablesInsert<"clients">)
+        .eq("id", selectedClient.id)
+        .eq("company_id", user.id);
+      if (error) {
+        const message = (error as { message?: string } | null)?.message ?? "";
+        if (!message.toLowerCase().includes("company_logo_url") && !message.toLowerCase().includes("column")) {
+          throw error;
+        }
+      }
+
+      const updatedClient = { ...selectedClient, ...logoPatch } as Client;
+      setSelectedClient(updatedClient);
+      setClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+      setFilteredClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+      setAllClients((prev) => prev.map((item) => (item.id === selectedClient.id ? updatedClient : item)));
+      setClientLogoPreviewByClient((prev) => {
+        const next = { ...prev };
+        delete next[selectedClient.id];
+        return next;
+      });
+      setClientLogoPathByClient((prev) => {
+        const next = { ...prev };
+        delete next[selectedClient.id];
+        return next;
+      });
+
+      if (existingLogoPath) {
+        await supabase.storage.from("client-logos").remove([existingLogoPath]);
+      }
+
+      toast({
+        title: "Logo removed",
+        description: "Client logo has been removed.",
+      });
+    } catch (error: unknown) {
+      toast({
+        title: "Unable to remove logo",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsClientLogoUploading(false);
+    }
+  }, [clientLogoPathByClient, removeClientLogoRecord, selectedClient, toast, user]);
+
   const renderProfilePanel = () => {
-    if (!selectedEmployee) return null;
-    const clientLogoUrl = resolveClientLogoUrl(selectedEmployee);
+    if (!selectedClient) return null;
+    const clientLogoUrl = resolveClientLogoUrl(selectedClient);
 
     return (
       <div className="flex h-full flex-col bg-[#f7f9fb] overflow-hidden">
@@ -4375,9 +4589,9 @@ const Employees = () => {
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
                 onClick={(event) => {
                   if (!guardEditSession(event)) return;
-                  void navigateToEmployee(selectedEmployeeIndex - 1);
+                  void navigateToClient(selectedClientIndex - 1);
                 }}
-                disabled={!hasPreviousEmployee}
+                disabled={!hasPreviousClient}
               >
                 <ChevronLeft className="h-3 w-3 mr-[-1px]" />
                 Previous
@@ -4390,9 +4604,9 @@ const Employees = () => {
                 className="h-7 w-[89px] px-2 text-[10px] text-slate-700 border border-slate-300 bg-white justify-center gap-1 hover:bg-white hover:text-slate-900 hover:border-blue-400 data-[state=open]:border-slate-300"
                 onClick={(event) => {
                   if (!guardEditSession(event)) return;
-                  void navigateToEmployee(selectedEmployeeIndex + 1);
+                  void navigateToClient(selectedClientIndex + 1);
                 }}
-                disabled={!hasNextEmployee}
+                disabled={!hasNextClient}
               >
                 <span className="h-3 w-2" aria-hidden="true" />
                 Next
@@ -4427,31 +4641,47 @@ const Employees = () => {
                     <img
                       src={clientLogoUrl}
                       alt="Client logo"
-                      className="max-h-full max-w-full object-contain"
+                      className="max-h-[104px] max-w-[94%] object-contain"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="rounded-full border-[3px] border-white shadow-lg">
-                      <img
-                        src={(profileForm.gender || "").toLowerCase().startsWith("f") ? "/female_avatar(1).png" : "/male_avatar(1).png"}
-                        alt="Client logo"
-                        className="h-20 w-20 rounded-full object-cover"
-                        loading="lazy"
-                      />
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border-[3px] border-white bg-slate-200 text-lg font-semibold uppercase text-slate-600 shadow-lg">
+                      {`${(selectedClient.client_name ?? "").trim().charAt(0)}${(selectedClient.client_surname ?? "").trim().charAt(0)}`.trim() || "C"}
                     </div>
                   )}
                 </div>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  className="absolute right-2 top-2 h-7 w-7 rounded-full border-slate-300 bg-white text-slate-700 hover:border-[#3eca44] hover:text-[#2f9f35]"
-                  onClick={() => clientLogoFileInputRef.current?.click()}
-                  disabled={isClientLogoUploading}
-                  aria-label={isClientLogoUploading ? "Uploading logo" : "Upload or change logo"}
-                >
-                  <Camera className="h-3.5 w-3.5" />
-                </Button>
+                {clientLogoUrl ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-0.5 top-0.5 z-20 h-7 w-7 rounded-full text-slate-400 hover:bg-transparent hover:text-red-500"
+                    onClick={() => void removeClientLogo()}
+                    disabled={isClientLogoUploading}
+                    aria-label="Remove logo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+                <div className="absolute bottom-0 left-0 z-20 flex h-10 w-10 -translate-x-[38%] translate-y-[38%] items-center justify-center rounded-full bg-white">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="h-6 w-6 rounded-full border-slate-300 bg-white text-slate-700 shadow-sm [&_svg]:size-3.5 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
+                    onClick={() => clientLogoFileInputRef.current?.click()}
+                    disabled={isClientLogoUploading}
+                    aria-label={
+                      isClientLogoUploading
+                        ? "Uploading logo"
+                        : clientLogoUrl
+                          ? "Edit logo"
+                          : "Upload logo"
+                    }
+                  >
+                    {clientLogoUrl ? <Pencil /> : <Camera className="h-2 w-2" />}
+                  </Button>
+                </div>
               </div>
               <div className="flex items-center justify-center pt-2 pb-2">
                 {isClientLogoUploading ? (
@@ -4460,7 +4690,7 @@ const Employees = () => {
               </div>
 
               <div className="pl-5 pr-2 pt-2 min-h-[28px]">
-                {employeeStatus !== "Inactive" ? (
+                {clientStatus !== "Inactive" ? (
                   <div className="flex justify-end">
                     <TooltipProvider delayDuration={150}>
                       <Tooltip>
@@ -4499,15 +4729,15 @@ const Employees = () => {
               <div className="space-y-1">
                 <div className="flex items-baseline gap-3.5">
                   <h3 className="text-lg font-semibold text-slate-900">
-                    {(selectedEmployee.employee_name ?? "").trim()} {(selectedEmployee.employee_surname ?? "").trim()}
+                    {(selectedClient.client_name ?? "").trim()} {(selectedClient.client_surname ?? "").trim()}
                   </h3>
-                  {employeeStatus !== "Inactive" && (
-                    <span className="text-[10px] text-slate-400">{profileForm.employeeNumber || ""}</span>
+                  {clientStatus !== "Inactive" && (
+                    <span className="text-[10px] text-slate-400">{profileForm.clientNumber || ""}</span>
                   )}
                 </div>
                 <span className="inline-flex rounded-full bg-blue-100/70 px-2 py-0.5 text-[10px] font-normal text-blue-700">
-                  {employeeStatus === "Inactive"
-                    ? (selectedEmployee?.termination_reason ?? "").toString().trim() || "Termination reason not set"
+                  {clientStatus === "Inactive"
+                    ? (selectedClient?.termination_reason ?? "").toString().trim() || "Termination reason not set"
                     : profileForm.jobTitle?.trim() || "Job title not set"}
                 </span>
               </div>
@@ -4568,10 +4798,10 @@ const Employees = () => {
                       <p className="text-[10px] text-slate-400">Status</p>
                       <p
                         className={`text-[11px] font-semibold ${
-                          employeeStatus === "Inactive" ? "text-red-600" : "text-emerald-600"
+                          clientStatus === "Inactive" ? "text-red-600" : "text-emerald-600"
                         }`}
                       >
-                        {employeeStatus || "Active"}
+                        {clientStatus || "Active"}
                       </p>
                     </div>
                   </div>
@@ -4585,15 +4815,15 @@ const Employees = () => {
                     </div>
                   </div>
                   <div className="pt-3 flex justify-center">
-                    {employeeStatus === "Inactive" ? (
+                    {clientStatus === "Inactive" ? (
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         className="group h-6 w-40 justify-center rounded-[3px] px-2 text-[11px] inline-flex items-center border-[0.5px] bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
                         onClick={() => {
-                          if (selectedEmployee) {
-                            handleStartRehire(selectedEmployee);
+                          if (selectedClient) {
+                            handleStartRehire(selectedClient);
                           }
                         }}
                       >
@@ -4622,7 +4852,7 @@ const Employees = () => {
               value={activeTab}
               onValueChange={(value) => {
                 if (!guardEditSession()) return;
-                setActiveTab(value as EmployeeTab);
+                setActiveTab(value as ClientTab);
               }}
               className="mt-0 flex h-full min-h-0 flex-1 flex-col"
             >
@@ -4732,17 +4962,17 @@ const Employees = () => {
     );
   };
 
-  const fetchEmployees = useCallback(async () => {
+  const fetchClients = useCallback(async () => {
     if (!user) return;
     const from = (currentPage - 1) * DEFAULT_PAGE_SIZE;
     const to = from + DEFAULT_PAGE_SIZE - 1;
     const queryText = searchQuery.trim();
     let query = (supabase as any)
-      .from("employees")
-      .select(employeeTableSelectColumns)
+      .from("clients")
+      .select(clientTableSelectColumns)
       .eq("company_id", user.id);
 
-    if (employeeStatusFilter === "inactive") {
+    if (clientStatusFilter === "inactive") {
       query = query.eq("status", "inactive");
     } else {
       query = query.or("status.is.null,status.eq.active");
@@ -4751,7 +4981,7 @@ const Employees = () => {
     if (queryText.length > 0) {
       const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
       query = query.or(
-        `registration_number.ilike.%${escaped}%,owner.ilike.%${escaped}%,tel_cell.ilike.%${escaped}%,client_email.ilike.%${escaped}%`,
+        `client_number.ilike.%${escaped}%,client_name.ilike.%${escaped}%,client_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,email.ilike.%${escaped}%,cell_number.ilike.%${escaped}%`,
       );
     }
 
@@ -4776,25 +5006,25 @@ const Employees = () => {
       return;
     }
 
-    setEmployees(pageRows);
-    setFilteredEmployees(pageRows);
+    setClients(pageRows);
+    setFilteredClients(pageRows);
   }, [
     toast,
     user,
     currentPage,
     searchQuery,
-    employeeStatusFilter,
+    clientStatusFilter,
   ]);
 
-  const fetchEmployeesCount = useCallback(async () => {
+  const fetchClientsCount = useCallback(async () => {
     if (!user) return;
     const queryText = searchQuery.trim();
     let query = (supabase as any)
-      .from("employees")
+      .from("clients")
       .select("id", { count: "exact", head: true })
       .eq("company_id", user.id);
 
-    if (employeeStatusFilter === "inactive") {
+    if (clientStatusFilter === "inactive") {
       query = query.eq("status", "inactive");
     } else {
       query = query.or("status.is.null,status.eq.active");
@@ -4803,7 +5033,7 @@ const Employees = () => {
     if (queryText.length > 0) {
       const escaped = queryText.replace(/%/g, "\\%").replace(/_/g, "\\_");
       query = query.or(
-        `registration_number.ilike.%${escaped}%,owner.ilike.%${escaped}%,tel_cell.ilike.%${escaped}%,client_email.ilike.%${escaped}%`,
+        `client_number.ilike.%${escaped}%,client_name.ilike.%${escaped}%,client_surname.ilike.%${escaped}%,id_number.ilike.%${escaped}%,email.ilike.%${escaped}%,cell_number.ilike.%${escaped}%`,
       );
     }
 
@@ -4818,7 +5048,7 @@ const Employees = () => {
     }
 
     const nextCount = count ?? 0;
-    setTotalEmployeeCount(nextCount);
+    setTotalClientCount(nextCount);
     setCurrentPage((prev) => {
       const maxPage = Math.max(1, Math.ceil(nextCount / DEFAULT_PAGE_SIZE));
       return prev > maxPage ? maxPage : prev;
@@ -4827,21 +5057,21 @@ const Employees = () => {
     toast,
     user,
     searchQuery,
-    employeeStatusFilter,
+    clientStatusFilter,
   ]);
 
-  const fetchAllEmployees = useCallback(async () => {
+  const fetchAllClients = useCallback(async () => {
     if (!user) return;
-    setIsAllEmployeesLoading(true);
-    const runAllEmployeesQuery = async (selectColumns: string) =>
+    setIsAllClientsLoading(true);
+    const runAllClientsQuery = async (selectColumns: string) =>
       await (supabase as any)
-        .from("employees")
+        .from("clients")
         .select(selectColumns)
         .eq("company_id", user.id)
         .order("created_at", { ascending: false, nullsFirst: false })
         .order("id", { ascending: false, nullsFirst: false });
 
-    let { data, error } = await runAllEmployeesQuery(employeeSelectColumnsWithTermination);
+    let { data, error } = await runAllClientsQuery(clientSelectColumnsWithTermination);
     if (error) {
       const message = (error as { message?: string } | null)?.message ?? "";
       const isTerminationColumnMissing =
@@ -4849,16 +5079,16 @@ const Employees = () => {
         message.includes("previous_job_title") ||
         message.includes("terminated_at");
       if (isTerminationColumnMissing) {
-        ({ data, error } = await runAllEmployeesQuery(employeeSelectColumnsBase));
+        ({ data, error } = await runAllClientsQuery(clientSelectColumnsBase));
       }
     }
 
     if (error) {
-      setIsAllEmployeesLoading(false);
+      setIsAllClientsLoading(false);
       return;
     }
-    setAllEmployees(Array.isArray(data) ? data : []);
-    setIsAllEmployeesLoading(false);
+    setAllClients(Array.isArray(data) ? data : []);
+    setIsAllClientsLoading(false);
   }, [user]);
 
   const fetchConductOffences = useCallback(async () => {
@@ -4910,35 +5140,35 @@ const Employees = () => {
     if (!user) return;
     let cancelled = false;
 
-    const loadEmployees = async () => {
-      setIsEmployeesLoading(true);
-      await fetchEmployees();
-      if (!cancelled) setIsEmployeesLoading(false);
+    const loadClients = async () => {
+      setIsClientsLoading(true);
+      await fetchClients();
+      if (!cancelled) setIsClientsLoading(false);
     };
 
-    void loadEmployees();
+    void loadClients();
     return () => {
       cancelled = true;
     };
-  }, [user, fetchEmployees]);
+  }, [user, fetchClients]);
 
   useEffect(() => {
     if (!user) return;
-    void fetchEmployeesCount();
-  }, [user, fetchEmployeesCount]);
+    void fetchClientsCount();
+  }, [user, fetchClientsCount]);
 
   useEffect(() => {
-    if (!user || !isProfilePanelOpen || hasLoadedAllEmployees) return;
+    if (!user || !isProfilePanelOpen || hasLoadedAllClients) return;
     let cancelled = false;
-    const loadAllEmployees = async () => {
-      await fetchAllEmployees();
-      if (!cancelled) setHasLoadedAllEmployees(true);
+    const loadAllClients = async () => {
+      await fetchAllClients();
+      if (!cancelled) setHasLoadedAllClients(true);
     };
-    void loadAllEmployees();
+    void loadAllClients();
     return () => {
       cancelled = true;
     };
-  }, [user, isProfilePanelOpen, hasLoadedAllEmployees, fetchAllEmployees]);
+  }, [user, isProfilePanelOpen, hasLoadedAllClients, fetchAllClients]);
 
   useEffect(() => {
     if (!user || !isProfilePanelOpen || activeTab !== "discipline" || hasLoadedConductOffences) return;
@@ -4955,57 +5185,60 @@ const Employees = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-    setTotalEmployeeCount(0);
-    setHasLoadedAllEmployees(false);
+    setTotalClientCount(0);
+    setHasLoadedAllClients(false);
     setHasLoadedConductOffences(false);
-    setAllEmployees([]);
+    setAllClients([]);
     setConductOffences([]);
   }, [user?.id]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, employeeStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
+  }, [searchQuery, clientStatusFilter, contractFilter, genderFilter, raceFilter, nationalityFilter]);
 
   useEffect(() => {
-    setFilteredEmployees(employees);
-  }, [employees]);
+    setFilteredClients(clients);
+  }, [clients]);
 
   useEffect(() => {
     // Keep selections in sync with the currently filtered list to avoid deleting hidden rows.
-    setSelectedEmployees((prev) => {
+    setSelectedClients((prev) => {
       if (prev.size === 0) return prev;
-      const allowedIds = new Set(filteredEmployees.map((emp) => emp.id));
+      const allowedIds = new Set(filteredClients.map((emp) => emp.id));
       const next = new Set(Array.from(prev).filter((id) => allowedIds.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [filteredEmployees]);
+  }, [filteredClients]);
 
-  const handleCustomEmployeeNumberChange = (value: string) => {
-    const cleaned = cleanEmployeeNumberInput(value);
+  const handleCustomClientNumberChange = (value: string) => {
+    const cleaned = cleanClientNumberInput(value);
     setProfileForm((prev) => ({
       ...prev,
-      employeeNumber: cleaned,
+      clientNumber: cleaned,
     }));
   };
 
   const handleUndoDelete = async () => {
     if (!deleteUndo || !user?.id) return;
     try {
-      const payload = deleteUndo.deletedEmployees.map((employee) => ({
-        ...employee,
+      const payload = deleteUndo.deletedClients.map((client) => ({
+        ...client,
         company_id: user.id,
-        created_at: employee.created_at ?? new Date().toISOString(),
+        created_at: client.created_at ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));
-      const { error } = await supabase.from("employees").upsert(payload, { onConflict: "id" });
+      const sanitizedPayload = payload.map(
+        (row) => pickClientWritePayload(row as Record<string, unknown>) as TablesInsert<"clients">,
+      );
+      const { error } = await supabase.from("clients").upsert(sanitizedPayload, { onConflict: "id" });
       if (error) throw error;
 
       toast({
         title: "Clients restored",
-        description: `${deleteUndo.deletedEmployees.length} client(s) were restored.`,
+        description: `${deleteUndo.deletedClients.length} client(s) were restored.`,
       });
       clearDeleteUndoState();
-      await fetchEmployees();
+      await fetchClients();
     } catch (error) {
       console.error(error);
       toast({
@@ -5016,7 +5249,7 @@ const Employees = () => {
     }
   };
 
-   const handleAddEmployee = async (e: React.FormEvent) => {
+   const handleAddClient = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!user) return;
      if (addFormStep < 3) {
@@ -5033,12 +5266,12 @@ const Employees = () => {
       const selectedMemberTypes = addForm.memberTypes
         .map((value) => value.trim())
         .filter(Boolean);
-      const sanitizedRegisteredName = sanitizeText(addForm.employeeName);
-      const sanitizedTradingAsInput = sanitizeText(addForm.employeeSurname);
+      const sanitizedRegisteredName = sanitizeText(addForm.clientName);
+      const sanitizedTradingAsInput = sanitizeText(addForm.clientSurname);
       const sanitizedTradingAs = sanitizedTradingAsInput || sanitizedRegisteredName;
       const sanitizedIdNumber = sanitizeText(addForm.idNumber);
       const sanitizedRegistrationNumber = formatRegistrationNumberInput(addForm.registrationNumber.trim());
-      const sanitizedEmployeeNumber = sanitizeEmployeeNumber(addForm.employeeNumber);
+      const sanitizedClientNumber = sanitizeClientNumber(addForm.clientNumber);
       const sanitizedStartDate = addForm.startDate.trim();
       const sanitizedEndDate = addForm.endDate.trim();
       const sanitizedContractType = sanitizeText(addForm.contractType);
@@ -5062,8 +5295,8 @@ const Employees = () => {
       if (sanitizedTradingAs.length < 2 || sanitizedTradingAs.length > 100) {
         throw new Error("Trading as must be between 2 and 100 characters.");
       }
-      if (!sanitizedEmployeeNumber || sanitizedEmployeeNumber.length > EMPLOYEE_NUMBER_MAX_LENGTH) {
-        throw new Error(`Client number must be up to ${EMPLOYEE_NUMBER_MAX_LENGTH} letters or numbers.`);
+      if (!sanitizedClientNumber || sanitizedClientNumber.length > CLIENT_NUMBER_MAX_LENGTH) {
+        throw new Error(`Client number must be up to ${CLIENT_NUMBER_MAX_LENGTH} letters or numbers.`);
       }
       if (!dateRegex.test(sanitizedStartDate) || !dateRegex.test(sanitizedEndDate)) {
         throw new Error("Please select valid dates for start date and membership renewal date.");
@@ -5075,16 +5308,16 @@ const Employees = () => {
         throw new Error("Please select a valid province.");
       }
 
-      const normalizedNumber = normalizeEmployeeNumber(sanitizedEmployeeNumber);
+      const normalizedNumber = normalizeClientNumber(sanitizedClientNumber);
       const duplicate = normalizedNumber
-        ? employees.find(
+        ? clients.find(
             (emp) => {
               const dynamic = emp as Record<string, unknown>;
               const existingClientNumber =
-                (dynamic.client_number as string | undefined) ?? emp.employee_number ?? "";
+                (dynamic.client_number as string | undefined) ?? emp.client_number ?? "";
               return (
-                normalizeEmployeeNumber(existingClientNumber) === normalizedNumber &&
-                (!rehireEmployeeId || emp.id !== rehireEmployeeId)
+                normalizeClientNumber(existingClientNumber) === normalizedNumber &&
+                (!rehireClientId || emp.id !== rehireClientId)
               );
             },
           )
@@ -5098,20 +5331,20 @@ const Employees = () => {
         return;
       }
       const normalizedRegistrationNumber = normalizeRegistrationNumberValue(sanitizedRegistrationNumber);
-      const duplicateRegistrationEmployee = normalizedRegistrationNumber
-        ? employees.find(
+      const duplicateRegistrationClient = normalizedRegistrationNumber
+        ? clients.find(
             (emp) =>
               normalizeRegistrationNumberValue(
                 emp.registration_number ?? ((emp as Record<string, unknown>).registration_number as string | null) ?? "",
               ) ===
                 normalizedRegistrationNumber &&
-              (!rehireEmployeeId || emp.id !== rehireEmployeeId),
+              (!rehireClientId || emp.id !== rehireClientId),
           )
         : undefined;
-      if (duplicateRegistrationEmployee) {
+      if (duplicateRegistrationClient) {
         toast({
           title: "Duplicate registration number",
-          description: `That registration number is already allocated to ${getClientDisplayName(duplicateRegistrationEmployee)}. Please use a different registration number.`,
+          description: `That registration number is already allocated to ${getClientDisplayName(duplicateRegistrationClient)}. Please use a different registration number.`,
           variant: "destructive",
         });
         return;
@@ -5119,31 +5352,17 @@ const Employees = () => {
 
       const basePayload: Record<string, unknown> = {
         company_id: user.id,
-        member_types: selectedMemberTypes.length > 0 ? selectedMemberTypes : null,
-        start_date: sanitizedStartDate || null,
-        owner: sanitizedOwner || null,
-        tel_cell: sanitizedTellCell || null,
-        client_email: sanitizedCompanyEmail || sanitizeText(addForm.email) || null,
-        physical_address_line1: sanitizedAddressLine1 || null,
-        physical_address_line2: sanitizedAddressLine2 || null,
-        city: sanitizedCity || null,
-        province: sanitizedProvince || null,
-        area_code: sanitizedAreaCode || null,
-        postal_address_line1: sanitizedPostalAddressLine1 || null,
-        postal_address_line2: sanitizedPostalAddressLine2 || null,
-        postal_city: sanitizedPostalCity || null,
-        postal_province: sanitizedPostalProvince || null,
-        postal_area_code: sanitizedPostalAreaCode || null,
-        registration_number: sanitizedRegistrationNumber || null,
+        client_name: sanitizedRegisteredName || null,
+        client_surname: sanitizedTradingAs || null,
+        id_number: sanitizedIdNumber || null,
+        client_number: sanitizedClientNumber || null,
+        gender: sanitizedOwner || null,
+        race: sanitizedTellCell || null,
+        cell_number: sanitizedCompanyEmail || sanitizeText(addForm.email) || null,
+        email: sanitizeText(addForm.email) || null,
       };
       const optionalPopupPayload: Record<string, unknown> = {
-        registered_name: sanitizedRegisteredName || null,
-        trading_name: sanitizedTradingAsInput || null,
-        trading_as: sanitizedTradingAsInput || null,
-        client_number: sanitizedEmployeeNumber || null,
-        payment_cycle: sanitizedContractType || null,
-        renewal_date: sanitizedEndDate || null,
-        vat_number: sanitizedIdNumber || null,
+        status: "active",
       };
       const createClientPayload = (): Record<string, unknown> => {
         const payload: Record<string, unknown> = { ...basePayload };
@@ -5157,16 +5376,17 @@ const Employees = () => {
         const match = message.match(/'([^']+)' column/);
         return match?.[1] ?? null;
       };
-      const runEmployeesWrite = async (mode: "insert" | "update") => {
+      const runClientsWrite = async (mode: "insert" | "update") => {
         const payload = createClientPayload();
         const triedMissingColumns = new Set<string>();
         // Retry by pruning unknown optional columns so runtime stays compatible with evolving schema.
         while (true) {
           if (mode === "update") {
+            const sanitized = pickClientWritePayload({ ...payload, status: "active" });
             const { error } = await supabase
-              .from("employees")
-              .update({ ...payload, status: "active" } as any)
-              .eq("id", rehireEmployeeId)
+              .from("clients")
+              .update(sanitized as any)
+              .eq("id", rehireClientId)
               .eq("company_id", user.id);
             if (!error) return payload;
             const missingColumn = getMissingColumnName(error);
@@ -5183,7 +5403,7 @@ const Employees = () => {
             throw error;
           }
 
-          const { error } = await supabase.from("employees").insert(payload as any);
+          const { error } = await supabase.from("clients").insert(pickClientWritePayload(payload) as any);
           if (!error) return payload;
           const missingColumn = getMissingColumnName(error);
           if (
@@ -5200,27 +5420,27 @@ const Employees = () => {
         }
       };
       let persistedPayload: Record<string, unknown> = {};
-      if (rehireEmployeeId) {
-        persistedPayload = await runEmployeesWrite("update");
+      if (rehireClientId) {
+        persistedPayload = await runClientsWrite("update");
 
         const { data: existingTerminationDocs } = await terminationDocumentTable()
           .select("id, file_url")
           .eq("company_id", user.id)
-          .eq("employee_id", rehireEmployeeId);
+          .eq("client_id", rehireClientId);
         if ((existingTerminationDocs ?? []).length > 0) {
           await terminationDocumentTable()
             .delete()
             .eq("company_id", user.id)
-            .eq("employee_id", rehireEmployeeId);
+            .eq("client_id", rehireClientId);
           const storagePaths = (existingTerminationDocs as Array<{ file_url?: string | null }>)
             .map((row) => getContractStoragePathFromUrl(row.file_url))
             .filter((path): path is string => !!path);
           if (storagePaths.length > 0) {
             await supabase.storage.from("contracts").remove(storagePaths);
           }
-          setTerminationDocumentByEmployee((prev) => ({
+          setTerminationDocumentByClient((prev) => ({
             ...prev,
-            [rehireEmployeeId]: null,
+            [rehireClientId]: null,
           }));
         }
 
@@ -5229,7 +5449,7 @@ const Employees = () => {
           description: "Client rehired successfully!",
         });
       } else {
-        persistedPayload = await runEmployeesWrite("insert");
+        persistedPayload = await runClientsWrite("insert");
 
         toast({
           title: "Success",
@@ -5238,13 +5458,13 @@ const Employees = () => {
       }
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
-      setRehireEmployeeId(null);
+      setRehireClientId(null);
       setIsRegistrationNumberFocused(false);
       setIsAddFormSubmitRequested(false);
       setIsAddDialogOpen(false);
-      await fetchEmployees();
-      if (selectedEmployee && rehireEmployeeId && selectedEmployee.id === rehireEmployeeId) {
-        setSelectedEmployee((prev) =>
+      await fetchClients();
+      if (selectedClient && rehireClientId && selectedClient.id === rehireClientId) {
+        setSelectedClient((prev) =>
           prev
             ? ({
                 ...prev,
@@ -5253,10 +5473,10 @@ const Employees = () => {
                 termination_reason: null,
                 previous_job_title: null,
                 terminated_at: null,
-              } as Employee)
+              } as Client)
             : prev,
         );
-        setEmployeeStatus("Active");
+        setClientStatus("Active");
       }
     } catch (error: unknown) {
       toast({
@@ -5270,80 +5490,65 @@ const Employees = () => {
    };
 
   const handleProfileSave = async () => {
-    if (!selectedEmployee) return;
+    if (!selectedClient) return;
     setIsProfileSaving(true);
     try {
-      const validated = employeeProfileSchema.parse(profileForm);
+      const validated = clientProfileSchema.parse(profileForm);
        const endDateValue =
          validated.contractType === "Temporary" && validated.endDate ? validated.endDate : null;
-       const finalEmployeeNumber = validated.employeeNumber || null;
-       const normalizedNumber = normalizeEmployeeNumber(finalEmployeeNumber);
+       const finalClientNumber = validated.clientNumber || null;
+       const normalizedStatus = clientStatus.trim().toLowerCase() || null;
+       const normalizedNumber = normalizeClientNumber(finalClientNumber);
        const duplicate = normalizedNumber
-         ? employees.find(
+         ? clients.find(
              (emp) =>
-               emp.id !== selectedEmployee.id &&
-               normalizeEmployeeNumber(emp.employee_number) === normalizedNumber,
+               emp.id !== selectedClient.id &&
+               normalizeClientNumber(emp.client_number) === normalizedNumber,
            )
          : undefined;
        if (duplicate) {
          toast({
            title: "Duplicate client number",
-           description: `You already allocated that client number to ${duplicate.employee_name ?? "Client"} ${duplicate.employee_surname ?? ""}. Please choose a different client number.`,
+           description: `You already allocated that client number to ${duplicate.client_name ?? "Client"} ${duplicate.client_surname ?? ""}. Please choose a different client number.`,
            variant: "destructive",
          });
          setIsProfileSaving(false);
          return;
        }
        const normalizedIdNumber = normalizeIdNumberValue(validated.idNumber);
-       const duplicateIdEmployee = normalizedIdNumber
-         ? employees.find(
+       const duplicateIdClient = normalizedIdNumber
+         ? clients.find(
              (emp) =>
-               emp.id !== selectedEmployee.id &&
+               emp.id !== selectedClient.id &&
                normalizeIdNumberValue(emp.id_number) === normalizedIdNumber,
            )
          : undefined;
-       if (duplicateIdEmployee) {
+       if (duplicateIdClient) {
          toast({
            title: "Duplicate ID/passport number",
-           description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Client"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
+           description: `That ID/passport number is already allocated to ${duplicateIdClient.client_name ?? "Client"} ${duplicateIdClient.client_surname ?? ""}. Please use a different ID/passport number.`,
            variant: "destructive",
          });
          setIsProfileSaving(false);
          return;
        }
 
-        const updatePayload: EmployeeUpdate = {
-          employee_name: validated.employeeName,
-          employee_surname: validated.employeeSurname,
+        const updatePayload: ClientUpdate = {
+          client_name: validated.clientName,
+          client_surname: validated.clientSurname,
           id_number: validated.idNumber || null,
-          start_date: validated.startDate,
-          contract_type: validated.contractType,
-          end_date: endDateValue,
-          nationality: validated.nationality,
           gender: validated.gender,
           race: validated.race,
-          employee_number: finalEmployeeNumber,
-          job_title: validated.jobTitle || null,
-          physical_address_line1: validated.physicalAddressLine1 || null,
-          physical_address_line2: validated.physicalAddressLine2 || null,
-          city: validated.city || null,
-          province: validated.province,
-          area_code: validated.areaCode || null,
-          postal_address_line1: validated.postalAddressLine1 || null,
-          postal_address_line2: validated.postalAddressLine2 || null,
-          postal_city: validated.postalCity || null,
-          postal_province: validated.postalProvince || null,
-          postal_area_code: validated.postalAreaCode || null,
+          client_number: finalClientNumber,
           cell_number: validated.cellNumber || null,
           email: validated.email || null,
-          emergency_contact_name: validated.emergencyContactName || null,
-        emergency_contact_number: validated.emergencyContactNumber || null,
+          status: normalizedStatus,
       };
 
        const { error } = await supabase
-         .from("employees")
-         .update(updatePayload as unknown as TablesInsert<"employees">)
-         .eq("id", selectedEmployee.id);
+         .from("clients")
+         .update(pickClientWritePayload(updatePayload as Record<string, unknown>) as unknown as TablesInsert<"clients">)
+         .eq("id", selectedClient.id);
 
        if (error) throw error;
 
@@ -5352,16 +5557,16 @@ const Employees = () => {
         description: "Client profile has been saved successfully.",
       });
 
-      const updatedEmployee: Employee = {
-        ...selectedEmployee,
-        employee_name: validated.employeeName,
-        employee_surname: validated.employeeSurname,
+      const updatedClient: Client = {
+        ...selectedClient,
+        client_name: validated.clientName,
+        client_surname: validated.clientSurname,
         id_number: validated.idNumber || null,
         start_date: validated.startDate || null,
         contract_type: validated.contractType,
         end_date: endDateValue,
         nationality: validated.nationality,
-        employee_number: finalEmployeeNumber,
+        client_number: finalClientNumber,
         job_title: validated.jobTitle || null,
         physical_address_line1: validated.physicalAddressLine1 || null,
         physical_address_line2: validated.physicalAddressLine2 || null,
@@ -5379,10 +5584,10 @@ const Employees = () => {
         emergency_contact_number: validated.emergencyContactNumber || null,
       };
 
-      setSelectedEmployee(updatedEmployee);
-      setProfileForm(createProfileFormFromEmployee(updatedEmployee));
+      setSelectedClient(updatedClient);
+      setProfileForm(createProfileFormFromClient(updatedClient));
       setIsEditMode(false);
-      await fetchEmployees();
+      await fetchClients();
     } catch (error: unknown) {
       toast({
         title: "Error",
@@ -5395,14 +5600,14 @@ const Employees = () => {
    };
 
    const handleBulkDelete = async () => {
-     if (selectedEmployees.size === 0 || !user) return;
+     if (selectedClients.size === 0 || !user) return;
    const confirmed = confirm(
      "The selected client(s) will be permanently removed from all databases/storage. Are you sure you want to delete selected client(s)?",
    );
    if (!confirmed) return;
 
-    const deletedEmployees = employees.filter((emp) => selectedEmployees.has(emp.id));
-    if (deletedEmployees.length === 0) {
+    const deletedClients = clients.filter((emp) => selectedClients.has(emp.id));
+    if (deletedClients.length === 0) {
       toast({
         title: "No matching clients",
         description: "Could not find the selected clients to delete.",
@@ -5412,9 +5617,9 @@ const Employees = () => {
     }
 
     const { error } = await supabase
-      .from("employees")
+      .from("clients")
       .delete()
-      .in("id", Array.from(selectedEmployees));
+      .in("id", Array.from(selectedClients));
 
      if (error) {
        toast({
@@ -5427,26 +5632,26 @@ const Employees = () => {
 
     toast({
       title: "Success",
-      description: `${selectedEmployees.size} client(s) deleted successfully!`,
+      description: `${selectedClients.size} client(s) deleted successfully!`,
     });
 
     setDeleteUndo({
-      deletedEmployees,
+      deletedClients,
       expiresAt: Date.now() + 20_000,
     });
-    setSelectedEmployees(new Set());
-    await fetchEmployees();
+    setSelectedClients(new Set());
+    await fetchClients();
   };
 
-  const handleTerminateEmployee = async (employee: Employee) => {
+  const handleTerminateClient = async (client: Client) => {
     if (!user) return;
-    const fullName = `${(employee.employee_name ?? "").trim()} ${(employee.employee_surname ?? "").trim()}`.trim();
+    const fullName = `${(client.client_name ?? "").trim()} ${(client.client_surname ?? "").trim()}`.trim();
     const confirmed = confirm(
       `This action permanently removes this client and all related records from Zappir's databases. You will have 20 seconds to undo after deletion; once that 20-second undo period expires, this action cannot be undone.\n\nAre you sure you want to delete ${fullName || "this client"}?`,
     );
     if (!confirmed) return;
 
-    const { error } = await supabase.from("employees").delete().eq("id", employee.id);
+    const { error } = await supabase.from("clients").delete().eq("id", client.id);
     if (error) {
       toast({
         title: "Error",
@@ -5462,44 +5667,44 @@ const Employees = () => {
     });
 
     setDeleteUndo({
-      deletedEmployees: [employee],
+      deletedClients: [client],
       expiresAt: Date.now() + 20_000,
     });
-    setSelectedEmployees((prev) => {
-      if (!prev.has(employee.id)) return prev;
+    setSelectedClients((prev) => {
+      if (!prev.has(client.id)) return prev;
       const next = new Set(prev);
-      next.delete(employee.id);
+      next.delete(client.id);
       return next;
     });
-    if (selectedEmployee?.id === employee.id) {
-      setSelectedEmployee(null);
+    if (selectedClient?.id === client.id) {
+      setSelectedClient(null);
       setIsProfilePanelOpen(false);
     }
-    await fetchEmployees();
+    await fetchClients();
   };
 
-  const handleExportEmployeesPdf = async () => {
+  const handleExportClientsPdf = async () => {
     if (!user) return;
 
-    setIsExportingEmployeesPdf(true);
+    setIsExportingClientsPdf(true);
     try {
       const { data, error } = await (supabase as any)
-        .from("employees")
-        .select("employee_name, employee_surname, employee_number, id_number, contract_type, job_title, cell_number, gender, race, status")
+        .from("clients")
+        .select("*")
         .eq("company_id", user.id)
         .ilike("status", "active")
-        .order("employee_surname", { ascending: true })
-        .order("employee_name", { ascending: true });
+        .order("client_surname", { ascending: true })
+        .order("client_name", { ascending: true });
 
       if (error) throw error;
 
-      type ExportEmployeeRow = Pick<
-        Employee,
-        "employee_name" | "employee_surname" | "employee_number" | "id_number" | "contract_type" | "job_title" | "cell_number" | "gender" | "race" | "status"
+      type ExportClientRow = Pick<
+        Client,
+        "client_name" | "client_surname" | "client_number" | "id_number" | "contract_type" | "job_title" | "cell_number" | "gender" | "race" | "status"
       >;
-      const activeEmployees = (data ?? []) as ExportEmployeeRow[];
+      const activeClients = (data ?? []) as ExportClientRow[];
 
-      if (activeEmployees.length === 0) {
+      if (activeClients.length === 0) {
         toast({
           title: "No active clients",
           description: "There are no active clients to export.",
@@ -5523,12 +5728,12 @@ const Employees = () => {
       };
 
       const grouped = {
-        permanent: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "permanent"),
-        temporary: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "temporary"),
-        other: activeEmployees.filter((emp) => getGroupKey(emp.contract_type) === "other"),
+        permanent: activeClients.filter((emp) => getGroupKey(emp.contract_type) === "permanent"),
+        temporary: activeClients.filter((emp) => getGroupKey(emp.contract_type) === "temporary"),
+        other: activeClients.filter((emp) => getGroupKey(emp.contract_type) === "other"),
       };
 
-      const groupsAll: Array<{ key: "permanent" | "temporary" | "other"; title: string; rows: ExportEmployeeRow[] }> = [
+      const groupsAll: Array<{ key: "permanent" | "temporary" | "other"; title: string; rows: ExportClientRow[] }> = [
         { key: "permanent", title: "Permanent Staff", rows: grouped.permanent },
         { key: "temporary", title: "Temporary Staff", rows: grouped.temporary },
         { key: "other", title: "Other Staff", rows: grouped.other },
@@ -5548,7 +5753,7 @@ const Employees = () => {
 
       const columns = [
         { key: "name", label: "Name", width: 64 },
-        { key: "employeeNo", label: "Client #", width: 28 },
+        { key: "clientNo", label: "Client #", width: 28 },
         { key: "id", label: "ID Number", width: 34 },
         { key: "job", label: "Job Title", width: 58 },
         { key: "cell", label: "Cell Number", width: 36 },
@@ -5614,15 +5819,15 @@ const Employees = () => {
         drawSectionHeader(group.title);
         drawTableHeader();
 
-        group.rows.forEach((employee) => {
+        group.rows.forEach((client) => {
           const rowValues = [
-            `${(employee.employee_name || "").trim()} ${(employee.employee_surname || "").trim()}`.trim() || "-",
-            (employee.employee_number || "").trim() || "-",
-            (employee.id_number || "").trim() || "-",
-            (employee.job_title || "").trim() || "-",
-            (employee.cell_number || "").trim() || "-",
-            (employee.gender || "").trim() || "-",
-            (employee.race || "").trim() || "-",
+            `${(client.client_name || "").trim()} ${(client.client_surname || "").trim()}`.trim() || "-",
+            (client.client_number || "").trim() || "-",
+            (client.id_number || "").trim() || "-",
+            (client.job_title || "").trim() || "-",
+            (client.cell_number || "").trim() || "-",
+            (client.gender || "").trim() || "-",
+            (client.race || "").trim() || "-",
           ];
           const lineHeight = 3.6;
           const paddingX = 2;
@@ -5690,32 +5895,30 @@ const Employees = () => {
         variant: "destructive",
       });
     } finally {
-      setIsExportingEmployeesPdf(false);
+      setIsExportingClientsPdf(false);
     }
   };
 
-  const handleExportEmployeesExcel = async () => {
+  const handleExportClientsExcel = async () => {
     if (!user) return;
 
-    setIsExportingEmployeesExcel(true);
+    setIsExportingClientsExcel(true);
     try {
       const { data, error } = await (supabase as any)
-        .from("employees")
-        .select(
-          "employee_number, employee_name, employee_surname, id_number, gender, race, nationality, cell_number, email, income_tax_number, contract_type, job_title, physical_address_line1, physical_address_line2, city, province, area_code, status",
-        )
+        .from("clients")
+        .select("*")
         .eq("company_id", user.id)
         .ilike("status", "active")
-        .order("employee_surname", { ascending: true })
-        .order("employee_name", { ascending: true });
+        .order("client_surname", { ascending: true })
+        .order("client_name", { ascending: true });
 
       if (error) throw error;
 
-      type ExportExcelEmployeeRow = Pick<
-        Employee,
-        | "employee_number"
-        | "employee_name"
-        | "employee_surname"
+      type ExportExcelClientRow = Pick<
+        Client,
+        | "client_number"
+        | "client_name"
+        | "client_surname"
         | "id_number"
         | "gender"
         | "race"
@@ -5732,9 +5935,9 @@ const Employees = () => {
         | "area_code"
       >;
 
-      const activeEmployees = (data ?? []) as ExportExcelEmployeeRow[];
+      const activeClients = (data ?? []) as ExportExcelClientRow[];
 
-      if (activeEmployees.length === 0) {
+      if (activeClients.length === 0) {
         toast({
           title: "No active clients",
           description: "There are no active clients to export.",
@@ -5747,9 +5950,9 @@ const Employees = () => {
       const worksheet = workbook.addWorksheet("Clients");
 
       worksheet.columns = [
-        { header: "Client Number", key: "employeeNumber", width: 18 },
-        { header: "Name", key: "employeeName", width: 18 },
-        { header: "Surname", key: "employeeSurname", width: 18 },
+        { header: "Client Number", key: "clientNumber", width: 18 },
+        { header: "Name", key: "clientName", width: 18 },
+        { header: "Surname", key: "clientSurname", width: 18 },
         { header: "ID Number", key: "idNumber", width: 18 },
         { header: "Gender", key: "gender", width: 12 },
         { header: "Race", key: "race", width: 14 },
@@ -5767,25 +5970,25 @@ const Employees = () => {
       ];
       worksheet.getRow(1).font = { bold: true };
 
-      activeEmployees.forEach((employee) => {
+      activeClients.forEach((client) => {
         worksheet.addRow({
-          employeeNumber: (employee.employee_number || "").trim(),
-          employeeName: (employee.employee_name || "").trim(),
-          employeeSurname: (employee.employee_surname || "").trim(),
-          idNumber: (employee.id_number || "").trim(),
-          gender: (employee.gender || "").trim(),
-          race: (employee.race || "").trim(),
-          nationality: (employee.nationality || "").trim(),
-          cellNumber: (employee.cell_number || "").trim(),
-          email: (employee.email || "").trim(),
-          incomeTaxNumber: (employee.income_tax_number || "").trim(),
-          contractType: (employee.contract_type || "").trim(),
-          jobTitle: (employee.job_title || "").trim(),
-          addressLine1: (employee.physical_address_line1 || "").trim(),
-          addressLine2: (employee.physical_address_line2 || "").trim(),
-          city: (employee.city || "").trim(),
-          province: (employee.province || "").trim(),
-          areaCode: (employee.area_code || "").trim(),
+          clientNumber: (client.client_number || "").trim(),
+          clientName: (client.client_name || "").trim(),
+          clientSurname: (client.client_surname || "").trim(),
+          idNumber: (client.id_number || "").trim(),
+          gender: (client.gender || "").trim(),
+          race: (client.race || "").trim(),
+          nationality: (client.nationality || "").trim(),
+          cellNumber: (client.cell_number || "").trim(),
+          email: (client.email || "").trim(),
+          incomeTaxNumber: (client.income_tax_number || "").trim(),
+          contractType: (client.contract_type || "").trim(),
+          jobTitle: (client.job_title || "").trim(),
+          addressLine1: (client.physical_address_line1 || "").trim(),
+          addressLine2: (client.physical_address_line2 || "").trim(),
+          city: (client.city || "").trim(),
+          province: (client.province || "").trim(),
+          areaCode: (client.area_code || "").trim(),
         });
       });
 
@@ -5800,7 +6003,7 @@ const Employees = () => {
       listSheet.state = "veryHidden";
 
       const validationStartRow = 2;
-      const validationEndRow = Math.max(500, activeEmployees.length + 50);
+      const validationEndRow = Math.max(500, activeClients.length + 50);
       const genderFormula = `Lists!$A$2:$A$${genderOptions.length + 1}`;
       const raceFormula = `Lists!$B$2:$B$${raceOptions.length + 1}`;
       const nationalityFormula = `Lists!$C$2:$C$${nationalityOptions.length + 1}`;
@@ -5857,15 +6060,15 @@ const Employees = () => {
         variant: "destructive",
       });
     } finally {
-      setIsExportingEmployeesExcel(false);
+      setIsExportingClientsExcel(false);
     }
   };
 
-  const handleStartRehire = (employee: Employee) => {
+  const handleStartRehire = (client: Client) => {
     setIsEditMode(false);
     setActiveEditSection(null);
-    setRehireEmployeeId(employee.id);
-    setAddForm(createAddFormFromEmployee(employee));
+    setRehireClientId(client.id);
+    setAddForm(createAddFormFromClient(client));
     setAddFormStep(1);
     setIsAddFormSubmitRequested(false);
     setIsAddDialogOpen(true);
@@ -5881,15 +6084,15 @@ const Employees = () => {
   const handleAddDialogChange = (open: boolean) => {
     setIsAddDialogOpen(open);
     if (!open) {
-      setIsNewEmployeeMenuOpen(false);
+      setIsNewClientMenuOpen(false);
       setAddForm(createBlankAddForm());
       setAddFormStep(1);
-      setRehireEmployeeId(null);
+      setRehireClientId(null);
       setIsRegistrationNumberFocused(false);
       setIsAddFormSubmitRequested(false);
       requestAnimationFrame(() => {
         (document.activeElement as HTMLElement | null)?.blur?.();
-        newEmployeeMenuTriggerRef.current?.blur();
+        newClientMenuTriggerRef.current?.blur();
       });
     }
   };
@@ -5924,8 +6127,8 @@ const Employees = () => {
       if (addFormStep === 1) {
         return {
           ...prev,
-          employeeName: "",
-          employeeSurname: "",
+          clientName: "",
+          clientSurname: "",
           registrationNumber: "",
           idNumber: "",
           gender: "",
@@ -5937,7 +6140,7 @@ const Employees = () => {
       if (addFormStep === 2) {
         return {
           ...prev,
-          employeeNumber: "",
+          clientNumber: "",
           memberTypes: [],
           contractType: "",
           startDate: "",
@@ -5973,10 +6176,10 @@ const Employees = () => {
        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, dateNF: "dd/mm/yyyy", defval: "" });
 
-      const validatedEmployees: Array<{
+      const validatedClients: Array<{
         rowNumber: number;
         normalizedIdNumber: string;
-        payload: EmployeeInsert;
+        payload: ClientInsert;
       }> = [];
       const errors: string[] = [];
 
@@ -6026,9 +6229,9 @@ const Employees = () => {
         const rowNumber = i + 2;
         try {
           const rawData = {
-            employeeNumber: getColumnValue(row, "Client Number", "Employee Number", "employee_number"),
-            employeeName: getColumnValue(row, "Name", "First Name", "employee_name"),
-            employeeSurname: getColumnValue(row, "Surname", "Last Name", "employee_surname"),
+            clientNumber: getColumnValue(row, "Client Number", "Client Number", "client_number"),
+            clientName: getColumnValue(row, "Name", "First Name", "client_name"),
+            clientSurname: getColumnValue(row, "Surname", "Last Name", "client_surname"),
             idNumber: getColumnValue(row, "ID Number", "ID", "id_number", "Id Number"),
             gender: normalizeEnumValue(getColumnValue(row, "Gender", "gender"), genderOptions),
             race: normalizeEnumValue(getColumnValue(row, "Race", "race"), raceOptions),
@@ -6046,30 +6249,20 @@ const Employees = () => {
             jobTitle: getColumnValue(row, "Job Title", "job_title"),
           };
 
-          const validated = employeeImportSchema.parse(rawData);
-          validatedEmployees.push({
+          const validated = clientImportSchema.parse(rawData);
+          validatedClients.push({
             rowNumber,
             normalizedIdNumber: normalizeIdNumberValue(validated.idNumber),
             payload: {
               company_id: user.id,
-              employee_name: validated.employeeName,
-              employee_surname: validated.employeeSurname,
+              client_name: validated.clientName,
+              client_surname: validated.clientSurname,
               id_number: validated.idNumber || null,
-              employee_number: validated.employeeNumber || null,
-              contract_type: validated.contractType || null,
-              start_date: validated.startDate || null,
+              client_number: validated.clientNumber || null,
               gender: validated.gender || null,
               race: validated.race || null,
-              nationality: validated.nationality || null,
               cell_number: validated.cellNumber || null,
               email: validated.email || null,
-              income_tax_number: validated.incomeTaxNumber || null,
-              physical_address_line1: validated.addressLine1 || null,
-              physical_address_line2: validated.addressLine2 || null,
-              city: validated.city || null,
-              province: validated.province || null,
-              area_code: validated.areaCode || null,
-              job_title: validated.jobTitle || null,
             },
           });
         } catch (err: unknown) {
@@ -6077,14 +6270,14 @@ const Employees = () => {
         }
       }
 
-      if (validatedEmployees.length === 0) {
+      if (validatedClients.length === 0) {
         const firstError = errors[0] ?? "Each row needs at least a Name and Surname.";
         throw new Error(`No valid client data found. ${firstError}`);
       }
 
       const seenFileIdRows = new Map<string, number>();
-      const dedupedRows: typeof validatedEmployees = [];
-      for (const row of validatedEmployees) {
+      const dedupedRows: typeof validatedClients = [];
+      for (const row of validatedClients) {
         if (!row.normalizedIdNumber) {
           dedupedRows.push(row);
           continue;
@@ -6114,50 +6307,52 @@ const Employees = () => {
         .map((row) => row.payload.id_number)
         .filter((value): value is string => !!value && value.trim().length > 0);
 
-      const existingEmployeesById = new Map<string, { id: string }>();
+      const existingClientsById = new Map<string, { id: string }>();
       if (idNumbersInFile.length > 0) {
         const { data: existingWithIds, error: existingError } = await supabase
-          .from("employees")
+          .from("clients")
           .select("id, id_number")
           .eq("company_id", user.id)
           .in("id_number", idNumbersInFile);
         if (existingError) throw existingError;
-        for (const employee of existingWithIds ?? []) {
-          const normalized = normalizeIdNumberValue(employee.id_number);
+        for (const client of existingWithIds ?? []) {
+          const normalized = normalizeIdNumberValue(client.id_number);
           if (normalized) {
-            existingEmployeesById.set(normalized, { id: employee.id });
+            existingClientsById.set(normalized, { id: client.id });
           }
         }
       }
 
-      const employeesToInsert: EmployeeInsert[] = [];
-      const employeesToUpdate: Array<{ id: string; payload: EmployeeUpdate }> = [];
+      const clientsToInsert: ClientInsert[] = [];
+      const clientsToUpdate: Array<{ id: string; payload: ClientUpdate }> = [];
       for (const row of dedupedRows) {
-        const existing = row.normalizedIdNumber ? existingEmployeesById.get(row.normalizedIdNumber) : undefined;
+        const existing = row.normalizedIdNumber ? existingClientsById.get(row.normalizedIdNumber) : undefined;
         if (existing) {
           const { company_id: _companyId, ...updatePayload } = row.payload;
-          employeesToUpdate.push({ id: existing.id, payload: updatePayload as EmployeeUpdate });
+          clientsToUpdate.push({ id: existing.id, payload: updatePayload as ClientUpdate });
         } else {
-          employeesToInsert.push(row.payload);
+          clientsToInsert.push(row.payload);
         }
       }
 
-      if (employeesToInsert.length > 0) {
-        const { error } = await supabase.from("employees").insert(employeesToInsert as TablesInsert<"employees">[]);
+      if (clientsToInsert.length > 0) {
+        const { error } = await supabase.from("clients").insert(
+          clientsToInsert.map((row) => pickClientWritePayload(row as Record<string, unknown>)) as TablesInsert<"clients">[],
+        );
         if (error) throw error;
       }
 
-      for (const row of employeesToUpdate) {
+      for (const row of clientsToUpdate) {
         const { error } = await supabase
-          .from("employees")
-          .update(row.payload as unknown as TablesInsert<"employees">)
+          .from("clients")
+          .update(pickClientWritePayload(row.payload as Record<string, unknown>) as unknown as TablesInsert<"clients">)
           .eq("id", row.id)
           .eq("company_id", user.id);
         if (error) throw error;
       }
 
-      const importedCount = employeesToInsert.length;
-      const updatedCount = employeesToUpdate.length;
+      const importedCount = clientsToInsert.length;
+      const updatedCount = clientsToUpdate.length;
 
       toast({
         title: "Success",
@@ -6165,7 +6360,7 @@ const Employees = () => {
       });
 
       if (fileInputRef.current) fileInputRef.current.value = "";
-      await fetchEmployees();
+      await fetchClients();
       handleBulkDialogChange(false);
     } catch (error: unknown) {
       toast({
@@ -6183,9 +6378,9 @@ const Employees = () => {
     const worksheet = workbook.addWorksheet("Clients");
 
     worksheet.columns = [
-      { header: "Client Number", key: "employeeNumber", width: 18 },
-      { header: "Name", key: "employeeName", width: 18 },
-      { header: "Surname", key: "employeeSurname", width: 18 },
+      { header: "Client Number", key: "clientNumber", width: 18 },
+      { header: "Name", key: "clientName", width: 18 },
+      { header: "Surname", key: "clientSurname", width: 18 },
       { header: "ID Number", key: "idNumber", width: 18 },
       { header: "Gender", key: "gender", width: 12 },
       { header: "Race", key: "race", width: 14 },
@@ -6205,9 +6400,9 @@ const Employees = () => {
     worksheet.getRow(1).font = { bold: true };
 
     worksheet.addRow({
-      employeeNumber: "A0001",
-      employeeName: "John",
-      employeeSurname: "Doe",
+      clientNumber: "A0001",
+      clientName: "John",
+      clientSurname: "Doe",
       idNumber: "9001015009087",
       gender: "Male",
       race: "African",
@@ -6226,9 +6421,9 @@ const Employees = () => {
     });
 
     worksheet.addRow({
-      employeeNumber: "B0002",
-      employeeName: "Jane",
-      employeeSurname: "Smith",
+      clientNumber: "B0002",
+      clientName: "Jane",
+      clientSurname: "Smith",
       idNumber: "8505125800082",
       gender: "Female",
       race: "White",
@@ -6322,54 +6517,54 @@ const Employees = () => {
    };
 
    const toggleSelectAll = () => {
-     if (selectedEmployees.size === filteredEmployees.length) {
-       setSelectedEmployees(new Set());
+     if (selectedClients.size === filteredClients.length) {
+       setSelectedClients(new Set());
        return;
      }
-     setSelectedEmployees(new Set(filteredEmployees.map((emp) => emp.id)));
+     setSelectedClients(new Set(filteredClients.map((emp) => emp.id)));
    };
 
-   const toggleSelectEmployee = (id: string) => {
-     const next = new Set(selectedEmployees);
+   const toggleSelectClient = (id: string) => {
+     const next = new Set(selectedClients);
      if (next.has(id)) {
        next.delete(id);
      } else {
        next.add(id);
      }
-     setSelectedEmployees(next);
+     setSelectedClients(next);
    };
 
-  const openProfileDialog = async (employee: Employee, initialTab: EmployeeTab = "personal") => {
-    let employeeForProfile = employee;
+  const openProfileDialog = async (client: Client, initialTab: ClientTab = "personal") => {
+    let clientForProfile = client;
     if (user) {
       const { data } = await (supabase as any)
-        .from("employees")
-        .select(employeeSelectColumnsWithTermination)
+        .from("clients")
+        .select(clientSelectColumnsWithTermination)
         .eq("company_id", user.id)
-        .eq("id", employee.id)
+        .eq("id", client.id)
         .maybeSingle();
       if (data) {
-        employeeForProfile = data as Employee;
+        clientForProfile = data as Client;
       }
     }
-    setSelectedEmployee(employeeForProfile);
-    setProfileForm(createProfileFormFromEmployee(employeeForProfile));
-    setProbationPeriod(employeeForProfile.probation_period ?? "");
+    setSelectedClient(clientForProfile);
+    setProfileForm(createProfileFormFromClient(clientForProfile));
+    setProbationPeriod(clientForProfile.probation_period ?? "");
     setRetirementAge(
-      retirementAgeOptions.find((option) => option === String(employeeForProfile.retirement_age ?? 65)) ?? "65",
+      retirementAgeOptions.find((option) => option === String(clientForProfile.retirement_age ?? 65)) ?? "65",
     );
-    setUnionMember((employeeForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
-    setTradeUnion(employeeForProfile.trade_union ?? "");
-    setDepartment((employeeForProfile.department as (typeof departmentOptions)[number]) ?? "");
-    setBranch(employeeForProfile.branch ?? "");
-    setReportingTo(employeeForProfile.reporting_to ?? "");
+    setUnionMember((clientForProfile.union_member as (typeof unionMemberOptions)[number]) ?? "");
+    setTradeUnion(clientForProfile.trade_union ?? "");
+    setDepartment((clientForProfile.department as (typeof departmentOptions)[number]) ?? "");
+    setBranch(clientForProfile.branch ?? "");
+    setReportingTo(clientForProfile.reporting_to ?? "");
     setOccupationalLevel(
-      (employeeForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      (clientForProfile.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
-    setSalaryType((employeeForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-    setBasicSalary(employeeForProfile.basic_salary ?? "");
-    setWorkEmail(employeeForProfile.work_email ?? "");
-    setWorkCellNumber(employeeForProfile.work_cell_number ?? "");
+    setSalaryType((clientForProfile.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setBasicSalary(clientForProfile.basic_salary ?? "");
+    setWorkEmail(clientForProfile.work_email ?? "");
+    setWorkCellNumber(clientForProfile.work_cell_number ?? "");
     setPendingIdDocumentFile(null);
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(false);
@@ -6393,34 +6588,34 @@ const Employees = () => {
   };
 
   useEffect(() => {
-    const state = (location.state ?? {}) as { openEmployeeId?: string; openEmployeeTab?: EmployeeTab };
-    const requestedId = (state.openEmployeeId ?? "").trim();
-    const requestedTab = state.openEmployeeTab ?? "personal";
+    const state = (location.state ?? {}) as { openClientId?: string; openClientTab?: ClientTab };
+    const requestedId = (state.openClientId ?? "").trim();
+    const requestedTab = state.openClientTab ?? "personal";
     if (!requestedId) return;
     const run = async () => {
-      const existing = employees.find((employee) => employee.id === requestedId);
+      const existing = clients.find((client) => client.id === requestedId);
       const fetched =
         existing || !user?.id
           ? null
           : ((await (supabase as any)
-              .from("employees")
-              .select(employeeSelectColumnsWithTermination)
+              .from("clients")
+              .select(clientSelectColumnsWithTermination)
               .eq("company_id", user.id)
               .eq("id", requestedId)
-              .maybeSingle()).data as Employee | null);
-      const targetEmployee = existing ?? fetched;
-      if (targetEmployee) {
-        await openProfileDialog(targetEmployee, requestedTab);
+              .maybeSingle()).data as Client | null);
+      const targetClient = existing ?? fetched;
+      if (targetClient) {
+        await openProfileDialog(targetClient, requestedTab);
       }
-      navigate("/employees", { replace: true, state: {} });
+      navigate("/clients", { replace: true, state: {} });
     };
     void run();
-  }, [employees, location.state, navigate, user?.id]);
+  }, [clients, location.state, navigate, user?.id]);
 
   const closeProfileDialog = () => {
     if (!guardEditSession()) return;
     setIsProfilePanelOpen(false);
-    setSelectedEmployee(null);
+    setSelectedClient(null);
     setIsEditMode(false);
     setActiveEditSection(null);
     setProbationPeriod("");
@@ -6458,28 +6653,28 @@ const Employees = () => {
    };
 
   const handleSectionSave = async (section: ProfileSectionKey) => {
-    if (!selectedEmployee) return;
+    if (!selectedClient) return;
     setIsProfileSaving(true);
     try {
       const shouldUploadIdDocument = section === "identity" && !!pendingIdDocumentFile;
       const shouldRemoveIdDocument =
-        section === "identity" && isIdDocumentMarkedForRemoval && !!idDocumentByEmployee[selectedEmployee.id];
+        section === "identity" && isIdDocumentMarkedForRemoval && !!idDocumentByClient[selectedClient.id];
       const shouldUploadEmploymentContract = section === "employmentStatus" && !!pendingEmploymentContractFile;
       const shouldRemoveEmploymentContract =
         section === "employmentStatus" &&
         isEmploymentContractMarkedForRemoval &&
-        !!activeContractForSelectedEmployee;
-      const identityFieldKeys: Array<keyof EmployeeProfileFormData> = [
-        "employeeName",
-        "employeeSurname",
+        !!activeContractForSelectedClient;
+      const identityFieldKeys: Array<keyof ClientProfileFormData> = [
+        "clientName",
+        "clientSurname",
         "incomeTaxNumber",
         "idNumber",
         "citizenshipStatus",
       ];
-      const employmentStatusFieldKeys: Array<keyof EmployeeProfileFormData> = [
+      const employmentStatusFieldKeys: Array<keyof ClientProfileFormData> = [
         "startDate",
         "endDate",
-        "employeeNumber",
+        "clientNumber",
       ];
       const hasIdentityFieldChanges =
         section === "identity" && !!originalProfile
@@ -6488,7 +6683,7 @@ const Employees = () => {
       const hasEmploymentStatusFieldChanges =
         section === "employmentStatus" && !!originalProfile
           ? employmentStatusFieldKeys.some((key) => profileForm[key] !== originalProfile[key]) ||
-            employeeStatus !== getDisplayMembershipStatus((selectedEmployee as any)?.status)
+            clientStatus !== getDisplayMembershipStatus((selectedClient as any)?.status)
           : false;
       const isEmploymentSection =
         section === "employmentStatus" ||
@@ -6541,17 +6736,17 @@ const Employees = () => {
       }
 
       if (isEmploymentSection) {
-        const finalEmployeeNumber = validated.employeeNumber || null;
-        const normalizedNumber = normalizeEmployeeNumber(finalEmployeeNumber);
+        const finalClientNumber = validated.clientNumber || null;
+        const normalizedNumber = normalizeClientNumber(finalClientNumber);
         const duplicate = normalizedNumber
-          ? employees.find(
+          ? clients.find(
               (emp) => {
                 const dynamic = emp as Record<string, unknown>;
                 const existingClientNumber =
-                  (dynamic.client_number as string | undefined) ?? emp.employee_number ?? "";
+                  (dynamic.client_number as string | undefined) ?? emp.client_number ?? "";
                 return (
-                  emp.id !== selectedEmployee.id &&
-                  normalizeEmployeeNumber(existingClientNumber) === normalizedNumber
+                  emp.id !== selectedClient.id &&
+                  normalizeClientNumber(existingClientNumber) === normalizedNumber
                 );
               },
             )
@@ -6559,7 +6754,7 @@ const Employees = () => {
         if (duplicate) {
           toast({
             title: "Duplicate client number",
-            description: `You already allocated that client number to ${duplicate.employee_name ?? "Client"} ${duplicate.employee_surname ?? ""}. Please choose a different client number.`,
+            description: `You already allocated that client number to ${duplicate.client_name ?? "Client"} ${duplicate.client_surname ?? ""}. Please choose a different client number.`,
             variant: "destructive",
           });
           setIsProfileSaving(false);
@@ -6568,23 +6763,23 @@ const Employees = () => {
       }
       if (section === "identity") {
         const normalizedIdNumber = normalizeIdNumberValue(validated.idNumber);
-        const duplicateIdEmployee = normalizedIdNumber
-          ? employees.find(
+        const duplicateIdClient = normalizedIdNumber
+          ? clients.find(
               (emp) => {
                 const dynamic = emp as Record<string, unknown>;
                 const existingVatNumber =
                   (dynamic.vat_number as string | undefined) ?? emp.id_number ?? "";
                 return (
-                  emp.id !== selectedEmployee.id &&
+                  emp.id !== selectedClient.id &&
                   normalizeIdNumberValue(existingVatNumber) === normalizedIdNumber
                 );
               },
             )
           : undefined;
-        if (duplicateIdEmployee) {
+        if (duplicateIdClient) {
           toast({
             title: "Duplicate ID/passport number",
-            description: `That ID/passport number is already allocated to ${duplicateIdEmployee.employee_name ?? "Client"} ${duplicateIdEmployee.employee_surname ?? ""}. Please use a different ID/passport number.`,
+            description: `That ID/passport number is already allocated to ${duplicateIdClient.client_name ?? "Client"} ${duplicateIdClient.client_surname ?? ""}. Please use a different ID/passport number.`,
             variant: "destructive",
           });
           setIsProfileSaving(false);
@@ -6594,10 +6789,10 @@ const Employees = () => {
 
       if (section === "identity" && !hasIdentityFieldChanges && (shouldUploadIdDocument || shouldRemoveIdDocument)) {
         if (shouldRemoveIdDocument) {
-          await removeIdDocument(selectedEmployee.id);
+          await removeIdDocument(selectedClient.id);
         }
         if (shouldUploadIdDocument) {
-          await uploadPendingIdDocument(selectedEmployee.id);
+          await uploadPendingIdDocument(selectedClient.id);
         }
         toast({
           title: "Client updated",
@@ -6613,10 +6808,10 @@ const Employees = () => {
         (shouldUploadEmploymentContract || shouldRemoveEmploymentContract)
       ) {
         if (shouldRemoveEmploymentContract) {
-          await removeActiveEmploymentContract(selectedEmployee.id);
+          await removeActiveEmploymentContract(selectedClient.id);
         }
         if (shouldUploadEmploymentContract) {
-          await uploadPendingEmploymentContract(selectedEmployee.id);
+          await uploadPendingEmploymentContract(selectedClient.id);
         }
         toast({
           title: "Client updated",
@@ -6627,103 +6822,44 @@ const Employees = () => {
         return;
       }
 
-      const endDateValue =
-        isEmploymentSection && validated.contractType === "Temporary" && validated.endDate
-          ? validated.endDate
-          : isEmploymentSection
-            ? null
-            : undefined;
-      const selectedMemberTypes = membershipTypeOptions.filter((service) => serviceSelections[service] === "Yes");
-      const normalizedStatus = employeeStatus.trim().toLowerCase() || null;
+      const normalizedStatus = clientStatus.trim().toLowerCase() || null;
 
-      const updatePayload: EmployeeUpdate =
+      const updatePayload: ClientUpdate =
         section === "identity"
           ? {
-              registered_name: validated.employeeName || null,
-              trading_as: validated.employeeSurname || null,
-              trading_name: validated.employeeSurname || null,
-              registration_number: validated.incomeTaxNumber || null,
-              vat_number: validated.idNumber || null,
-              company_type: validated.citizenshipStatus || null,
+              client_name: validated.clientName || null,
+              client_surname: validated.clientSurname || null,
+              id_number: validated.idNumber || null,
             }
           : section === "equity"
             ? {
-                owner: validated.gender || null,
-                tel_cell: validated.race || null,
-                client_email: validated.cellNumber || null,
+                gender: validated.gender || null,
+                race: validated.race || null,
               }
             : section === "contact"
               ? {
-                  physical_address_line1: validated.physicalAddressLine1 || null,
-                  physical_address_line2: validated.physicalAddressLine2 || null,
-                  city: validated.city || null,
-                  province: validated.province || "",
-                  area_code: validated.areaCode || null,
+                  cell_number: validated.cellNumber || null,
+                  email: validated.email || null,
                 }
             : section === "statutory"
-              ? {
-                  postal_address_line1: validated.postalAddressLine1 || null,
-                  postal_address_line2: validated.postalAddressLine2 || null,
-                  postal_city: validated.postalCity || null,
-                  postal_province: validated.postalProvince || null,
-                  postal_area_code: validated.postalAreaCode || null,
-                }
+              ? {}
             : isEmploymentSection
                 ? {
                     ...(section === "employmentStatus"
                       ? {
-                          start_date: validated.startDate,
-                          end_date: validated.endDate || endDateValue || null,
-                          employee_number: validated.employeeNumber || null,
-                          client_number: validated.employeeNumber || null,
-                          renewal_date: validated.endDate || endDateValue || null,
+                          client_number: validated.clientNumber || null,
                           status: normalizedStatus,
-                        }
-                      : {}),
-                    ...(section === "employmentOrg"
-                      ? {
-                          member_types: selectedMemberTypes.length > 0 ? selectedMemberTypes : null,
-                        }
-                      : {}),
-                    ...(section === "employmentRemuneration"
-                      ? {
-                          salary_type: salaryType || null,
-                          basic_salary: normalizeSalaryForStorage(basicSalary) || null,
-                        }
-                      : {}),
-                    ...(section === "employmentWorkContact"
-                      ? {
-                          work_email: workEmail || null,
-                          work_cell_number: workCellNumber || null,
-                        }
-                      : {}),
-                    ...(section === "employmentUnion"
-                      ? {
-                          union_member: unionMember || null,
-                          trade_union: unionMember === "Yes" ? tradeUnion || null : null,
                         }
                       : {}),
                   }
                 : section === "homeAddress"
-                  ? {
-                      physical_address_line1: validated.physicalAddressLine1 || null,
-                      physical_address_line2: validated.physicalAddressLine2 || null,
-                      city: validated.city || null,
-                      province: validated.province || "",
-                      area_code: validated.areaCode || null,
-                    }
-                  : {
-                      postal_address_line1: validated.postalAddressLine1 || null,
-                      postal_address_line2: validated.postalAddressLine2 || null,
-                      postal_city: validated.postalCity || null,
-                      postal_province: validated.postalProvince || null,
-                      postal_area_code: validated.postalAreaCode || null,
-                    };
+                  ? {}
+                  : {};
 
       const { error } = await supabase
-        .from("employees")
-        .update(updatePayload as unknown as TablesInsert<"employees">)
-        .eq("id", selectedEmployee.id);
+        .from("clients")
+        .update(pickClientWritePayload(updatePayload as Record<string, unknown>) as unknown as TablesInsert<"clients">)
+        .eq("id", selectedClient.id);
 
       if (error) throw error;
 
@@ -6732,41 +6868,41 @@ const Employees = () => {
         description: "Client profile has been saved successfully.",
       });
 
-      const updatedEmployee: Employee = {
-        ...selectedEmployee,
+      const updatedClient: Client = {
+        ...selectedClient,
         ...updatePayload,
       };
 
-      setSelectedEmployee(updatedEmployee);
-      setEmployeeStatus(getDisplayMembershipStatus((updatedEmployee as any).status));
-      setProfileForm(createProfileFormFromEmployee(updatedEmployee));
-      setProbationPeriod(updatedEmployee.probation_period ?? "");
+      setSelectedClient(updatedClient);
+      setClientStatus(getDisplayMembershipStatus((updatedClient as any).status));
+      setProfileForm(createProfileFormFromClient(updatedClient));
+      setProbationPeriod(updatedClient.probation_period ?? "");
       setRetirementAge(
-        retirementAgeOptions.find((option) => option === String(updatedEmployee.retirement_age ?? 65)) ?? "65",
+        retirementAgeOptions.find((option) => option === String(updatedClient.retirement_age ?? 65)) ?? "65",
       );
-      setUnionMember((updatedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
-      setTradeUnion(updatedEmployee.trade_union ?? "");
-      setDepartment((updatedEmployee.department as (typeof departmentOptions)[number]) ?? "");
-      setBranch(updatedEmployee.branch ?? "");
-      setReportingTo(updatedEmployee.reporting_to ?? "");
+      setUnionMember((updatedClient.union_member as (typeof unionMemberOptions)[number]) ?? "");
+      setTradeUnion(updatedClient.trade_union ?? "");
+      setDepartment((updatedClient.department as (typeof departmentOptions)[number]) ?? "");
+      setBranch(updatedClient.branch ?? "");
+      setReportingTo(updatedClient.reporting_to ?? "");
       setOccupationalLevel(
-        (updatedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+        (updatedClient.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
       );
-      setSalaryType((updatedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-      setBasicSalary(updatedEmployee.basic_salary ?? "");
-      setWorkEmail(updatedEmployee.work_email ?? "");
-      setWorkCellNumber(updatedEmployee.work_cell_number ?? "");
+      setSalaryType((updatedClient.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+      setBasicSalary(updatedClient.basic_salary ?? "");
+      setWorkEmail(updatedClient.work_email ?? "");
+      setWorkCellNumber(updatedClient.work_cell_number ?? "");
       if (shouldRemoveIdDocument) {
-        await removeIdDocument(selectedEmployee.id);
+        await removeIdDocument(selectedClient.id);
       }
       if (shouldUploadIdDocument) {
-        await uploadPendingIdDocument(selectedEmployee.id);
+        await uploadPendingIdDocument(selectedClient.id);
       }
       if (shouldRemoveEmploymentContract) {
-        await removeActiveEmploymentContract(selectedEmployee.id);
+        await removeActiveEmploymentContract(selectedClient.id);
       }
       if (shouldUploadEmploymentContract) {
-        await uploadPendingEmploymentContract(selectedEmployee.id);
+        await uploadPendingEmploymentContract(selectedClient.id);
       }
       if (isEmploymentSection) {
         setOriginalDepartment(department);
@@ -6780,7 +6916,7 @@ const Employees = () => {
       }
       setIsEditMode(false);
       setActiveEditSection(null);
-      await fetchEmployees();
+      await fetchClients();
     } catch (error: unknown) {
       toast({
         title: "Error",
@@ -6793,26 +6929,26 @@ const Employees = () => {
   };
 
   const handleSectionCancel = useCallback(() => {
-    if (!selectedEmployee) return;
-    setProfileForm(createProfileFormFromEmployee(selectedEmployee));
-    setProbationPeriod(selectedEmployee.probation_period ?? "");
+    if (!selectedClient) return;
+    setProfileForm(createProfileFormFromClient(selectedClient));
+    setProbationPeriod(selectedClient.probation_period ?? "");
     setRetirementAge(
-      retirementAgeOptions.find((option) => option === String(selectedEmployee.retirement_age ?? 65)) ?? "65",
+      retirementAgeOptions.find((option) => option === String(selectedClient.retirement_age ?? 65)) ?? "65",
     );
-    setUnionMember((selectedEmployee.union_member as (typeof unionMemberOptions)[number]) ?? "");
-    setTradeUnion(selectedEmployee.trade_union ?? "");
-    setDepartment((selectedEmployee.department as (typeof departmentOptions)[number]) ?? "");
-    setBranch(selectedEmployee.branch ?? "");
-    setReportingTo(selectedEmployee.reporting_to ?? "");
+    setUnionMember((selectedClient.union_member as (typeof unionMemberOptions)[number]) ?? "");
+    setTradeUnion(selectedClient.trade_union ?? "");
+    setDepartment((selectedClient.department as (typeof departmentOptions)[number]) ?? "");
+    setBranch(selectedClient.branch ?? "");
+    setReportingTo(selectedClient.reporting_to ?? "");
     setOccupationalLevel(
-      (selectedEmployee.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
+      (selectedClient.occupational_level as (typeof occupationalLevelOptions)[number]) ?? "",
     );
-    setSalaryType((selectedEmployee.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
-    setBasicSalary(selectedEmployee.basic_salary ?? "");
-    setWorkEmail(selectedEmployee.work_email ?? "");
-    setWorkCellNumber(selectedEmployee.work_cell_number ?? "");
-    setEmployeeStatus(getDisplayMembershipStatus((selectedEmployee as any)?.status));
-    setServiceSelections(createMembershipServiceSelectionsFromEmployee(selectedEmployee));
+    setSalaryType((selectedClient.salary_type as (typeof salaryTypeOptions)[number]) ?? "");
+    setBasicSalary(selectedClient.basic_salary ?? "");
+    setWorkEmail(selectedClient.work_email ?? "");
+    setWorkCellNumber(selectedClient.work_cell_number ?? "");
+    setClientStatus(getDisplayMembershipStatus((selectedClient as any)?.status));
+    setServiceSelections(createMembershipServiceSelectionsFromClient(selectedClient));
     setPendingIdDocumentFile(null);
     setPendingIdDocumentName("");
     setIsIdDocumentMarkedForRemoval(false);
@@ -6831,7 +6967,7 @@ const Employees = () => {
     });
     setIsEditMode(false);
     setActiveEditSection(null);
-  }, [selectedEmployee]);
+  }, [selectedClient]);
 
   const enableEditMode = useCallback(() => {
     return;
@@ -6915,14 +7051,14 @@ const Employees = () => {
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
-                value={profileForm.employeeName}
+                value={profileForm.clientName}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    employeeName: e.target.value,
+                    clientName: e.target.value,
                   }))
                 }
               />
@@ -6932,14 +7068,14 @@ const Employees = () => {
               <Input
                 className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
                 placeholder="Please insert"
-                value={profileForm.employeeSurname}
+                value={profileForm.clientSurname}
                 readOnly={!isEditMode}
                 onFocus={enableEditMode}
                 onMouseDown={enableEditMode}
                 onChange={(e) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    employeeSurname: e.target.value,
+                    clientSurname: e.target.value,
                   }))
                 }
               />
@@ -6990,7 +7126,7 @@ const Employees = () => {
                 }
               >
                 <SelectTrigger
-                  className={employeeDropdownTriggerClass}
+                  className={clientDropdownTriggerClass}
                   showIcon={isEditMode}
                   onPointerDown={handleSelectPointerDown}
                 >
@@ -6998,7 +7134,7 @@ const Employees = () => {
                 </SelectTrigger>
                 <SelectContent className="text-[11px]">
                   {companyTypeOptions.map((option) => (
-                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
+                    <SelectItem key={option} value={option} className={clientDropdownSelectItemClass}>
                       {option}
                     </SelectItem>
                   ))}
@@ -7209,12 +7345,12 @@ const Employees = () => {
                 onValueChange={(value) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    province: value as EmployeeProfileFormData["province"],
+                    province: value as ClientProfileFormData["province"],
                   }))
                 }
               >
                 <SelectTrigger
-                  className={employeeDropdownTriggerClass}
+                  className={clientDropdownTriggerClass}
                   showIcon={isEditMode}
                   onPointerDown={handleSelectPointerDown}
                 >
@@ -7225,7 +7361,7 @@ const Employees = () => {
                     <SelectItem
                       key={province}
                       value={province}
-                      className={employeeDropdownSelectItemClass}
+                      className={clientDropdownSelectItemClass}
                     >
                       {province}
                     </SelectItem>
@@ -7376,12 +7512,12 @@ const Employees = () => {
                 onValueChange={(value) =>
                   setProfileForm((prev) => ({
                     ...prev,
-                    postalProvince: value as EmployeeProfileFormData["postalProvince"],
+                    postalProvince: value as ClientProfileFormData["postalProvince"],
                   }))
                 }
               >
                 <SelectTrigger
-                  className={employeeDropdownTriggerClass}
+                  className={clientDropdownTriggerClass}
                   showIcon={isEditMode}
                   onPointerDown={handleSelectPointerDown}
                 >
@@ -7392,7 +7528,7 @@ const Employees = () => {
                     <SelectItem
                       key={province}
                       value={province}
-                      className={employeeDropdownSelectItemClass}
+                      className={clientDropdownSelectItemClass}
                     >
                       {province}
                     </SelectItem>
@@ -7526,12 +7662,12 @@ const Employees = () => {
               onValueChange={(value) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  province: value as EmployeeProfileFormData["province"],
+                  province: value as ClientProfileFormData["province"],
                 }))
               }
             >
               <SelectTrigger
-                className={employeeDropdownTriggerClass}
+                className={clientDropdownTriggerClass}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >
@@ -7542,7 +7678,7 @@ const Employees = () => {
                   <SelectItem
                     key={province}
                     value={province}
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     {province}
                   </SelectItem>
@@ -7692,12 +7828,12 @@ const Employees = () => {
               onValueChange={(value) =>
                 setProfileForm((prev) => ({
                   ...prev,
-                  postalProvince: value as EmployeeProfileFormData["postalProvince"],
+                  postalProvince: value as ClientProfileFormData["postalProvince"],
                 }))
               }
             >
               <SelectTrigger
-                className={employeeDropdownTriggerClass}
+                className={clientDropdownTriggerClass}
                 showIcon={isEditMode}
                 onPointerDown={handleSelectPointerDown}
               >
@@ -7708,7 +7844,7 @@ const Employees = () => {
                   <SelectItem
                     key={province}
                     value={province}
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     {province}
                   </SelectItem>
@@ -7740,7 +7876,7 @@ const Employees = () => {
 
   const renderLicencesTab = () => {
     const renderCategoryCard = (category: LicenceCategory) => {
-      const rows = licencesForSelectedEmployee.filter((item) => item.category === category);
+      const rows = licencesForSelectedClient.filter((item) => item.category === category);
       return (
         <div key={category} className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
           <div className="mb-3 flex items-center justify-between">
@@ -7759,7 +7895,7 @@ const Employees = () => {
                 {licenceTypesByCategory[category].map((type) => (
                   <DropdownMenuItem
                     key={type}
-                    className={employeeDropdownMenuItemClass}
+                    className={clientDropdownMenuItemClass}
                     onSelect={() => {
                       setLicenceTypeSelection((prev) => ({
                         ...prev,
@@ -7841,7 +7977,7 @@ const Employees = () => {
 
   const renderEducationTab = () => {
     const renderCategoryCard = (category: EducationCategory) => {
-      const rows = educationsForSelectedEmployee.filter((item) => item.category === category);
+      const rows = educationsForSelectedClient.filter((item) => item.category === category);
       return (
         <div key={category} className="rounded-sm border border-slate-300 bg-white px-5 pb-5 pt-[9px]">
           <div className="mb-3 flex items-center justify-between">
@@ -7860,7 +7996,7 @@ const Employees = () => {
                 {educationTypesByCategory[category].map((type) => (
                   <DropdownMenuItem
                     key={type}
-                    className={employeeDropdownMenuItemClass}
+                    className={clientDropdownMenuItemClass}
                     onSelect={() => {
                       setEducationTypeSelection((prev) => ({
                         ...prev,
@@ -7941,13 +8077,13 @@ const Employees = () => {
   };
 
   const renderEmploymentTab = () => {
-    if (employeeStatus === "Inactive") {
+    if (clientStatus === "Inactive") {
       const terminationReason =
-        (selectedEmployee?.termination_reason ?? "").toString().trim() || "--";
-      const terminationDateRaw = (selectedEmployee?.terminated_at ?? "").toString().trim();
+        (selectedClient?.termination_reason ?? "").toString().trim() || "--";
+      const terminationDateRaw = (selectedClient?.terminated_at ?? "").toString().trim();
       const previousJobTitle =
-        (selectedEmployee?.previous_job_title ?? "").toString().trim() || "--";
-      const terminationDocumentInputId = `termination-document-upload-${selectedEmployee?.id ?? "none"}`;
+        (selectedClient?.previous_job_title ?? "").toString().trim() || "--";
+      const terminationDocumentInputId = `termination-document-upload-${selectedClient?.id ?? "none"}`;
 
       return (
         <div className="space-y-3">
@@ -8010,7 +8146,7 @@ const Employees = () => {
                     className="hidden"
                     onChange={handleTerminationDocumentFileChange}
                   />
-                  {!terminationDocumentForSelectedEmployee && (
+                  {!terminationDocumentForSelectedClient && (
                     <Button
                       type="button"
                       asChild
@@ -8031,19 +8167,19 @@ const Employees = () => {
                     >
                       {pendingTerminationDocumentName}
                     </span>
-                  ) : terminationDocumentForSelectedEmployee ? (
+                  ) : terminationDocumentForSelectedClient ? (
                     <button
                       type="button"
                       className="max-w-[180px] truncate text-[11px] font-semibold text-blue-600 hover:underline"
-                      onClick={() => void handleOpenTerminationDocument(terminationDocumentForSelectedEmployee)}
-                      title={terminationDocumentForSelectedEmployee.fileName}
+                      onClick={() => void handleOpenTerminationDocument(terminationDocumentForSelectedClient)}
+                      title={terminationDocumentForSelectedClient.fileName}
                     >
-                      {terminationDocumentForSelectedEmployee.fileName}
+                      {terminationDocumentForSelectedClient.fileName}
                     </button>
                   ) : (
                     <span className="text-[11px] font-semibold text-slate-500">--</span>
                   )}
-                  {terminationDocumentForSelectedEmployee && (
+                  {terminationDocumentForSelectedClient && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -8124,12 +8260,12 @@ const Employees = () => {
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Member Number</Label>
             <Input
               className={`${fieldInputClass} w-full max-w-[320px] ml-auto`}
-              value={profileForm.employeeNumber}
+              value={profileForm.clientNumber}
               readOnly={!isEditMode}
               onFocus={enableEditMode}
               onMouseDown={enableEditMode}
-              maxLength={EMPLOYEE_NUMBER_MAX_LENGTH}
-              onChange={(e) => handleCustomEmployeeNumberChange(e.target.value)}
+              maxLength={CLIENT_NUMBER_MAX_LENGTH}
+              onChange={(e) => handleCustomClientNumberChange(e.target.value)}
               placeholder="Please insert"
             />
           </div>
@@ -8222,8 +8358,8 @@ const Employees = () => {
           <div className="flex items-center gap-3">
             <Label className={`${fieldLabelClass} w-28 shrink-0 text-left`}>Status</Label>
             <Select
-              value={employeeStatus}
-              onValueChange={(value) => setEmployeeStatus(value as (typeof membershipStatusOptions)[number])}
+              value={clientStatus}
+              onValueChange={(value) => setClientStatus(value as (typeof membershipStatusOptions)[number])}
               onOpenChange={(open) => {
                 if (open && !isEditMode) {
                   return;
@@ -8231,12 +8367,12 @@ const Employees = () => {
               }}
               disabled={!isEditMode}
             >
-              <SelectTrigger className={employeeDropdownTriggerClass} disabled={!isEditMode}>
+              <SelectTrigger className={clientDropdownTriggerClass} disabled={!isEditMode}>
                 <SelectValue placeholder="Please select" />
               </SelectTrigger>
               <SelectContent className="text-[11px]">
                 {membershipStatusOptions.map((option) => (
-                  <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
+                  <SelectItem key={option} value={option} className={clientDropdownSelectItemClass}>
                     {option}
                   </SelectItem>
                 ))}
@@ -8309,12 +8445,12 @@ const Employees = () => {
                 }}
                 disabled={!isEditMode}
               >
-                <SelectTrigger className={employeeDropdownTriggerClass} disabled={!isEditMode}>
+                <SelectTrigger className={clientDropdownTriggerClass} disabled={!isEditMode}>
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
                 <SelectContent className="text-[11px]">
                   {membershipServiceSelectionOptions.map((option) => (
-                    <SelectItem key={option} value={option} className={employeeDropdownSelectItemClass}>
+                    <SelectItem key={option} value={option} className={clientDropdownSelectItemClass}>
                       {option}
                     </SelectItem>
                   ))}
@@ -8384,7 +8520,7 @@ const Employees = () => {
               }}
             >
             <SelectTrigger
-                className={employeeDropdownTriggerClass}
+                className={clientDropdownTriggerClass}
                 disabled={!isEditMode}
               >
                 <SelectValue placeholder="Please select a cycle" />
@@ -8394,7 +8530,7 @@ const Employees = () => {
                   <SelectItem
                     key={option}
                     value={option}
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     {option}
                   </SelectItem>
@@ -8426,13 +8562,13 @@ const Employees = () => {
   const renderDisciplineTab = () => {
     const showingValid = warningFilter === "valid";
     const activeWarnings = showingValid ? warningsByStatus.valid : warningsByStatus.expired;
-    const warningTypeTag: Record<EmployeeWarning["warningType"], string> = {
+    const warningTypeTag: Record<ClientWarning["warningType"], string> = {
       First: "First",
       Second: "Second",
       Serious: "Serious",
       Final: "Final",
     };
-    const warningTypeBadgeClass: Record<EmployeeWarning["warningType"], string> = {
+    const warningTypeBadgeClass: Record<ClientWarning["warningType"], string> = {
       First: "border-blue-200 bg-blue-50 text-blue-700",
       Second: "border-emerald-200 bg-emerald-50 text-emerald-700",
       Serious: "border-amber-200 bg-amber-50 text-amber-700",
@@ -8465,13 +8601,13 @@ const Employees = () => {
               <SelectContent className="text-[11px]">
                   <SelectItem
                     value="valid"
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     Valid
                   </SelectItem>
                   <SelectItem
                     value="expired"
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     Expired
                   </SelectItem>
@@ -8574,7 +8710,7 @@ const Employees = () => {
                                 onCloseAutoFocus={(event) => event.preventDefault()}
                               >
                                 <DropdownMenuItem
-                                  className={employeeDropdownMenuItemWithGapClass}
+                                  className={clientDropdownMenuItemWithGapClass}
                                   onSelect={(event) => {
                                     event.preventDefault();
                                     handleEditWarning(warning);
@@ -8585,7 +8721,7 @@ const Employees = () => {
                                 </DropdownMenuItem>
                                 {warning.fileUrl && (
                                   <DropdownMenuItem
-                                    className={employeeDropdownMenuItemWithGapClass}
+                                    className={clientDropdownMenuItemWithGapClass}
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenWarning(warning);
@@ -8652,13 +8788,13 @@ const Employees = () => {
                 <SelectContent className="text-[11px]">
                   <SelectItem
                     value="active"
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     Active
                   </SelectItem>
                   <SelectItem
                     value="inactive"
-                    className={employeeDropdownSelectItemClass}
+                    className={clientDropdownSelectItemClass}
                   >
                     Inactive
                   </SelectItem>
@@ -8740,7 +8876,7 @@ const Employees = () => {
                               >
                                 {contract.fileUrl && (
                                   <DropdownMenuItem
-                                    className={employeeDropdownMenuItemWithGapClass}
+                                    className={clientDropdownMenuItemWithGapClass}
                                     onSelect={(event) => {
                                       event.preventDefault();
                                       void handleOpenContract(contract);
@@ -8875,18 +9011,18 @@ const Employees = () => {
                 )}
                 </div>
                 <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
-                  <span className="text-slate-900">{tableRangeStart}-{tableRangeEnd}</span> of {totalEmployeeCount} clients
+                  <span className="text-slate-900">{tableRangeStart}-{tableRangeEnd}</span> of {totalClientCount} clients
                 </p>
               </div>
               <div className="flex items-center gap-2 justify-end">
-                {employeeStatusFilter === "active" && selectedEmployees.size > 0 ? (
+                {clientStatusFilter === "active" && selectedClients.size > 0 ? (
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => void handleBulkDelete()}
                     className="h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-rose-600"
                   >
-                    Delete ({selectedEmployees.size})
+                    Delete ({selectedClients.size})
                   </Button>
                 ) : null}
                 <DropdownMenu>
@@ -8894,28 +9030,28 @@ const Employees = () => {
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
+                      disabled={isExportingClientsPdf || isExportingClientsExcel}
                       className={exportButtonStyle2}
                     >
-                      <span>{isExportingEmployeesPdf || isExportingEmployeesExcel ? "Exporting" : "Export"}</span>
+                      <span>{isExportingClientsPdf || isExportingClientsExcel ? "Exporting" : "Export"}</span>
                       <ChevronDown className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={0} className="w-36 text-[11px] rounded-t-none border-t-0">
                     <DropdownMenuItem
-                      onClick={() => void handleExportEmployeesPdf()}
-                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
-                      className={employeeDropdownMenuItemWithGapClass}
+                      onClick={() => void handleExportClientsPdf()}
+                      disabled={isExportingClientsPdf || isExportingClientsExcel}
+                      className={clientDropdownMenuItemWithGapClass}
                     >
-                      <Download className={`h-3.5 w-3.5${isExportingEmployeesPdf ? " animate-pulse" : ""}`} />
+                      <Download className={`h-3.5 w-3.5${isExportingClientsPdf ? " animate-pulse" : ""}`} />
                       Export as PDF
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => void handleExportEmployeesExcel()}
-                      disabled={isExportingEmployeesPdf || isExportingEmployeesExcel}
-                      className={employeeDropdownMenuItemWithGapClass}
+                      onClick={() => void handleExportClientsExcel()}
+                      disabled={isExportingClientsPdf || isExportingClientsExcel}
+                      className={clientDropdownMenuItemWithGapClass}
                     >
-                      <Download className={`h-3.5 w-3.5${isExportingEmployeesExcel ? " animate-pulse" : ""}`} />
+                      <Download className={`h-3.5 w-3.5${isExportingClientsExcel ? " animate-pulse" : ""}`} />
                       Export as Excel
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -8949,12 +9085,12 @@ const Employees = () => {
                         type="button"
                         className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 hover:underline"
                         onClick={() => {
-                          setEmployeeStatusFilter("active");
+                          setClientStatusFilter("active");
                           setContractFilter("all");
                           setGenderFilter("all");
                           setRaceFilter("all");
                           setNationalityFilter("all");
-                          closeEmployeeFiltersPanel();
+                          closeClientFiltersPanel();
                         }}
                       >
                         Clear
@@ -8981,12 +9117,12 @@ const Employees = () => {
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
-                                  setEmployeeStatusFilter(option.value);
-                                  closeEmployeeFiltersPanel();
+                                  setClientStatusFilter(option.value);
+                                  closeClientFiltersPanel();
                                 }}
                               >
                                 <span>{option.label}</span>
-                                {employeeStatusFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                                {clientStatusFilter === option.value && <Check className="h-3.5 w-3.5 text-blue-600" />}
                               </button>
                             ))}
                           </div>
@@ -9014,7 +9150,7 @@ const Employees = () => {
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setContractFilter(option.value);
-                                  closeEmployeeFiltersPanel();
+                                  closeClientFiltersPanel();
                                 }}
                               >
                                 <span>{option.label}</span>
@@ -9041,8 +9177,8 @@ const Employees = () => {
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
-                                  setGenderFilter(option.value as "all" | EmployeeProfileFormData["gender"]);
-                                  closeEmployeeFiltersPanel();
+                                  setGenderFilter(option.value as "all" | ClientProfileFormData["gender"]);
+                                  closeClientFiltersPanel();
                                 }}
                               >
                                 <span>{option.label}</span>
@@ -9069,8 +9205,8 @@ const Employees = () => {
                                 type="button"
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
-                                  setRaceFilter(option.value as "all" | EmployeeProfileFormData["race"]);
-                                  closeEmployeeFiltersPanel();
+                                  setRaceFilter(option.value as "all" | ClientProfileFormData["race"]);
+                                  closeClientFiltersPanel();
                                 }}
                               >
                                 <span>{option.label}</span>
@@ -9102,7 +9238,7 @@ const Employees = () => {
                                 className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-blue-50/70 hover:text-blue-600"
                                 onClick={() => {
                                   setNationalityFilter(option.value);
-                                  closeEmployeeFiltersPanel();
+                                  closeClientFiltersPanel();
                                 }}
                               >
                                 <span>{option.label}</span>
@@ -9115,10 +9251,10 @@ const Employees = () => {
                     </div>
                   </PopoverContent>
                 </Popover>
-                <DropdownMenu open={isNewEmployeeMenuOpen} onOpenChange={setIsNewEmployeeMenuOpen}>
+                <DropdownMenu open={isNewClientMenuOpen} onOpenChange={setIsNewClientMenuOpen}>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      ref={newEmployeeMenuTriggerRef}
+                      ref={newClientMenuTriggerRef}
                       className={newClientButtonStyle1}
                     >
                       <span className="truncate">New Client</span>
@@ -9129,8 +9265,8 @@ const Employees = () => {
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
-                        setIsNewEmployeeMenuOpen(false);
-                        setRehireEmployeeId(null);
+                        setIsNewClientMenuOpen(false);
+                        setRehireClientId(null);
                         setAddForm(createBlankAddForm());
                         setAddFormStep(1);
                         setIsAddDialogOpen(true);
@@ -9143,7 +9279,7 @@ const Employees = () => {
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault();
-                        setIsNewEmployeeMenuOpen(false);
+                        setIsNewClientMenuOpen(false);
                         handleBulkDialogChange(true);
                       }}
                       className={newClientDropdownItemStyle}
@@ -9157,7 +9293,7 @@ const Employees = () => {
             </div>
           </CardHeader>
           <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
-            {isEmployeesLoading ? (
+            {isClientsLoading ? (
               <div className="flex items-center justify-center pt-[210px] pb-10">
                 <img
                   src="/llasa_thumbnail.png"
@@ -9166,12 +9302,12 @@ const Employees = () => {
                   style={{ animationDuration: "2s" }}
                 />
               </div>
-            ) : employees.length === 0 && !hasEmployeeTableFiltersApplied ? (
+            ) : clients.length === 0 && !hasClientTableFiltersApplied ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">No clients added yet</p>
                 <Button
                   onClick={() => {
-                    setRehireEmployeeId(null);
+                    setRehireClientId(null);
                     setAddForm(createBlankAddForm());
                     setAddFormStep(1);
                     setIsAddDialogOpen(true);
@@ -9182,14 +9318,14 @@ const Employees = () => {
                   Add Your First Client
                 </Button>
               </div>
-            ) : employees.length === 0 || filteredEmployees.length === 0 ? (
+            ) : clients.length === 0 || filteredClients.length === 0 ? (
               <div className="text-center py-12">
-                {employeeStatusFilter === "inactive" ? (
+                {clientStatusFilter === "inactive" ? (
                   <p className="text-muted-foreground">
                     You don't have any inactive clients. Switch back to your{" "}
                     <button
                       type="button"
-                      onClick={() => setEmployeeStatusFilter("active")}
+                      onClick={() => setClientStatusFilter("active")}
                       className="font-semibold text-blue-600 hover:underline"
                     >
                       Active
@@ -9210,9 +9346,9 @@ const Employees = () => {
                       <Checkbox
                         indicator="x"
                         checked={
-                          filteredEmployees.length > 0 && selectedEmployees.size === filteredEmployees.length
+                          filteredClients.length > 0 && selectedClients.size === filteredClients.length
                             ? true
-                            : selectedEmployees.size > 0
+                            : selectedClients.size > 0
                               ? "indeterminate"
                               : false
                         }
@@ -9232,54 +9368,54 @@ const Employees = () => {
                   </div>
                   <div
                     ref={tableScrollRef}
-                    className="divide-y employee-table-scroll overflow-y-auto min-h-0"
+                    className="divide-y client-table-scroll overflow-y-auto min-h-0"
                     style={{ height: tableBodyResponsiveHeight, maxHeight: tableBodyResponsiveHeight }}
                   >
-                    {filteredEmployees.map((employee) => (
+                    {filteredClients.map((client) => (
                       <div
-                        key={employee.id}
+                        key={client.id}
                         className="grid grid-cols-[0.4fr_2fr_2fr_1.4fr_1.1fr_1.1fr_1.4fr_0.7fr_1fr] items-center gap-2 pl-1 pr-3 py-1 text-xs hover:bg-[#3eca44]/5"
                       >
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
-                            checked={selectedEmployees.has(employee.id)}
-                            onCheckedChange={() => toggleSelectEmployee(employee.id)}
-                            aria-label={`Select ${getClientDisplayName(employee).toLowerCase()}`}
+                            checked={selectedClients.has(client.id)}
+                            onCheckedChange={() => toggleSelectClient(client.id)}
+                            aria-label={`Select ${getClientDisplayName(client).toLowerCase()}`}
                             className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
                         <div className="font-medium leading-tight">
                           <button
                             type="button"
-                            onClick={() => void openProfileDialog(employee)}
+                            onClick={() => void openProfileDialog(client)}
                             className="text-left text-slate-900 hover:text-slate-900 hover:underline transition-colors"
                           >
-                            {getClientRegisteredName(employee)}
+                            {getClientRegisteredName(client)}
                           </button>
                         </div>
-                        <div className="leading-tight">{getClientTradingName(employee) || "--"}</div>
+                        <div className="leading-tight">{getClientTradingName(client) || "--"}</div>
                         <div className="flex items-center gap-2 leading-tight">
                           <span>
-                            {(employee.registration_number ?? employee.income_tax_number ?? "").trim()
+                            {(client.registration_number ?? client.income_tax_number ?? "").trim()
                               ? formatRegistrationNumberMaskDisplay(
-                                  (employee.registration_number ?? employee.income_tax_number ?? "").trim(),
+                                  (client.registration_number ?? client.income_tax_number ?? "").trim(),
                                 )
                               : "--"}
                           </span>
                         </div>
                         <div className="leading-tight">
-                          {(employee.owner ?? employee.gender ?? "").trim() || "--"}
+                          {(client.owner ?? client.gender ?? "").trim() || "--"}
                         </div>
                         <div className="flex items-center leading-tight text-left">
-                          {(employee.tel_cell ?? employee.race ?? employee.cell_number ?? "").trim() || "--"}
+                          {(client.tel_cell ?? client.race ?? client.cell_number ?? "").trim() || "--"}
                         </div>
                         <div className="flex items-center leading-tight text-left">
-                          {(employee.client_email ?? employee.email ?? "").trim() || "--"}
+                          {(client.client_email ?? client.email ?? "").trim() || "--"}
                         </div>
                         <div className="flex items-center leading-tight text-left">
-                          {(employee.status ?? "").trim()
-                            ? (employee.status ?? "").trim().toLowerCase() === "inactive"
+                          {(client.status ?? "").trim()
+                            ? (client.status ?? "").trim().toLowerCase() === "inactive"
                               ? "Inactive"
                               : "Active"
                             : "--"}
@@ -9292,7 +9428,7 @@ const Employees = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => void openProfileDialog(employee)}
+                                    onClick={() => void openProfileDialog(client)}
                                     className="h-6 w-6 p-0 hover:text-[#3eca44] hover:bg-muted/50 bg-transparent"
                                   >
                                     <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
@@ -9307,7 +9443,7 @@ const Employees = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setDocumentDialogEmployee(employee)}
+                                    onClick={() => setDocumentDialogClient(client)}
                                     className="h-6 w-6 p-0 group hover:bg-muted/50 bg-transparent"
                                   >
                                     <FilePlus className="h-3 w-3 transition-colors group-hover:text-[#3eca44]" strokeWidth={1.5} />
@@ -9322,7 +9458,7 @@ const Employees = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => void handleTerminateEmployee(employee)}
+                                    onClick={() => void handleTerminateClient(client)}
                                     className="h-6 w-6 p-0 group hover:bg-muted/50 bg-transparent"
                                   >
                                     <Trash2 className="h-3 w-3 transition-colors group-hover:text-red-600" strokeWidth={1.5} />
@@ -9475,7 +9611,7 @@ const Employees = () => {
                         <div className="flex items-center gap-2 pl-2">
                           <User className="h-4 w-4 text-white" />
                           <DialogTitle className="text-sm font-semibold text-white">
-                            {rehireEmployeeId ? "Rehire Client" : "New Client"}
+                            {rehireClientId ? "Rehire Client" : "New Client"}
                           </DialogTitle>
                         </div>
                         <DialogClose asChild>
@@ -9486,7 +9622,7 @@ const Employees = () => {
                       </div>
                       <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
                     <div className="pt-0 pb-2"></div>
-                    <form onSubmit={handleAddEmployee} className="space-y-4 pt-2">
+                    <form onSubmit={handleAddClient} className="space-y-4 pt-2">
                       <div className="mx-auto w-full max-w-[320px] py-4">
                         <div className="relative grid grid-cols-3 items-start">
                           <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
@@ -9541,11 +9677,11 @@ const Employees = () => {
                                 Registered Name <span className="text-red-600">*</span>
                               </span>
                               <Input
-                                id="employeeName"
-                                className={getAddModalInputClass(addForm.employeeName.trim().length > 0)}
+                                id="clientName"
+                                className={getAddModalInputClass(addForm.clientName.trim().length > 0)}
                                 placeholder="Insert company registered name"
-                                value={addForm.employeeName}
-                                onChange={(e) => setAddForm((prev) => ({ ...prev, employeeName: e.target.value }))}
+                                value={addForm.clientName}
+                                onChange={(e) => setAddForm((prev) => ({ ...prev, clientName: e.target.value }))}
                               />
                             </div>
                           </div>
@@ -9553,7 +9689,7 @@ const Employees = () => {
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                 Trading as
                               </span>
-                              <Input id="employeeSurname" className={getAddModalInputClass(addForm.employeeSurname.trim().length > 0)} placeholder="Insert trading name" value={addForm.employeeSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeSurname: e.target.value }))} />
+                              <Input id="clientSurname" className={getAddModalInputClass(addForm.clientSurname.trim().length > 0)} placeholder="Insert trading name" value={addForm.clientSurname} onChange={(e) => setAddForm((prev) => ({ ...prev, clientSurname: e.target.value }))} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
@@ -9692,7 +9828,7 @@ const Employees = () => {
                               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                 Client Number <span className="text-red-600">*</span>
                               </span>
-                              <Input id="addEmployeeNumber" className={getAddModalInputClass(addForm.employeeNumber.trim().length > 0)} placeholder="Please insert client number" value={addForm.employeeNumber} maxLength={EMPLOYEE_NUMBER_MAX_LENGTH} onChange={(e) => setAddForm((prev) => ({ ...prev, employeeNumber: sanitizeEmployeeNumber(e.target.value) }))} />
+                              <Input id="addClientNumber" className={getAddModalInputClass(addForm.clientNumber.trim().length > 0)} placeholder="Please insert client number" value={addForm.clientNumber} maxLength={CLIENT_NUMBER_MAX_LENGTH} onChange={(e) => setAddForm((prev) => ({ ...prev, clientNumber: sanitizeClientNumber(e.target.value) }))} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">                            <div className="relative w-full max-w-none">
@@ -9857,7 +9993,7 @@ const Employees = () => {
                                   <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
                                     Province <span className="text-red-600">*</span>
                                   </span>
-                                  <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddEmployeeFormState["province"] }))}>
+                                  <Select value={addForm.province} onValueChange={(value) => setAddForm((prev) => ({ ...prev, province: value as AddClientFormState["province"] }))}>
                                   <SelectTrigger className={`${getAddModalSelectTriggerClass(addForm.province.trim().length > 0)} ${addModalDropdownToneClass}`}>
                                     <SelectValue placeholder="Please select province" />
                                   </SelectTrigger>
@@ -9923,7 +10059,7 @@ const Employees = () => {
                               onClick={() => setIsAddFormSubmitRequested(true)}
                               disabled={isLoading || !isAddFormStepOneComplete || !isAddFormStepTwoComplete || !isAddFormStepThreeComplete}
                             >
-                              {isLoading ? "Saving..." : rehireEmployeeId ? "Rehire" : "Add"}
+                              {isLoading ? "Saving..." : rehireClientId ? "Rehire" : "Add"}
                             </Button>
                           )}
                         </div>
@@ -10031,17 +10167,17 @@ const Employees = () => {
                 <Select
                   value={warningForm.warningType}
                   onValueChange={(value) =>
-                    setWarningForm((prev) => ({ ...prev, warningType: value as EmployeeWarning["warningType"] }))
+                    setWarningForm((prev) => ({ ...prev, warningType: value as ClientWarning["warningType"] }))
                   }
                 >
                   <SelectTrigger className={`${getAddModalSelectTriggerClass(Boolean(warningForm.warningType))} ${addModalDropdownToneClass}`}>
                     <SelectValue placeholder="Select warning type" />
                   </SelectTrigger>
                   <SelectContent className="text-[11px]">
-                <SelectItem value="First" className={employeeDropdownSelectItemClass}>First (6 months)</SelectItem>
-                <SelectItem value="Second" className={employeeDropdownSelectItemClass}>Second (6 months)</SelectItem>
-                <SelectItem value="Serious" className={employeeDropdownSelectItemClass}>Serious (9 months)</SelectItem>
-                <SelectItem value="Final" className={employeeDropdownSelectItemClass}>Final (12 months)</SelectItem>
+                <SelectItem value="First" className={clientDropdownSelectItemClass}>First (6 months)</SelectItem>
+                <SelectItem value="Second" className={clientDropdownSelectItemClass}>Second (6 months)</SelectItem>
+                <SelectItem value="Serious" className={clientDropdownSelectItemClass}>Serious (9 months)</SelectItem>
+                <SelectItem value="Final" className={clientDropdownSelectItemClass}>Final (12 months)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -10385,7 +10521,7 @@ const Employees = () => {
                 </SelectTrigger>
                 <SelectContent className="text-[11px]">
                   {terminationReasons.map((reason) => (
-                    <SelectItem key={reason} value={reason} className={employeeDropdownSelectItemClass}>
+                    <SelectItem key={reason} value={reason} className={clientDropdownSelectItemClass}>
                       {reason}
                     </SelectItem>
                   ))}
@@ -10552,9 +10688,9 @@ const Employees = () => {
       )}
 
       <Dialog
-        open={Boolean(documentDialogEmployee)}
+        open={Boolean(documentDialogClient)}
         onOpenChange={(open) => {
-          if (!open) setDocumentDialogEmployee(null);
+          if (!open) setDocumentDialogClient(null);
         }}
       >
         <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
@@ -10573,7 +10709,7 @@ const Employees = () => {
             <div className="mt-[46px] bg-white px-6 pt-4 pb-6">
             <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
               Select any document from the list below to instantly start drafting a new document for{" "}
-              {`${documentDialogEmployee?.employee_name ?? ""} ${documentDialogEmployee?.employee_surname ?? ""}`.trim()}.
+              {`${documentDialogClient?.client_name ?? ""} ${documentDialogClient?.client_surname ?? ""}`.trim()}.
             </p>
             <div className="space-y-1">
               <Label htmlFor="document-select">Choose a document</Label>
@@ -10595,7 +10731,7 @@ const Employees = () => {
                           key={doc.path}
                           value={doc.path}
                           disabled={!doc.active}
-                          className={employeeDropdownSelectItemClass}
+                          className={clientDropdownSelectItemClass}
                         >
                           {doc.label} {!doc.active ? "(coming soon)" : ""}
                         </SelectItem>
@@ -10612,7 +10748,7 @@ const Employees = () => {
               onClick={() => {
                 const selected = documentOptions.find((d) => d.path === selectedDocumentPath);
                 if (selected?.active) {
-                  handleDocumentCategorySelect(selected.path, documentDialogEmployee);
+                  handleDocumentCategorySelect(selected.path, documentDialogClient);
                 }
               }}
               disabled={!documentOptions.find((d) => d.path === selectedDocumentPath && d.active)}
@@ -10628,7 +10764,7 @@ const Employees = () => {
 );
  };
 
-export default Employees;
+export default Clients;
 
 
 

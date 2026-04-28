@@ -127,6 +127,54 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          cell_number: string | null
+          client_name: string
+          client_number: string | null
+          client_surname: string
+          company_id: string
+          created_at: string | null
+          email: string | null
+          gender: string | null
+          id: string
+          id_number: string | null
+          race: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          cell_number?: string | null
+          client_name: string
+          client_number?: string | null
+          client_surname: string
+          company_id: string
+          created_at?: string | null
+          email?: string | null
+          gender?: string | null
+          id?: string
+          id_number?: string | null
+          race?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          cell_number?: string | null
+          client_name?: string
+          client_number?: string | null
+          client_surname?: string
+          company_id?: string
+          created_at?: string | null
+          email?: string | null
+          gender?: string | null
+          id?: string
+          id_number?: string | null
+          race?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           account_type: string

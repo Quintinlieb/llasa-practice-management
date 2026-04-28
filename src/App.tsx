@@ -39,7 +39,8 @@ const AppRoutes = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/account-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/employees" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+        <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+        <Route path="/employees" element={<Navigate to="/clients" replace />} />
         <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/documents/discipline/code-of-conduct/preview" element={<ProtectedRoute><CodeOfConductPreviewPage /></ProtectedRoute>} />
         <Route path="/documents/discipline" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />

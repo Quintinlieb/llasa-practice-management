@@ -1955,10 +1955,10 @@ const PermanentContractGenerator = ({
                     onClick={() => {
                       setHasDismissedEmployeeHint(true);
                       setShowEmployeeHint(false);
-                      navigate("/employees");
+                      navigate("/clients");
                     }}
                   >
-                    Employees page
+                    Clients page
                   </button>
                   <button
                     type="button"

@@ -847,6 +847,58 @@ export const employeeImportSchema = z.object({
     .transform((val) => (typeof val === "string" ? val.trim() : "")),
 });
 
+// Client-facing aliases and schemas.
+export const CLIENT_NUMBER_MAX_LENGTH = EMPLOYEE_NUMBER_MAX_LENGTH;
+export const sanitizeClientNumber = sanitizeEmployeeNumber;
+
+const toEmployeeProfileInput = (value: unknown) => {
+  if (!value || typeof value !== "object") return value;
+  const input = value as Record<string, unknown>;
+  return {
+    ...input,
+    employeeName: input.clientName ?? input.employeeName,
+    employeeSurname: input.clientSurname ?? input.employeeSurname,
+    employeeNumber: input.clientNumber ?? input.employeeNumber,
+  };
+};
+
+const toClientProfileOutput = (
+  value: z.infer<typeof employeeProfileSchema>,
+) => ({
+  ...value,
+  clientName: value.employeeName,
+  clientSurname: value.employeeSurname,
+  clientNumber: value.employeeNumber,
+});
+
+const toEmployeeImportInput = (value: unknown) => {
+  if (!value || typeof value !== "object") return value;
+  const input = value as Record<string, unknown>;
+  return {
+    ...input,
+    employeeName: input.clientName ?? input.employeeName,
+    employeeSurname: input.clientSurname ?? input.employeeSurname,
+    employeeNumber: input.clientNumber ?? input.employeeNumber,
+  };
+};
+
+const toClientImportOutput = (
+  value: z.infer<typeof employeeImportSchema>,
+) => ({
+  ...value,
+  clientName: value.employeeName,
+  clientSurname: value.employeeSurname,
+  clientNumber: value.employeeNumber,
+});
+
+export const clientProfileSchema = z
+  .preprocess(toEmployeeProfileInput, employeeProfileSchema)
+  .transform(toClientProfileOutput);
+
+export const clientImportSchema = z
+  .preprocess(toEmployeeImportInput, employeeImportSchema)
+  .transform(toClientImportOutput);
+
 // Warning Generator Schema
 export const warningGeneratorSchema = z.object({
   tradingName: z
@@ -1184,6 +1236,8 @@ export const temporaryContractSchema = baseContractSchema
 export type CompanySetupFormData = z.infer<typeof companySetupSchema>;
 export type EmployeeBasicFormData = z.infer<typeof employeeBasicSchema>;
 export type EmployeeProfileFormData = z.infer<typeof employeeProfileSchema>;
+export type ClientProfileFormData = z.infer<typeof clientProfileSchema>;
+export type ClientImportFormData = z.infer<typeof clientImportSchema>;
 export type WarningGeneratorFormData = z.infer<typeof warningGeneratorSchema>;
 export type PermanentContractFormData = z.infer<typeof permanentContractSchema>;
 export type EmploymentFormData = PermanentContractFormData;

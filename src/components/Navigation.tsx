@@ -45,14 +45,14 @@ const Navigation = () => {
                 Dashboard
               </Button>
             </Link>
-            <Link to="/employees">
+            <Link to="/clients">
               <Button 
-                variant={isActive("/employees") ? "secondary" : "ghost"} 
+                variant={isActive("/clients") ? "secondary" : "ghost"} 
                 size="sm"
                 className="gap-2"
               >
                 <Users className="h-4 w-4" />
-                Employees
+                Clients
               </Button>
             </Link>
             <Link to="/warning-generator">

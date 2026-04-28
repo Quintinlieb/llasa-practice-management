@@ -465,7 +465,7 @@ const Dashboard = () => {
 
   const handleUpcomingEventClick = (event: UpcomingEvent) => {
     if (!event.employeeId) return;
-    navigate("/employees", { state: { openEmployeeId: event.employeeId, openEmployeeTab: "employment" } });
+    navigate("/clients", { state: { openClientId: event.employeeId, openClientTab: "employment" } });
   };
 
   const rangeSelect = (value: RangeKey, onChange: (v: RangeKey) => void) => (

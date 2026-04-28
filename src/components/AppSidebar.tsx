@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
-  { title: "Clients", url: "/employees", icon: Users },
+  { title: "Clients", url: "/clients", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
 ];
 

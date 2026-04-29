@@ -13,6 +13,7 @@ import CompanySetup from "./pages/CompanySetup";
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import Documents from "./pages/Documents";
+import CaseFiles from "./pages/CaseFiles";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
@@ -51,6 +52,7 @@ const AppRoutes = () => {
         <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
+        <Route path="/case-files" element={<ProtectedRoute><CaseFiles /></ProtectedRoute>} />
         <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/terms" element={<TermsAndConditions />} />

@@ -12,6 +12,7 @@ import ResetPassword from "./pages/ResetPassword";
 import CompanySetup from "./pages/CompanySetup";
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
+import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
 import CaseFiles from "./pages/CaseFiles";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
@@ -41,6 +42,7 @@ const AppRoutes = () => {
         <Route path="/account-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+        <Route path="/clients-2" element={<ProtectedRoute><ClientsTwo /></ProtectedRoute>} />
         <Route path="/employees" element={<Navigate to="/clients" replace />} />
         <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/documents/discipline/code-of-conduct/preview" element={<ProtectedRoute><CodeOfConductPreviewPage /></ProtectedRoute>} />

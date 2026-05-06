@@ -77,6 +77,19 @@ type SubuserInviteForm = {
   surname: string;
   contact_number: string;
   email: string;
+  role: "Main" | "Consultant" | "Administrator" | "";
+  username: string;
+  password: string;
+  confirmPassword: string;
+};
+type SubuserListItem = {
+  id: string;
+  name: string;
+  surname: string;
+  contact_number: string | null;
+  email: string;
+  role: string | null;
+  created_at: string | null;
 };
 
 type BranchAllocationEmployee = {
@@ -152,6 +165,10 @@ const emptySubuserInviteForm: SubuserInviteForm = {
   surname: "",
   contact_number: "",
   email: "",
+  role: "",
+  username: "",
+  password: "",
+  confirmPassword: "",
 };
 
 const parseEmployeeBranchNames = (value: string): string[] => {
@@ -353,6 +370,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [isInviteSubuserOpen, setIsInviteSubuserOpen] = useState(false);
   const [subuserInviteForm, setSubuserInviteForm] = useState<SubuserInviteForm>(emptySubuserInviteForm);
   const [subuserInviteSubmitting, setSubuserInviteSubmitting] = useState(false);
+  const [subuserInviteStep, setSubuserInviteStep] = useState<1 | 2>(1);
+  const [showSubuserPassword, setShowSubuserPassword] = useState(false);
+  const [showSubuserConfirmPassword, setShowSubuserConfirmPassword] = useState(false);
+  const [subusersList, setSubusersList] = useState<SubuserListItem[]>([]);
+  const [subusersLoading, setSubusersLoading] = useState(false);
   const [isBranchAllocationOpen, setIsBranchAllocationOpen] = useState(false);
   const [branchAllocationEmployees, setBranchAllocationEmployees] = useState<BranchAllocationEmployee[]>([]);
   const [branchAllocationLoading, setBranchAllocationLoading] = useState(false);
@@ -393,11 +415,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const floatingLabelClass =
     "pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-400";
   const settingsActionRowClass = "mt-auto flex justify-center border-t border-slate-100 bg-white pt-3 pb-1";
-  const isSubuserInviteFormComplete =
+  const isSubuserStepOneComplete =
     subuserInviteForm.name.trim().length > 0 &&
     subuserInviteForm.surname.trim().length > 0 &&
     subuserInviteForm.contact_number.trim().length > 0 &&
-    subuserInviteForm.email.trim().length > 0;
+    subuserInviteForm.email.trim().length > 0 &&
+    subuserInviteForm.role.trim().length > 0;
+  const isSubuserStepTwoComplete =
+    subuserInviteForm.username.trim().length > 0 &&
+    subuserInviteForm.password.trim().length > 0 &&
+    subuserInviteForm.confirmPassword.trim().length > 0 &&
+    subuserInviteForm.password === subuserInviteForm.confirmPassword;
   const branchNames = useMemo(
     () =>
       branchSettings.branches
@@ -1763,11 +1791,73 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!open) {
       setSubuserInviteForm(emptySubuserInviteForm);
       setSubuserInviteSubmitting(false);
+      setSubuserInviteStep(1);
+      setShowSubuserPassword(false);
+      setShowSubuserConfirmPassword(false);
     }
   };
+  const fetchSubusersList = useCallback(async () => {
+    if (!user?.id) return;
+    setSubusersLoading(true);
+    try {
+      let { data, error } = await (supabase as any)
+        .from("subusers")
+        .select("id,name,surname,contact_number,email,role,status,created_at")
+        .order("created_at", { ascending: false, nullsFirst: false });
+      if (error) {
+        const code = String((error as any)?.code || "");
+        const message = String((error as any)?.message || "").toLowerCase();
+        const missingColumn = code === "42703" || message.includes("column");
+        if (missingColumn) {
+          const fallback = await (supabase as any)
+            .from("subusers")
+            .select("*")
+            .order("created_at", { ascending: false, nullsFirst: false });
+          data = fallback.data;
+          error = fallback.error;
+        }
+      }
+      if (error) throw error;
+      const normalized = ((data ?? []) as any[]).map((row) => ({
+        id: String(row.id ?? row.auth_user_id ?? `${row.email ?? "subuser"}-${row.created_at ?? ""}`),
+        name: String(row.name ?? row.user_name ?? "").trim(),
+        surname: String(row.surname ?? row.user_surname ?? row.last_name ?? "").trim(),
+        contact_number: String(row.contact_number ?? row.contact ?? row.phone_number ?? "").trim(),
+        email: String(row.email ?? "").trim(),
+        role: String(row.role ?? row.user_role ?? "").trim(),
+        status: String(row.status ?? "active").trim(),
+        created_at: row.created_at ?? row.invited_at ?? null,
+      })) as SubuserListItem[];
+      setSubusersList(normalized);
+    } catch (error: any) {
+      toast({
+        title: "Unable to load subusers",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      setSubusersList([]);
+    } finally {
+      setSubusersLoading(false);
+    }
+  }, [toast, user?.id]);
 
   const handleSubuserInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (subuserInviteStep === 1) {
+      if (!isSubuserStepOneComplete) return;
+      setSubuserInviteStep(2);
+      return;
+    }
+    if (!isSubuserStepTwoComplete) return;
+    const passwordValidation = passwordSchema.safeParse(subuserInviteForm.password);
+    if (!passwordValidation.success) {
+      toast({
+        title: "Invalid password",
+        description: passwordValidation.error.errors[0]?.message ?? "Password does not meet requirements.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubuserInviteSubmitting(true);
 
     const payload = {
@@ -1775,12 +1865,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       surname: subuserInviteForm.surname.trim(),
       contact_number: subuserInviteForm.contact_number.trim(),
       email: subuserInviteForm.email.trim().toLowerCase(),
+      role: subuserInviteForm.role,
+      username: subuserInviteForm.username.trim(),
+      password: subuserInviteForm.password,
     };
 
-    const { data, error } = await supabase.functions.invoke("Subuser_invites", {
+    const { data, error } = await supabase.functions.invoke("create-subuser-manual", {
       body: payload,
     });
-    const response = (data ?? null) as { ok?: boolean; error?: string } | null;
+    const response = (data ?? null) as { ok?: boolean; error?: string; message?: string; email_notification_sent?: boolean } | null;
 
     if (error) {
       let errorMessage = error.message || "Unable to send invite right now.";
@@ -1818,9 +1911,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
 
     toast({
-      title: "Invite sent",
-      description: `Invitation link sent to ${payload.email}.`,
+      title: "Subuser created",
+      description:
+        response?.message ||
+        `${payload.name} ${payload.surname} has been created successfully.`,
     });
+    await fetchSubusersList();
     handleSubuserInviteDialogChange(false);
   };
 
@@ -2065,6 +2161,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     void fetchAllocatedBranches();
     void fetchBranchAllocationEmployees();
   }, [branchSettings.branches_enabled, fetchAllocatedBranches, fetchBranchAllocationEmployees, settingsTab, user]);
+  useEffect(() => {
+    if (!user) return;
+    if (settingsTab !== "subusers") return;
+    void fetchSubusersList();
+  }, [fetchSubusersList, settingsTab, user]);
 
   const content = (
       <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
@@ -2206,7 +2307,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-blue-600">Subusers</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
-                  Here, the main user can add multiple users by sending a link to their email address.
+                  Here, the main user can create and manage active subusers.
                 </p>
               </div>
               <div className={settingsActionRowClass.replace("justify-center", "justify-start")}>
@@ -2217,6 +2318,30 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 >
                   Add Subuser
                 </Button>
+              </div>
+              <div className="overflow-hidden rounded border border-slate-200">
+                <div className="grid grid-cols-[1.4fr_1.4fr_1.2fr_1fr] items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                  <div>Name</div>
+                  <div>Email</div>
+                  <div>Contact Number</div>
+                  <div>Role</div>
+                </div>
+                <div className="max-h-[330px] divide-y overflow-y-auto bg-white text-[11px]">
+                  {subusersLoading ? (
+                    <div className="px-3 py-3 text-slate-500">Loading subusers...</div>
+                  ) : subusersList.length === 0 ? (
+                    <div className="px-3 py-3 text-slate-500">No active subusers found.</div>
+                  ) : (
+                    subusersList.map((item) => (
+                      <div key={item.id} className="grid grid-cols-[1.4fr_1.4fr_1.2fr_1fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
+                        <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
+                        <div className="truncate text-slate-700">{item.email || "--"}</div>
+                        <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
+                        <div className="truncate text-slate-700">{item.role || "--"}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
               )}
@@ -3620,74 +3745,127 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   <div className="mt-[46px] bg-white">
                 <div className="px-6 pt-0 pb-7"></div>
                 <form onSubmit={handleSubuserInviteSubmit} className="space-y-4 px-6 pb-6 pt-0">
-                  <div className="w-full space-y-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
-                        <Input
-                          value={subuserInviteForm.name}
-                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, name: e.target.value }))}
-                          className={subuserModalInputClass}
-                          placeholder="Please insert name"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Surname <span className="text-red-600">*</span></span>
-                        <Input
-                          value={subuserInviteForm.surname}
-                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, surname: e.target.value }))}
-                          className={subuserModalInputClass}
-                          placeholder="Please insert surname"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Contact Number <span className="text-red-600">*</span></span>
-                        <Input
-                          value={subuserInviteForm.contact_number}
-                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, contact_number: e.target.value }))}
-                          className={subuserModalInputClass}
-                          placeholder="Please insert contact number"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Email <span className="text-red-600">*</span></span>
-                        <Input
-                          type="email"
-                          value={subuserInviteForm.email}
-                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, email: e.target.value }))}
-                          className={subuserModalInputClass}
-                          placeholder="Please insert email"
-                          required
-                        />
-                      </div>
+                  <div className="mx-auto w-full max-w-[320px] py-2">
+                    <div className="relative grid grid-cols-2 items-start">
+                      <div className="pointer-events-none absolute left-[calc(25%+26px)] top-[10px] h-[2px] w-[calc(50%-52px)] bg-slate-300" />
+                      {subuserInviteStep > 1 && <div className="pointer-events-none absolute left-[calc(25%+26px)] top-[10px] h-[2px] w-[calc(50%-52px)] bg-[#3eca44]" />}
+                      {[{ step: 1 as const, label: "Details" }, { step: 2 as const, label: "Authentication" }].map((item) => {
+                        const active = subuserInviteStep === item.step;
+                        const done = subuserInviteStep > item.step;
+                        return (
+                          <div key={item.step} className="z-10 flex flex-col items-center text-center">
+                            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${active || done ? "bg-[#3ec74a] text-white" : "bg-slate-400 text-white"}`}>
+                              {done ? <Plus className="h-3 w-3" /> : item.step}
+                            </span>
+                            <span className={`mt-2 text-[10px] font-semibold ${active ? "text-slate-700" : "text-slate-500"}`}>{item.label}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                  {subuserInviteStep === 1 ? (
+                    <div className="w-full space-y-4">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
+                        <Input value={subuserInviteForm.name} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, name: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert name" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Surname <span className="text-red-600">*</span></span>
+                        <Input value={subuserInviteForm.surname} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, surname: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert surname" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Contact Number <span className="text-red-600">*</span></span>
+                        <Input value={subuserInviteForm.contact_number} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, contact_number: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert contact number" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Email <span className="text-red-600">*</span></span>
+                        <Input type="email" value={subuserInviteForm.email} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, email: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert email" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
+                        <Select value={subuserInviteForm.role || undefined} onValueChange={(value) => setSubuserInviteForm((prev) => ({ ...prev, role: value as SubuserInviteForm["role"] }))}>
+                          <SelectTrigger
+                            className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                          >
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded text-[11px]">
+                            <SelectItem value="Main" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main</SelectItem>
+                            <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
+                            <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full space-y-4">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Username <span className="text-red-600">*</span></span>
+                        <Input value={subuserInviteForm.username} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, username: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert username" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Password <span className="text-red-600">*</span></span>
+                        <Input
+                          type={showSubuserPassword ? "text" : "password"}
+                          value={subuserInviteForm.password}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, password: e.target.value }))}
+                          className={`${subuserModalInputClass} pr-8`}
+                          placeholder="Please insert password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-label={showSubuserPassword ? "Hide password" : "Show password"}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          onClick={() => setShowSubuserPassword((prev) => !prev)}
+                        >
+                          {showSubuserPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Confirm Password <span className="text-red-600">*</span></span>
+                        <Input
+                          type={showSubuserConfirmPassword ? "text" : "password"}
+                          value={subuserInviteForm.confirmPassword}
+                          onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                          className={`${subuserModalInputClass} pr-8`}
+                          placeholder="Please confirm password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          aria-label={showSubuserConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          onClick={() => setShowSubuserConfirmPassword((prev) => !prev)}
+                        >
+                          {showSubuserConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-center gap-2 pt-4">
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
-                      onClick={() => handleSubuserInviteDialogChange(false)}
+                      className="h-[28px] w-[90px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                      onClick={() => {
+                        if (subuserInviteStep === 2) {
+                          setSubuserInviteStep(1);
+                          return;
+                        }
+                        handleSubuserInviteDialogChange(false);
+                      }}
                       disabled={subuserInviteSubmitting}
                     >
-                      Cancel
+                      {subuserInviteStep === 2 ? "Back" : "Cancel"}
                     </Button>
                     <Button
                       type="submit"
-                      className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
-                      disabled={subuserInviteSubmitting || !isSubuserInviteFormComplete}
+                      className="h-[28px] w-[90px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300 disabled:text-white"
+                      disabled={subuserInviteSubmitting || (subuserInviteStep === 1 ? !isSubuserStepOneComplete : !isSubuserStepTwoComplete)}
                     >
                       {subuserInviteSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Submit
+                      {subuserInviteStep === 1 ? "Next" : "Submit"}
                     </Button>
                   </div>
                 </form>

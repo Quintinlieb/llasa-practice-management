@@ -1,10 +1,11 @@
 export type AuthFormDraft = {
   isLogin: boolean;
+  name: string;
+  surname: string;
+  contactNumber: string;
   email: string;
   password: string;
   confirmPassword: string;
-  accountType: "trial" | "domestic" | "business" | null;
-  acceptedTerms: boolean;
 };
 
 const AUTH_FORM_DRAFT_KEY = "nudoc.authFormDraft";

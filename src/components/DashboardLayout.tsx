@@ -24,7 +24,6 @@ interface HeaderInfo {
   account_type: string | null;
   company_name: string | null;
   company_type: string | null;
-  domestic_surname: string | null;
   user_surname: string | null;
 }
 
@@ -127,31 +126,70 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (user) {
-      supabase
-        .from("profiles")
-        .select("account_type, company_name, company_type, domestic_surname, user_surname")
-        .eq("id", user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (!data) return;
-          const headerData = data as HeaderInfo;
-          const isDomestic = headerData.account_type === "domestic";
-          if (isDomestic) {
-            const surname = headerData.domestic_surname || headerData.user_surname || "";
-            setCompanyName(surname ? `${surname} Household` : "");
-            setCompanyType("");
-          } else {
-            setCompanyName(headerData.company_name ?? "");
-            setCompanyType(headerData.company_type ?? "");
-          }
-        });
+      (async () => {
+        let queryResult = await (supabase as any)
+          .from("profiles")
+          .select("account_type, company_name, company_type, user_surname")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (queryResult.error) {
+          const fallbackResult = await (supabase as any)
+            .from("profiles")
+            .select("company_name, company_type, user_surname")
+            .eq("id", user.id)
+            .maybeSingle();
+          queryResult = fallbackResult;
+        }
+
+        const data = queryResult.data as HeaderInfo | null;
+        if (!data) return;
+        const isDomestic = data.account_type === "domestic";
+        if (isDomestic) {
+          const surname = data.user_surname || "";
+          setCompanyName(surname ? `${surname} Household` : "");
+          setCompanyType("");
+          return;
+        }
+        setCompanyName(data.company_name ?? "");
+        setCompanyType(data.company_type ?? "");
+      })();
       supabase
         .from("profiles")
         .select("user_name, user_surname, user_email")
         .eq("id", user.id)
         .maybeSingle()
-        .then(({ data }) => {
-          if (data) setProfile(data as Profile);
+        .then(async ({ data }) => {
+          if (data) {
+            setProfile(data as Profile);
+            return;
+          }
+
+          const { data: subuserData } = await (supabase as any)
+            .from("subusers")
+            .select("name,surname,email")
+            .eq("auth_user_id", user.id)
+            .maybeSingle();
+
+          if (subuserData) {
+            setProfile({
+              user_name: String((subuserData as any).name || "").trim(),
+              user_surname: String((subuserData as any).surname || "").trim(),
+              user_email: String((subuserData as any).email || user.email || "").trim(),
+            });
+            return;
+          }
+
+          const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
+          const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
+          const email = String(user.email || "").trim();
+          if (metaName || metaSurname || email) {
+            setProfile({
+              user_name: metaName || "User",
+              user_surname: metaSurname || "",
+              user_email: email,
+            });
+          }
         });
     }
   }, [user]);

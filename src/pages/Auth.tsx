@@ -10,13 +10,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import { readAuthFormDraft, writeAuthFormDraft } from "@/lib/authFormDraft";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -27,6 +20,9 @@ const passwordSchema = z.string()
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [name, setName] = useState("");
+  const [surname, setSurname] = useState("");
+  const [contactNumber, setContactNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,9 +33,6 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
-  const [accountType, setAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
-  const [selectedAccountType, setSelectedAccountType] = useState<"trial" | "domestic" | "business" | null>(null);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const { signUp, signIn, signOut, resetPassword, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -50,18 +43,7 @@ const Auth = () => {
     const draft = readAuthFormDraft();
     if (!draft) return;
     const params = new URLSearchParams(location.search);
-    const forceSignup = params.get("new") === "1";
     const forceLogin = params.get("login") === "1";
-    if (forceSignup) {
-      setIsLogin(false);
-      setEmail("");
-      setPassword("");
-      setConfirmPassword("");
-      setAccountType(null);
-      setSelectedAccountType(null);
-      setAcceptedTerms(false);
-      return;
-    }
 
     if (!forceLogin) {
       setIsLogin(draft.isLogin);
@@ -71,18 +53,18 @@ const Auth = () => {
       setEmail(draft.email);
       setPassword(draft.password);
       setConfirmPassword("");
-      setAccountType(null);
-      setSelectedAccountType(null);
-      setAcceptedTerms(false);
+      setName("");
+      setSurname("");
+      setContactNumber("");
       return;
     }
 
+    setName(draft.name);
+    setSurname(draft.surname);
+    setContactNumber(draft.contactNumber);
     setEmail("");
     setPassword("");
     setConfirmPassword("");
-    setAccountType(null);
-    setSelectedAccountType(null);
-    setAcceptedTerms(false);
   }, [location.search]);
 
   useEffect(() => {
@@ -96,20 +78,20 @@ const Auth = () => {
   useEffect(() => {
     writeAuthFormDraft({
       isLogin,
+      name,
+      surname,
+      contactNumber,
       email,
       password,
       confirmPassword,
-      accountType,
-      acceptedTerms,
     });
-  }, [isLogin, email, password, confirmPassword, accountType, acceptedTerms]);
+  }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
 
   // When starting a new auth flow, clear any existing session once.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const fromMarketing = params.get("new") === "1";
     const fromLogin = params.get("login") === "1";
-    if (!fromMarketing && !fromLogin) return;
+    if (!fromLogin) return;
     setIsLogin(fromLogin);
     if (clearedSessionRef.current || loading) return;
     clearedSessionRef.current = true;
@@ -123,10 +105,9 @@ const Auth = () => {
   useEffect(() => {
     const checkProfileAndRedirect = async () => {
       const params = new URLSearchParams(location.search);
-      const fromMarketing = params.get("new") === "1";
       const fromLogin = params.get("login") === "1";
       // Skip auto-redirects while still unauthenticated when explicitly starting a new flow
-      if ((fromMarketing || fromLogin) && !user) return;
+      if (fromLogin && !user) return;
       if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -136,9 +117,112 @@ const Auth = () => {
 
         if (profile) {
           if (location.pathname !== "/dashboard") navigate("/dashboard");
-        } else {
-          if (location.pathname !== "/account-setup") navigate("/account-setup");
+          return;
         }
+
+        const { data: subuser } = await (supabase as any)
+          .from("subusers")
+          .select("id,status")
+          .eq("auth_user_id", user.id)
+          .in("status", ["accepted", "active"])
+          .maybeSingle();
+
+        if (subuser) {
+          if (location.pathname !== "/dashboard") navigate("/dashboard");
+          return;
+        }
+
+        // Fallback for subusers when RLS blocks direct subusers-row reads.
+        // Manual subuser creation stores company_id in auth user metadata.
+        const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+        if (metadataCompanyId) {
+          if (location.pathname !== "/dashboard") navigate("/dashboard");
+          return;
+        }
+
+        // Main-user fallback: if profile row is missing, create a minimal one
+        // so the user can proceed without legacy company-setup flow.
+        const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
+        const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
+        const metaContact = String((user as any)?.user_metadata?.user_contact || (user as any)?.user_metadata?.contact_number || "").trim();
+        const emailValue = String(user.email || "").trim();
+        const defaultName = metaName || "User";
+        const defaultSurname = metaSurname || "Profile";
+        const defaultContact = metaContact || "N/A";
+
+        const profilePayloads: Record<string, unknown>[] = [
+          {
+            id: user.id,
+            account_type: "business",
+            company_name: `${defaultName} ${defaultSurname}`.trim(),
+            registration_number: "N/A",
+            physical_address: "N/A",
+            postal_address: "N/A",
+            representative_name: defaultName,
+            representative_surname: defaultSurname,
+            company_contact: defaultContact,
+            company_email: emailValue || "N/A",
+            user_name: defaultName,
+            user_surname: defaultSurname,
+            user_contact: defaultContact,
+            user_email: emailValue || "N/A",
+            company_type: "(Pty) Ltd",
+          },
+          {
+            id: user.id,
+            user_name: defaultName,
+            user_surname: defaultSurname,
+            user_contact: defaultContact,
+            user_email: emailValue || "N/A",
+            role: "Master user",
+          },
+          {
+            id: user.id,
+            user_name: defaultName,
+            user_surname: defaultSurname,
+            user_email: emailValue || "N/A",
+          },
+          {
+            id: user.id,
+            name: defaultName,
+            surname: defaultSurname,
+            contact_number: defaultContact,
+            email: emailValue || "N/A",
+            role: "Master user",
+          },
+          {
+            id: user.id,
+            name: defaultName,
+            surname: defaultSurname,
+            email: emailValue || "N/A",
+          },
+          {
+            id: user.id,
+            full_name: `${defaultName} ${defaultSurname}`.trim(),
+            email: emailValue || "N/A",
+          },
+        ];
+
+        let profileCreated = false;
+        for (const payload of profilePayloads) {
+          const { error: createProfileError } = await (supabase as any)
+            .from("profiles")
+            .upsert(payload, { onConflict: "id" });
+          if (!createProfileError) {
+            profileCreated = true;
+            break;
+          }
+        }
+
+        // Never block auth if profile schema changed again.
+        if (!profileCreated) {
+          toast({
+            title: "Profile sync warning",
+            description: "Signed in, but profile record could not be created automatically.",
+            variant: "destructive",
+          });
+        }
+        if (location.pathname !== "/dashboard") navigate("/dashboard");
       }
     };
 
@@ -197,7 +281,11 @@ const Auth = () => {
           });
         }
       } else {
-        const { data, error } = await signUp(email, password, accountType);
+        const { data, error } = await signUp(email, password, {
+          name: name.trim(),
+          surname: surname.trim(),
+          contactNumber: contactNumber.trim(),
+        });
         if (error) {
           toast({
             title: "Error",
@@ -208,14 +296,16 @@ const Auth = () => {
           if (data?.session) {
             await signOut();
           }
+          const signedUpEmail = email.trim();
           toast({
             title: "Success",
             description: "Account created! Please confirm your email and then sign in.",
           });
           setIsLogin(true);
+          setEmail(signedUpEmail);
           setPassword("");
           setConfirmPassword("");
-          navigate("/auth", { replace: true });
+          navigate("/auth?login=1", { replace: true });
         }
       }
     } catch (error: unknown) {
@@ -285,19 +375,14 @@ const Auth = () => {
 
   const isSignupReady =
     !isLogin &&
-    !!accountType &&
+    name.trim().length > 0 &&
+    surname.trim().length > 0 &&
+    contactNumber.trim().length > 0 &&
     email.trim().length > 0 &&
     password.trim().length > 0 &&
-    confirmPassword.trim().length > 0 &&
-    acceptedTerms;
+    confirmPassword.trim().length > 0;
   const signupFieldClass =
     "h-[34px] rounded border-[1.75px] border-slate-300 bg-white text-[11px] font-medium text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44] ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
-  const accountTypeSelectTriggerClass =
-    `${signupFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs data-[state=open]:border-[#3eca44] data-[state=open]:ring-0 data-[state=open]:ring-offset-0 data-[state=open]:outline-none`;
-  const accountTypeSelectContentClass = "!rounded";
-  const accountTypeSelectItemClass =
-    "!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#3eca44] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#3eca44] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
-
   const authFormContent = (
     <div className="w-full max-w-md space-y-4">
       <div className="text-center space-y-3">
@@ -306,105 +391,58 @@ const Auth = () => {
         </div>
         <div className="space-y-1">
           <h1 className="text-[1.35rem] font-semibold text-foreground">
-            {isLogin ? "Welcome back" : accountType ? "Create account" : "Choose account"}
+            {isLogin ? "Welcome back" : "Create account"}
           </h1>
           <p className="text-[0.8rem] text-muted-foreground">
-            {isLogin ? "Go ahead and log in below" : accountType ? "Go ahead and fill out the form to get started." : "Select the account type that suit your needs and proceed."}
+            {isLogin ? "Go ahead and log in below" : "Go ahead and fill out the form to get started."}
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="pt-6 space-y-4" autoComplete={isLogin ? "on" : "off"}>
-        {!isLogin && !accountType && (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setSelectedAccountType("domestic")}
-                aria-pressed={selectedAccountType === "domestic"}
-                className={`group h-40 rounded-xl border bg-white p-4 text-left shadow-sm transition flex flex-col justify-between ${
-                  selectedAccountType === "domestic"
-                    ? "border-[#3eca44] ring-2 ring-[#3eca44]/20"
-                    : "border-slate-200 hover:border-[#3eca44] hover:bg-[#3eca44]/10"
-                }`}
-              >
-                <div className="flex h-full flex-col items-center justify-center text-center">
-                  <p className="mt-3 text-4xl font-semibold text-slate-900">Lite</p>
-                  <div className="mt-3 w-16 border-t-2 border-[#3eca44]" aria-hidden="true" />
-                  <p className="mt-5 mb-3 text-xs text-slate-600">Ideal for startups and small businesses.</p>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedAccountType("business")}
-                aria-pressed={selectedAccountType === "business"}
-                className={`group h-40 rounded-xl border bg-white p-4 text-left shadow-sm transition flex flex-col justify-between ${
-                  selectedAccountType === "business"
-                    ? "border-[#3eca44] ring-2 ring-[#3eca44]/20"
-                    : "border-slate-200 hover:border-[#3eca44] hover:bg-[#3eca44]/10"
-                }`}
-              >
-                <div className="flex h-full flex-col items-center justify-center text-center">
-                  <p className="mt-3 text-4xl font-semibold text-slate-900">Pro</p>
-                  <div className="mt-3 w-16 border-t-2 border-[#3eca44]" aria-hidden="true" />
-                  <p className="mt-5 mb-3 text-xs text-slate-600">Best for established organisations from small to large.</p>
-                </div>
-              </button>
-            </div>
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedAccountType("trial");
-                  setAccountType("trial");
-                }}
-                className="text-xs text-slate-500 transition-colors hover:text-[#3eca44] hover:underline"
-              >
-                Try FREE for 7 days!
-              </button>
-            </div>
-            <div className="pt-6">
-              <Button
-                type="button"
-                className="w-full bg-[#3eca44] text-white hover:bg-[#3eca44]"
-                disabled={!selectedAccountType}
-                onClick={() => {
-                  if (selectedAccountType) {
-                    setAccountType(selectedAccountType);
-                  }
-                }}
-              >
-                Proceed
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {isLogin || accountType ? (
+        {(
           <>
             {!isLogin && (
-              <div className="group space-y-1">
-                <Label htmlFor="accountType">Account type</Label>
-                <Select
-                  value={accountType ?? ""}
-                  onValueChange={(value) => {
-                    const nextValue = value as "trial" | "domestic" | "business";
-                    setAccountType(nextValue);
-                    setSelectedAccountType(nextValue);
-                  }}
-                >
-                  <SelectTrigger
-                    id="accountType"
-                    className={accountTypeSelectTriggerClass}
-                  >
-                    <SelectValue placeholder="Select account type" />
-                  </SelectTrigger>
-                  <SelectContent className={`w-[var(--radix-select-trigger-width)] ${accountTypeSelectContentClass}`}>
-                    <SelectItem value="trial" className={accountTypeSelectItemClass}>Free (7 days)</SelectItem>
-                    <SelectItem value="domestic" className={accountTypeSelectItemClass}>Lite</SelectItem>
-                    <SelectItem value="business" className={accountTypeSelectItemClass}>Pro (Recommended)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="group space-y-1">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Type your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="given-name"
+                    required
+                    className={signupFieldClass}
+                  />
+                </div>
+                <div className="group space-y-1">
+                  <Label htmlFor="surname">Surname</Label>
+                  <Input
+                    id="surname"
+                    type="text"
+                    placeholder="Type your surname"
+                    value={surname}
+                    onChange={(e) => setSurname(e.target.value)}
+                    autoComplete="family-name"
+                    required
+                    className={signupFieldClass}
+                  />
+                </div>
+                <div className="group space-y-1 sm:col-span-2">
+                  <Label htmlFor="contactNumber">Contact Number</Label>
+                  <Input
+                    id="contactNumber"
+                    type="text"
+                    placeholder="Type your contact number"
+                    value={contactNumber}
+                    onChange={(e) => setContactNumber(e.target.value)}
+                    autoComplete="tel"
+                    required
+                    className={signupFieldClass}
+                  />
+                </div>
               </div>
             )}
             <div className="group space-y-1">
@@ -516,28 +554,6 @@ const Auth = () => {
                   )}
                 </div>
               )}
-              {!isLogin && (
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    id="terms"
-                    type="checkbox"
-                    checked={acceptedTerms}
-                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                    required
-                    className="h-3 w-3 rounded border-slate-300 text-[#3eca44] focus:ring-[#3eca44]"
-                  />
-                  <label htmlFor="terms" className="text-xs text-muted-foreground">
-                    I have read, understood, and agree to the{" "}
-                    <Link
-                      to="/terms"
-                      className="font-semibold text-inherit hover:text-[#3eca44] hover:underline"
-                    >
-                      Terms and Conditions
-                    </Link>
-                    .
-                  </label>
-                </div>
-              )}
             </div>
             <div className="pt-6">
               <Button
@@ -549,14 +565,16 @@ const Auth = () => {
                 </Button>
               </div>
           </>
-        ) : null}
+        )}
       </form>
 
       <div className="text-center text-xs text-muted-foreground">
         <button
           onClick={() => {
             if (isLogin) {
-              navigate("/auth?new=1", { replace: true });
+              setIsLogin(false);
+              setPassword("");
+              setConfirmPassword("");
             } else {
               navigate("/auth?login=1", { replace: true });
             }

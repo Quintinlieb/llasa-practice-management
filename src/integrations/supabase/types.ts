@@ -135,10 +135,14 @@ export type Database = {
           client_surname: string
           company_id: string
           created_at: string | null
+          ee_billing_cycle: string | null
           email: string | null
           gender: string | null
+          hs_billing_cycle: string | null
           id: string
           id_number: string | null
+          lr_billing_cycle: string | null
+          pr_billing_cycle: string | null
           race: string | null
           status: string | null
           updated_at: string | null
@@ -150,10 +154,14 @@ export type Database = {
           client_surname: string
           company_id: string
           created_at?: string | null
+          ee_billing_cycle?: string | null
           email?: string | null
           gender?: string | null
+          hs_billing_cycle?: string | null
           id?: string
           id_number?: string | null
+          lr_billing_cycle?: string | null
+          pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null
           updated_at?: string | null
@@ -165,10 +173,14 @@ export type Database = {
           client_surname?: string
           company_id?: string
           created_at?: string | null
+          ee_billing_cycle?: string | null
           email?: string | null
           gender?: string | null
+          hs_billing_cycle?: string | null
           id?: string
           id_number?: string | null
+          lr_billing_cycle?: string | null
+          pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null
           updated_at?: string | null

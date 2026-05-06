@@ -182,8 +182,7 @@ const Dashboard = () => {
         const { data: p, error: pe } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
         if (pe) throw pe;
         if (!p) {
-          navigate("/account-setup");
-          return;
+          // Continue loading dashboard data even if profile row is missing.
         }
         const [e, w] = await Promise.all([
           (supabase as any)

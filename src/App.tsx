@@ -9,7 +9,6 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
-import CompanySetup from "./pages/CompanySetup";
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import ClientsTwo from "./pages/clientsTwo";
@@ -39,7 +38,6 @@ const AppRoutes = () => {
         <Route path="/landing" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/account-setup" element={<ProtectedRoute><CompanySetup /></ProtectedRoute>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
         <Route path="/clients-2" element={<ProtectedRoute><ClientsTwo /></ProtectedRoute>} />

@@ -9,7 +9,11 @@ type AuthContextValue = {
   signUp: (
     email: string,
     password: string,
-    accountType: "trial" | "domestic" | "business",
+    profile: {
+      name: string;
+      surname: string;
+      contactNumber: string;
+    },
   ) => Promise<{ data: { session: Session | null } | null; error: unknown }>;
   signIn: (email: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<{ error: unknown }>;
@@ -46,7 +50,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signUp = async (
     email: string,
     password: string,
-    accountType: "trial" | "domestic" | "business",
+    profile: {
+      name: string;
+      surname: string;
+      contactNumber: string;
+    },
   ) => {
     const configuredAppUrl = import.meta.env.VITE_APP_URL as string | undefined;
     const appBaseUrl = (
@@ -60,7 +68,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       options: {
         emailRedirectTo: redirectUrl,
         data: {
-          account_type: accountType,
+          name: profile.name,
+          surname: profile.surname,
+          user_name: profile.name,
+          user_surname: profile.surname,
+          contact_number: profile.contactNumber,
+          user_contact: profile.contactNumber,
+          role: "Master user",
         },
       }
     });

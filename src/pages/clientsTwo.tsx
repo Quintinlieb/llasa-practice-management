@@ -107,6 +107,7 @@ const ClientsTwo = () => {
   const [clientDetailsForm, setClientDetailsForm] = useState({
     registeredName: "",
     tradingAs: "",
+    companyType: "",
     registrationNumber: "",
     vatNumber: "",
     owner: "",
@@ -114,11 +115,15 @@ const ClientsTwo = () => {
     email: "",
   });
   const [membershipForm, setMembershipForm] = useState({
-    clientNumber: "LL00001",
+    clientNumber: "",
     startDate: "",
     renewalDate: "",
     paymentCycle: "",
     memberTypes: [] as string[],
+    lrBillingCycle: "",
+    eeBillingCycle: "",
+    prBillingCycle: "",
+    hsBillingCycle: "",
   });
   const [addressForm, setAddressForm] = useState({
     line1: "",
@@ -146,6 +151,20 @@ const ClientsTwo = () => {
   const [industrySearchQuery, setIndustrySearchQuery] = useState("");
   const [isCouncilPickerOpen, setIsCouncilPickerOpen] = useState(false);
   const [councilSearchQuery, setCouncilSearchQuery] = useState("");
+  const [isStatusChangeOpen, setIsStatusChangeOpen] = useState(false);
+  const [pendingStatusSelection, setPendingStatusSelection] = useState("");
+  const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
+  const [clientFileNotes, setClientFileNotes] = useState<any[]>([]);
+  const [clientFileNotesSearchQuery, setClientFileNotesSearchQuery] = useState("");
+  const [isNotesLoading, setIsNotesLoading] = useState(false);
+  const [isFileNoteDialogOpen, setIsFileNoteDialogOpen] = useState(false);
+  const [isSavingFileNote, setIsSavingFileNote] = useState(false);
+  const [editingFileNoteId, setEditingFileNoteId] = useState<string | null>(null);
+  const [fileNoteForm, setFileNoteForm] = useState({
+    noteDate: "",
+    noteContent: "",
+    noteUserName: "",
+  });
   const [clientEditForm, setClientEditForm] = useState({
     companyName: "",
     tradingAs: "",
@@ -184,6 +203,10 @@ const ClientsTwo = () => {
     agreement: "",
     memberTypes: [] as string[],
     billingCycle: "",
+    lrBillingCycle: "",
+    eeBillingCycle: "",
+    prBillingCycle: "",
+    hsBillingCycle: "",
     lrRetainer: "",
     eeRetainer: "",
     prRetainer: "",
@@ -193,6 +216,7 @@ const ClientsTwo = () => {
 
   const isStepOneComplete = Boolean(
     clientDetailsForm.registeredName.trim() &&
+      clientDetailsForm.companyType.trim() &&
       clientDetailsForm.registrationNumber.trim() &&
       clientDetailsForm.owner.trim() &&
       clientDetailsForm.telCell.trim() &&
@@ -201,8 +225,11 @@ const ClientsTwo = () => {
   const isStepTwoComplete = Boolean(
       membershipForm.clientNumber.trim() &&
       membershipForm.startDate.trim() &&
-      membershipForm.paymentCycle.trim() &&
-      membershipForm.memberTypes.length > 0,
+      membershipForm.memberTypes.length > 0 &&
+      membershipForm.memberTypes.every((serviceCode) => {
+        const cycleField = getServiceBillingCycleField(serviceCode);
+        return String((membershipForm as any)[cycleField] || "").trim().length > 0;
+      }),
   );
   const isStepThreeComplete = Boolean(
     addressForm.line1.trim() &&
@@ -210,12 +237,24 @@ const ClientsTwo = () => {
       addressForm.province.trim() &&
       addressForm.areaCode.trim(),
   );
+  const getNextAvailableClientNumber = useCallback(() => {
+    const maxSeq = clientRows.reduce((max, row) => {
+      const value = String(row?.clientNumber ?? "").trim();
+      const match = value.match(/^LL(\d+)$/i);
+      if (!match) return max;
+      const parsed = Number.parseInt(match[1], 10);
+      return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
+    }, 0);
+    const nextSeq = Math.max(1, maxSeq + 1);
+    return `LL${String(nextSeq).padStart(5, "0")}`;
+  }, [clientRows]);
 
   const resetNewClientForm = () => {
     setNewClientStep(1);
     setClientDetailsForm({
       registeredName: "",
       tradingAs: "",
+      companyType: "",
       registrationNumber: "",
       vatNumber: "",
       owner: "",
@@ -223,11 +262,15 @@ const ClientsTwo = () => {
       email: "",
     });
     setMembershipForm({
-      clientNumber: "LL00001",
+      clientNumber: getNextAvailableClientNumber(),
       startDate: "",
       renewalDate: "",
       paymentCycle: "",
       memberTypes: [],
+      lrBillingCycle: "",
+      eeBillingCycle: "",
+      prBillingCycle: "",
+      hsBillingCycle: "",
     });
     setAddressForm({
       line1: "",
@@ -237,6 +280,13 @@ const ClientsTwo = () => {
       areaCode: "",
     });
   };
+  useEffect(() => {
+    if (!isNewClientOpen) return;
+    setMembershipForm((prev) => ({
+      ...prev,
+      clientNumber: getNextAvailableClientNumber(),
+    }));
+  }, [getNextAvailableClientNumber, isNewClientOpen]);
 
   const handleNextStep = () => {
     if (newClientStep === 1 && !isStepOneComplete) return;
@@ -355,6 +405,27 @@ const ClientsTwo = () => {
     PR: "Payroll",
     OHS: "Health and Safety",
   };
+  const statusReasonOptions = [
+    "Active",
+    "Suspended - Pending Payment",
+    "Suspended - Pending Dispute",
+    "Terminated - Close of Business",
+    "Terminated - Sale of Business",
+    "Terminated - Did not Renew",
+    "Terminated - LLASA Contract Breach",
+    "Terminated - Client Contract Breach",
+    "Terminated - Requested Early Cancellation",
+    "Terminated - Client Financial Problems",
+  ] as const;
+  function getServiceBillingCycleField(serviceCode: string) {
+    return serviceCode === "LR"
+      ? "lrBillingCycle"
+      : serviceCode === "EE"
+        ? "eeBillingCycle"
+        : serviceCode === "PR"
+          ? "prBillingCycle"
+          : "hsBillingCycle";
+  }
   const provinceOptions = [
     "Gauteng",
     "Limpopo",
@@ -408,15 +479,16 @@ const ClientsTwo = () => {
     "Domestic Work and Household Employment",
   ] as const;
   const companyTypeOptions = [
-    "Private Company (Pty) Ltd",
-    "Close Corporation (CC)",
-    "Sole Proprietor",
-    "Partnership",
-    "Trust",
-    "Non-Profit Company (NPC)",
+    "Private Company ((Pty) Ltd)",
     "Public Company (Ltd)",
     "Personal Liability Company (Inc.)",
     "State-Owned Company (SOC Ltd)",
+    "Non-Profit Company (NPC)",
+    "Close Corporation (CC)",
+    "Co-operative (Co-op)",
+    "Sole Proprietor (SP)",
+    "Partnership (Partnership)",
+    "Business Trust (Trust)",
   ] as const;
   const bargainingCouncilOptions = [
     { label: "None", value: "None" },
@@ -468,6 +540,16 @@ const ClientsTwo = () => {
         .includes(q);
     });
   }, [clientRows, searchQuery]);
+  const filteredClientFileNotes = useMemo(() => {
+    const q = clientFileNotesSearchQuery.trim().toLowerCase();
+    if (!q) return clientFileNotes;
+    return clientFileNotes.filter((note) =>
+      [note.note_user_name, note.note_content]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [clientFileNotes, clientFileNotesSearchQuery]);
   const normalizedGroupSearch = groupSearchQuery.trim().toLowerCase();
   const filteredGroupOptions = useMemo(
     () =>
@@ -490,10 +572,34 @@ const ClientsTwo = () => {
         option.label.toLowerCase().includes(q),
     );
   }, [councilSearchQuery, bargainingCouncilOptions]);
+  const companyTypeSuffixByValue: Record<string, string> = {
+    "Private Company ((Pty) Ltd)": "(Pty) Ltd",
+    "Public Company (Ltd)": "Ltd",
+    "Personal Liability Company (Inc.)": "Inc.",
+    "State-Owned Company (SOC Ltd)": "SOC Ltd",
+    "Non-Profit Company (NPC)": "NPC",
+    "Close Corporation (CC)": "CC",
+    "Co-operative (Co-op)": "Co-op",
+    "Sole Proprietor (SP)": "SP",
+    "Partnership (Partnership)": "Partnership",
+    "Business Trust (Trust)": "Trust",
+  };
+  const getCompanyNameDisplay = (registeredName: unknown, companyType: unknown) => {
+    const rawName = String(registeredName || "").trim();
+    if (!rawName) return "--";
+    const typeValue = String(companyType || "").trim();
+    const suffix = companyTypeSuffixByValue[typeValue] || "";
+    if (!suffix) return rawName;
+    const normalizedName = rawName.toLowerCase();
+    const normalizedSuffix = suffix.toLowerCase();
+    if (normalizedName.endsWith(normalizedSuffix)) return rawName;
+    return `${rawName} ${suffix}`;
+  };
 
   const mapClientRow = (row: any) => ({
     id: row.id,
     companyName: row.registered_name || "--",
+    companyNameDisplay: getCompanyNameDisplay(row.registered_name, row.company_type),
     tradingAs: row.trading_as || row.trading_name || "--",
     registrationNumber: row.registration_number || "--",
     vatNumber: row.vat_number || "--",
@@ -502,9 +608,12 @@ const ClientsTwo = () => {
     bargainingCouncil: extractCouncilAbbreviation(row.bargaining_council),
     groupName: row.group_name || "None",
     groupId: row.group_id || "",
-    contactPerson: row.owner_name || row.owner || "--",
-    contactNumber: row.owner_number || row.tel_cell || "--",
-    ownerEmail: row.owner_email || row.client_email || "--",
+    contactPerson: row.primary_name || "--",
+    contactNumber: row.primary_number || "--",
+    ownerEmail: row.primary_email || "--",
+    ownerContactPerson: row.owner_name || "--",
+    ownerContactNumber: row.owner_number || "--",
+    ownerContactEmail: row.owner_email || "--",
     primaryName: row.primary_name || "--",
     primaryJobTitle: row.primary_job_title || "--",
     primaryNumber: row.primary_number || "--",
@@ -523,7 +632,7 @@ const ClientsTwo = () => {
     postalCity: row.postal_city || "--",
     postalProvince: row.postal_province || "--",
     postalAreaCode: row.postal_area_code || "--",
-    email: row.owner_email || row.client_email || "--",
+    email: row.primary_email || "--",
     status: row.status ? String(row.status).replace(/^./, (s) => s.toUpperCase()) : "Active",
     memberTypes: Array.isArray(row.member_types) ? row.member_types.filter(Boolean) : [],
     clientNumber: row.client_number || "--",
@@ -531,6 +640,10 @@ const ClientsTwo = () => {
     renewalDate: row.renewal_date || getNextRenewalDateFromStart(row.start_date) || "--",
     agreement: row.agreement || "--",
     billingCycle: row.membership_period || row.retainer_cycle || "--",
+    lrBillingCycle: row.lr_billing_cycle || row.retainer_cycle || row.membership_period || "--",
+    eeBillingCycle: row.ee_billing_cycle || row.retainer_cycle || row.membership_period || "--",
+    prBillingCycle: row.pr_billing_cycle || row.retainer_cycle || row.membership_period || "--",
+    hsBillingCycle: row.hs_billing_cycle || row.retainer_cycle || row.membership_period || "--",
     lrRetainer: row.lr_retainer || "--",
     eeRetainer: row.ee_retainer || "--",
     prRetainer: row.pr_retainer || "--",
@@ -560,6 +673,58 @@ const ClientsTwo = () => {
     if (error) return;
     setGroupOptions(data ?? []);
   }, [user?.id]);
+  const fetchCurrentUserDisplayName = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await (supabase as any)
+      .from("profiles")
+      .select("user_name, user_surname")
+      .eq("id", user.id)
+      .maybeSingle();
+    const firstName = String((data as any)?.user_name || "").trim();
+    const surname = String((data as any)?.user_surname || "").trim();
+    const fullName = `${firstName} ${surname}`.trim();
+    if (fullName) setCurrentUserDisplayName(fullName);
+  }, [user?.id]);
+  const resolveCurrentUserName = useCallback(() => {
+    if (currentUserDisplayName.trim()) return currentUserDisplayName.trim();
+    const firstName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || (user as any)?.user_metadata?.given_name || "").trim();
+    const surname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || (user as any)?.user_metadata?.family_name || "").trim();
+    const combined = `${firstName} ${surname}`.trim();
+    if (combined) return combined;
+    const fromMetaName = String((user as any)?.user_metadata?.full_name || "").trim();
+    if (fromMetaName) return fromMetaName;
+    const fromMetaDisplay = String((user as any)?.user_metadata?.display_name || "").trim();
+    if (fromMetaDisplay) return fromMetaDisplay;
+    const fromEmail = String(user?.email || "").trim();
+    return fromEmail || "Unknown User";
+  }, [currentUserDisplayName, user]);
+  const resetFileNoteForm = useCallback(() => {
+    setFileNoteForm({
+      noteDate: dateToday(),
+      noteContent: "",
+      noteUserName: resolveCurrentUserName(),
+    });
+    setEditingFileNoteId(null);
+  }, [resolveCurrentUserName]);
+  const fetchClientFileNotes = useCallback(async (clientId: string) => {
+    if (!user?.id || !clientId) return;
+    setIsNotesLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("client_file_notes")
+        .select("*")
+        .eq("company_id", user.id)
+        .eq("client_id", clientId)
+        .order("note_date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false });
+      if (error) throw error;
+      setClientFileNotes(data ?? []);
+    } catch (error: any) {
+      toast({ title: "Unable to load file notes", description: error?.message || "Load failed.", variant: "destructive" });
+    } finally {
+      setIsNotesLoading(false);
+    }
+  }, [toast, user?.id]);
 
   useEffect(() => {
     void fetchClients();
@@ -567,6 +732,9 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchClientGroups();
   }, [fetchClientGroups]);
+  useEffect(() => {
+    void fetchCurrentUserDisplayName();
+  }, [fetchCurrentUserDisplayName]);
   const fetchSlaContract = useCallback(async (clientId: string) => {
     if (!user?.id) return;
     const { data, error } = await agreementRecordTable()
@@ -590,33 +758,91 @@ const ClientsTwo = () => {
     if (!selectedClientRow?.id) return;
     void fetchSlaContract(selectedClientRow.id);
   }, [fetchSlaContract, selectedClientRow?.id]);
+  useEffect(() => {
+    if (!selectedClientRow?.id) {
+      setClientFileNotes([]);
+      return;
+    }
+    setClientFileNotesSearchQuery("");
+    void fetchClientFileNotes(selectedClientRow.id);
+  }, [fetchClientFileNotes, selectedClientRow?.id]);
 
   const handleCreateClient = async () => {
     if (!user?.id) return;
     if (!isStepOneComplete || !isStepTwoComplete || !isStepThreeComplete) return;
     setIsSavingClient(true);
     try {
-      const normalizedCycle =
-        membershipForm.paymentCycle.trim().toLowerCase() === "annually"
-          ? "Annual"
-          : membershipForm.paymentCycle.trim();
+      const normalizedClientNumber = membershipForm.clientNumber.trim().toUpperCase();
+      if (!normalizedClientNumber) {
+        toast({ title: "Error", description: "Client number is required.", variant: "destructive" });
+        return;
+      }
+      const duplicateInLoadedRows = clientRows.some(
+        (row) => String(row?.clientNumber ?? "").trim().toUpperCase() === normalizedClientNumber,
+      );
+      if (duplicateInLoadedRows) {
+        const nextSuggested = getNextAvailableClientNumber();
+        setMembershipForm((prev) => ({ ...prev, clientNumber: nextSuggested }));
+        toast({
+          title: "Duplicate client number",
+          description: `Client number ${normalizedClientNumber} already exists. Suggested ${nextSuggested}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const { data: existingClientNumberRows, error: existingClientNumberError } = await (supabase as any)
+        .from("clients")
+        .select("id")
+        .eq("company_id", user.id)
+        .eq("client_number", normalizedClientNumber)
+        .limit(1);
+      if (existingClientNumberError) throw existingClientNumberError;
+      if (Array.isArray(existingClientNumberRows) && existingClientNumberRows.length > 0) {
+        const nextSuggested = getNextAvailableClientNumber();
+        setMembershipForm((prev) => ({ ...prev, clientNumber: nextSuggested }));
+        toast({
+          title: "Duplicate client number",
+          description: `Client number ${normalizedClientNumber} already exists. Suggested ${nextSuggested}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const normalizeCycleValue = (value: string) => {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "annually" || normalized === "annual") return "Annual";
+        if (normalized === "monthly") return "Monthly";
+        return value.trim();
+      };
+      const normalizedLrCycle = normalizeCycleValue(membershipForm.lrBillingCycle);
+      const normalizedEeCycle = normalizeCycleValue(membershipForm.eeBillingCycle);
+      const normalizedPrCycle = normalizeCycleValue(membershipForm.prBillingCycle);
+      const normalizedHsCycle = normalizeCycleValue(membershipForm.hsBillingCycle);
+      const firstSelectedService = membershipForm.memberTypes[0];
+      const firstSelectedCycle = firstSelectedService
+        ? normalizeCycleValue(String((membershipForm as any)[getServiceBillingCycleField(firstSelectedService)] || ""))
+        : "";
       const basePayload: Record<string, unknown> = {
         company_id: user.id,
-        client_number: membershipForm.clientNumber.trim() || null,
+        client_number: normalizedClientNumber,
         status: "active",
       };
       const optionalPayload: Record<string, unknown> = {
         registered_name: clientDetailsForm.registeredName.trim() || null,
         trading_as: clientDetailsForm.tradingAs.trim() || null,
         trading_name: clientDetailsForm.tradingAs.trim() || null,
+        company_type: clientDetailsForm.companyType.trim() || null,
         registration_number: clientDetailsForm.registrationNumber.trim() || null,
         vat_number: clientDetailsForm.vatNumber.trim() || null,
-        owner_name: clientDetailsForm.owner.trim() || null,
-        owner_number: clientDetailsForm.telCell.trim() || null,
-        owner_email: clientDetailsForm.email.trim() || null,
+        primary_name: clientDetailsForm.owner.trim() || null,
+        primary_number: clientDetailsForm.telCell.trim() || null,
+        primary_email: clientDetailsForm.email.trim() || null,
         start_date: membershipForm.startDate.trim() || null,
-        membership_period: normalizedCycle || null,
-        retainer_cycle: normalizedCycle || null,
+        membership_period: firstSelectedCycle || null,
+        retainer_cycle: firstSelectedCycle || null,
+        lr_billing_cycle: normalizedLrCycle || null,
+        ee_billing_cycle: normalizedEeCycle || null,
+        pr_billing_cycle: normalizedPrCycle || null,
+        hs_billing_cycle: normalizedHsCycle || null,
         member_types: membershipForm.memberTypes,
         physical_address_line1: addressForm.line1.trim() || null,
         physical_address_line2: addressForm.line2.trim() || null,
@@ -880,9 +1106,9 @@ const ClientsTwo = () => {
       bargainingCouncil: row.bargainingCouncil === "--" ? "" : row.bargainingCouncil || "",
       groupName: row.groupName === "--" || !row.groupName ? "None" : row.groupName,
       groupId: row.groupId || "",
-      contactPerson: row.contactPerson === "--" ? "" : row.contactPerson || "",
-      contactNumber: row.contactNumber === "--" ? "" : row.contactNumber || "",
-      ownerEmail: row.ownerEmail === "--" ? "" : row.ownerEmail || "",
+      contactPerson: row.ownerContactPerson === "--" ? "" : row.ownerContactPerson || "",
+      contactNumber: row.ownerContactNumber === "--" ? "" : row.ownerContactNumber || "",
+      ownerEmail: row.ownerContactEmail === "--" ? "" : row.ownerContactEmail || "",
       primaryName: row.primaryName === "--" ? "" : row.primaryName || "",
       primaryJobTitle: row.primaryJobTitle === "--" ? "" : row.primaryJobTitle || "",
       primaryNumber: row.primaryNumber === "--" ? "" : row.primaryNumber || "",
@@ -908,6 +1134,10 @@ const ClientsTwo = () => {
       agreement: row.agreement === "--" ? "" : row.agreement || "",
       memberTypes: Array.isArray(row.memberTypes) ? row.memberTypes : [],
       billingCycle: row.billingCycle === "--" ? "" : row.billingCycle || "",
+      lrBillingCycle: row.lrBillingCycle === "--" ? "" : row.lrBillingCycle || row.billingCycle || "",
+      eeBillingCycle: row.eeBillingCycle === "--" ? "" : row.eeBillingCycle || row.billingCycle || "",
+      prBillingCycle: row.prBillingCycle === "--" ? "" : row.prBillingCycle || row.billingCycle || "",
+      hsBillingCycle: row.hsBillingCycle === "--" ? "" : row.hsBillingCycle || row.billingCycle || "",
       lrRetainer: row.lrRetainer === "--" ? "" : row.lrRetainer || "",
       eeRetainer: row.eeRetainer === "--" ? "" : row.eeRetainer || "",
       prRetainer: row.prRetainer === "--" ? "" : row.prRetainer || "",
@@ -922,6 +1152,85 @@ const ClientsTwo = () => {
     openClientFile(selectedClientRow);
     setIsClientEditMode(false);
   };
+  const openAddFileNoteDialog = () => {
+    resetFileNoteForm();
+    setIsFileNoteDialogOpen(true);
+  };
+  const openEditFileNoteDialog = (note: any) => {
+    setEditingFileNoteId(note.id);
+    setFileNoteForm({
+      noteDate: String(note.note_date || dateToday()),
+      noteContent: String(note.note_content || ""),
+      noteUserName: String(note.note_user_name || resolveCurrentUserName()),
+    });
+    setIsFileNoteDialogOpen(true);
+  };
+  const handleSaveFileNote = async () => {
+    if (!selectedClientRow?.id || !user?.id) return;
+    const noteDate = fileNoteForm.noteDate.trim();
+    const noteContent = fileNoteForm.noteContent.trim();
+    const noteUserName = fileNoteForm.noteUserName.trim() || resolveCurrentUserName();
+    if (!noteDate || !noteContent) {
+      toast({ title: "Missing fields", description: "Date and note content are required.", variant: "destructive" });
+      return;
+    }
+    setIsSavingFileNote(true);
+    try {
+      if (editingFileNoteId) {
+        const baseContent = noteContent.replace(/\s*\(Edited by .* on \d{4}-\d{2}-\d{2}\)\s*$/i, "").trim();
+        const editedTag = `(Edited by ${noteUserName} on ${dateToday()})`;
+        const updatedContent = `${baseContent} ${editedTag}`.trim();
+        const { error } = await (supabase as any)
+          .from("client_file_notes")
+          .update({
+            note_content: updatedContent,
+            note_user_name: noteUserName,
+          })
+          .eq("id", editingFileNoteId)
+          .eq("company_id", user.id)
+          .eq("client_id", selectedClientRow.id);
+        if (error) throw error;
+      } else {
+        const payload = {
+          company_id: user.id,
+          client_id: selectedClientRow.id,
+          note_date: noteDate,
+          note_content: noteContent,
+          note_user_name: noteUserName,
+        };
+        const { error } = await (supabase as any).from("client_file_notes").insert(payload);
+        if (error) throw error;
+      }
+      setIsFileNoteDialogOpen(false);
+      resetFileNoteForm();
+      await fetchClientFileNotes(selectedClientRow.id);
+      toast({ title: "Success", description: editingFileNoteId ? "File note updated." : "File note created." });
+    } catch (error: any) {
+      toast({ title: "Unable to save file note", description: error?.message || "Save failed.", variant: "destructive" });
+    } finally {
+      setIsSavingFileNote(false);
+    }
+  };
+  const handleDeleteFileNote = async (noteId: string) => {
+    if (!selectedClientRow?.id || !user?.id) return;
+    if (!window.confirm("Delete this file note?")) return;
+    try {
+      const { error } = await (supabase as any)
+        .from("client_file_notes")
+        .delete()
+        .eq("id", noteId)
+        .eq("company_id", user.id)
+        .eq("client_id", selectedClientRow.id);
+      if (error) throw error;
+      await fetchClientFileNotes(selectedClientRow.id);
+      toast({ title: "File note deleted" });
+    } catch (error: any) {
+      toast({ title: "Unable to delete file note", description: error?.message || "Delete failed.", variant: "destructive" });
+    }
+  };
+  const clientFileCardClass = `rounded border border-slate-200 bg-white p-3 transition-colors ${
+    isClientEditMode ? "hover:border-slate-500" : "hover:border-[#3eca44] hover:bg-[#3eca44]/5"
+  }`;
 
   const handleSaveClientEdits = async () => {
     if (!selectedClientRow?.id) return;
@@ -1027,6 +1336,10 @@ const ClientsTwo = () => {
         member_types: clientEditForm.memberTypes,
         membership_period: clientEditForm.billingCycle.trim() || null,
         retainer_cycle: clientEditForm.billingCycle.trim() || null,
+        lr_billing_cycle: clientEditForm.lrBillingCycle.trim() || null,
+        ee_billing_cycle: clientEditForm.eeBillingCycle.trim() || null,
+        pr_billing_cycle: clientEditForm.prBillingCycle.trim() || null,
+        hs_billing_cycle: clientEditForm.hsBillingCycle.trim() || null,
         lr_retainer: toTrimmedString(clientEditForm.lrRetainer) || null,
         ee_retainer: toTrimmedString(clientEditForm.eeRetainer) || null,
         pr_retainer: toTrimmedString(clientEditForm.prRetainer) || null,
@@ -1060,6 +1373,7 @@ const ClientsTwo = () => {
           ? {
               ...prev,
               companyName: clientEditForm.companyName || "--",
+              companyNameDisplay: getCompanyNameDisplay(clientEditForm.companyName, clientEditForm.companyType),
               tradingAs: clientEditForm.tradingAs || "--",
               registrationNumber: clientEditForm.registrationNumber || "--",
               vatNumber: clientEditForm.vatNumber || "--",
@@ -1068,9 +1382,12 @@ const ClientsTwo = () => {
               bargainingCouncil: clientEditForm.bargainingCouncil || "--",
               groupName: clientEditForm.groupName || "--",
               groupId: resolvedGroupId || "",
-              contactPerson: clientEditForm.contactPerson || "--",
-              contactNumber: clientEditForm.contactNumber || "--",
-              ownerEmail: clientEditForm.ownerEmail || "--",
+              contactPerson: clientEditForm.primaryName || "--",
+              contactNumber: clientEditForm.primaryNumber || "--",
+              ownerEmail: clientEditForm.primaryEmail || "--",
+              ownerContactPerson: clientEditForm.contactPerson || "--",
+              ownerContactNumber: clientEditForm.contactNumber || "--",
+              ownerContactEmail: clientEditForm.ownerEmail || "--",
               primaryName: clientEditForm.primaryName || "--",
               primaryJobTitle: clientEditForm.primaryJobTitle || "--",
               primaryNumber: clientEditForm.primaryNumber || "--",
@@ -1079,7 +1396,7 @@ const ClientsTwo = () => {
               secondaryJobTitle: clientEditForm.secondaryJobTitle || "--",
               secondaryNumber: clientEditForm.secondaryNumber || "--",
               secondaryEmail: clientEditForm.secondaryEmail || "--",
-              email: clientEditForm.ownerEmail || "--",
+              email: clientEditForm.primaryEmail || "--",
               physicalLine1: clientEditForm.physicalLine1 || "--",
               physicalLine2: clientEditForm.physicalLine2 || "--",
               physicalCity: clientEditForm.physicalCity || "--",
@@ -1096,6 +1413,10 @@ const ClientsTwo = () => {
               agreement: clientEditForm.agreement || "--",
               memberTypes: clientEditForm.memberTypes || [],
               billingCycle: clientEditForm.billingCycle || "--",
+              lrBillingCycle: clientEditForm.lrBillingCycle || "--",
+              eeBillingCycle: clientEditForm.eeBillingCycle || "--",
+              prBillingCycle: clientEditForm.prBillingCycle || "--",
+              hsBillingCycle: clientEditForm.hsBillingCycle || "--",
               lrRetainer: clientEditForm.lrRetainer || "--",
               eeRetainer: clientEditForm.eeRetainer || "--",
               prRetainer: clientEditForm.prRetainer || "--",
@@ -1120,7 +1441,7 @@ const ClientsTwo = () => {
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
               <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-[#3eca44] -ml-1">Cleints 2</h1>
+                <h1 className="text-4xl font-normal text-[#3eca44] -ml-1">Clients 2</h1>
                 <p className="text-xs text-slate-600 mt-2">Browse, search, and manage your clients and attach their documents.</p>
               </div>
             </div>
@@ -1135,7 +1456,7 @@ const ClientsTwo = () => {
                             placeholder="Search clients..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-semibold shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
                               searchQuery.trim().length > 0 ? "pr-20" : "pr-9"
                             }`}
                           />
@@ -1206,18 +1527,18 @@ const ClientsTwo = () => {
                             <div className="flex items-center justify-center">
                               <Checkbox
                                 indicator="x"
-                                aria-label={`Select ${row.companyName}`}
+                                aria-label={`Select ${row.companyNameDisplay}`}
                                 className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                               />
                             </div>
                             <button type="button" onClick={() => openClientFile(row)} className="font-medium text-left hover:underline">
-                              {row.companyName}
+                              {row.companyNameDisplay}
                             </button>
                             <div>{row.tradingAs}</div>
                             <div>{row.contactPerson}</div>
                             <div>{row.contactNumber}</div>
                             <div>{row.email}</div>
-                            <div>{row.status}</div>
+                            <div>{getClientStatusIndicator(row.status).label}</div>
                           </div>
                         ))}
                       </div>
@@ -1289,7 +1610,7 @@ const ClientsTwo = () => {
                     if (newClientStep < 3) handleNextStep();
                   }}
                 >
-                  <div className="h-[330px] pr-1">
+                  <div className="h-[390px] pr-1">
                   {newClientStep === 1 && (
                     <div className="w-full space-y-4">
                       <div className="relative space-y-1">
@@ -1301,6 +1622,19 @@ const ClientsTwo = () => {
                         <Input className={addModalFieldInputClass} placeholder="Insert trading name" value={clientDetailsForm.tradingAs} onChange={(e) => setClientDetailsForm((p) => ({ ...p, tradingAs: e.target.value }))} />
                       </div>
                       <div className="relative space-y-1">
+                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Company Type <span className="text-red-600">*</span></span>
+                        <Select value={clientDetailsForm.companyType || undefined} onValueChange={(value) => setClientDetailsForm((p) => ({ ...p, companyType: value }))}>
+                          <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
+                            <SelectValue placeholder="Select company type" />
+                          </SelectTrigger>
+                          <SelectContent className="text-[11px]">
+                            {companyTypeOptions.map((option) => (
+                              <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="relative space-y-1">
                         <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Registration Number <span className="text-red-600">*</span></span>
                         <Input className={addModalFieldInputClass} placeholder="Insert company registration number" value={clientDetailsForm.registrationNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, registrationNumber: e.target.value }))} />
                       </div>
@@ -1309,16 +1643,16 @@ const ClientsTwo = () => {
                         <Input className={addModalFieldInputClass} placeholder="Insert company vat number" value={clientDetailsForm.vatNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, vatNumber: e.target.value }))} />
                       </div>
                       <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Owner <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert owner's name and surname" value={clientDetailsForm.owner} onChange={(e) => setClientDetailsForm((p) => ({ ...p, owner: e.target.value }))} />
+                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Contact <span className="text-red-600">*</span></span>
+                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact name and surname" value={clientDetailsForm.owner} onChange={(e) => setClientDetailsForm((p) => ({ ...p, owner: e.target.value }))} />
                       </div>
                       <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Tell / Cell <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert company contact number" value={clientDetailsForm.telCell} onChange={(e) => setClientDetailsForm((p) => ({ ...p, telCell: e.target.value }))} />
+                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Number <span className="text-red-600">*</span></span>
+                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact number" value={clientDetailsForm.telCell} onChange={(e) => setClientDetailsForm((p) => ({ ...p, telCell: e.target.value }))} />
                       </div>
                       <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Email <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert company email" value={clientDetailsForm.email} onChange={(e) => setClientDetailsForm((p) => ({ ...p, email: e.target.value }))} />
+                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Email <span className="text-red-600">*</span></span>
+                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact email" value={clientDetailsForm.email} onChange={(e) => setClientDetailsForm((p) => ({ ...p, email: e.target.value }))} />
                       </div>
                     </div>
                   )}
@@ -1357,19 +1691,7 @@ const ClientsTwo = () => {
                         />
                       </div>
                       <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Payment Cycle <span className="text-red-600">*</span></span>
-                        <Select value={membershipForm.paymentCycle || undefined} onValueChange={(value) => setMembershipForm((p) => ({ ...p, paymentCycle: value }))}>
-                          <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
-                            <SelectValue placeholder="Please select payment cycle" />
-                          </SelectTrigger>
-                          <SelectContent className="text-[11px]">
-                            <SelectItem value="Monthly" className={addModalSelectItemClass}>Monthly</SelectItem>
-                            <SelectItem value="Annual" className={addModalSelectItemClass}>Annual</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Member Type <span className="text-red-600">*</span></span>
+                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Membership Type <span className="text-red-600">*</span></span>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -1411,6 +1733,30 @@ const ClientsTwo = () => {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
+                      {membershipForm.memberTypes.length > 0 ? (
+                        membershipForm.memberTypes.map((serviceCode) => {
+                          const cycleField = getServiceBillingCycleField(serviceCode);
+                          return (
+                            <div key={`new-client-cycle-${serviceCode}`} className="relative space-y-1">
+                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
+                                {serviceCode} Billing Cycle <span className="text-red-600">*</span>
+                              </span>
+                              <Select
+                                value={String((membershipForm as any)[cycleField] || "") || undefined}
+                                onValueChange={(value) => setMembershipForm((p) => ({ ...p, [cycleField]: value }))}
+                              >
+                                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
+                                  <SelectValue placeholder="Please select billing cycle" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[11px]">
+                                  <SelectItem value="Monthly" className={addModalSelectItemClass}>Monthly</SelectItem>
+                                  <SelectItem value="Annual" className={addModalSelectItemClass}>Annual</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        })
+                      ) : null}
                     </div>
                   )}
 
@@ -1566,7 +1912,7 @@ const ClientsTwo = () => {
                           </div>
                         );
                       })()}
-                      <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selectedClientRow.companyName}</h2>
+                      <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selectedClientRow.companyNameDisplay || selectedClientRow.companyName}</h2>
                       {selectedClientRow.tradingAs && selectedClientRow.tradingAs !== "--" ? (
                         <p className="mb-2 text-xs text-slate-500">t/a {selectedClientRow.tradingAs}</p>
                       ) : null}
@@ -1588,7 +1934,7 @@ const ClientsTwo = () => {
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-8 text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                          className="h-8 rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                           onClick={cancelClientEdits}
                           disabled={isSavingClientEdit}
                         >
@@ -1598,7 +1944,7 @@ const ClientsTwo = () => {
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-8 text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                        className="h-8 rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                         onClick={() => {
                           if (isClientEditMode) {
                             void handleSaveClientEdits();
@@ -1615,16 +1961,16 @@ const ClientsTwo = () => {
 
                   <Tabs defaultValue="company" className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="grid w-full grid-cols-5 bg-slate-100">
-                      <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-300 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-white data-[state=active]:text-[#2f9f35] data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
-                      <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-300 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-white data-[state=active]:text-[#2f9f35] data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
-                      <TabsTrigger value="notes" className="text-[11px] data-[state=inactive]:text-slate-300 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-white data-[state=active]:text-[#2f9f35] data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
-                      <TabsTrigger value="matters" className="text-[11px] data-[state=inactive]:text-slate-300 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-white data-[state=active]:text-[#2f9f35] data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
-                      <TabsTrigger value="documents" className="text-[11px] data-[state=inactive]:text-slate-300 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-white data-[state=active]:text-[#2f9f35] data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
+                      <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
+                      <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
+                      <TabsTrigger value="notes" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
+                      <TabsTrigger value="matters" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
+                      <TabsTrigger value="documents" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="company" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
                       <div className="space-y-3 text-xs">
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Company Identity</p>
                           <div className="mt-2 space-y-2">
                             {[
@@ -1655,7 +2001,7 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Company Structure</p>
                           <div className="mt-2 space-y-2">
                             {[
@@ -1863,20 +2209,41 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
-                          <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Ownership</p>
+                        <div className={clientFileCardClass}>
+                          <div className="mb-3 grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
+                            <p className="text-[13px] font-semibold text-slate-700 underline">Ownership</p>
+                            <div>
+                              <button
+                                type="button"
+                                className="rounded border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-700 transition-colors hover:border-[#3eca44] hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!isClientEditMode}
+                                onClick={() =>
+                                  setClientEditForm((p) => ({
+                                    ...p,
+                                    contactPerson: p.primaryName,
+                                    contactNumber: p.primaryNumber,
+                                    ownerEmail: p.primaryEmail,
+                                  }))
+                                }
+                              >
+                                Same as Primary
+                              </button>
+                            </div>
+                            <div />
+                            <div />
+                          </div>
                           <div className="mt-2 space-y-2">
                             {[
                               [
-                                ["Owner", "contactPerson", selectedClientRow.contactPerson],
+                                ["Owner", "contactPerson", selectedClientRow.ownerContactPerson],
                                 ["", "", ""],
                               ],
                               [
-                                ["Owner Number", "contactNumber", selectedClientRow.contactNumber],
+                                ["Owner Number", "contactNumber", selectedClientRow.ownerContactNumber],
                                 ["", "", ""],
                               ],
                               [
-                                ["Owner Email", "ownerEmail", selectedClientRow.ownerEmail],
+                                ["Owner Email", "ownerEmail", selectedClientRow.ownerContactEmail],
                                 ["", "", ""],
                               ],
                             ].map((row, rowIndex) => (
@@ -1905,7 +2272,7 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Contacts</p>
                           <div className="mt-2 space-y-2">
                             {[
@@ -1951,7 +2318,7 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Address</p>
                           <div className="space-y-2">
                             <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
@@ -2039,7 +2406,7 @@ const ClientsTwo = () => {
 
                     <TabsContent value="membership" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
                       <div className="space-y-3 text-xs">
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">General Details</p>
                           <div className="space-y-2">
                             {[
@@ -2063,15 +2430,20 @@ const ClientsTwo = () => {
                                       <p className="text-[10px] font-medium text-slate-500">{label}</p>
                                       {isClientEditMode ? (
                                         field === "status" ? (
-                                          <Select value={clientEditForm.status} onValueChange={(nextValue) => setClientEditForm((p) => ({ ...p, status: nextValue }))}>
-                                            <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}><SelectValue /></SelectTrigger>
-                                            <SelectContent className="text-[11px]">
-                                              <SelectItem value="Active" className={addModalSelectItemClass}>Active</SelectItem>
-                                              <SelectItem value="Suspended" className={addModalSelectItemClass}>Suspended</SelectItem>
-                                              <SelectItem value="Cancelled" className={addModalSelectItemClass}>Cancelled</SelectItem>
-                                              <SelectItem value="Pending" className={addModalSelectItemClass}>Pending</SelectItem>
-                                            </SelectContent>
-                                          </Select>
+                                          <div className="h-8 flex items-center justify-between gap-2">
+                                            <Input
+                                              readOnly
+                                              className="h-8 rounded !text-[11px] md:!text-[11px] font-medium bg-slate-50 text-slate-700 cursor-not-allowed"
+                                              value={clientEditForm.status || "--"}
+                                            />
+                                            <button
+                                              type="button"
+                                              className="shrink-0 text-[10px] font-medium text-slate-700 hover:text-[#2f9f35] hover:underline"
+                                              onClick={() => setIsStatusChangeOpen(true)}
+                                            >
+                                              Change
+                                            </button>
+                                          </div>
                                         ) : field === "startDate" ? (
                                           <div className="relative">
                                             <Input
@@ -2167,6 +2539,19 @@ const ClientsTwo = () => {
                                           ) : (
                                             <p className="text-[11px] font-medium text-slate-900">None</p>
                                           )
+                                        ) : field === "status" ? (
+                                          <div className="h-8 flex items-center justify-between gap-2">
+                                            <p className="text-[11px] font-medium text-slate-900 truncate">{String(value || "--")}</p>
+                                            {isClientEditMode ? (
+                                              <button
+                                                type="button"
+                                                className="text-[10px] font-medium text-slate-700 hover:text-[#2f9f35] hover:underline"
+                                                onClick={() => setIsStatusChangeOpen(true)}
+                                              >
+                                                Change
+                                              </button>
+                                            ) : null}
+                                          </div>
                                         ) : (
                                           <p className="text-[11px] font-medium text-slate-900">
                                             {field === "startDate" || field === "renewalDate"
@@ -2188,7 +2573,7 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Service Selection</p>
                           <div className="space-y-2">
                             {[
@@ -2224,7 +2609,13 @@ const ClientsTwo = () => {
                                           />
                                         </div>
                                       ) : (
-                                        <p className="text-[11px] font-medium text-slate-900">{selected ? "Selected" : "--"}</p>
+                                        <p className="text-[11px] font-medium">
+                                          {selected ? (
+                                            <Check className="h-3.5 w-3.5 text-[#2f9f35]" />
+                                          ) : (
+                                            <X className="h-3.5 w-3.5 text-rose-600" />
+                                          )}
+                                        </p>
                                       )}
                                     </span>
                                   );
@@ -2234,7 +2625,7 @@ const ClientsTwo = () => {
                           </div>
                         </div>
 
-                        <div className="rounded border border-slate-200 bg-white p-3 transition-colors hover:border-slate-500">
+                        <div className={clientFileCardClass}>
                           <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Billing Terms</p>
                           <div className="space-y-2">
                             {(
@@ -2249,7 +2640,9 @@ const ClientsTwo = () => {
                                       : serviceCode === "PR"
                                         ? "prRetainer"
                                         : "hsRetainer";
+                                const billingCycleField = getServiceBillingCycleField(serviceCode);
                                 const rowRetainerValue = (isClientEditMode ? (clientEditForm as any)[retainerField] : (selectedClientRow as any)[retainerField]) as string;
+                                const rowBillingCycleValue = (isClientEditMode ? (clientEditForm as any)[billingCycleField] : (selectedClientRow as any)[billingCycleField]) as string;
                                 return (
                                 <div
                                   key={`${serviceCode}-${index}`}
@@ -2265,26 +2658,17 @@ const ClientsTwo = () => {
                                   ) : (
                                     <p className="text-[11px] font-medium text-slate-900">{formatRetainerDisplay(rowRetainerValue)}</p>
                                   )}
-                                  {index === 0 ? (
-                                    <>
-                                      <p className="text-[10px] font-medium text-slate-500">Billing Cycle</p>
-                                      {isClientEditMode ? (
-                                        <Select value={clientEditForm.billingCycle || undefined} onValueChange={(nextValue) => setClientEditForm((p) => ({ ...p, billingCycle: nextValue }))}>
-                                          <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}><SelectValue placeholder="Select cycle" /></SelectTrigger>
-                                          <SelectContent className="text-[11px]">
-                                            <SelectItem value="Monthly" className={addModalSelectItemClass}>Monthly</SelectItem>
-                                            <SelectItem value="Annual" className={addModalSelectItemClass}>Annual</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      ) : (
-                                        <p className="text-[11px] font-medium text-slate-900">{String(selectedClientRow.billingCycle || "--")}</p>
-                                      )}
-                                    </>
+                                  <p className="text-[10px] font-medium text-slate-500">{serviceCode} Billing Cycle</p>
+                                  {isClientEditMode ? (
+                                    <Select value={rowBillingCycleValue || undefined} onValueChange={(nextValue) => setClientEditForm((p) => ({ ...p, [billingCycleField]: nextValue }))}>
+                                      <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}><SelectValue placeholder="Select cycle" /></SelectTrigger>
+                                      <SelectContent className="text-[11px]">
+                                        <SelectItem value="Monthly" className={addModalSelectItemClass}>Monthly</SelectItem>
+                                        <SelectItem value="Annual" className={addModalSelectItemClass}>Annual</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   ) : (
-                                    <>
-                                      <div />
-                                      <div />
-                                    </>
+                                    <p className="text-[11px] font-medium text-slate-900">{String(rowBillingCycleValue || "--")}</p>
                                   )}
                                 </div>
                               )})
@@ -2301,8 +2685,92 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="notes" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">No notes yet.</div>
+                    <TabsContent value="notes" className="mt-6 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-0">
+                        {isNotesLoading ? (
+                          <div className="px-2 py-3 text-[11px] text-slate-500">Loading notes...</div>
+                        ) : clientFileNotes.length === 0 ? (
+                          <div className="space-y-3">
+                            <div className="px-2 py-3 text-[11px] text-slate-500">No file notes yet.</div>
+                            <Button
+                              type="button"
+                              className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                              onClick={openAddFileNoteDialog}
+                            >
+                              New Note
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <div className="group relative w-full max-w-[360px]">
+                                <Input
+                                  placeholder="Search by user or note content..."
+                                  value={clientFileNotesSearchQuery}
+                                  onChange={(e) => setClientFileNotesSearchQuery(e.target.value)}
+                                  className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                                    clientFileNotesSearchQuery.trim().length > 0 ? "pr-20" : "pr-9"
+                                  }`}
+                                />
+                                {clientFileNotesSearchQuery.trim().length > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                                    onClick={() => setClientFileNotesSearchQuery("")}
+                                  >
+                                    Clear
+                                  </button>
+                                ) : (
+                                  <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                                )}
+                              </div>
+                              <Button
+                                type="button"
+                                className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                                onClick={openAddFileNoteDialog}
+                              >
+                                New Note
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-[0.8fr_3fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                              <div>Date</div>
+                              <div>Note</div>
+                              <div>Created By</div>
+                              <div>Actions</div>
+                            </div>
+                            <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                              {filteredClientFileNotes.length === 0 ? (
+                                <div className="px-2 py-3 text-slate-500">No file notes found.</div>
+                              ) : (
+                                filteredClientFileNotes.map((note) => (
+                                  <div key={note.id} className="grid grid-cols-[0.8fr_3fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
+                                    <div className="text-slate-700">{String(note.note_date || "--")}</div>
+                                    <div
+                                      className="break-words pr-2 text-slate-900 overflow-hidden text-ellipsis"
+                                      style={{
+                                        display: "-webkit-box",
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: "vertical",
+                                      }}
+                                    >
+                                      {String(note.note_content || "--")}
+                                    </div>
+                                    <div className="text-slate-700">{String(note.note_user_name || "--")}</div>
+                                    <div className="flex items-center gap-2">
+                                      <button type="button" className="text-slate-500 hover:text-[#2f9f35]" onClick={() => openEditFileNoteDialog(note)} aria-label="Edit note">
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button type="button" className="text-slate-500 hover:text-rose-600" onClick={() => void handleDeleteFileNote(note.id)} aria-label="Delete note">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="matters" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
@@ -2319,10 +2787,107 @@ const ClientsTwo = () => {
           </div>
         </div>
       )}
+      <Dialog
+        open={isFileNoteDialogOpen}
+        onOpenChange={(open) => {
+          setIsFileNoteDialogOpen(open);
+          if (!open) resetFileNoteForm();
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[420px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <DialogTitle className="text-sm font-semibold text-white">{editingFileNoteId ? "Edit File Note" : "Add File Note"}</DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-4 bg-white p-4">
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Date</span>
+              <Input
+                type="date"
+                className={addModalFieldInputClass}
+                value={fileNoteForm.noteDate}
+                onChange={(e) => setFileNoteForm((p) => ({ ...p, noteDate: e.target.value }))}
+                disabled={Boolean(editingFileNoteId)}
+              />
+            </div>
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
+              <textarea
+                className="min-h-[96px] w-full rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
+                value={fileNoteForm.noteContent}
+                onChange={(e) => setFileNoteForm((p) => ({ ...p, noteContent: e.target.value }))}
+              />
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsFileNoteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]" onClick={() => void handleSaveFileNote()} disabled={isSavingFileNote}>
+                {isSavingFileNote ? "Saving..." : "Submit"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={isStatusChangeOpen}
+        onOpenChange={(open) => {
+          setIsStatusChangeOpen(open);
+          if (open) {
+            setPendingStatusSelection(clientEditForm.status || "");
+          }
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <DialogTitle className="text-sm font-semibold text-white">Change Status</DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-3 bg-white px-3 pb-3 pt-6">
+            <div className="relative space-y-1.5 mb-7">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">New Status</span>
+              <Select value={pendingStatusSelection || undefined} onValueChange={setPendingStatusSelection}>
+                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {statusReasonOptions.map((option) => (
+                    <SelectItem key={option} value={option} className={addModalSelectItemClass}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="pt-1">
+              <Button
+                type="button"
+                className="mx-auto h-8 w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
+                disabled={!pendingStatusSelection.trim()}
+                onClick={() => {
+                  setClientEditForm((prev) => ({ ...prev, status: pendingStatusSelection }));
+                  setIsStatusChangeOpen(false);
+                }}
+              >
+                Submit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
 
 export default ClientsTwo;
+
 
 

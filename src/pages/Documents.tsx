@@ -1117,11 +1117,11 @@ const Documents = () => {
                         const itemClasses = cn(
                           "flex items-start gap-3 rounded-sm border px-3 py-2 transition-colors",
                           isActive
-                            ? "border-blue-300 bg-blue-50"
+                            ? "border-[#9dd8a2] bg-[#e9f9ee]"
                             : isComplete
                               ? "border-emerald-300 bg-emerald-50"
                               : "border-slate-300 bg-white",
-                          isClickable && "cursor-pointer hover:border-blue-300 hover:bg-blue-50/40",
+                          isClickable && "cursor-pointer hover:border-[#9dd8a2] hover:bg-[#3eca44]/10",
                         );
                         const itemContent = (
                           <>
@@ -1129,7 +1129,7 @@ const Documents = () => {
                               className={cn(
                                 "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold",
                                 isActive
-                                  ? "border-blue-600 bg-blue-600 text-white"
+                                  ? "border-[#3eca44] bg-[#3eca44] text-white"
                                   : isComplete
                                     ? "border-emerald-600 bg-emerald-600 text-white"
                                     : "border-slate-300 bg-white text-slate-500",
@@ -1140,7 +1140,7 @@ const Documents = () => {
                             <span
                               className={cn(
                                 "text-left text-xs font-semibold leading-5",
-                                isActive ? "text-blue-700" : isComplete ? "text-emerald-700" : "text-slate-600",
+                                isActive ? "text-[#2f9f35]" : isComplete ? "text-emerald-700" : "text-slate-600",
                               )}
                             >
                               {step}
@@ -1164,7 +1164,7 @@ const Documents = () => {
                       })}
                     </div>
                     <div className="mt-4 rounded-sm bg-white px-3 py-3">
-                      <h3 className="mb-[11px] text-[11px] font-semibold uppercase tracking-wide text-blue-700">Notes:</h3>
+                      <h3 className="mb-[11px] text-[11px] font-semibold uppercase tracking-wide text-[#2f9f35]">Notes:</h3>
                       <p className="mt-1 text-[11px] font-semibold text-slate-600 underline decoration-slate-500 underline-offset-2">
                         {activeModalStepLabel}
                       </p>
@@ -1222,7 +1222,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onBack?.()}
                           disabled={!stepMeta?.canGoBack}
-                          className="h-[28px] w-[84px] rounded border border-blue-600 px-3 text-xs font-semibold text-blue-600 hover:bg-transparent hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-xs font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
                         >
                           Back
                         </button>
@@ -1237,8 +1237,8 @@ const Documents = () => {
                             className={cn(
                               "inline-flex h-[28px] w-[84px] items-center justify-center gap-1.5 rounded border bg-white text-xs font-semibold disabled:cursor-not-allowed",
                               stepMeta?.isFinished
-                                ? "border-slate-300 text-slate-600 hover:border-blue-600 hover:bg-white hover:text-blue-600 disabled:border-slate-300 disabled:text-slate-300"
-                                : "border-transparent text-slate-700 hover:border-transparent hover:bg-white hover:text-blue-600 disabled:text-slate-300",
+                                ? "border-slate-300 text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] disabled:border-slate-300 disabled:text-slate-300"
+                                : "border-transparent text-slate-700 hover:border-transparent hover:bg-white hover:text-[#2f9f35] disabled:text-slate-300",
                             )}
                           >
                             {!stepMeta?.isFinished ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}
@@ -1255,7 +1255,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onNext?.()}
                           disabled={!stepMeta?.canGoNext}
-                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {stepMeta?.isFinished ? "Download" : "Next"}
                         </button>

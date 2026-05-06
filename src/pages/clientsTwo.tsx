@@ -18,6 +18,57 @@ import { supabase } from "@/integrations/supabase/client";
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
 const SLA_RECORD_TYPE = "Service Level Agreement";
+const FILE_NOTE_EDIT_TAG_REGEX = /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on \d{1,2}\s+[A-Za-z]+\s+\d{4}))\s*$/i;
+const formatDisplayDate = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "--";
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return trimmed;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+};
+const formatDisplayTime = (value: string | Date) => {
+  const date = value instanceof Date ? value : new Date(String(value || "").trim());
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+};
+const normalizeEditedTagForDisplay = (tag: string) => {
+  const value = String(tag || "").trim();
+  if (!value) return "";
+  const match = value.match(/^Edited by\s+(.+?)\s+on\s+(.+?)(?:\s+at\s+(.+))?$/i);
+  if (!match) return value;
+  const actor = String(match[1] || "").trim();
+  const rawDate = String(match[2] || "").trim();
+  const rawTime = String(match[3] || "").trim();
+  let parsedDate: Date | null = null;
+  const slashDate = rawDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashDate) {
+    const day = Number(slashDate[1]);
+    const month = Number(slashDate[2]);
+    const year = Number(slashDate[3]);
+    parsedDate = new Date(year, month - 1, day);
+  } else {
+    const generic = new Date(rawDate);
+    parsedDate = Number.isNaN(generic.getTime()) ? null : generic;
+  }
+  const nextDate = parsedDate ? formatDisplayDate(parsedDate.toISOString()) : rawDate;
+  if (rawTime) return `Edited by ${actor} on ${nextDate} at ${rawTime}`;
+  return `Edited by ${actor} on ${nextDate}`;
+};
+const ensureEditedTagHasTime = (tag: string, updatedAt?: string | null) => {
+  const normalized = normalizeEditedTagForDisplay(tag);
+  if (!normalized) return normalized;
+  if (/\sat\s/i.test(normalized)) return normalized;
+  const fallbackTime = formatDisplayTime(String(updatedAt || "").trim());
+  if (!fallbackTime) return normalized;
+  return `${normalized} at ${fallbackTime}`;
+};
+const splitFileNoteContentAndEditTag = (raw: string) => {
+  const value = String(raw || "");
+  const match = value.match(FILE_NOTE_EDIT_TAG_REGEX);
+  const editTag = match ? String(match[1] || match[2] || "").trim() : "";
+  const content = editTag ? value.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim() : value;
+  return { content, editTag };
+};
 const cropClientLogoPadding = (dataUrl: string): Promise<string> =>
   new Promise((resolve) => {
     const img = new Image();
@@ -133,6 +184,7 @@ const ClientsTwo = () => {
     areaCode: "",
   });
   const [clientRows, setClientRows] = useState<any[]>([]);
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
   const [isSavingClient, setIsSavingClient] = useState(false);
   const [selectedClientRow, setSelectedClientRow] = useState<any | null>(null);
   const [isClientEditMode, setIsClientEditMode] = useState(false);
@@ -154,12 +206,18 @@ const ClientsTwo = () => {
   const [isStatusChangeOpen, setIsStatusChangeOpen] = useState(false);
   const [pendingStatusSelection, setPendingStatusSelection] = useState("");
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
+  const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
+  const [currentUserIsSubuser, setCurrentUserIsSubuser] = useState(false);
   const [clientFileNotes, setClientFileNotes] = useState<any[]>([]);
   const [clientFileNotesSearchQuery, setClientFileNotesSearchQuery] = useState("");
   const [isNotesLoading, setIsNotesLoading] = useState(false);
   const [isFileNoteDialogOpen, setIsFileNoteDialogOpen] = useState(false);
   const [isSavingFileNote, setIsSavingFileNote] = useState(false);
   const [editingFileNoteId, setEditingFileNoteId] = useState<string | null>(null);
+  const [isFileNotePreviewOpen, setIsFileNotePreviewOpen] = useState(false);
+  const [fileNotePreviewContent, setFileNotePreviewContent] = useState("");
+  const [fileNotePreviewEditTag, setFileNotePreviewEditTag] = useState("");
+  const [fileNotePreviewUpdatedAt, setFileNotePreviewUpdatedAt] = useState("");
   const [fileNoteForm, setFileNoteForm] = useState({
     noteDate: "",
     noteContent: "",
@@ -331,8 +389,13 @@ const ClientsTwo = () => {
     const raw = String(rawValue || "").trim();
     if (!raw) return "SLA.pdf";
     const base = decodeURIComponent(raw.split("/").pop() || raw);
-    const withoutPrefix = base.replace(/^.*-SLA[_-]*/i, "");
-    const cleaned = withoutPrefix.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    const withoutGeneratedPrefix = base
+      .replace(
+        /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-)+/i,
+        "",
+      )
+      .replace(/^\d{10,}-/, "");
+    const cleaned = withoutGeneratedPrefix.replace(/_/g, " ").replace(/\s+/g, " ").trim();
     return cleaned || "SLA.pdf";
   };
   const getNextRenewalDateFromStart = (startDate?: string) => {
@@ -540,6 +603,11 @@ const ClientsTwo = () => {
         .includes(q);
     });
   }, [clientRows, searchQuery]);
+  const allVisibleSelected = useMemo(
+    () => tableRows.length > 0 && tableRows.every((row) => selectedClientIds.has(String(row.id))),
+    [selectedClientIds, tableRows],
+  );
+  const selectedCount = selectedClientIds.size;
   const filteredClientFileNotes = useMemo(() => {
     const q = clientFileNotesSearchQuery.trim().toLowerCase();
     if (!q) return clientFileNotes;
@@ -655,7 +723,6 @@ const ClientsTwo = () => {
     const { data, error } = await (supabase as any)
       .from("clients")
       .select("*")
-      .eq("company_id", user.id)
       .order("created_at", { ascending: false, nullsFirst: false });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -668,22 +735,39 @@ const ClientsTwo = () => {
     const { data, error } = await (supabase as any)
       .from("client_groups")
       .select("id, group_name")
-      .eq("company_id", user.id)
       .order("group_name", { ascending: true });
     if (error) return;
     setGroupOptions(data ?? []);
   }, [user?.id]);
   const fetchCurrentUserDisplayName = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await (supabase as any)
+    const { data: subuserData } = await (supabase as any)
+      .from("subusers")
+      .select("name,surname,role")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    const subuserName = String((subuserData as any)?.name || "").trim();
+    const subuserSurname = String((subuserData as any)?.surname || "").trim();
+    const subuserRole = String((subuserData as any)?.role || "").trim();
+    const subuserFullName = `${subuserName} ${subuserSurname}`.trim();
+    if (subuserFullName) {
+      setCurrentUserIsSubuser(true);
+      setCurrentUserSubuserRole(subuserRole);
+      setCurrentUserDisplayName(subuserFullName);
+      return;
+    }
+    setCurrentUserIsSubuser(false);
+    setCurrentUserSubuserRole("");
+
+    const { data: profileData } = await (supabase as any)
       .from("profiles")
       .select("user_name, user_surname")
       .eq("id", user.id)
       .maybeSingle();
-    const firstName = String((data as any)?.user_name || "").trim();
-    const surname = String((data as any)?.user_surname || "").trim();
-    const fullName = `${firstName} ${surname}`.trim();
-    if (fullName) setCurrentUserDisplayName(fullName);
+    const profileName = String((profileData as any)?.user_name || "").trim();
+    const profileSurname = String((profileData as any)?.user_surname || "").trim();
+    const profileFullName = `${profileName} ${profileSurname}`.trim();
+    if (profileFullName) setCurrentUserDisplayName(profileFullName);
   }, [user?.id]);
   const resolveCurrentUserName = useCallback(() => {
     if (currentUserDisplayName.trim()) return currentUserDisplayName.trim();
@@ -698,6 +782,33 @@ const ClientsTwo = () => {
     const fromEmail = String(user?.email || "").trim();
     return fromEmail || "Unknown User";
   }, [currentUserDisplayName, user]);
+  const isNoteEditableByCurrentUser = useCallback(
+    (note: any) => {
+      const actor = resolveCurrentUserName().trim().toLowerCase();
+      const createdBy = String(note?.note_user_name || "").trim().toLowerCase();
+      if (!actor || !createdBy) return false;
+      return actor === createdBy;
+    },
+    [resolveCurrentUserName],
+  );
+  const canCurrentUserDeleteNotes = useMemo(() => {
+    const role = currentUserSubuserRole.trim().toLowerCase();
+    if (!role) return true;
+    return role !== "consultant" && role !== "administrator";
+  }, [currentUserSubuserRole]);
+  const canCurrentUserChangeStatus = useMemo(() => {
+    const role = currentUserSubuserRole.trim().toLowerCase();
+    if (!role) return true;
+    return role !== "consultant" && role !== "administrator";
+  }, [currentUserSubuserRole]);
+  const isFallbackActorName = useCallback(
+    (value: string) => {
+      const current = String(value || "").trim();
+      const email = String(user?.email || "").trim();
+      return !current || current === "Unknown User" || (email.length > 0 && current === email);
+    },
+    [user?.email],
+  );
   const resetFileNoteForm = useCallback(() => {
     setFileNoteForm({
       noteDate: dateToday(),
@@ -713,7 +824,6 @@ const ClientsTwo = () => {
       const { data, error } = await (supabase as any)
         .from("client_file_notes")
         .select("*")
-        .eq("company_id", user.id)
         .eq("client_id", clientId)
         .order("note_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false, nullsFirst: false });
@@ -735,11 +845,21 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchCurrentUserDisplayName();
   }, [fetchCurrentUserDisplayName]);
+  useEffect(() => {
+    if (!isFileNoteDialogOpen) return;
+    if (editingFileNoteId) return;
+    const resolved = resolveCurrentUserName();
+    if (!resolved) return;
+    setFileNoteForm((prev) => {
+      if (!isFallbackActorName(prev.noteUserName)) return prev;
+      if (prev.noteUserName === resolved) return prev;
+      return { ...prev, noteUserName: resolved };
+    });
+  }, [editingFileNoteId, isFallbackActorName, isFileNoteDialogOpen, resolveCurrentUserName]);
   const fetchSlaContract = useCallback(async (clientId: string) => {
     if (!user?.id) return;
     const { data, error } = await agreementRecordTable()
       .select("id, file_url")
-      .eq("company_id", user.id)
       .eq("client_id", clientId)
       .eq("contract_type", SLA_RECORD_TYPE)
       .order("created_at", { ascending: false })
@@ -793,7 +913,6 @@ const ClientsTwo = () => {
       const { data: existingClientNumberRows, error: existingClientNumberError } = await (supabase as any)
         .from("clients")
         .select("id")
-        .eq("company_id", user.id)
         .eq("client_number", normalizedClientNumber)
         .limit(1);
       if (existingClientNumberError) throw existingClientNumberError;
@@ -822,7 +941,6 @@ const ClientsTwo = () => {
         ? normalizeCycleValue(String((membershipForm as any)[getServiceBillingCycleField(firstSelectedService)] || ""))
         : "";
       const basePayload: Record<string, unknown> = {
-        company_id: user.id,
         client_number: normalizedClientNumber,
         status: "active",
       };
@@ -967,7 +1085,6 @@ const ClientsTwo = () => {
           {
             client_id: selectedClientRow.id,
             storage_path: storagePath,
-            company_id: user.id,
             uploaded_by: user.id,
           },
           { onConflict: "client_id" },
@@ -1081,7 +1198,7 @@ const ClientsTwo = () => {
     const existing = slaRecordByClient[selectedClientRow.id];
     if (!existing?.id) return;
     try {
-      const { error: deleteError } = await agreementRecordTable().delete().eq("id", existing.id).eq("company_id", user.id);
+      const { error: deleteError } = await agreementRecordTable().delete().eq("id", existing.id);
       if (deleteError) throw deleteError;
       if (existing.fileUrl) {
         await supabase.storage.from("contracts").remove([existing.fileUrl]);
@@ -1156,11 +1273,28 @@ const ClientsTwo = () => {
     resetFileNoteForm();
     setIsFileNoteDialogOpen(true);
   };
+  const openFileNotePreviewDialog = (rawContent: string, updatedAt?: string) => {
+    const { content, editTag } = splitFileNoteContentAndEditTag(rawContent);
+    setFileNotePreviewContent(content);
+    setFileNotePreviewEditTag(editTag);
+    setFileNotePreviewUpdatedAt(String(updatedAt || "").trim());
+    setIsFileNotePreviewOpen(true);
+  };
   const openEditFileNoteDialog = (note: any) => {
+    if (!isNoteEditableByCurrentUser(note)) {
+      toast({
+        title: "Edit not allowed",
+        description: "You can only edit notes created by you.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const rawNoteContent = String(note.note_content || "");
+    const { content: editableContent } = splitFileNoteContentAndEditTag(rawNoteContent);
     setEditingFileNoteId(note.id);
     setFileNoteForm({
       noteDate: String(note.note_date || dateToday()),
-      noteContent: String(note.note_content || ""),
+      noteContent: editableContent,
       noteUserName: String(note.note_user_name || resolveCurrentUserName()),
     });
     setIsFileNoteDialogOpen(true);
@@ -1177,8 +1311,9 @@ const ClientsTwo = () => {
     setIsSavingFileNote(true);
     try {
       if (editingFileNoteId) {
-        const baseContent = noteContent.replace(/\s*\(Edited by .* on \d{4}-\d{2}-\d{2}\)\s*$/i, "").trim();
-        const editedTag = `(Edited by ${noteUserName} on ${dateToday()})`;
+        const baseContent = noteContent.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim();
+        const now = new Date();
+        const editedTag = `Edited by ${noteUserName} on ${formatDisplayDate(now.toISOString())} at ${formatDisplayTime(now)}`;
         const updatedContent = `${baseContent} ${editedTag}`.trim();
         const { error } = await (supabase as any)
           .from("client_file_notes")
@@ -1187,12 +1322,10 @@ const ClientsTwo = () => {
             note_user_name: noteUserName,
           })
           .eq("id", editingFileNoteId)
-          .eq("company_id", user.id)
           .eq("client_id", selectedClientRow.id);
         if (error) throw error;
       } else {
         const payload = {
-          company_id: user.id,
           client_id: selectedClientRow.id,
           note_date: noteDate,
           note_content: noteContent,
@@ -1213,13 +1346,20 @@ const ClientsTwo = () => {
   };
   const handleDeleteFileNote = async (noteId: string) => {
     if (!selectedClientRow?.id || !user?.id) return;
+    if (!canCurrentUserDeleteNotes) {
+      toast({
+        title: "Delete not allowed",
+        description: "Consultant and Administrator subusers cannot delete notes.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!window.confirm("Delete this file note?")) return;
     try {
       const { error } = await (supabase as any)
         .from("client_file_notes")
         .delete()
         .eq("id", noteId)
-        .eq("company_id", user.id)
         .eq("client_id", selectedClientRow.id);
       if (error) throw error;
       await fetchClientFileNotes(selectedClientRow.id);
@@ -1242,7 +1382,7 @@ const ClientsTwo = () => {
         try {
           const existing = slaRecordByClient[selectedClientRow.id];
           if (existing?.id) {
-            await agreementRecordTable().delete().eq("id", existing.id).eq("company_id", user.id);
+            await agreementRecordTable().delete().eq("id", existing.id);
           }
 
           const safeName = pendingSlaFile.name.replace(/\s+/g, "_");
@@ -1255,7 +1395,6 @@ const ClientsTwo = () => {
           if (uploadError) throw uploadError;
 
           const { error: insertError } = await agreementRecordTable().insert({
-            company_id: user.id,
             client_id: selectedClientRow.id,
             contract_type: SLA_RECORD_TYPE,
             issue_date: dateToday(),
@@ -1286,7 +1425,6 @@ const ClientsTwo = () => {
           const { data: createdGroup, error: createGroupError } = await (supabase as any)
             .from("client_groups")
             .insert({
-              company_id: user?.id,
               group_name: requestedGroup,
             })
             .select("id, group_name")
@@ -1356,8 +1494,7 @@ const ClientsTwo = () => {
         const { error } = await (supabase as any)
           .from("clients")
           .update(updatePayload)
-          .eq("id", selectedClientRow.id)
-          .eq("company_id", user?.id);
+          .eq("id", selectedClientRow.id);
         if (!error) break;
         const missingColumn = getMissingColumn(error);
         if (missingColumn && Object.prototype.hasOwnProperty.call(updatePayload, missingColumn) && !tried.has(missingColumn)) {
@@ -1433,6 +1570,75 @@ const ClientsTwo = () => {
       setIsSavingClientEdit(false);
     }
   };
+  const toggleClientSelection = useCallback((clientId: string, checked: boolean) => {
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(clientId);
+      else next.delete(clientId);
+      return next;
+    });
+  }, []);
+  const toggleSelectAllVisibleClients = useCallback((checked: boolean) => {
+    setSelectedClientIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const row of tableRows) next.add(String(row.id));
+      } else {
+        for (const row of tableRows) next.delete(String(row.id));
+      }
+      return next;
+    });
+  }, [tableRows]);
+  const handleDeleteSelectedClients = useCallback(async () => {
+    if (currentUserIsSubuser) {
+      toast({
+        title: "Delete not allowed",
+        description: "Only the master user can delete client rows.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const ids = Array.from(selectedClientIds);
+    if (ids.length === 0) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete ${ids.length} client${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    try {
+      const { data: contracts } = await agreementRecordTable().select("file_url").in("client_id", ids);
+      const contractFiles = (contracts ?? []).map((row: any) => String(row?.file_url || "").trim()).filter(Boolean);
+      if (contractFiles.length > 0) {
+        await supabase.storage.from("contracts").remove(contractFiles);
+      }
+      const { data: logoRows } = await clientLogoTable().select("storage_path,logo_path,logo_url,company_logo_url").in("client_id", ids);
+      const logoPaths = (logoRows ?? [])
+        .map((row: any) => getClientLogoPathFromRecord((row as Record<string, unknown>) ?? null))
+        .filter(Boolean);
+      if (logoPaths.length > 0) {
+        await supabase.storage.from("client-logos").remove(logoPaths);
+      }
+      await (supabase as any).from("client_file_notes").delete().in("client_id", ids);
+      await agreementRecordTable().delete().in("client_id", ids);
+      await clientLogoTable().delete().in("client_id", ids);
+      const { error: clientDeleteError } = await (supabase as any).from("clients").delete().in("id", ids);
+      if (clientDeleteError) throw clientDeleteError;
+      if (selectedClientRow?.id && ids.includes(String(selectedClientRow.id))) {
+        setSelectedClientRow(null);
+      }
+      setSelectedClientIds(new Set());
+      await fetchClients();
+      toast({
+        title: "Clients deleted",
+        description: `Deleted ${ids.length} client${ids.length === 1 ? "" : "s"} successfully.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Delete failed",
+        description: error?.message || "Could not delete selected clients.",
+        variant: "destructive",
+      });
+    }
+  }, [currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
 
   return (
     <DashboardLayout>
@@ -1477,6 +1683,17 @@ const ClientsTwo = () => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
+                        {selectedCount > 0 && !currentUserIsSubuser ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 rounded px-3 text-[11px] inline-flex items-center gap-1 border-rose-300 bg-white !text-rose-700 hover:bg-rose-50 hover:border-rose-400 hover:!text-rose-700 [&>svg]:!text-rose-700 hover:[&>svg]:!text-rose-700"
+                            onClick={() => void handleDeleteSelectedClients()}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </Button>
+                        ) : null}
                         <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -1510,6 +1727,8 @@ const ClientsTwo = () => {
                           <Checkbox
                             indicator="x"
                             aria-label="Select all clients"
+                            checked={allVisibleSelected}
+                            onCheckedChange={(checked) => toggleSelectAllVisibleClients(Boolean(checked))}
                             className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
@@ -1528,6 +1747,8 @@ const ClientsTwo = () => {
                               <Checkbox
                                 indicator="x"
                                 aria-label={`Select ${row.companyNameDisplay}`}
+                                checked={selectedClientIds.has(String(row.id))}
+                                onCheckedChange={(checked) => toggleClientSelection(String(row.id), Boolean(checked))}
                                 className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                               />
                             </div>
@@ -1914,7 +2135,7 @@ const ClientsTwo = () => {
                       })()}
                       <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selectedClientRow.companyNameDisplay || selectedClientRow.companyName}</h2>
                       {selectedClientRow.tradingAs && selectedClientRow.tradingAs !== "--" ? (
-                        <p className="mb-2 text-xs text-slate-500">t/a {selectedClientRow.tradingAs}</p>
+                        <p className="mb-2 text-sm text-slate-500">t/a {selectedClientRow.tradingAs}</p>
                       ) : null}
                       {Array.isArray(selectedClientRow.memberTypes) && selectedClientRow.memberTypes.length > 0 ? (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -2438,8 +2659,19 @@ const ClientsTwo = () => {
                                             />
                                             <button
                                               type="button"
-                                              className="shrink-0 text-[10px] font-medium text-slate-700 hover:text-[#2f9f35] hover:underline"
-                                              onClick={() => setIsStatusChangeOpen(true)}
+                                              className={`shrink-0 text-[10px] font-medium ${canCurrentUserChangeStatus ? "text-slate-700 hover:text-[#2f9f35] hover:underline" : "cursor-not-allowed text-slate-400"}`}
+                                              onClick={() => {
+                                                if (!canCurrentUserChangeStatus) {
+                                                  toast({
+                                                    title: "Change not allowed",
+                                                    description: "Consultant and Administrator subusers cannot change status.",
+                                                    variant: "destructive",
+                                                  });
+                                                  return;
+                                                }
+                                                setIsStatusChangeOpen(true);
+                                              }}
+                                              disabled={!canCurrentUserChangeStatus}
                                             >
                                               Change
                                             </button>
@@ -2545,8 +2777,19 @@ const ClientsTwo = () => {
                                             {isClientEditMode ? (
                                               <button
                                                 type="button"
-                                                className="text-[10px] font-medium text-slate-700 hover:text-[#2f9f35] hover:underline"
-                                                onClick={() => setIsStatusChangeOpen(true)}
+                                                className={`text-[10px] font-medium ${canCurrentUserChangeStatus ? "text-slate-700 hover:text-[#2f9f35] hover:underline" : "cursor-not-allowed text-slate-400"}`}
+                                                onClick={() => {
+                                                  if (!canCurrentUserChangeStatus) {
+                                                    toast({
+                                                      title: "Change not allowed",
+                                                      description: "Consultant and Administrator subusers cannot change status.",
+                                                      variant: "destructive",
+                                                    });
+                                                    return;
+                                                  }
+                                                  setIsStatusChangeOpen(true);
+                                                }}
+                                                disabled={!canCurrentUserChangeStatus}
                                               >
                                                 Change
                                               </button>
@@ -2732,7 +2975,7 @@ const ClientsTwo = () => {
                                 New Note
                               </Button>
                             </div>
-                            <div className="grid grid-cols-[0.8fr_3fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                            <div className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
                               <div>Date</div>
                               <div>Note</div>
                               <div>Created By</div>
@@ -2743,27 +2986,45 @@ const ClientsTwo = () => {
                                 <div className="px-2 py-3 text-slate-500">No file notes found.</div>
                               ) : (
                                 filteredClientFileNotes.map((note) => (
-                                  <div key={note.id} className="grid grid-cols-[0.8fr_3fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
-                                    <div className="text-slate-700">{String(note.note_date || "--")}</div>
-                                    <div
-                                      className="break-words pr-2 text-slate-900 overflow-hidden text-ellipsis"
-                                      style={{
-                                        display: "-webkit-box",
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: "vertical",
-                                      }}
-                                    >
-                                      {String(note.note_content || "--")}
+                                  <div key={note.id} className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
+                                    {(() => {
+                                      const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
+                                      return (
+                                        <>
+                                    <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                    <div className="min-w-0 pr-2">
+                                      <button
+                                        type="button"
+                                        className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
+                                        onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""))}
+                                      >
+                                        {content || "--"}
+                                      </button>
                                     </div>
-                                    <div className="text-slate-700">{String(note.note_user_name || "--")}</div>
-                                    <div className="flex items-center gap-2">
-                                      <button type="button" className="text-slate-500 hover:text-[#2f9f35]" onClick={() => openEditFileNoteDialog(note)} aria-label="Edit note">
+                                    <div className="min-w-0 truncate text-slate-700">{String(note.note_user_name || "--")}</div>
+                                    <div className="min-w-0 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        className={`text-slate-500 ${isNoteEditableByCurrentUser(note) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
+                                        onClick={() => openEditFileNoteDialog(note)}
+                                        aria-label="Edit note"
+                                        disabled={!isNoteEditableByCurrentUser(note)}
+                                      >
                                         <Pencil className="h-3.5 w-3.5" />
                                       </button>
-                                      <button type="button" className="text-slate-500 hover:text-rose-600" onClick={() => void handleDeleteFileNote(note.id)} aria-label="Delete note">
+                                      <button
+                                        type="button"
+                                        className={`text-slate-500 ${canCurrentUserDeleteNotes ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
+                                        onClick={() => void handleDeleteFileNote(note.id)}
+                                        aria-label="Delete note"
+                                        disabled={!canCurrentUserDeleteNotes}
+                                      >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
                                     </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 ))
                               )}
@@ -2803,17 +3064,7 @@ const ClientsTwo = () => {
               </button>
             </DialogClose>
           </div>
-          <div className="space-y-4 bg-white p-4">
-            <div className="relative space-y-1">
-              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Date</span>
-              <Input
-                type="date"
-                className={addModalFieldInputClass}
-                value={fileNoteForm.noteDate}
-                onChange={(e) => setFileNoteForm((p) => ({ ...p, noteDate: e.target.value }))}
-                disabled={Boolean(editingFileNoteId)}
-              />
-            </div>
+          <div className="space-y-4 bg-white p-4 pt-6">
             <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
               <textarea
@@ -2830,6 +3081,28 @@ const ClientsTwo = () => {
                 {isSavingFileNote ? "Saving..." : "Submit"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isFileNotePreviewOpen} onOpenChange={setIsFileNotePreviewOpen}>
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <DialogTitle className="text-sm font-semibold text-white">File Note Preview</DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-3 bg-white p-4">
+            <div className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-900">
+              {fileNotePreviewContent || "--"}
+            </div>
+            {fileNotePreviewEditTag ? (
+              <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
+                {ensureEditedTagHasTime(fileNotePreviewEditTag, fileNotePreviewUpdatedAt)}
+              </div>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
@@ -2871,8 +3144,16 @@ const ClientsTwo = () => {
               <Button
                 type="button"
                 className="mx-auto h-8 w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
-                disabled={!pendingStatusSelection.trim()}
+                disabled={!pendingStatusSelection.trim() || !canCurrentUserChangeStatus}
                 onClick={() => {
+                  if (!canCurrentUserChangeStatus) {
+                    toast({
+                      title: "Change not allowed",
+                      description: "Consultant and Administrator subusers cannot change status.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
                   setClientEditForm((prev) => ({ ...prev, status: pendingStatusSelection }));
                   setIsStatusChangeOpen(false);
                 }}

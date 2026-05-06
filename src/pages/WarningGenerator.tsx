@@ -58,6 +58,10 @@ const isEmployeePrefillState = (value: unknown): value is EmployeePrefillState =
 };
 
 type WarningFormData = {
+  clientId: string;
+  companyName: string;
+  registrationNumber: string;
+  physicalAddress: string;
   employeeId: string;
   validityMonths: string;
   warningType: WarningGeneratorFormData["warningType"] | "";
@@ -75,7 +79,21 @@ type WarningFormData = {
   | "description"
 >;
 
-type WarningEmployee = Pick<Tables<"employees">, "id" | "employee_name" | "employee_surname" | "id_number">;
+type WarningClient = {
+  id: string;
+  registered_name: string | null;
+  trading_as: string | null;
+  registration_number: string | null;
+  physical_address_line1: string | null;
+  physical_address_line2: string | null;
+  city: string | null;
+  province: string | null;
+  area_code: string | null;
+  owner_number: string | null;
+  primary_number: string | null;
+  owner_email: string | null;
+  primary_email: string | null;
+};
 type EmployeeWarningRow = {
   id: string;
   misconduct_type: string | null;
@@ -222,19 +240,18 @@ const WarningGenerator = ({
   const location = useLocation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null);
-  const [employees, setEmployees] = useState<WarningEmployee[]>([]);
+  const [clients, setClients] = useState<WarningClient[]>([]);
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRow[]>([]);
   const [misconductSearch, setMisconductSearch] = useState("");
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
   const [draftMisconductTypes, setDraftMisconductTypes] = useState<string[]>([]);
-  const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
-  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
-  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const clientSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const dateIssuedPickerRef = useRef<HTMLInputElement | null>(null);
   const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
-  const [employeeSelectResetCount, setEmployeeSelectResetCount] = useState(0);
+  const [clientSelectResetCount, setClientSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
     { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
   >([]);
@@ -281,6 +298,10 @@ const WarningGenerator = ({
   });
   const [duplicateOverrideAccepted, setDuplicateOverrideAccepted] = useState(false);
   const [formData, setFormData] = useState<WarningFormData>({
+    clientId: "",
+    companyName: "",
+    registrationNumber: "",
+    physicalAddress: "",
     tradingName: "",
     employerContact: "",
     employerEmail: "",
@@ -296,20 +317,20 @@ const WarningGenerator = ({
     description: "",
   });
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
-  const steps = ["Employer Details", "Employee Details", "Warning Details"] as const;
+  const steps = ["Client Details", "Employee Details", "Warning Details"] as const;
   const stepIcons = [Building2, User2, TriangleAlert] as const;
   const [activeStep, setActiveStep] = useState(0);
   const [showFinalActions, setShowFinalActions] = useState(false);
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-[#3eca44] !focus-visible:border-[1.75px] !focus-visible:border-[#3eca44] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const warningModalDropdownToneClass =
-    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+    "bg-white border-slate-300 hover:border-[#3eca44] data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const warningModalSelectItemClass =
-    "text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getWarningModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getWarningModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44] !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
 
   useEffect(() => {
@@ -326,30 +347,16 @@ const WarningGenerator = ({
     }
   }, [location.state]);
 
-  const fetchProfile = useCallback(async () => {
+  const fetchClients = useCallback(async () => {
     if (!user) return;
-
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (data) {
-      setProfile(data);
-    }
-  }, [user]);
-
-  const fetchEmployees = useCallback(async () => {
-    if (!user) return;
-
     const { data } = await (supabase as any)
-      .from("employees")
-      .select("id, employee_name, employee_surname, id_number")
-      .eq("company_id", user.id);
-
+      .from("clients")
+      .select(
+        "id,registered_name,trading_as,registration_number,physical_address_line1,physical_address_line2,city,province,area_code,owner_number,primary_number,owner_email,primary_email",
+      )
+      .order("registered_name", { ascending: true, nullsFirst: false });
     if (data) {
-      setEmployees(data);
+      setClients(data as WarningClient[]);
     }
   }, [user]);
 
@@ -405,21 +412,10 @@ const WarningGenerator = ({
 
   useEffect(() => {
     if (user) {
-      fetchProfile();
-      fetchEmployees();
+      fetchClients();
       fetchConductOffences();
     }
-  }, [user, fetchProfile, fetchEmployees, fetchConductOffences]);
-
-  useEffect(() => {
-    if (profile) {
-      setFormData((prev) => ({
-        ...prev,
-        employerContact: prev.employerContact || profile.company_contact || "",
-        employerEmail: prev.employerEmail || profile.company_email || "",
-      }));
-    }
-  }, [profile]);
+  }, [user, fetchClients, fetchConductOffences]);
 
   const fetchEmployeeWarnings = useCallback(
     async (employeeId: string) => {
@@ -451,48 +447,36 @@ const WarningGenerator = ({
     fetchEmployeeWarnings(formData.employeeId);
   }, [formData.employeeId, fetchEmployeeWarnings]);
 
-  const sortedEmployees = useMemo(
+  const sortedClients = useMemo(
     () =>
-      [...employees].sort((a, b) => {
-        const nameOrder = a.employee_name.localeCompare(b.employee_name, undefined, { sensitivity: "base" });
-        if (nameOrder !== 0) return nameOrder;
-        return a.employee_surname.localeCompare(b.employee_surname, undefined, { sensitivity: "base" });
-      }),
-    [employees],
+      [...clients].sort((a, b) =>
+        String(a.registered_name || "").localeCompare(String(b.registered_name || ""), undefined, {
+          sensitivity: "base",
+        }),
+      ),
+    [clients],
   );
-
-  const searchedEmployees = useMemo(() => {
-    const query = employeeSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
-    if (!query) return sortedEmployees;
+  const searchedClients = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return sortedClients;
     const tokens = query.split(" ").filter(Boolean);
-    return sortedEmployees
-      .map((employee) => {
-        const fullName = `${employee.employee_name} ${employee.employee_surname}`.trim().replace(/\s+/g, " ");
-        const fullNameLower = fullName.toLowerCase();
-        const firstNameLower = employee.employee_name.toLowerCase();
-        const surnameLower = employee.employee_surname.toLowerCase();
-        const idNumberLower = (employee.id_number ?? "").toLowerCase();
+    return sortedClients
+      .map((client) => {
+        const name = String(client.registered_name || "").trim();
+        const trading = String(client.trading_as || "").trim();
+        const searchable = `${name} ${trading}`.trim().replace(/\s+/g, " ").toLowerCase();
         let score = 0;
-
-        if (fullNameLower === query) score += 1000;
-        if (fullNameLower.startsWith(query)) score += 800;
-        if (fullNameLower.includes(query)) score += 500;
-        if (firstNameLower.startsWith(query) || surnameLower.startsWith(query)) score += 350;
-        if (tokens.length > 0 && tokens.every((token) => fullNameLower.includes(token))) score += 300;
-        if (query.length >= 3 && idNumberLower.includes(query)) score += 120;
-
-        return { employee, score, fullName };
+        if (searchable === query) score += 1000;
+        if (searchable.startsWith(query)) score += 800;
+        if (searchable.includes(query)) score += 500;
+        if (tokens.length > 0 && tokens.every((token) => searchable.includes(token))) score += 300;
+        return { client, score, searchable };
       })
       .filter((item) => item.score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          a.fullName.localeCompare(b.fullName, undefined, {
-            sensitivity: "base",
-          }),
-      )
-      .map((item) => item.employee);
-  }, [employeeSearchQuery, sortedEmployees]);
+      .sort((a, b) => b.score - a.score || a.searchable.localeCompare(b.searchable, undefined, { sensitivity: "base" }))
+      .map((item) => item.client);
+  }, [clientSearchQuery, sortedClients]);
+
 
   useEffect(() => {
     setDuplicateOverrideAccepted(false);
@@ -757,10 +741,10 @@ const WarningGenerator = ({
   };
 
   useEffect(() => {
-    if (!employeeSearchOpen) return;
-    const timer = setTimeout(() => employeeSearchInputRef.current?.focus(), 0);
+    if (!clientSearchOpen) return;
+    const timer = setTimeout(() => clientSearchInputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
-  }, [employeeSearchOpen]);
+  }, [clientSearchOpen]);
 
   useEffect(() => {
     if (!misconductPickerOpen) return;
@@ -870,20 +854,32 @@ const WarningGenerator = ({
     applyWarningTypeWithDuplicateCheck(value);
   };
 
-  const handleEmployeeSelect = (employeeId: string) => {
-    const employee = employees.find((e) => e.id === employeeId);
-    if (employee) {
-      setFormData({
-        ...formData,
-        employeeId,
-        employeeName: employee.employee_name,
-        employeeSurname: employee.employee_surname,
-        employeeIdNumber: employee.id_number ?? "",
-      });
-      setEmployeeSearchOpen(false);
-      setEmployeeSearchQuery("");
-      setEmployeeSelectResetCount((prev) => prev + 1);
-    }
+  const handleClientSelect = (clientId: string) => {
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return;
+    const address = [
+      client.physical_address_line1,
+      client.physical_address_line2,
+      client.city,
+      client.province,
+      client.area_code,
+    ]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(", ");
+    setFormData((prev) => ({
+      ...prev,
+      clientId,
+      companyName: String(client.registered_name || "").trim(),
+      registrationNumber: String(client.registration_number || "").trim(),
+      physicalAddress: address,
+      tradingName: String(client.trading_as || "").trim(),
+      employerContact: String(client.owner_number || client.primary_number || "").trim(),
+      employerEmail: String(client.owner_email || client.primary_email || "").trim(),
+    }));
+    setClientSearchOpen(false);
+    setClientSearchQuery("");
+    setClientSelectResetCount((prev) => prev + 1);
   };
   const handleOpenWarningFile = useCallback((fileUrl: string | null) => {
     if (!fileUrl) return;
@@ -926,7 +922,8 @@ const WarningGenerator = ({
       doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(80, 80, 80);
-      doc.text(label, margin + 4, yPosition + sectionHeight - 2);
+      const headerCenterY = yPosition + sectionHeight / 2;
+      doc.text(label, margin + 4, headerCenterY, { baseline: "middle" });
       yPosition += sectionHeight + 6;
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(9);
@@ -949,18 +946,16 @@ const WarningGenerator = ({
       return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
     };
 
-    if (profile) {
-      drawSectionTitle("A. EMPLOYER DETAILS");
-      renderLabelValue("Company Name:", profile.company_name || "-");
-      renderLabelValue("Reg No:", profile.registration_number || "-");
-      renderLabelValue("Company Address:", profile.physical_address || "-");
-      if (formData.tradingName) {
-        renderLabelValue("Trading As:", formData.tradingName);
-      }
-      renderLabelValue("Employer Contact:", formData.employerContact || "-");
-      renderLabelValue("Employer Email:", formData.employerEmail || "-");
-      yPosition += 4;
-    }
+    drawSectionTitle("A. EMPLOYER DETAILS");
+    const employerDisplayName = formData.tradingName
+      ? `${formData.companyName || "-"} t/a ${formData.tradingName}`
+      : formData.companyName || "-";
+    renderLabelValue("Company Name:", employerDisplayName);
+    renderLabelValue("Registration No:", formData.registrationNumber || "-");
+    renderLabelValue("Employer Number:", formData.employerContact || "-");
+    renderLabelValue("Employer Email:", formData.employerEmail || "-");
+    renderLabelValue("Employer Address:", formData.physicalAddress || "-");
+    yPosition += 4;
 
     drawSectionTitle("B. EMPLOYEE DETAILS");
     renderLabelValue("Employee Name:", `${formData.employeeName} ${formData.employeeSurname}`.trim() || "-");
@@ -1147,6 +1142,10 @@ const WarningGenerator = ({
 
   const handleResetForm = () => {
     setFormData({
+      clientId: "",
+      companyName: "",
+      registrationNumber: "",
+      physicalAddress: "",
       tradingName: "",
       employerContact: "",
       employerEmail: "",
@@ -1166,6 +1165,9 @@ const WarningGenerator = ({
     setMisconductPickerOpen(false);
     setDraftMisconductTypes([]);
     setMisconductSearch("");
+    setClientSelectResetCount((prev) => prev + 1);
+    setClientSearchOpen(false);
+    setClientSearchQuery("");
     setActiveStep(0);
     setShowFinalActions(false);
     resetWarningSelection();
@@ -1213,6 +1215,22 @@ const WarningGenerator = ({
     });
   };
 
+  const handleResetClientStep = () => {
+    setFormData((prev) => ({
+      ...prev,
+      clientId: "",
+      companyName: "",
+      registrationNumber: "",
+      physicalAddress: "",
+      tradingName: "",
+      employerContact: "",
+      employerEmail: "",
+    }));
+    setClientSelectResetCount((prev) => prev + 1);
+    setClientSearchOpen(false);
+    setClientSearchQuery("");
+  };
+
   const handleResetEmployeeStep = () => {
     setFormData((prev) => ({
       ...prev,
@@ -1221,9 +1239,12 @@ const WarningGenerator = ({
       employeeSurname: "",
       employeeIdNumber: "",
     }));
-    setEmployeeSelectResetCount((prev) => prev + 1);
   };
   const clearCurrentStepFields = () => {
+    if (activeStep === 0) {
+      handleResetClientStep();
+      return;
+    }
     if (activeStep === 1) {
       handleResetEmployeeStep();
       return;
@@ -1431,41 +1452,40 @@ const WarningGenerator = ({
 
       <div className="space-y-5 text-sm text-black">
         {/* Employer Details */}
-        {profile && (
-          <div className="space-y-2">
-            <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
-              A. Employer Details
-            </div>
-            <div className="text-xs space-y-1">
-              <div className="grid grid-cols-[140px,1fr] gap-2">
-                <span className="font-semibold">Company Name:</span>
-                <span>{profile.company_name}</span>
-              </div>
-              <div className="grid grid-cols-[140px,1fr] gap-2">
-                <span className="font-semibold">Reg No:</span>
-                <span>{profile.registration_number}</span>
-              </div>
-              <div className="grid grid-cols-[140px,1fr] gap-2">
-                <span className="font-semibold">Company Address:</span>
-                <span>{profile.physical_address}</span>
-              </div>
-              {formData.tradingName && (
+        <div className="space-y-2">
+          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+            A. Employer Details
+          </div>
+          <div className="text-xs space-y-1">
+            {(() => {
+              const employerDisplayName = formData.tradingName
+                ? `${formData.companyName || "-"} t/a ${formData.tradingName}`
+                : formData.companyName || "-";
+              return (
                 <div className="grid grid-cols-[140px,1fr] gap-2">
-                  <span className="font-semibold">Trading As:</span>
-                  <span>{formData.tradingName}</span>
+                  <span className="font-semibold">Company Name:</span>
+                  <span>{employerDisplayName}</span>
                 </div>
-              )}
-              <div className="grid grid-cols-[140px,1fr] gap-2">
-                <span className="font-semibold">Employer Contact:</span>
-                <span>{formData.employerContact || "-"}</span>
-              </div>
-              <div className="grid grid-cols-[140px,1fr] gap-2">
-                <span className="font-semibold">Employer Email:</span>
-                <span>{formData.employerEmail || "-"}</span>
-              </div>
+              );
+            })()}
+            <div className="grid grid-cols-[140px,1fr] gap-2">
+              <span className="font-semibold">Registration No:</span>
+              <span>{formData.registrationNumber || "-"}</span>
+            </div>
+            <div className="grid grid-cols-[140px,1fr] gap-2">
+              <span className="font-semibold">Employer Number:</span>
+              <span>{formData.employerContact || "-"}</span>
+            </div>
+            <div className="grid grid-cols-[140px,1fr] gap-2">
+              <span className="font-semibold">Employer Email:</span>
+              <span>{formData.employerEmail || "-"}</span>
+            </div>
+            <div className="grid grid-cols-[140px,1fr] gap-2">
+              <span className="font-semibold">Employer Address:</span>
+              <span>{formData.physicalAddress || "-"}</span>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Employee Details */}
         <div className="space-y-2">
@@ -1600,7 +1620,7 @@ const WarningGenerator = ({
                   <div className="space-y-1">
                     <p className="text-xs font-semibold text-slate-700">
                       Documents / Discipline /{" "}
-                      <span className="text-blue-700 underline underline-offset-4">
+                      <span className="text-[#2f9f35] underline underline-offset-4">
                         Warning Form
                       </span>{" "}
                       <span className="text-slate-700">({steps[activeStep]})</span>
@@ -1627,10 +1647,10 @@ const WarningGenerator = ({
                           const isActive = index === activeStep && !isFinalizedCurrent;
                           const Icon = stepIcons[index];
                           const circleClasses = isDone
-                            ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
+                            ? "border-[#9dd8a2] text-[#1f7a25] bg-[#e9f9ee]"
                             : isActive
-                              ? "border-blue-300 text-blue-700 bg-blue-100"
-                              : "border-slate-200 text-slate-500 bg-white";
+                              ? "border-[#9dd8a2] text-[#2f9f35] bg-[#e9f9ee]"
+                              : "border-slate-300 text-slate-500 bg-slate-100";
                           const canClick = canNavigateToStep(index);
                           const handleClick = () => handleStepClick(index);
 
@@ -1656,7 +1676,7 @@ const WarningGenerator = ({
                                       }
                                       className={`flex flex-col items-start gap-1 transition ${
                                         canClick
-                                          ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                          ? "cursor-pointer hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3eca44] rounded-md"
                                           : "cursor-default"
                                       }`}
                                     >
@@ -1673,7 +1693,7 @@ const WarningGenerator = ({
                               {index < steps.length - 1 && (
                                 <div
                                   className={`h-px w-16 ${
-                                    index < activeStep || isFinalizedCurrent ? "bg-[#04b81f]" : "bg-slate-200"
+                                    index < activeStep || isFinalizedCurrent ? "bg-[#3eca44]" : "bg-slate-300"
                                   }`}
                                   aria-hidden="true"
                                 />
@@ -1696,34 +1716,78 @@ const WarningGenerator = ({
                     <form onSubmit={handleSubmit} className="space-y-4">
 
                       <div className={cn("space-y-4", useExternalShell && "pr-1")}>
-                {activeStep === 0 && (
-                  <div className="space-y-3">
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
+              {activeStep === 0 && (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="client" className={modalFieldLabelClass}>
+                      Select Client (optional)
+                    </Label>
+                    <Select
+                      key={clientSelectResetCount}
+                      value={formData.clientId || undefined}
+                      onValueChange={handleClientSelect}
+                      open={clientSearchOpen}
+                      onOpenChange={(open) => {
+                        setClientSearchOpen(open);
+                        if (open) setClientSearchQuery("");
+                      }}
+                    >
+                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.clientId.trim().length > 0)} ${warningModalDropdownToneClass}`}>
+                        <SelectValue placeholder="Select from saved clients or fill manually" />
+                      </SelectTrigger>
+                      <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
+                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                          <Input
+                            ref={clientSearchInputRef}
+                            value={clientSearchQuery}
+                            onChange={(event) => setClientSearchQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              (event.nativeEvent as KeyboardEvent).stopImmediatePropagation?.();
+                            }}
+                            onKeyUp={(event) => event.stopPropagation()}
+                            placeholder="Type client name..."
+                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                          />
+                        </div>
+                        {searchedClients.length > 0 ? (
+                          searchedClients.map((client) => (
+                            <SelectItem key={client.id} value={client.id} className={warningModalSelectItemClass}>
+                              {String(client.registered_name || "").trim() || "Unnamed client"}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-[11px] text-slate-500">No matching clients found.</div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
                       <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
                       <Input
                         id="companyName"
-                        value={profile?.company_name || ""}
-                        readOnly
-                        className={getWarningModalInputClass(Boolean(profile?.company_name))}
+                        value={formData.companyName}
+                        onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                        className={getWarningModalInputClass(formData.companyName.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="registrationNumber" className={modalFieldLabelClass}>Registration number</Label>
                       <Input
                         id="registrationNumber"
-                        value={profile?.registration_number || ""}
-                        readOnly
-                        className={getWarningModalInputClass(Boolean(profile?.registration_number))}
+                        value={formData.registrationNumber}
+                        onChange={(e) => setFormData({ ...formData, registrationNumber: e.target.value })}
+                        className={getWarningModalInputClass(formData.registrationNumber.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                       <Label htmlFor="physicalAddress" className={modalFieldLabelClass}>Registered address</Label>
                       <Input
                         id="physicalAddress"
-                        value={profile?.physical_address || ""}
-                        readOnly
-                        className={getWarningModalInputClass(Boolean(profile?.physical_address))}
+                        value={formData.physicalAddress}
+                        onChange={(e) => setFormData({ ...formData, physicalAddress: e.target.value })}
+                        className={getWarningModalInputClass(formData.physicalAddress.trim().length > 0)}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1769,50 +1833,6 @@ const WarningGenerator = ({
 
               {activeStep === 1 && (
                 <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="employee" className={modalFieldLabelClass}>
-                      Select Employee (optional)
-                    </Label>
-                    <Select
-                      key={employeeSelectResetCount}
-                      value={formData.employeeId || undefined}
-                      onValueChange={handleEmployeeSelect}
-                      open={employeeSearchOpen}
-                      onOpenChange={(open) => {
-                        setEmployeeSearchOpen(open);
-                        if (open) setEmployeeSearchQuery("");
-                      }}
-                    >
-                      <SelectTrigger className={`${getWarningModalSelectTriggerClass(formData.employeeId.trim().length > 0)} ${warningModalDropdownToneClass}`}>
-                        <SelectValue placeholder="Select from saved employees or fill manually" />
-                      </SelectTrigger>
-                      <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
-                        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
-                          <Input
-                            ref={employeeSearchInputRef}
-                            value={employeeSearchQuery}
-                            onChange={(event) => setEmployeeSearchQuery(event.target.value)}
-                            onKeyDown={(event) => {
-                              event.stopPropagation();
-                              (event.nativeEvent as KeyboardEvent).stopImmediatePropagation?.();
-                            }}
-                            onKeyUp={(event) => event.stopPropagation()}
-                            placeholder="Type full employee name..."
-                            className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
-                          />
-                        </div>
-                        {searchedEmployees.length > 0 ? (
-                          searchedEmployees.map((employee) => (
-                            <SelectItem key={employee.id} value={employee.id} className={warningModalSelectItemClass}>
-                              {employee.employee_name} {employee.employee_surname}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <div className="px-3 py-2 text-[11px] text-slate-500">No matching employees found.</div>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
                   <div className="grid md:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="employeeName" className={modalFieldLabelClass}>
@@ -1874,7 +1894,7 @@ const WarningGenerator = ({
                           <TooltipContent
                             side="right"
                             align="start"
-                            className="max-w-[320px] border-blue-200 p-3 text-left"
+                            className="max-w-[320px] border-[#9dd8a2] p-3 text-left"
                           >
                             <div className="space-y-2">
                               <div className="text-xs text-slate-500">Click on warning to view</div>
@@ -1954,7 +1974,7 @@ const WarningGenerator = ({
                           type="button"
                           variant="ghost"
                           onClick={() => updateMisconductTypes(() => [])}
-                          className="h-6 px-2 text-[11px] text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                          className="h-6 px-2 text-[11px] text-slate-600 hover:text-[#2f9f35] hover:bg-[#3eca44]/10"
                         >
                           Clear all
                         </Button>
@@ -2074,7 +2094,7 @@ const WarningGenerator = ({
                           type="button"
                           variant="outline"
                           onClick={handleBack}
-                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                         >
                           Back
                         </Button>
@@ -2085,7 +2105,7 @@ const WarningGenerator = ({
                           variant="ghost"
                           onClick={handleResetWarningStep}
                           disabled={isLoading}
-                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                          className="gap-2 text-slate-700 hover:text-[#2f9f35] hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                         >
                           <RotateCcw className="h-4 w-4" />
                           Reset form
@@ -2096,7 +2116,7 @@ const WarningGenerator = ({
                           type="button"
                           onClick={handleFinish}
                           disabled={!isWarningStepComplete || isLoading}
-                          className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                          className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300"
                         >
                           Next
                         </Button>
@@ -2110,7 +2130,7 @@ const WarningGenerator = ({
                             type="button"
                             variant="outline"
                             onClick={handleBack}
-                            className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                            className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                           >
                             Back
                           </Button>
@@ -2123,7 +2143,7 @@ const WarningGenerator = ({
                             type="button"
                             onClick={handleNext}
                             disabled={!canGoNext}
-                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                            className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300"
                           >
                             Next
                           </Button>
@@ -2164,7 +2184,7 @@ const WarningGenerator = ({
                               type="button"
                               variant="outline"
                               onClick={handleBack}
-                              className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                              className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                             >
                               Back
                             </Button>
@@ -2175,7 +2195,7 @@ const WarningGenerator = ({
                               type="button"
                               onClick={handleDownload}
                               disabled={isLoading}
-                              className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                              className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300"
                             >
                               Download
                             </Button>
@@ -2253,12 +2273,12 @@ const WarningGenerator = ({
                       {bucket.map((item) => (
                         <label
                           key={`${category}-${item.name}`}
-                          className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${warningModalSelectItemClass}`}
+                          className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-[#3eca44]/10/70 hover:text-[#2f9f35] focus-within:bg-[#3eca44]/10 ${warningModalSelectItemClass}`}
                         >
                           <Checkbox
                             checked={draftMisconductTypes.includes(item.name)}
                             onCheckedChange={() => handleDraftMisconductSelect(item.name)}
-                            className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                            className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                           <span className="flex-1">{item.name}</span>
                         </label>
@@ -2293,7 +2313,7 @@ const WarningGenerator = ({
                   type="button"
                   variant="outline"
                   onClick={cancelMisconductPicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                 >
                   Cancel
                 </Button>
@@ -2313,7 +2333,7 @@ const WarningGenerator = ({
                 <Button
                   type="button"
                   onClick={applyMisconductPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                 >
                   Done
                 </Button>
@@ -2351,14 +2371,14 @@ const WarningGenerator = ({
                 <Button
                   type="button"
                   onClick={() => confirmOverrideWarning(false)}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                 >
                   No
                 </Button>
                 <Button
                   type="button"
                   onClick={() => confirmOverrideWarning(true)}
-                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border border-[#3eca44] bg-white px-3 text-xs text-[#2f9f35] hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
                 >
                   Yes
                 </Button>
@@ -2394,14 +2414,14 @@ const WarningGenerator = ({
                 <Button
                   type="button"
                   onClick={() => handleConfirmDismissible(false)}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                 >
                   No
                 </Button>
                 <Button
                   type="button"
                   onClick={() => handleConfirmDismissible(true)}
-                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border border-[#3eca44] bg-white px-3 text-xs text-[#2f9f35] hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
                 >
                   Yes
                 </Button>
@@ -2431,7 +2451,7 @@ const WarningGenerator = ({
                 <button
                   type="button"
                   onClick={() => handleOpenWarningFile(duplicateWarningOverride.viewUrl)}
-                  className="font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                  className="font-semibold text-[#2f9f35] hover:text-[#1f7a25] underline underline-offset-2"
                 >
                   View here
                 </button>
@@ -2447,14 +2467,14 @@ const WarningGenerator = ({
                 <Button
                   type="button"
                   onClick={() => confirmDuplicateWarningOverride(false)}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
                 >
                   No
                 </Button>
                 <Button
                   type="button"
                   onClick={() => confirmDuplicateWarningOverride(true)}
-                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border border-[#3eca44] bg-white px-3 text-xs text-[#2f9f35] hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
                 >
                   Yes
                 </Button>
@@ -2496,7 +2516,7 @@ const WarningGenerator = ({
               <Button
                 type="button"
                 onClick={closeMixedCategoryCaution}
-                className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
               >
                 OK
               </Button>
@@ -2511,6 +2531,7 @@ const WarningGenerator = ({
 };
 
 export default WarningGenerator;
+
 
 
 

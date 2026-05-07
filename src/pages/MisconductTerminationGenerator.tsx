@@ -27,7 +27,6 @@ import {
 } from "@/lib/validation";
 import { addServiceDelayToDate } from "@/lib/terminationNotice";
 import { detectLogoLayout, getPdfLogoTargetHeight, type LogoLayout } from "@/lib/logoLayout";
-import type { Tables } from "@/integrations/supabase/types";
 
 type MisconductFormState = {
   employeeId: string;
@@ -100,25 +99,22 @@ type SlimProfile = Pick<
   company_logo_data_url?: string | null;
   company_logo_layout?: "vertical" | "horizontal" | null;
 };
-type SlimEmployee = {
+type SlimClient = {
   id: string;
   id_number: string | null;
-  employee_name: string;
-  employee_surname: string;
-  nationality: string | null;
-  emergency_contact_number: string | null;
-  gender: string | null;
-  race: string | null;
-  cell_number: string | null;
-  email: string | null;
-  job_title: string | null;
-  start_date: string | null;
-  employee_number: string | null;
+  registered_name: string | null;
+  company_type: string | null;
+  registration_number: string | null;
+  trading_as: string | null;
   physical_address_line1: string | null;
   physical_address_line2: string | null;
   city: string | null;
   province: string | null;
   area_code: string | null;
+  owner_number: string | null;
+  primary_number: string | null;
+  owner_email: string | null;
+  primary_email: string | null;
 };
 type ClauseDefinition = {
   id: string;
@@ -353,12 +349,44 @@ const formatMisconductList = (types: string[]) => {
 
 const formatCompanyDisplayName = (companyName?: string | null, companyType?: string | null) => {
   const name = (companyName || "").trim();
-  const type = (companyType || "").trim();
+  const rawType = (companyType || "").trim().replace(/\s+/g, " ");
+  const normalizedType = rawType.toLowerCase().trim();
+  const canonicalTypeFromMap = (() => {
+    if (!normalizedType) return "";
+    const mappings: Array<{ test: RegExp; value: string }> = [
+      { test: /private\s+company|pty/i, value: "(Pty) Ltd" },
+      { test: /public\s+company|^ltd$/i, value: "Ltd" },
+      { test: /close\s+corporation|closed\s+corporation|^cc$/i, value: "CC" },
+      { test: /incorporated|inc\.?/i, value: "Inc." },
+      { test: /corporation|corp\.?/i, value: "Corp." },
+      { test: /non[\s-]*profit|npc/i, value: "NPC" },
+      { test: /state\s+owned|soc/i, value: "SOC Ltd" },
+      { test: /personal\s+liability|incorporated\s+company|^inc$/i, value: "Inc." },
+      { test: /partnership/i, value: "Partnership" },
+      { test: /sole\s+propriet(or|orship)/i, value: "Sole Prop." },
+      { test: /trust/i, value: "Trust" },
+      { test: /co[\s-]*operative|coop/i, value: "Co-op" },
+    ];
+    const match = mappings.find((entry) => entry.test.test(normalizedType));
+    return match?.value ?? rawType;
+  })();
+  const cleanCanonical = canonicalTypeFromMap.replace(/^\(+/, "").replace(/\)+$/, "").trim();
+  const type = cleanCanonical.toLowerCase() === "pty ltd" ? "(Pty) Ltd" : canonicalTypeFromMap;
+  const nameHasType = name.toLowerCase().includes(type.toLowerCase()) || (/\bpty\b/i.test(name) && /\bltd\b/i.test(name) && type === "(Pty) Ltd");
   if (!name && !type) return "";
   if (!name) return type;
   if (!type) return name;
-  if (name.toLowerCase().includes(type.toLowerCase())) return name;
+  if (nameHasType) return name;
   return `${name} ${type}`;
+};
+
+const getClientLogoStoragePathFromUrl = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  const bucketSegment = "/storage/v1/object/public/client-logos/";
+  const idx = trimmed.indexOf(bucketSegment);
+  if (idx >= 0) return trimmed.slice(idx + bucketSegment.length).trim();
+  return "";
 };
 
 const trimLogoWhitespace = (dataUrl: string): Promise<string> =>
@@ -717,14 +745,11 @@ const MisconductTerminationGenerator = ({
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const employeePrefillAppliedRef = useRef(false);
 
   const [profile, setProfile] = useState<SlimProfile | null>(null);
-  const [employees, setEmployees] = useState<SlimEmployee[]>([]);
   const [conductOffences, setConductOffences] = useState<
     { category: "Minor" | "Serious" | "Dismissible"; name: string; firstOutcome: string }[]
   >([]);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [showFinalActions, setShowFinalActions] = useState(false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -740,8 +765,8 @@ const MisconductTerminationGenerator = ({
   const steps = ["Employer Details", "Employee Details", "Notice Details"] as const;
   const stepIcons = [Building2, User2, Briefcase] as const;
   const [activeStep, setActiveStep] = useState(0);
-  const [employeeSearchOpen, setEmployeeSearchOpen] = useState(false);
-  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [sameDayCaution, setSameDayCaution] = useState<{ open: boolean; pendingAction: "" | "finish" | "download" }>({
     open: false,
     pendingAction: "",
@@ -755,13 +780,14 @@ const MisconductTerminationGenerator = ({
   const [draftTransmissionMethods, setDraftTransmissionMethods] = useState<string[]>([]);
   const [colorThemePickerOpen, setColorThemePickerOpen] = useState(false);
   const [draftLetterheadThemeColors, setDraftLetterheadThemeColors] = useState<string[]>([]);
+  const [effectiveDateManuallySet, setEffectiveDateManuallySet] = useState(false);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const referenceDatePickerRef = useRef<HTMLInputElement | null>(null);
   const previousEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const updatedEndDatePickerRef = useRef<HTMLInputElement | null>(null);
   const companyLogoInputRef = useRef<HTMLInputElement | null>(null);
-  const employeeSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const clientSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
   const clauseFieldFocusRef = useRef<HTMLElement | null>(null);
   const editClauseTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -770,16 +796,16 @@ const MisconductTerminationGenerator = ({
   const previewScrollTop = useRef(0);
   const [companyLogoPreview, setCompanyLogoPreview] = useState<string>("");
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-[#3eca44] !focus-visible:border-[1.75px] !focus-visible:border-[#3eca44] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const terminationModalDropdownToneClass =
-    "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
+    "bg-white border-slate-300 hover:border-[#3eca44] data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const terminationModalSelectContentClass = "!rounded";
   const terminationModalSelectItemClass =
-    "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getTerminationModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getTerminationModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44] !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
   const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
   const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
   const snippetPaddingTopMm = 2;
@@ -850,22 +876,37 @@ const MisconductTerminationGenerator = ({
     reportsTo: "",
     additionalNotes: "",
   });
-  const searchedEmployees = useMemo(() => {
-    const query = employeeSearchQuery.trim().toLowerCase();
-    return employees.filter((employee) => {
-      if (!query) return true;
-      const haystack = [
-        employee.employee_name,
-        employee.employee_surname,
-        employee.employee_number,
-        employee.id_number,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [employees, employeeSearchQuery]);
+  const [clients, setClients] = useState<SlimClient[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const sortedClients = useMemo(
+    () =>
+      [...clients].sort((a, b) =>
+        String(a.registered_name || "").localeCompare(String(b.registered_name || ""), undefined, {
+          sensitivity: "base",
+        }),
+      ),
+    [clients],
+  );
+  const searchedClients = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!query) return sortedClients;
+    const tokens = query.split(" ").filter(Boolean);
+    return sortedClients
+      .map((client) => {
+        const name = String(client.registered_name || "").trim();
+        const trading = String(client.trading_as || "").trim();
+        const searchable = `${name} ${trading}`.trim().replace(/\s+/g, " ").toLowerCase();
+        let score = 0;
+        if (searchable === query) score += 1000;
+        if (searchable.startsWith(query)) score += 800;
+        if (searchable.includes(query)) score += 500;
+        if (tokens.length > 0 && tokens.every((token) => searchable.includes(token))) score += 300;
+        return { client, score, searchable };
+      })
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.searchable.localeCompare(b.searchable, undefined, { sensitivity: "base" }))
+      .map((item) => item.client);
+  }, [clientSearchQuery, sortedClients]);
   const selectedLetterheadThemeColors = useMemo(
     () => sanitizeThemeColors(formData.letterheadThemeColors),
     [formData.letterheadThemeColors],
@@ -913,27 +954,44 @@ const MisconductTerminationGenerator = ({
     if (data) setProfile(data as SlimProfile);
   }, [user]);
 
-  const fetchEmployees = useCallback(async () => {
+  const fetchClients = useCallback(async () => {
     if (!user) return;
     const { data, error } = await (supabase as any)
-      .from("employees")
+      .from("clients")
       .select(
-        "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
+        "id, registered_name, company_type, trading_as, registration_number, physical_address_line1, physical_address_line2, city, province, area_code, owner_number, primary_number, owner_email, primary_email",
       )
-      .eq("company_id", user.id);
+      .order("registered_name", { ascending: true, nullsFirst: false });
     if (error) {
-      console.warn("Unable to load employees", error);
+      console.warn("Unable to load clients", error);
       return;
     }
-    if (data) setEmployees(data as SlimEmployee[]);
+    setClients((data as SlimClient[]) ?? []);
   }, [user]);
+
+  const findClientByIdNumber = useCallback(
+    async (clientIdNumber: string) => {
+      if (!user || !clientIdNumber.trim()) return null;
+      const result = await (supabase as any)
+        .from("clients")
+        .select("id")
+        .eq("id_number", clientIdNumber.trim())
+        .maybeSingle();
+      if (result.error) {
+        console.warn("Unable to load client by id number", result.error);
+        return null;
+      }
+      return result.data ?? null;
+    },
+    [user],
+  );
 
   const fetchConductOffences = useCallback(async () => {
     if (!user) return;
     const { data, error } = await (supabase as any)
       .from("company_code_of_conduct")
       .select("data")
-      .eq("company_id", user.id)
+      
       .maybeSingle();
 
     if (error) {
@@ -981,10 +1039,61 @@ const MisconductTerminationGenerator = ({
   useEffect(() => {
     if (user) {
       fetchProfile();
-      fetchEmployees();
+      fetchClients();
       fetchConductOffences();
     }
-  }, [user, fetchEmployees, fetchProfile, fetchConductOffences]);
+  }, [user, fetchClients, fetchProfile, fetchConductOffences]);
+
+  useEffect(() => {
+    if (!clientSearchOpen) return;
+    const timer = setTimeout(() => clientSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [clientSearchOpen]);
+
+  const loadClientLogoByClientId = useCallback(async (clientId: string) => {
+    const { data, error } = await (supabase as any)
+      .from("client_logos")
+      .select("*")
+      .eq("client_id", clientId)
+      .limit(1);
+    if (error) return "";
+    const logoRow = Array.isArray(data) ? data[0] : data;
+    if (!logoRow) return "";
+
+    const storagePath = String(
+      logoRow.storage_path ||
+      logoRow.logo_path ||
+      getClientLogoStoragePathFromUrl(String(logoRow.logo_url || "")) ||
+      getClientLogoStoragePathFromUrl(String(logoRow.company_logo_url || "")) ||
+      "",
+    ).trim();
+    const directUrl = String(logoRow.logo_url || logoRow.company_logo_url || "").trim();
+    if (storagePath) {
+      const { data } = supabase.storage.from("client-logos").getPublicUrl(storagePath);
+      return String(data?.publicUrl || "").trim();
+    }
+    return directUrl;
+  }, []);
+
+  const applyDetectedLogo = useCallback(async (logoUrl: string) => {
+    const trimmed = String(logoUrl || "").trim();
+    if (!trimmed) {
+      setCompanyLogoPreview("");
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: "", logoLayout: null }));
+      return;
+    }
+    setCompanyLogoPreview(trimmed);
+    setFormData((prev) => ({
+      ...prev,
+      companyLogoDataUrl: trimmed,
+    }));
+    const detectedLayout = (await detectLogoLayout(trimmed)) ?? "horizontal";
+    setFormData((prev) => ({
+      ...prev,
+      logoLayout: detectedLayout,
+      logoPlacement: detectedLayout === "horizontal" ? "left" : "center",
+    }));
+  }, []);
 
   useEffect(() => {
     if (profile) {
@@ -1011,102 +1120,110 @@ const MisconductTerminationGenerator = ({
     }
   }, [profile]);
 
-  const handleEmployeeSelect = (employeeId: string) => {
-    setSelectedEmployeeId(employeeId);
-    const employee = employees.find((emp) => emp.id === employeeId);
-    if (!employee) return;
-    const employeeNationality =
-      (employee as Partial<Tables<"employees">> & { nationality?: MisconductBaseFormData["nationality"] })
-        .nationality || "South African";
-    const hasIdNumber = Boolean(employee.id_number);
-    const passportNumber = !hasIdNumber ? employee.id_number ?? "" : "";
-    const emergencyContact =
-      (employee as Partial<Tables<"employees">> & { emergency_contact_number?: string }).emergency_contact_number ?? "";
-    const genderValue = (employee as Partial<Tables<"employees">> & { gender?: MisconductBaseFormData["gender"] }).gender || "";
-    const raceValue = (employee as Partial<Tables<"employees">> & { race?: MisconductBaseFormData["race"] }).race || "";
-    const cellNumber = (employee as Partial<Tables<"employees">> & { cell_number?: string }).cell_number ?? "";
-    const emailAddress = (employee as Partial<Tables<"employees">> & { email?: string }).email ?? "";
-    const jobTitle = (employee as Partial<Tables<"employees">> & { job_title?: string }).job_title ?? "";
-    const startDate = (employee as Partial<Tables<"employees">> & { start_date?: string }).start_date ?? "";
-    const employeeNumber = (employee as Partial<Tables<"employees">> & { employee_number?: string }).employee_number ?? "";
-    const physicalAddressLine1 =
-      (employee as Partial<Tables<"employees">> & { physical_address_line1?: string }).physical_address_line1 ?? "";
-    const physicalAddressLine2 =
-      (employee as Partial<Tables<"employees">> & { physical_address_line2?: string }).physical_address_line2 ?? "";
-    const city = (employee as Partial<Tables<"employees">> & { city?: string }).city ?? "";
-    const province = (employee as Partial<Tables<"employees">> & { province?: string }).province ?? "";
-    const areaCode = (employee as Partial<Tables<"employees">> & { area_code?: string }).area_code ?? "";
-    const idNumber = hasIdNumber ? employee.id_number ?? "" : "";
-    const ageFromId = hasIdNumber ? deriveAgeFromId(idNumber) : "";
-    const nextIdType: "id" | "passport" = hasIdNumber ? "id" : "passport";
-
-    setFormData((prev) => ({
-      ...prev,
-      employeeId,
-      employeeName: employee.employee_name,
-      employeeSurname: employee.employee_surname,
-      employeeIdNumber: idNumber,
-      passportNumber: passportNumber || prev.passportNumber,
-      nationality: employeeNationality,
-      alternativeContact: emergencyContact || prev.alternativeContact,
-      gender: genderValue || prev.gender,
-      race: raceValue || prev.race,
-      employeeCell: cellNumber || prev.employeeCell,
-      employeeEmail: emailAddress || prev.employeeEmail,
-      jobTitle: jobTitle || prev.jobTitle,
-      startDate: startDate || prev.startDate,
-      employeeNumber: employeeNumber || prev.employeeNumber,
-      homeAddressLine: physicalAddressLine1 || prev.homeAddressLine,
-      homeAddressLine2: physicalAddressLine2 || prev.homeAddressLine2,
-      homeCity: city || prev.homeCity,
-      homeProvince: province || prev.homeProvince,
-      homeAreaCode: areaCode || prev.homeAreaCode,
-      age: ageFromId,
-      idType: nextIdType,
-    }));
-  };
 
   useEffect(() => {
-    if (employeePrefillAppliedRef.current) return;
-    if (!location.state || typeof location.state !== "object") return;
+    if (!user || !location.state || typeof location.state !== "object") return;
+    const state = location.state as { clientIdNumber?: unknown };
+    const clientIdNumber = typeof state.clientIdNumber === "string" ? state.clientIdNumber.trim() : "";
+    if (!clientIdNumber) return;
 
-    const state = location.state as {
-      employeeName?: unknown;
-      employeeSurname?: unknown;
-      employeeIdNumber?: unknown;
+    let isCancelled = false;
+    const loadClientLogoFromFile = async () => {
+      const clientRow = await findClientByIdNumber(clientIdNumber);
+      if (!clientRow?.id || isCancelled) return;
+      const resolvedUrl = await loadClientLogoByClientId(clientRow.id);
+      if (!resolvedUrl || isCancelled) return;
+      setSelectedClientId(clientRow.id);
+      await applyDetectedLogo(resolvedUrl);
     };
 
-    const employeeName = typeof state.employeeName === "string" ? state.employeeName.trim() : "";
-    const employeeSurname = typeof state.employeeSurname === "string" ? state.employeeSurname.trim() : "";
-    const employeeIdNumber = typeof state.employeeIdNumber === "string" ? state.employeeIdNumber.trim() : "";
+    void loadClientLogoFromFile();
+    return () => {
+      isCancelled = true;
+    };
+  }, [applyDetectedLogo, findClientByIdNumber, loadClientLogoByClientId, location.state, user]);
 
-    if (!employeeName && !employeeSurname && !employeeIdNumber) {
-      employeePrefillAppliedRef.current = true;
-      return;
-    }
+  const selectedClient = useMemo(
+    () => clients.find((client) => client.id === selectedClientId) ?? null,
+    [clients, selectedClientId],
+  );
+  const selectedClientAddress = useMemo(() => {
+    if (!selectedClient) return "";
+    return [
+      selectedClient.physical_address_line1,
+      selectedClient.physical_address_line2,
+      selectedClient.city,
+      selectedClient.province,
+      selectedClient.area_code,
+    ]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(", ");
+  }, [selectedClient]);
+  const resolvedCompanyProfile = useMemo<SlimProfile | null>(() => {
+    if (!profile && !selectedClient) return null;
+    if (!selectedClient) return profile;
+    const clientAddress = [
+      selectedClient.physical_address_line1,
+      selectedClient.physical_address_line2,
+      selectedClient.city,
+      selectedClient.province,
+      selectedClient.area_code,
+    ]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(", ");
+    return {
+      id: profile?.id ?? "",
+      company_name: selectedClient.registered_name ?? profile?.company_name ?? null,
+      company_type: selectedClient.company_type ?? profile?.company_type ?? null,
+      registration_number: selectedClient.registration_number ?? profile?.registration_number ?? null,
+      physical_address: clientAddress || profile?.physical_address || null,
+      company_contact: profile?.company_contact ?? null,
+      company_email: profile?.company_email ?? null,
+      company_logo_data_url: profile?.company_logo_data_url ?? null,
+      company_logo_layout: profile?.company_logo_layout ?? null,
+    };
+  }, [profile, selectedClient]);
 
-    if (!employees.length) return;
+  const handleClientSelect = useCallback(
+    async (clientId: string) => {
+      setSelectedClientId(clientId);
+      const client = clients.find((item) => item.id === clientId);
+      if (!client) return;
 
-    const fullName = `${employeeName} ${employeeSurname}`.trim().toLowerCase();
-    const idDigits = employeeIdNumber.replace(/\D/g, "");
+      const employerContact = String(client.primary_number || client.owner_number || "").trim();
+      const employerEmail = String(client.primary_email || client.owner_email || "").trim();
+      const tradingName = String(client.trading_as || "").trim();
+      const workplace = [
+        client.physical_address_line1,
+        client.physical_address_line2,
+        client.city,
+        client.province,
+        client.area_code,
+      ]
+        .map((part) => String(part || "").trim())
+        .filter(Boolean)
+        .join(", ");
 
-    const matchedEmployee = employees.find((employee) => {
-      const employeeFullName = `${employee.employee_name ?? ""} ${employee.employee_surname ?? ""}`.trim().toLowerCase();
-      const rawId = (employee.id_number ?? "").trim();
-      const rawDigits = rawId.replace(/\D/g, "");
-      const matchesId =
-        employeeIdNumber.length > 0 &&
-        (rawId.toLowerCase() === employeeIdNumber.toLowerCase() || (idDigits.length > 0 && rawDigits === idDigits));
-      const matchesName = fullName.length > 0 && employeeFullName === fullName;
-      return matchesId || matchesName;
-    });
+      setFormData((prev) => ({
+        ...prev,
+        tradingName,
+        employerContact: employerContact || prev.employerContact,
+        employerEmail: employerEmail || prev.employerEmail,
+        workplace: workplace || prev.workplace,
+      }));
 
-    if (matchedEmployee) {
-      handleEmployeeSelect(matchedEmployee.id);
-    }
-
-    employeePrefillAppliedRef.current = true;
-  }, [employees, handleEmployeeSelect, location.state]);
+      const logoUrl = await loadClientLogoByClientId(clientId);
+      if (logoUrl) {
+        await applyDetectedLogo(logoUrl);
+        return;
+      }
+      setCompanyLogoPreview("");
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: "" }));
+    },
+    [applyDetectedLogo, clients, loadClientLogoByClientId],
+  );
 
   const resetForm = () => {
     setFormData({
@@ -1166,7 +1283,6 @@ const MisconductTerminationGenerator = ({
       reportsTo: "",
       additionalNotes: "",
     });
-    setSelectedEmployeeId("");
     setValidatedPreview(null);
     setShowFinalActions(false);
     setActiveStep(0);
@@ -1179,6 +1295,7 @@ const MisconductTerminationGenerator = ({
     setAddingAfter(undefined);
     setNewClauseBody("");
     setCompanyLogoPreview("");
+    setEffectiveDateManuallySet(false);
   };
 
   useEffect(() => {
@@ -1189,6 +1306,7 @@ const MisconductTerminationGenerator = ({
   }, [formData.employeeIdNumber, formData.idType]);
 
   useEffect(() => {
+    if (effectiveDateManuallySet) return;
     const noticeDate = formData.issueDate.trim();
     const noticePeriod = formData.noticePeriod.trim();
     if (!noticeDate || !noticePeriod) {
@@ -1221,7 +1339,7 @@ const MisconductTerminationGenerator = ({
     const day = String(nextDate.getDate()).padStart(2, "0");
     const computed = `${year}-${month}-${day}`;
     setFormData((prev) => (prev.effectiveDate !== computed ? { ...prev, effectiveDate: computed } : prev));
-  }, [formData.issueDate, formData.noticePeriod, formData.transmissionMethods]);
+  }, [effectiveDateManuallySet, formData.issueDate, formData.noticePeriod, formData.transmissionMethods]);
 
   const isEmployerStepComplete = useMemo(
     () => Boolean(formData.employerContact && formData.employerEmail),
@@ -1474,6 +1592,7 @@ const MisconductTerminationGenerator = ({
       updatedEndDate: "",
       referenceDate: "",
     }));
+    setEffectiveDateManuallySet(false);
   };
 
   const clearCurrentStepFields = () => {
@@ -1665,9 +1784,7 @@ const MisconductTerminationGenerator = ({
       const result = typeof reader.result === "string" ? reader.result : "";
       if (!result) return;
       const trimmedResult = await trimLogoWhitespace(result);
-      setCompanyLogoPreview(trimmedResult);
-      const detectedLayout = (await detectLogoLayout(trimmedResult)) ?? "horizontal";
-      setFormData((prev) => ({ ...prev, companyLogoDataUrl: trimmedResult, logoLayout: detectedLayout }));
+      await applyDetectedLogo(trimmedResult);
     };
     reader.onerror = () => {
       toast({
@@ -1684,8 +1801,8 @@ const MisconductTerminationGenerator = ({
     setFormData((prev) => ({
       ...prev,
       companyLogoDataUrl: "",
-    logoPlacement: "center",
-    logoLayout: null,
+      logoPlacement: "center",
+      logoLayout: null,
       letterheadThemeColors: [defaultDividerColor, defaultIconColor],
     }));
     if (companyLogoInputRef.current) {
@@ -1893,6 +2010,7 @@ const MisconductTerminationGenerator = ({
   };
 
   const generatePDF = (data: MisconductData, download = false) => {
+    const companyProfile = resolvedCompanyProfile ?? profile;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -1997,7 +2115,7 @@ const MisconductTerminationGenerator = ({
     const clauses = mergeClauses(withClauseIds(baseClauses));
     const clausesWithEdits = applyClauseEdits(clauses);
 
-    const companyAddressLines = (profile?.physical_address || "Address")
+    const companyAddressLines = (companyProfile?.physical_address || "Address")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
@@ -2019,7 +2137,7 @@ const MisconductTerminationGenerator = ({
     const employerEmailText = valueOrLine(data.employerEmail);
     const employerPhoneText = valueOrLine(data.employerContact);
     const headerInfoLines = [
-      valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type)),
+      valueOrLine(formatCompanyDisplayName(companyProfile?.company_name, companyProfile?.company_type)),
       ...(data.tradingName?.trim() ? [`t/a ${data.tradingName.trim()}`] : []),
       ...(companyAddressLines.length > 0 ? companyAddressLines : ["Address"]),
     ];
@@ -2030,7 +2148,9 @@ const MisconductTerminationGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = getPdfLogoTargetHeight(data.logoLayout);
+        const baseTargetHeight = getPdfLogoTargetHeight(data.logoLayout);
+        const targetLogoHeight =
+          imageRatio <= 1.2 ? Math.max(baseTargetHeight, 22) : baseTargetHeight;
         const maxLogoWidth = 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
@@ -2053,7 +2173,9 @@ const MisconductTerminationGenerator = ({
         const imageType = data.companyLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
         const imageProps = doc.getImageProperties(data.companyLogoDataUrl);
         const imageRatio = imageProps.width / imageProps.height;
-        const targetLogoHeight = getPdfLogoTargetHeight(data.logoLayout);
+        const baseTargetHeight = getPdfLogoTargetHeight(data.logoLayout);
+        const targetLogoHeight =
+          imageRatio <= 1.2 ? Math.max(baseTargetHeight, 22) : baseTargetHeight;
         const maxLogoWidth = 60;
         let logoHeight = targetLogoHeight;
         let logoWidth = logoHeight * imageRatio;
@@ -2156,11 +2278,11 @@ const MisconductTerminationGenerator = ({
     doc.setDrawColor(0, 0, 0);
     y += 4.6;
 
-    const companyName = valueOrLine(formatCompanyDisplayName(profile?.company_name, profile?.company_type));
+    const companyName = valueOrLine(formatCompanyDisplayName(companyProfile?.company_name, companyProfile?.company_type));
     const companyIdentity = data.tradingName?.trim()
       ? `${companyName} t/a ${data.tradingName.trim()}`
       : companyName;
-    const registrationNumber = (profile?.registration_number || "").trim();
+    const registrationNumber = (companyProfile?.registration_number || "").trim();
     const hasRegistrationNumber = registrationNumber.length > 0;
     const companyAddress = companyAddressLines.length > 0 ? companyAddressLines.join(", ") : "Address";
     const centeredFooterHeight = hasRegistrationNumber ? 15.5 : 12;
@@ -2444,7 +2566,7 @@ const MisconductTerminationGenerator = ({
                     const circleClasses = isDone
                       ? "border-[#b6e6c1] text-[#038314] bg-[#e9f9ee]"
                       : isActive
-                        ? "border-blue-300 text-blue-700 bg-blue-100"
+                        ? "border-blue-300 text-[#2f9f35] bg-blue-100"
                         : "border-slate-200 text-slate-500 bg-white";
                     const canClick = canNavigateToStep(index);
                     const handleClick = () => handleStepClick(index);
@@ -2471,7 +2593,7 @@ const MisconductTerminationGenerator = ({
                                 }
                                 className={`flex flex-col items-start gap-1 transition ${
                                   canClick
-                                    ? "cursor-pointer hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-md"
+                                    ? "cursor-pointer hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3eca44] rounded-md"
                                     : "cursor-default"
                                 }`}
                               >
@@ -2509,35 +2631,95 @@ const MisconductTerminationGenerator = ({
                 useExternalShell && showFinalActions && "p-0 h-full min-h-0 flex flex-col overflow-hidden",
               )}
             >
-              <div className={cn("space-y-4", useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1")}>
+              <div
+                className={cn(
+                  "space-y-4 min-h-0",
+                  !showFinalActions && "max-h-[70vh] overflow-y-auto overflow-x-hidden bg-white pr-1 pb-8",
+                  useExternalShell && showFinalActions && "min-h-0 flex-1 overflow-y-auto pr-1",
+                )}
+              >
               {activeStep === 0 && (
-                <div className="space-y-3">
+                <div className="space-y-3 pr-1 pb-4">
                   <div className="grid md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="clientSelector" className={modalFieldLabelClass}>
+                        Client selection
+                      </Label>
+                      <Select
+                        value={selectedClientId || undefined}
+                        onValueChange={(value) => void handleClientSelect(value)}
+                        open={clientSearchOpen}
+                        onOpenChange={(open) => {
+                          setClientSearchOpen(open);
+                          if (open) setClientSearchQuery("");
+                        }}
+                      >
+                        <SelectTrigger
+                          id="clientSelector"
+                          className={cn(
+                            getTerminationModalSelectTriggerClass(Boolean(selectedClientId)),
+                            "!focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]",
+                          )}
+                        >
+                          <SelectValue placeholder="Select client" />
+                        </SelectTrigger>
+                        <SelectContent hideScrollButtons className="w-[var(--radix-select-trigger-width)] p-0">
+                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
+                            <Input
+                              ref={clientSearchInputRef}
+                              value={clientSearchQuery}
+                              onChange={(event) => setClientSearchQuery(event.target.value)}
+                              onKeyDown={(event) => {
+                                event.stopPropagation();
+                                (event.nativeEvent as KeyboardEvent).stopImmediatePropagation?.();
+                              }}
+                              onKeyUp={(event) => event.stopPropagation()}
+                              placeholder="Type client name..."
+                              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
+                            />
+                          </div>
+                          {searchedClients.length > 0 ? searchedClients.map((client) => {
+                            const label = formatCompanyDisplayName(client.registered_name, client.company_type);
+                            return (
+                              <SelectItem
+                                key={client.id}
+                                value={client.id}
+                                className="!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                              >
+                                {label || "Unnamed client"}
+                              </SelectItem>
+                            );
+                          }) : (
+                            <div className="px-3 py-2 text-[11px] text-slate-500">No matching clients found.</div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="companyName" className={modalFieldLabelClass}>Company name</Label>
                       <Input
                         id="companyName"
-                        value={profile?.company_name || ""}
+                        value={selectedClient?.registered_name || profile?.company_name || ""}
                         readOnly
-                        className={getTerminationModalInputClass(Boolean(profile?.company_name))}
+                        className={getTerminationModalInputClass(Boolean(selectedClient?.registered_name || profile?.company_name))}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="registrationNumber" className={modalFieldLabelClass}>Registration number</Label>
                       <Input
                         id="registrationNumber"
-                        value={profile?.registration_number || ""}
+                        value={selectedClient?.registration_number || profile?.registration_number || ""}
                         readOnly
-                        className={getTerminationModalInputClass(Boolean(profile?.registration_number))}
+                        className={getTerminationModalInputClass(Boolean(selectedClient?.registration_number || profile?.registration_number))}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="physicalAddress" className={modalFieldLabelClass}>Registered address</Label>
                       <Input
                         id="physicalAddress"
-                        value={profile?.physical_address || ""}
+                        value={selectedClientAddress || profile?.physical_address || ""}
                         readOnly
-                        className={getTerminationModalInputClass(Boolean(profile?.physical_address))}
+                        className={getTerminationModalInputClass(Boolean(selectedClientAddress || profile?.physical_address))}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -2552,7 +2734,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="employerContact" className={modalFieldLabelClass}>
-                        Employer contact <span className="text-red-500">*</span>
+                        Primary contact number <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="employerContact"
@@ -2567,7 +2749,7 @@ const MisconductTerminationGenerator = ({
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="employerEmail" className={modalFieldLabelClass}>
-                        Employer email <span className="text-red-500">*</span>
+                        Primary email <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="employerEmail"
@@ -2596,7 +2778,7 @@ const MisconductTerminationGenerator = ({
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-[34px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:bg-white hover:text-blue-600"
+                          className="h-[34px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                           onClick={() => companyLogoInputRef.current?.click()}
                         >
                           {companyLogoPreview || formData.companyLogoDataUrl ? "Change logo" : "Upload logo"}
@@ -2631,8 +2813,8 @@ const MisconductTerminationGenerator = ({
                             onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "center" }))}
                             className={`rounded border p-2 text-left transition ${
                               formData.logoPlacement === "center"
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-slate-300 bg-white hover:border-blue-500"
+                                ? "border-[#3eca44] bg-blue-50"
+                                : "border-slate-300 bg-white hover:border-[#3eca44]"
                             }`}
                           >
                             <div className="h-[99px] rounded border border-slate-200 bg-white p-2">
@@ -2663,8 +2845,8 @@ const MisconductTerminationGenerator = ({
                             onClick={() => setFormData((prev) => ({ ...prev, logoPlacement: "left" }))}
                             className={`rounded border p-2 text-left transition ${
                               formData.logoPlacement === "left"
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-slate-300 bg-white hover:border-blue-500"
+                                ? "border-[#3eca44] bg-blue-50"
+                                : "border-slate-300 bg-white hover:border-[#3eca44]"
                             }`}
                           >
                             <div className="h-[99px] rounded border border-slate-200 bg-white p-2">
@@ -2727,46 +2909,6 @@ const MisconductTerminationGenerator = ({
               {activeStep === 1 && (
                 <div className="space-y-3">
                     <div className="space-y-2.5">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="employee" className={modalFieldLabelClass}>Select employee (optional)</Label>
-                      <Select
-                        value={selectedEmployeeId}
-                        onValueChange={handleEmployeeSelect}
-                        open={employeeSearchOpen}
-                        onOpenChange={(open) => {
-                          setEmployeeSearchOpen(open);
-                          if (open) setEmployeeSearchQuery("");
-                        }}
-                      >
-                        <SelectTrigger className={`${getTerminationModalSelectTriggerClass(selectedEmployeeId.trim().length > 0)} ${terminationModalDropdownToneClass}`}>
-                          <SelectValue placeholder="Select from saved employees or fill manually" />
-                        </SelectTrigger>
-                        <SelectContent
-                          hideScrollButtons
-                          className={`${terminationModalSelectContentClass} w-[var(--radix-select-trigger-width)] p-0`}
-                        >
-                          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white p-2">
-                            <Input
-                              ref={employeeSearchInputRef}
-                              value={employeeSearchQuery}
-                              onChange={(event) => setEmployeeSearchQuery(event.target.value)}
-                              onKeyDown={(event) => event.stopPropagation()}
-                              placeholder="Type full employee name..."
-                              className="h-8 rounded border-slate-300 text-[11px] placeholder:text-[10px] placeholder:text-slate-400"
-                            />
-                          </div>
-                          {searchedEmployees.length > 0 ? (
-                            searchedEmployees.map((employee) => (
-                              <SelectItem key={employee.id} value={employee.id} className={terminationModalSelectItemClass}>
-                                {employee.employee_name} {employee.employee_surname}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <div className="px-3 py-2 text-[11px] text-slate-500">No matching employees found.</div>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="grid md:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="employeeName" className={modalFieldLabelClass}>
@@ -2893,7 +3035,7 @@ const MisconductTerminationGenerator = ({
                             id="homeProvince"
                             className={`${getTerminationModalSelectTriggerClass(
                               formData.homeProvince.trim().length > 0,
-                            )} ${terminationModalDropdownToneClass}`}
+                            )} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                           >
                             <SelectValue placeholder="Select province" />
                           </SelectTrigger>
@@ -2902,7 +3044,7 @@ const MisconductTerminationGenerator = ({
                               <SelectItem
                                 key={province}
                                 value={province}
-                                className={terminationModalSelectItemClass}
+                                className="!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                               >
                                 {province}
                               </SelectItem>
@@ -3016,7 +3158,7 @@ const MisconductTerminationGenerator = ({
                         }
                       >
                         <SelectTrigger
-                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${terminationModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticePeriod))} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                         >
                           <SelectValue
                             placeholder="Select notice period"
@@ -3043,7 +3185,7 @@ const MisconductTerminationGenerator = ({
                           onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeMethod: value }))}
                         >
                           <SelectTrigger
-                            className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${terminationModalDropdownToneClass}`}
+                            className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeMethod))} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                           >
                             <SelectValue
                               placeholder="Select notice method"
@@ -3091,9 +3233,29 @@ const MisconductTerminationGenerator = ({
                           id="effectiveDate"
                           type="text"
                           readOnly
-                          placeholder="Auto-calculated from notice date and period"
+                          placeholder="Please select a date"
                           value={formData.effectiveDate ? toDisplayDate(formData.effectiveDate) : ""}
-                          className={`${getTerminationModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                          onClick={openEffectiveDatePicker}
+                          onFocus={openEffectiveDatePicker}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openEffectiveDatePicker();
+                            }
+                          }}
+                          className={`${getTerminationModalInputClass(formData.effectiveDate.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
+                        />
+                        <input
+                          ref={previousEndDatePickerRef}
+                          type="date"
+                          value={formData.effectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.effectiveDate) ? formData.effectiveDate : ""}
+                          onChange={(e) => {
+                            setEffectiveDateManuallySet(true);
+                            setFormData({ ...formData, effectiveDate: e.target.value });
+                          }}
+                          className="sr-only"
+                          aria-hidden="true"
+                          tabIndex={-1}
                         />
                       </div>
                     </div>
@@ -3219,7 +3381,7 @@ const MisconductTerminationGenerator = ({
                         }
                       >
                         <SelectTrigger
-                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.appliedProgressiveDisciplinaryAction))} ${terminationModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.appliedProgressiveDisciplinaryAction))} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                         >
                           <SelectValue
                             placeholder="Select yes or no"
@@ -3262,7 +3424,7 @@ const MisconductTerminationGenerator = ({
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, noticeOfAppeal: value }))}
                       >
                         <SelectTrigger
-                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${terminationModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.noticeOfAppeal))} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                         >
                           <SelectValue
                             placeholder="Select notice of appeal"
@@ -3307,7 +3469,7 @@ const MisconductTerminationGenerator = ({
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, chairperson: value }))}
                       >
                         <SelectTrigger
-                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.chairperson))} ${terminationModalDropdownToneClass}`}
+                          className={`${getTerminationModalSelectTriggerClass(Boolean(formData.chairperson))} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                         >
                           <SelectValue
                             placeholder="Select chairperson type"
@@ -3372,7 +3534,7 @@ const MisconductTerminationGenerator = ({
                         type="button"
                         variant="outline"
                         onClick={handleBack}
-                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                       >
                         Back
                       </Button>
@@ -3387,7 +3549,7 @@ const MisconductTerminationGenerator = ({
                               onClick={clearCurrentStepFields}
                               disabled={isGenerating}
                               aria-label="Reset fields"
-                              className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                              className="gap-2 text-slate-700 hover:text-[#2f9f35] hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                             >
                               <Undo2 className="h-4 w-4" />
                               Reset
@@ -3402,7 +3564,7 @@ const MisconductTerminationGenerator = ({
                         type="button"
                         onClick={handleFinish}
                         disabled={!isFormComplete || isGenerating}
-                        className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                        className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300"
                       >
                         Next
                       </Button>
@@ -3416,7 +3578,7 @@ const MisconductTerminationGenerator = ({
                           type="button"
                           variant="outline"
                           onClick={handleBack}
-                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                         >
                           Back
                         </Button>
@@ -3430,7 +3592,7 @@ const MisconductTerminationGenerator = ({
                           onClick={clearCurrentStepFields}
                           disabled={isGenerating}
                           aria-label="Reset fields"
-                          className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                          className="gap-2 text-slate-700 hover:text-[#2f9f35] hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                         >
                           <Undo2 className="h-4 w-4" />
                           Reset
@@ -3443,7 +3605,7 @@ const MisconductTerminationGenerator = ({
                           type="button"
                           onClick={handleNext}
                           disabled={!canGoNext}
-                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300"
                         >
                           Next
                         </Button>
@@ -3641,7 +3803,7 @@ const MisconductTerminationGenerator = ({
 
               return (
                 <div className="space-y-8">
-                  <FirstPagePreview data={validatedPreview} profile={profile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
+                  <FirstPagePreview data={validatedPreview} profile={resolvedCompanyProfile} logoPreviewUrl={companyLogoPreview || validatedPreview.companyLogoDataUrl}>
                     <div className="text-xs leading-relaxed space-y-5">
                           {(() => {
                             const renderAddClauseControl = (afterId: string | null) => {
@@ -3653,7 +3815,7 @@ const MisconductTerminationGenerator = ({
                                     onClick={() => openAddClauseForm(afterId)}
                                     className="group relative w-full max-w-[calc(100%-1.5rem)] mx-auto py-3 flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                   >
-                                    <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-blue-700 transition-all border border-transparent group-hover:font-semibold group-hover:border-blue-600 group-hover:rounded-full">
+                                    <span className="relative z-10 inline-flex h-8 w-16 items-center justify-center bg-white text-xs font-medium text-[#2f9f35] transition-all border border-transparent group-hover:font-semibold group-hover:border-[#3eca44] group-hover:rounded-full">
                                       <span className="absolute inset-0 flex items-center justify-center transition-opacity group-hover:opacity-0">
                                         <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" aria-hidden="true" />
                                       </span>
@@ -3662,9 +3824,9 @@ const MisconductTerminationGenerator = ({
                                       </span>
                                     </span>
                                     <span className="pointer-events-none absolute inset-0 flex items-center" aria-hidden="true">
-                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-[#3eca44]" />
                                       <span className="w-16" />
-                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-blue-600" />
+                                      <span className="flex-1 border-t border-slate-200 transition-all group-hover:border-[#3eca44]" />
                                     </span>
                                   </button>
                                 </div>
@@ -3682,13 +3844,13 @@ const MisconductTerminationGenerator = ({
                                     {isPreviewEditable ? (
                                       <div className="flex items-center gap-2">
                                         {isEditing ? (
-                                          <span className="text-[11px] font-semibold text-blue-600">Editing...</span>
+                                          <span className="text-[11px] font-semibold text-[#2f9f35]">Editing...</span>
                                         ) : (
                                           <>
                                             <Button
                                               size="sm"
                                               variant="outline"
-                                              className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-600 hover:bg-transparent hover:text-blue-600"
+                                              className="h-[28px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-[#3eca44] hover:bg-transparent hover:text-[#2f9f35]"
                                               onClick={() => startEditingClause(clause)}
                                             >
                                               Edit
@@ -3755,7 +3917,7 @@ const MisconductTerminationGenerator = ({
                                           }
                                         }}
                                         rows={3}
-                                        className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                        className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0 focus-visible:ring-offset-0"
                                         spellCheck={true}
                                         lang="en"
                                         autoCorrect="on"
@@ -3776,14 +3938,14 @@ const MisconductTerminationGenerator = ({
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-[#3eca44] !text-slate-700 hover:!text-[#2f9f35]"
                                           onClick={cancelClauseEdit}
                                         >
                                           Cancel
                                         </Button>
                                         <Button
                                           size="sm"
-                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                          className="h-[28px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300"
                                           onClick={() => saveClauseEdit(activeEditingClause.id)}
                                         >
                                           Save
@@ -3816,7 +3978,7 @@ const MisconductTerminationGenerator = ({
                                           }
                                         }}
                                     rows={3}
-                                    className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-blue-400 focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0"
+                                    className="min-h-[84px] resize-none rounded text-xs text-slate-600 border-slate-300 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0 focus-visible:ring-offset-0"
                                     placeholder="Type your new paragraph here..."
                                     spellCheck={true}
                                     lang="en"
@@ -3826,14 +3988,14 @@ const MisconductTerminationGenerator = ({
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-blue-600 !text-slate-700 hover:!text-blue-600"
+                                          className="h-[28px] px-3 text-xs rounded !bg-white hover:!bg-white !border-slate-300 hover:!border-[#3eca44] !text-slate-700 hover:!text-[#2f9f35]"
                                           onClick={cancelAddClause}
                                         >
                                           Cancel
                                         </Button>
                                         <Button
                                           size="sm"
-                                          className="h-[28px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                                          className="h-[28px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300"
                                           onClick={saveNewClause}
                                           disabled={!newClauseBody.trim()}
                                         >
@@ -3862,7 +4024,7 @@ const MisconductTerminationGenerator = ({
                         type="button"
                         variant="outline"
                         onClick={handleBack}
-                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                       >
                         Back
                       </Button>
@@ -3873,7 +4035,7 @@ const MisconductTerminationGenerator = ({
                         variant="ghost"
                         onClick={togglePreviewEditMode}
                         disabled={isGenerating}
-                        className="gap-2 text-slate-700 hover:text-blue-600 hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
+                        className="gap-2 text-slate-700 hover:text-[#2f9f35] hover:bg-white transition-transform duration-200 hover:scale-105 disabled:text-slate-300"
                       >
                         {isPreviewEditable ? "Save" : "Edit"}
                       </Button>
@@ -3883,7 +4045,7 @@ const MisconductTerminationGenerator = ({
                         type="button"
                         onClick={handleDownload}
                         disabled={isGenerating || isPreviewEditable}
-                        className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                        className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300"
                       >
                         Download
                       </Button>
@@ -3922,14 +4084,14 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={closeSameDayCaution}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35]"
                 >
                   No
                 </Button>
                 <Button
                   type="button"
                   onClick={confirmSameDayCaution}
-                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-blue-600 hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border border-slate-300 bg-white px-3 text-xs text-slate-600 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
                 >
                   Yes
                 </Button>
@@ -3975,7 +4137,7 @@ const MisconductTerminationGenerator = ({
                   filteredMisconductTypes.map((type) => (
                     <label
                       key={type}
-                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${terminationModalSelectItemClass}`}
+                      className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-[#3eca44]/10 hover:text-[#2f9f35] focus-within:bg-[#3eca44]/10 ${terminationModalSelectItemClass}`}
                     >
                       <Checkbox
                         checked={draftMisconductTypes.includes(type)}
@@ -3984,7 +4146,7 @@ const MisconductTerminationGenerator = ({
                             checked ? (prev.includes(type) ? prev : [...prev, type]) : prev.filter((item) => item !== type),
                           )
                         }
-                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                        className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                       />
                       <span className="flex-1">{type}</span>
                     </label>
@@ -4001,7 +4163,7 @@ const MisconductTerminationGenerator = ({
                     <Badge
                       key={type}
                       variant="outline"
-                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                      className="gap-1 border-[#3eca44]/40 bg-[#3eca44]/10 text-[10px] text-[#2f9f35] !font-normal hover:bg-[#3eca44]/10"
                     >
                       {type}
                     </Badge>
@@ -4017,7 +4179,7 @@ const MisconductTerminationGenerator = ({
                   type="button"
                   variant="outline"
                   onClick={cancelMisconductPicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                 >
                   Cancel
                 </Button>
@@ -4037,7 +4199,7 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyMisconductPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35]"
                 >
                   Done
                 </Button>
@@ -4075,7 +4237,7 @@ const MisconductTerminationGenerator = ({
                 {transmissionMethodOptions.map((method) => (
                   <label
                     key={method}
-                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-blue-50/70 hover:text-blue-600 focus-within:bg-blue-50/70 ${terminationModalSelectItemClass}`}
+                    className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-[#3eca44]/10 hover:text-[#2f9f35] focus-within:bg-[#3eca44]/10 ${terminationModalSelectItemClass}`}
                   >
                     <Checkbox
                       checked={draftTransmissionMethods.includes(method)}
@@ -4084,7 +4246,7 @@ const MisconductTerminationGenerator = ({
                           checked ? (prev.includes(method) ? prev : [...prev, method]) : prev.filter((item) => item !== method),
                         )
                       }
-                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600"
+                      className="h-4 w-4 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                     />
                     <span className="flex-1">{method}</span>
                   </label>
@@ -4100,7 +4262,7 @@ const MisconductTerminationGenerator = ({
                     <Badge
                       key={method}
                       variant="outline"
-                      className="gap-1 border-blue-300 bg-blue-50 text-[10px] text-blue-700 !font-normal hover:bg-blue-50"
+                      className="gap-1 border-[#3eca44]/40 bg-[#3eca44]/10 text-[10px] text-[#2f9f35] !font-normal hover:bg-[#3eca44]/10"
                     >
                       {method}
                     </Badge>
@@ -4116,7 +4278,7 @@ const MisconductTerminationGenerator = ({
                   type="button"
                   variant="outline"
                   onClick={cancelTransmissionPicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                 >
                   Cancel
                 </Button>
@@ -4127,7 +4289,7 @@ const MisconductTerminationGenerator = ({
                   variant="ghost"
                   onClick={() => setDraftTransmissionMethods([])}
                   disabled={draftTransmissionMethods.length === 0}
-                  className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline disabled:text-slate-300"
+                  className="h-[30px] rounded border-0 px-3 text-xs text-[#2f9f35] shadow-none hover:bg-transparent hover:text-[#2f9f35] hover:underline disabled:text-slate-300"
                 >
                   Clear
                 </Button>
@@ -4136,7 +4298,7 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyTransmissionPicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35]"
                 >
                   Done
                 </Button>
@@ -4181,7 +4343,7 @@ const MisconductTerminationGenerator = ({
                       key={option.value}
                       type="button"
                       onClick={() => toggleDraftThemeColor(option.value)}
-                      className={`relative h-8 w-8 rounded-[2px] border transition ${isSelected ? "border-blue-600 ring-1 ring-blue-200" : "border-slate-300 hover:border-blue-500"}`}
+                      className={`relative h-8 w-8 rounded-[2px] border transition ${isSelected ? "border-[#3eca44] ring-1 ring-[#3eca44]/30" : "border-slate-300 hover:border-[#3eca44]"}`}
                       style={{ backgroundColor: option.value }}
                       aria-label={`Theme colour ${option.value}`}
                     >
@@ -4217,7 +4379,7 @@ const MisconductTerminationGenerator = ({
                   type="button"
                   variant="outline"
                   onClick={cancelColorThemePicker}
-                  className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                  className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35]"
                 >
                   Cancel
                 </Button>
@@ -4237,7 +4399,7 @@ const MisconductTerminationGenerator = ({
                 <Button
                   type="button"
                   onClick={applyColorThemePicker}
-                  className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
+                  className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35]"
                 >
                   Done
                 </Button>
@@ -4255,5 +4417,7 @@ const MisconductTerminationGenerator = ({
 };
 
 export default MisconductTerminationGenerator;
+
+
 
 

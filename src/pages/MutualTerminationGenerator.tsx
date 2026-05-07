@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -482,7 +482,7 @@ const MutualTerminationGenerator = ({
       .select(
         "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number",
       )
-      .eq("company_id", user.id);
+      ;
     if (error) {
       console.warn("Unable to load employees", error);
       return;
@@ -2651,7 +2651,7 @@ const MutualTerminationGenerator = ({
                                         if (isAgreedPaymentSubParagraph(text)) {
                                           nodes.push(
                                             <div key={`${clause.id}-${parentIndex}-${text}`} className="grid grid-cols-[auto,1fr] gap-2 pl-5 text-justify">
-                                              <span className="font-semibold">â€¢</span>
+                                              <span className="font-semibold">•</span>
                                               {isTotalPaymentSummary(text) ? (
                                                 <p className="text-justify whitespace-pre-line text-black">
                                                   <span className="font-semibold">Total</span>
@@ -2929,6 +2929,7 @@ const MutualTerminationGenerator = ({
 };
 
 export default MutualTerminationGenerator;
+
 
 
 

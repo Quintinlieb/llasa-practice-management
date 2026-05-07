@@ -38,7 +38,7 @@ const documentSubmenuItems = [
 
 const documentFlyoutItems: Record<string, Array<{ title: string; url: string; selectedDocument?: string }>> = {
   Discipline: [
-    { title: "Code of Conduct", url: "/documents/discipline/code-of-conduct/preview" },
+    { title: "Code of Conduct", url: "/documents", selectedDocument: "codeOfConduct" },
     { title: "Warnings", url: "/documents", selectedDocument: "warnings" },
   ],
   Contracts: [
@@ -108,6 +108,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   useEffect(() => {
     const documentToCategory: Record<string, string> = {
       warnings: "Discipline",
+      codeOfConduct: "Discipline",
       permanentContract: "Contracts",
       temporaryContract: "Contracts",
       addendum: "Contracts",
@@ -273,12 +274,17 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                           {item.url === "/documents" && !isCollapsed && isDocumentsSubmenuOpen ? (
                             <SidebarMenuSub className="ml-7 mr-2 mt-1 gap-0 border-l-white/20">
                               {documentSubmenuItems.map((subItem) => {
-                                const subActive =
-                                  openDocumentCategory === subItem.title || modalActiveCategory === subItem.title;
+                                const subActive = modalActiveCategory === subItem.title;
+                                const isFlyoutOpenForItem = openDocumentCategory === subItem.title;
                                 return (
                                   <SidebarMenuSubItem
                                     key={subItem.title}
                                     className="relative"
+                                    onMouseEnter={() => {
+                                      const ready = positionFlyoutForCategory(subItem.title);
+                                      setIsFlyoutPositionReady(ready);
+                                      setOpenDocumentCategory(subItem.title);
+                                    }}
                                     ref={(node) => {
                                       submenuItemRefs.current[subItem.title] = node;
                                     }}
@@ -287,25 +293,15 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                                       isActive={subActive}
                                       className={cn(
                                         "cursor-pointer text-[11px] text-white/80 transition-all duration-150 hover:bg-transparent hover:text-[11.5px] hover:text-white data-[active=true]:bg-transparent data-[active=true]:text-[#3eca44]",
+                                        isFlyoutOpenForItem && !subActive && "text-[11.5px] text-white",
                                       )}
-                                      onClick={() => {
-                                        setActiveFlyoutItemKey(null);
-                                        setOpenDocumentCategory((prev) => {
-                                          if (prev === subItem.title) {
-                                            setIsFlyoutPositionReady(false);
-                                            return null;
-                                          }
-                                          const ready = positionFlyoutForCategory(subItem.title);
-                                          setIsFlyoutPositionReady(ready);
-                                          return subItem.title;
-                                        });
-                                      }}
                                     >
                                       <span className="flex w-full items-center justify-between gap-2">
                                         <span>{subItem.title}</span>
                                         <ChevronRight
                                           className={cn(
                                             "h-3.5 w-3.5 text-white/60 transition-colors",
+                                            isFlyoutOpenForItem && !subActive && "text-white",
                                             subActive && "text-[#3eca44]",
                                           )}
                                         />

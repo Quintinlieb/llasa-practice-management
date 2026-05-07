@@ -956,9 +956,9 @@ export default function CodeOfConductPreviewPage({
       const contentBottom = pageHeight - footerHeight - 3;
       const disclaimerPrefix = "Disclaimer:";
       const disclaimerText =
-        "This Code of Conduct serves as a guideline only and does not constitute a binding tariff of sanctions. The Employer retains full discretion to determine appropriate disciplinary action based on the specific circumstances of each case, including the nature and seriousness of the misconduct and any relevant mitigating or aggravating factors, and may deviate from the suggested sanctions where justified, subject always to the requirements of fairness in terms of applicable labour legislation.";
+        "This Code of Conduct serves as a guideline only and does not constitute a binding tariff of sanctions. The Client retains full discretion to determine appropriate disciplinary action based on the specific circumstances of each case, including the nature and seriousness of the misconduct and any relevant mitigating or aggravating factors, and may deviate from the suggested sanctions where justified, subject always to the requirements of fairness in terms of applicable labour legislation.";
       const companyName = formatCompanyDisplayName(profile?.company_name, profile?.company_type) || "Company";
-      const footerTopRowLeft = companyName;
+      const footerTopRowLeft = "LLASA";
       const footerTopRowCenter = "This document is confidential and for internal use only.";
       const firstPageTopContentY = 22;
       const continuationTopContentY = 12;
@@ -1332,13 +1332,13 @@ export default function CodeOfConductPreviewPage({
               onValueChange={(value) => setActiveCategoryId(value as FixedCategoryId)}
               className="space-y-4"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#3eca44]">
                 <TabsList className="h-auto flex-1 flex-wrap justify-start gap-0 bg-transparent px-0 py-0 shadow-none">
                   {fixedCategoryOrder.map((id) => (
                     <TabsTrigger
                       key={id}
                       value={id}
-                      className="rounded-none border-b-[3px] border-transparent px-5 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-blue-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-none"
+                      className="rounded-none border-b-[3px] border-transparent px-5 py-1 text-left text-sm font-medium text-slate-500 data-[state=inactive]:hover:text-slate-800 data-[state=active]:bg-white data-[state=active]:border-[#3eca44] data-[state=active]:text-slate-900 data-[state=active]:shadow-none"
                     >
                       {categoryMetadata[id].title.replace(" Offences", "")}
                     </TabsTrigger>
@@ -1349,7 +1349,7 @@ export default function CodeOfConductPreviewPage({
                   variant="outline"
                   onClick={handleExportPdf}
                   disabled={isExporting || sections.length === 0}
-                  className="mb-1 h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center gap-1 border border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600 disabled:text-slate-300"
+                  className="mb-1 h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center gap-1 border border-slate-200 bg-white text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] disabled:text-slate-300"
                 >
                   {isExporting ? <Upload className="h-3.5 w-3.5 animate-pulse" /> : <Upload className="h-3.5 w-3.5" />}
                   {isExporting ? "Exporting" : "Export"}
@@ -1393,7 +1393,7 @@ export default function CodeOfConductPreviewPage({
                           <div
                             key={`${selectedSection.id}-${index}`}
                             className={cn(
-                              "grid items-center gap-2 px-3 py-2.5 text-xs hover:bg-blue-50/70",
+                              "grid items-center gap-2 px-3 py-2.5 text-xs hover:bg-[#3eca44]/5",
                               isEditing
                                 ? "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr_3rem]"
                                 : "grid-cols-[2fr_1.25fr_1.25fr_1.25fr_1.25fr]",

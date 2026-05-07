@@ -32,7 +32,7 @@ type DocumentKey =
   | "retirementTermination"
   | "poorPerformanceTermination"
   | "mutualTermination";
-type ModalDocumentKey = Exclude<DocumentKey, "codeOfConduct">;
+type ModalDocumentKey = DocumentKey;
 
 type DocumentItem = {
   id?: DocumentKey;
@@ -194,13 +194,9 @@ const Documents = () => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
     if (nextSelected && documentComponents[nextSelected]) {
       setSelectedDocument(nextSelected);
-      if (nextSelected !== "codeOfConduct") {
-        setStepMeta(null);
-        setBreadcrumbStep(null);
-        setModalDocument(nextSelected);
-      } else {
-        setModalDocument(null);
-      }
+      setStepMeta(null);
+      setBreadcrumbStep(null);
+      setModalDocument(nextSelected);
     }
   }, [location.state]);
 
@@ -314,9 +310,19 @@ const Documents = () => {
           ? "Notice of Termination"
         : modalDocument === "permanentContract"
           ? "Permanent Contract"
-          : modalDocument === "temporaryContract"
+      : modalDocument === "temporaryContract"
             ? "Temporary Contract"
+          : modalDocument === "codeOfConduct"
+            ? "Code of Conduct"
           : "";
+  const isTerminationModal =
+    modalDocument === "noticeTermination" ||
+    modalDocument === "illHealthTermination" ||
+    modalDocument === "abscondmentTermination" ||
+    modalDocument === "retrenchmentTermination" ||
+    modalDocument === "retirementTermination" ||
+    modalDocument === "poorPerformanceTermination" ||
+    modalDocument === "mutualTermination";
   const modalSteps =
     modalDocument === "warnings" ||
     modalDocument === "disciplinaryHearingNotice" ||
@@ -739,6 +745,7 @@ const Documents = () => {
                                     type="button"
                                     onClick={() => {
                                       if (
+                                        item.id === "codeOfConduct" ||
                                         item.id === "warnings" ||
                                         item.id === "disciplinaryHearingNotice" ||
                                         item.id === "precautionarySuspensionNotice" ||
@@ -999,9 +1006,11 @@ const Documents = () => {
       >
       <DialogContent
         className={cn(
-          "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:right-5 [&>button]:top-4 [&>button]:text-white [&>button:hover]:text-slate-300 [&>button:hover]:bg-transparent [&>button]:focus:bg-transparent [&>button]:active:bg-transparent [&>button]:border-0 [&>button]:focus-visible:ring-0 [&>button]:focus-visible:outline-none [&>button]:active:text-white",
-          modalDocument === "warnings"
+          "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:right-5 [&>button]:top-4 [&>button]:text-slate-400 [&>button]:hover:text-white [&>button]:active:text-black [&>button]:hover:bg-transparent [&>button]:focus:bg-transparent [&>button]:active:bg-transparent [&>button]:border-0 [&>button]:focus-visible:ring-0 [&>button]:focus-visible:outline-none [&>button]:outline-none [&>button]:shadow-none [&>button>svg]:stroke-[2.4]",
+          modalDocument === "warnings" || isTerminationModal
             ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
+            : modalDocument === "codeOfConduct"
+              ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
             : modalDocument === "disciplinaryHearingNotice"
             || modalDocument === "precautionarySuspensionNotice"
             || modalDocument === "contemplatedRetrenchmentNotice"
@@ -1024,14 +1033,20 @@ const Documents = () => {
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "warnings" ? (
+          {modalDocument === "warnings" || isTerminationModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
               <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
                 <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
                   <Menu className="h-3.5 w-3.5 -ml-0.5" />
                   <span className="font-semibold">
-                    <span className="text-white/60">Documents / Discipline / </span>
-                    <span className="text-white">Warning Form</span>
+                    <span className="text-white/60">
+                      {modalDocument === "warnings"
+                        ? "Documents / Discipline / "
+                        : "Documents / Terminations / "}
+                    </span>
+                    <span className="text-white">
+                      {modalDocument === "warnings" ? "Warning Form" : modalTitle}
+                    </span>
                   </span>
                 </div>
               </header>
@@ -1048,7 +1063,7 @@ const Documents = () => {
                             className={cn(
                               "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
                               isActive
-                                ? "border-black bg-black text-white"
+                                ? "border-[#2D4256] bg-[#2D4256] text-white"
                                 : isComplete
                                   ? "border-[#3eca44] bg-[#3eca44] text-white"
                                   : "border-slate-200 bg-white text-slate-400",
@@ -1059,7 +1074,7 @@ const Documents = () => {
                           <span
                             className={cn(
                               "text-[11px] font-semibold",
-                              isActive ? "text-black" : isComplete ? "text-[#3eca44]" : "text-slate-400",
+                              isActive ? "text-[#2D4256]" : isComplete ? "text-[#3eca44]" : "text-slate-400",
                             )}
                           >
                             {step}
@@ -1151,6 +1166,40 @@ const Documents = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          ) : modalDocument === "codeOfConduct" ? (
+            <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
+              <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
+                  <Menu className="h-3.5 w-3.5 -ml-0.5" />
+                  <span className="font-semibold">
+                    <span className="text-white/60">Documents / Discipline / </span>
+                    <span className="text-white">Code of Conduct</span>
+                  </span>
+                </div>
+              </header>
+              <div className="mt-[46px] h-[calc(90vh-46px)] bg-white p-4">
+                <div className="mx-auto h-full max-w-[900px] min-h-0">
+                  <Suspense
+                    fallback={
+                      <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
+                        Loading document...
+                      </div>
+                    }
+                  >
+                    <div className="h-full min-h-0">
+                      {ModalComponent ? (
+                        <ModalComponent
+                          embedded
+                          externalNavigation
+                          onStepChange={setBreadcrumbStep}
+                          onStepMetaChange={setStepMeta}
+                        />
+                      ) : null}
+                    </div>
+                  </Suspense>
                 </div>
               </div>
             </div>

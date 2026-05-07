@@ -5,6 +5,7 @@ export const detectLogoLayout = (
 ): Promise<LogoLayout | null> =>
   new Promise((resolve) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const width = img.naturalWidth || img.width;
       const height = img.naturalHeight || img.height;
@@ -22,8 +23,23 @@ export const detectLogoLayout = (
         return;
       }
 
-      context.drawImage(img, 0, 0, width, height);
-      const pixels = context.getImageData(0, 0, width, height).data;
+      try {
+        context.drawImage(img, 0, 0, width, height);
+      } catch {
+        const aspect = width / height;
+        resolve(aspect >= 1 ? "horizontal" : "vertical");
+        return;
+      }
+
+      let pixels: Uint8ClampedArray;
+      try {
+        pixels = context.getImageData(0, 0, width, height).data;
+      } catch {
+        // Cross-origin images may block pixel reads. Fall back to aspect ratio.
+        const aspect = width / height;
+        resolve(aspect >= 1 ? "horizontal" : "vertical");
+        return;
+      }
       const rowInk = new Array<number>(height).fill(0);
       const colInk = new Array<number>(width).fill(0);
 

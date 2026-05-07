@@ -967,7 +967,7 @@ const PoorPerformanceTerminationGenerator = ({
       .select(
         "id, id_number, employee_name, employee_surname, nationality, emergency_contact_number, gender, race, cell_number, email, job_title, start_date, employee_number, physical_address_line1, physical_address_line2, city, province, area_code",
       )
-      .eq("company_id", user.id);
+      ;
     if (error) {
       console.warn("Unable to load employees", error);
       return;
@@ -980,7 +980,7 @@ const PoorPerformanceTerminationGenerator = ({
     const { data, error } = await (supabase as any)
       .from("company_code_of_conduct")
       .select("data")
-      .eq("company_id", user.id)
+      
       .maybeSingle();
 
     if (error) {
@@ -1150,6 +1150,51 @@ const PoorPerformanceTerminationGenerator = ({
 
     employeePrefillAppliedRef.current = true;
   }, [employees, handleEmployeeSelect, location.state]);
+
+  useEffect(() => {
+    if (!user || !location.state || typeof location.state !== "object") return;
+    const state = location.state as { clientIdNumber?: unknown };
+    const clientIdNumber = typeof state.clientIdNumber === "string" ? state.clientIdNumber.trim() : "";
+    if (!clientIdNumber) return;
+
+    let isCancelled = false;
+    const loadClientLogoFromFile = async () => {
+      const { data: clientRow } = await (supabase as any)
+        .from("clients")
+        .select("id")
+        
+        .eq("id_number", clientIdNumber)
+        .maybeSingle();
+      if (!clientRow?.id || isCancelled) return;
+
+      const { data: logoRow } = await (supabase as any)
+        .from("client_logos")
+        .select("storage_path, logo_path, logo_url, company_logo_url")
+        .eq("client_id", clientRow.id)
+        .maybeSingle();
+      if (!logoRow || isCancelled) return;
+
+      const storagePath = String(logoRow.storage_path || logoRow.logo_path || "").trim();
+      const directUrl = String(logoRow.logo_url || logoRow.company_logo_url || "").trim();
+      let resolvedUrl = "";
+
+      if (storagePath) {
+        const { data } = supabase.storage.from("client-logos").getPublicUrl(storagePath);
+        resolvedUrl = String(data?.publicUrl || "").trim();
+      } else if (directUrl) {
+        resolvedUrl = directUrl;
+      }
+
+      if (!resolvedUrl || isCancelled) return;
+      setCompanyLogoPreview(resolvedUrl);
+      setFormData((prev) => ({ ...prev, companyLogoDataUrl: resolvedUrl }));
+    };
+
+    void loadClientLogoFromFile();
+    return () => {
+      isCancelled = true;
+    };
+  }, [location.state, user]);
 
   const resetForm = () => {
     setFormData({
@@ -2631,7 +2676,7 @@ const PoorPerformanceTerminationGenerator = ({
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-[34px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:bg-white hover:text-blue-600"
+                          className="h-[34px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                           onClick={() => companyLogoInputRef.current?.click()}
                         >
                           {companyLogoPreview || formData.companyLogoDataUrl ? "Change logo" : "Upload logo"}
@@ -2928,7 +2973,7 @@ const PoorPerformanceTerminationGenerator = ({
                             id="homeProvince"
                             className={`${getTerminationModalSelectTriggerClass(
                               formData.homeProvince.trim().length > 0,
-                            )} ${terminationModalDropdownToneClass}`}
+                            )} ${terminationModalDropdownToneClass} !focus:border-[#3eca44] !focus-visible:border-[#3eca44] data-[state=open]:!border-[#3eca44]`}
                           >
                             <SelectValue placeholder="Select province" />
                           </SelectTrigger>
@@ -2937,7 +2982,7 @@ const PoorPerformanceTerminationGenerator = ({
                               <SelectItem
                                 key={province}
                                 value={province}
-                                className={terminationModalSelectItemClass}
+                                className="!rounded text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                               >
                                 {province}
                               </SelectItem>
@@ -4266,5 +4311,6 @@ const PoorPerformanceTerminationGenerator = ({
 };
 
 export default PoorPerformanceTerminationGenerator;
+
 
 

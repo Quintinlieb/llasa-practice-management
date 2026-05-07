@@ -951,10 +951,12 @@ export const warningGeneratorSchema = z.object({
     .refine((val) => val > 0 && val <= 24, "Validity must be between 1 and 24 months"),
   issuedBy: z
     .string()
-    .min(2, "Issued by must be at least 2 characters")
-    .max(100, "Issued by must not exceed 100 characters")
-    .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes")
-    .transform(sanitizeText),
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : ""))
+    .refine((val) => !val || val.length >= 2, "Issued by must be at least 2 characters")
+    .refine((val) => !val || val.length <= 100, "Issued by must not exceed 100 characters")
+    .refine((val) => !val || /^[a-zA-Z\s'-]+$/.test(val), "Name can only contain letters, spaces, hyphens, and apostrophes"),
   dateIssued: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")

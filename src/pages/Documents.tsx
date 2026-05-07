@@ -183,6 +183,14 @@ const Documents = () => {
   } | null>(null);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("documents-modal-state", {
+        detail: { open: Boolean(modalDocument), documentKey: modalDocument },
+      }),
+    );
+  }, [modalDocument]);
+
+  useEffect(() => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
     if (nextSelected && documentComponents[nextSelected]) {
       setSelectedDocument(nextSelected);
@@ -329,7 +337,7 @@ const Documents = () => {
     modalDocument === "permanentContract" ||
     modalDocument === "temporaryContract"
       ? ([
-          "Employer Details",
+          modalDocument === "warnings" ? "Client Details" : "Employer Details",
           "Employee Details",
           modalDocument === "warnings"
             ? "Warning Details"
@@ -991,9 +999,10 @@ const Documents = () => {
       >
       <DialogContent
         className={cn(
-          "p-0 [&>button]:right-5 [&>button]:top-4",
+          "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:right-5 [&>button]:top-4 [&>button]:text-white [&>button:hover]:text-slate-300 [&>button:hover]:bg-transparent [&>button]:focus:bg-transparent [&>button]:active:bg-transparent [&>button]:border-0 [&>button]:focus-visible:ring-0 [&>button]:focus-visible:outline-none [&>button]:active:text-white",
           modalDocument === "warnings"
-            || modalDocument === "disciplinaryHearingNotice"
+            ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
+            : modalDocument === "disciplinaryHearingNotice"
             || modalDocument === "precautionarySuspensionNotice"
             || modalDocument === "contemplatedRetrenchmentNotice"
             || modalDocument === "incapacityPerformanceHearingNotice"
@@ -1015,8 +1024,137 @@ const Documents = () => {
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "warnings" ||
-          modalDocument === "disciplinaryHearingNotice" ||
+          {modalDocument === "warnings" ? (
+            <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
+              <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
+                  <Menu className="h-3.5 w-3.5 -ml-0.5" />
+                  <span className="font-semibold">
+                    <span className="text-white/60">Documents / Discipline / </span>
+                    <span className="text-white">Warning Form</span>
+                  </span>
+                </div>
+              </header>
+              <div className="mt-[46px] h-[calc(90vh-46px)] bg-white">
+                <div className="flex h-14 items-center justify-center border-b border-slate-200 px-4">
+                  <div className="flex items-center gap-6">
+                    {modalSteps.map((step, index) => {
+                      const isActive = index === modalActiveStep;
+                      const isComplete = index < modalActiveStep;
+                      const isClickable = canSelectTrackerStep(index);
+                      const stepContent = (
+                        <>
+                          <span
+                            className={cn(
+                              "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
+                              isActive
+                                ? "border-black bg-black text-white"
+                                : isComplete
+                                  ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                  : "border-slate-200 bg-white text-slate-400",
+                            )}
+                          >
+                            {isComplete ? <Check className="h-3 w-3" aria-hidden="true" /> : index + 1}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[11px] font-semibold",
+                              isActive ? "text-black" : isComplete ? "text-[#3eca44]" : "text-slate-400",
+                            )}
+                          >
+                            {step}
+                          </span>
+                        </>
+                      );
+                      return isClickable ? (
+                        <button
+                          key={step}
+                          type="button"
+                          onClick={() => handleTrackerStepSelect(index)}
+                          className="flex items-center gap-2 rounded-sm px-1 hover:bg-slate-100"
+                        >
+                          {stepContent}
+                        </button>
+                      ) : (
+                        <div key={step} className="flex items-center gap-2 px-1">
+                          {stepContent}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="h-[calc(100%-56px)] p-4">
+                  <div className="mx-auto flex h-full max-w-[900px] min-h-0 flex-col">
+                    <section className="min-h-0 flex-1 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-3 pb-4">
+                    <Suspense
+                      fallback={
+                        <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
+                          Loading document generator...
+                        </div>
+                      }
+                    >
+                      <div className="h-full min-h-0">
+                        {ModalComponent ? (
+                          <ModalComponent
+                            embedded
+                            externalNavigation
+                            onStepChange={setBreadcrumbStep}
+                            onStepMetaChange={setStepMeta}
+                          />
+                          ) : null}
+                      </div>
+                    </Suspense>
+                    </section>
+                    <div className="mt-3 grid grid-cols-3 items-center">
+                      <div className="justify-self-start">
+                        <button
+                          type="button"
+                          onClick={() => stepMeta?.onBack?.()}
+                          disabled={!stepMeta?.canGoBack}
+                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-xs font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                        >
+                          Back
+                        </button>
+                      </div>
+                      <div className="justify-self-center">
+                        {stepMeta?.onClear &&
+                        (((stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished) ||
+                          (stepMeta?.isFinished && stepMeta?.supportsPreviewEditToggle)) ? (
+                          <button
+                            type="button"
+                            onClick={() => stepMeta.onClear?.()}
+                            className={cn(
+                              "inline-flex h-[28px] w-[84px] items-center justify-center gap-1.5 rounded border bg-white text-xs font-semibold disabled:cursor-not-allowed",
+                              stepMeta?.isFinished
+                                ? "border-slate-300 text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] disabled:border-slate-300 disabled:text-slate-300"
+                                : "border-transparent text-slate-700 hover:border-transparent hover:bg-white hover:text-[#2f9f35] disabled:text-slate-300",
+                            )}
+                          >
+                            {!stepMeta?.isFinished ? <Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                            {stepMeta?.isFinished
+                              ? stepMeta?.isPreviewEditable
+                                ? "Save"
+                                : "Edit"
+                              : "Reset"}
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="justify-self-end">
+                        <button
+                          type="button"
+                          onClick={() => stepMeta?.onNext?.()}
+                          disabled={!stepMeta?.canGoNext}
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                          {stepMeta?.isFinished ? "Download" : "Next"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : modalDocument === "disciplinaryHearingNotice" ||
           modalDocument === "precautionarySuspensionNotice" ||
           modalDocument === "contemplatedRetrenchmentNotice" ||
           modalDocument === "incapacityPerformanceHearingNotice" ||

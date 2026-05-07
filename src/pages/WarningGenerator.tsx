@@ -12,7 +12,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, X, Info, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Download, X, Info, RotateCcw, Building2, User2, Briefcase, Check, TriangleAlert, CalendarDays } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -105,6 +107,12 @@ type EmployeeWarningRow = {
 
 const warningTable = () => (supabase as any).from("employee_warnings");
 const dateToday = () => new Date().toISOString().split("T")[0];
+const toLocalIsoDate = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 const toDateOnly = (value: string) => value.split("T")[0];
 const formatDisplayDate = (value?: string | null) => {
   if (!value) return "--";
@@ -249,7 +257,7 @@ const WarningGenerator = ({
   const [clientSearchQuery, setClientSearchQuery] = useState("");
   const clientSearchInputRef = useRef<HTMLInputElement | null>(null);
   const misconductSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const dateIssuedPickerRef = useRef<HTMLInputElement | null>(null);
+  const [dateIssuedPopoverOpen, setDateIssuedPopoverOpen] = useState(false);
   const [warningSelectResetCount, setWarningSelectResetCount] = useState(0);
   const [clientSelectResetCount, setClientSelectResetCount] = useState(0);
   const [conductOffences, setConductOffences] = useState<
@@ -311,7 +319,7 @@ const WarningGenerator = ({
     employeeIdNumber: "",
     warningType: "" as WarningGeneratorFormData["warningType"] | "",
     validityMonths: "",
-    issuedBy: "",
+    issuedBy: "Management",
     dateIssued: new Date().toISOString().split("T")[0],
     misconductTypes: [] as string[],
     description: "",
@@ -885,17 +893,6 @@ const WarningGenerator = ({
     if (!fileUrl) return;
     window.open(fileUrl, "_blank", "noopener,noreferrer");
   }, []);
-  const openDateIssuedPicker = useCallback(() => {
-    const picker = dateIssuedPickerRef.current;
-    if (!picker) return;
-    if (typeof (picker as any).showPicker === "function") {
-      (picker as any).showPicker();
-      return;
-    }
-    picker.focus();
-    picker.click();
-  }, []);
-
   const generatePDF = (download = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -904,10 +901,10 @@ const WarningGenerator = ({
     let yPosition = 15;
 
     // Title
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
-    doc.text("DISCIPLINARY WARNING NOTICE", pageWidth / 2, yPosition, { align: "center" });
+    doc.text("DISCIPLINARY WARNING FORM", pageWidth / 2, yPosition, { align: "center" });
     
     yPosition += 10;
 
@@ -916,12 +913,12 @@ const WarningGenerator = ({
     const lineHeight = 5;
     const drawSectionTitle = (label: string) => {
       const sectionHeight = 8;
-      doc.setFillColor(240, 240, 240);
-      doc.setDrawColor(200, 200, 200);
-      doc.roundedRect(margin, yPosition, contentWidth, sectionHeight, 2, 2, "FD");
+      doc.setFillColor(236, 239, 242);
+      doc.setDrawColor(180, 186, 194);
+      doc.roundedRect(margin, yPosition, contentWidth, sectionHeight, 1, 1, "FD");
       doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(80, 80, 80);
+      doc.setTextColor(65, 72, 81);
       const headerCenterY = yPosition + sectionHeight / 2;
       doc.text(label, margin + 4, headerCenterY, { baseline: "middle" });
       yPosition += sectionHeight + 6;
@@ -1155,7 +1152,7 @@ const WarningGenerator = ({
       employeeIdNumber: "",
       warningType: "" as WarningGeneratorFormData["warningType"] | "",
       validityMonths: "",
-      issuedBy: "",
+      issuedBy: "Management",
       dateIssued: new Date().toISOString().split("T")[0],
       misconductTypes: [],
       description: "",
@@ -1192,7 +1189,7 @@ const WarningGenerator = ({
       ...prev,
       warningType: "" as WarningGeneratorFormData["warningType"] | "",
       validityMonths: "",
-      issuedBy: "",
+      issuedBy: "Management",
       dateIssued: new Date().toISOString().split("T")[0],
       misconductTypes: [],
       description: "",
@@ -1447,13 +1444,13 @@ const WarningGenerator = ({
     <div className="bg-white text-black px-8 pt-2 pb-8 mx-auto" style={{ width: "210mm", minHeight: "297mm" }}>
       {/* Header */}
       <div className="mb-3 flex items-center justify-center">
-        <h1 className="text-2xl font-bold text-black">DISCIPLINARY WARNING NOTICE</h1>
+        <h1 className="text-2xl font-bold text-black">DISCIPLINARY WARNING FORM</h1>
       </div>
 
       <div className="space-y-5 text-sm text-black">
         {/* Employer Details */}
         <div className="space-y-2">
-          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+          <div className="w-full rounded-sm border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
             A. Employer Details
           </div>
           <div className="text-xs space-y-1">
@@ -1489,7 +1486,7 @@ const WarningGenerator = ({
 
         {/* Employee Details */}
         <div className="space-y-2">
-          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+          <div className="w-full rounded-sm border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
             B. Employee Details
           </div>
           <div className="text-xs space-y-1">
@@ -1508,7 +1505,7 @@ const WarningGenerator = ({
 
         {/* Warning Details */}
         <div className="space-y-2">
-          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+          <div className="w-full rounded-sm border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
             C. Warning Details
           </div>
           <div className="text-xs space-y-2">
@@ -1555,7 +1552,7 @@ const WarningGenerator = ({
 
         {/* Consequences */}
         <div className="space-y-2">
-          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+          <div className="w-full rounded-sm border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
             D. Consequences
           </div>
           <p className="text-xs leading-5">
@@ -1565,7 +1562,7 @@ const WarningGenerator = ({
 
         {/* Signatures */}
         <div className="space-y-6">
-          <div className="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
+          <div className="w-full rounded-sm border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold uppercase">
             E. Signatures
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 text-xs mt-4">
@@ -2041,7 +2038,6 @@ const WarningGenerator = ({
                         id="issuedBy"
                         value={formData.issuedBy}
                         onChange={(e) => setFormData({ ...formData, issuedBy: e.target.value })}
-                        required
                         className={getWarningModalInputClass(formData.issuedBy.trim().length > 0)}
                       />
                     </div>
@@ -2049,38 +2045,65 @@ const WarningGenerator = ({
                       <Label htmlFor="dateIssued" className={modalFieldLabelClass}>
                         Date of Issue <span className="text-red-500">*</span>
                       </Label>
-                      <div className="flex items-start gap-2">
-                        <Input
-                          id="dateIssued"
-                          type="text"
-                          readOnly
-                          required
-                          placeholder="Please select a date"
-                          value={formData.dateIssued ? formatDisplayDate(formData.dateIssued) : ""}
-                          onClick={openDateIssuedPicker}
-                          onFocus={openDateIssuedPicker}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              openDateIssuedPicker();
-                            }
-                          }}
-                          className={`${getWarningModalInputClass(formData.dateIssued.trim().length > 0)} flex-1 cursor-pointer placeholder:!text-[11px] placeholder:!font-normal placeholder:!text-slate-400`}
-                        />
-                        <input
-                          ref={dateIssuedPickerRef}
-                          type="date"
-                          value={
-                            formData.dateIssued && /^\d{4}-\d{2}-\d{2}$/.test(formData.dateIssued)
-                              ? formData.dateIssued
-                              : ""
-                          }
-                          onChange={(event) => setFormData({ ...formData, dateIssued: event.target.value })}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
+                      <Popover open={dateIssuedPopoverOpen} onOpenChange={setDateIssuedPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            id="dateIssued"
+                            type="button"
+                            className={`${getWarningModalInputClass(formData.dateIssued.trim().length > 0)} flex w-full items-center justify-between px-3 text-left`}
+                          >
+                            <span className={cn(!formData.dateIssued && "text-slate-400")}>
+                              {formData.dateIssued ? formatDisplayDate(formData.dateIssued) : "Please select a date"}
+                            </span>
+                            <CalendarDays className="h-3.5 w-3.5 text-[#2f9f35]" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-auto rounded-sm border border-slate-200 p-0">
+                          <div className="p-1">
+                            <Calendar
+                              mode="single"
+                              selected={formData.dateIssued ? new Date(`${formData.dateIssued}T00:00:00`) : undefined}
+                              onSelect={(date) => {
+                                if (!date) return;
+                                const iso = toLocalIsoDate(date);
+                                setFormData({ ...formData, dateIssued: iso });
+                                setDateIssuedPopoverOpen(false);
+                              }}
+                              disabled={(date) => date > new Date()}
+                              classNames={{
+                                day_selected:
+                                  "bg-[#3eca44] text-white hover:bg-[#34b73b] hover:text-white focus:bg-[#3eca44] focus:text-white",
+                                day_today: "bg-[#3eca44]/15 text-[#2f9f35]",
+                                day: "h-9 w-9 p-0 font-normal hover:bg-[#3eca44]/10 hover:text-[#2f9f35] aria-selected:opacity-100",
+                              }}
+                              modifiersStyles={{
+                                selected: { backgroundColor: "#3eca44", color: "#ffffff" },
+                                today: { color: "#2f9f35" },
+                              }}
+                            />
+                            <div className="flex items-center justify-between px-3 pb-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, dateIssued: "" })}
+                                className="text-[11px] font-medium text-[#2f9f35] hover:text-[#34b73b]"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const todayIso = toLocalIsoDate(new Date());
+                                  setFormData({ ...formData, dateIssued: todayIso });
+                                  setDateIssuedPopoverOpen(false);
+                                }}
+                                className="text-[11px] font-medium text-[#2f9f35] hover:text-[#34b73b]"
+                              >
+                                Today
+                              </button>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                   </div>
                 </div>

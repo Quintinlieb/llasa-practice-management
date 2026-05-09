@@ -6,14 +6,19 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { Building2, Check, ChevronsUpDown, FileText, User2 } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, FileText, User2, X } from "lucide-react";
 
 type DiscWarningGeneratorProps = {
   embedded?: boolean;
   externalNavigation?: boolean;
   onRequestClose?: () => void;
+  draftState?: unknown;
+  onDraftStateChange?: (draftState: unknown) => void;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -30,6 +35,7 @@ type DiscWarningGeneratorProps = {
     isFinished?: boolean;
     isPreviewEditable?: boolean;
     supportsPreviewEditToggle?: boolean;
+    supportsResetAtFirstStep?: boolean;
     temporaryEmployeeCount?: number;
   }) => void;
 };
@@ -42,6 +48,14 @@ const steps = [
 ] as const;
 
 const stepIcons = [Building2, User2, FileText, Check] as const;
+
+type OffenceCategory = "Minor" | "Serious" | "Dismissible";
+
+type ConductOffence = {
+  name: string;
+  category: OffenceCategory;
+  firstOutcome: string;
+};
 
 type ClientRow = {
   id: string;
@@ -79,31 +93,98 @@ const emptyClientFormState: ClientFormState = {
   clientAddress: "",
 };
 
+type EmployeeFormState = {
+  employeeName: string;
+  employeeSurname: string;
+  employeeIdOrPassportNumber: string;
+  jobTitle: string;
+};
+
+const emptyEmployeeFormState: EmployeeFormState = {
+  employeeName: "",
+  employeeSurname: "",
+  employeeIdOrPassportNumber: "",
+  jobTitle: "",
+};
+
+type WarningFormState = {
+  misconductTypes: string[];
+  misconductDescription: string;
+  warningType: "first" | "second" | "serious" | "final" | "";
+  validityPeriod: string;
+  issuedBy: string;
+};
+
+const emptyWarningFormState: WarningFormState = {
+  misconductTypes: [],
+  misconductDescription: "",
+  warningType: "",
+  validityPeriod: "",
+  issuedBy: "",
+};
+
+type DiscWarningGeneratorDraftState = {
+  activeStep: number;
+  isFinished: boolean;
+  clientForm: ClientFormState;
+  employeeForm: EmployeeFormState;
+  warningForm: WarningFormState;
+};
+
+const isDiscWarningGeneratorDraftState = (value: unknown): value is DiscWarningGeneratorDraftState => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.activeStep !== "number" || typeof candidate.isFinished !== "boolean") return false;
+  if (!candidate.clientForm || typeof candidate.clientForm !== "object") return false;
+  return true;
+};
+
+const normalizeClientFormState = (value: unknown): ClientFormState => ({
+  ...emptyClientFormState,
+  ...((value && typeof value === "object" ? value : {}) as Partial<ClientFormState>),
+});
+
+const normalizeEmployeeFormState = (value: unknown): EmployeeFormState => ({
+  ...emptyEmployeeFormState,
+  ...((value && typeof value === "object" ? value : {}) as Partial<EmployeeFormState>),
+});
+
+const normalizeWarningFormState = (value: unknown): WarningFormState => {
+  const candidate = (value && typeof value === "object" ? value : {}) as Partial<WarningFormState>;
+  return {
+    ...emptyWarningFormState,
+    ...candidate,
+    misconductTypes: Array.isArray(candidate.misconductTypes)
+      ? candidate.misconductTypes.filter((item): item is string => typeof item === "string")
+      : [],
+  };
+};
+
 const stepShellCopy = [
   {
     eyebrow: "Step 1",
-    title: "Client details shell",
-    body: "This new disciplinary warning generator shell is active. The client and letterhead inputs will be rebuilt in the next phase.",
+    title: "Client details",
+    body: "Select the client and review the company information that will be used in this warning.",
   },
   {
     eyebrow: "Step 2",
-    title: "Employee details shell",
-    body: "This stage is reserved for the new employee capture and selection flow, separate from the legacy warning generator implementation.",
+    title: "Employee details",
+    body: "Capture the employee details that will appear in the warning.",
   },
   {
     eyebrow: "Step 3",
-    title: "Warning details shell",
-    body: "This stage will hold the new misconduct, warning type, issue date, and supporting detail inputs once the generator rework starts.",
+    title: "Warning details",
+    body: "Select the misconduct type or types and complete the warning information for this document.",
   },
   {
     eyebrow: "Preview",
-    title: "Preview and download shell",
-    body: "This placeholder confirms the new modal shell, stepper behavior, and footer controls before the real warning preview is implemented.",
+    title: "Preview and download",
+    body: "Review the warning before finalising and downloading it.",
   },
 ] as const;
 
 const inputClassName =
-  "h-8 rounded-sm border-slate-300 bg-white text-[11px] text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+  "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 
 const companyTypeSuffixByValue: Record<string, string> = {
   "Private Company ((Pty) Ltd)": "(Pty) Ltd",
@@ -164,11 +245,43 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientAddress: formatClientAddress(client),
 });
 
+const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
+
+const offenceGroupLabel: Record<OffenceCategory, string> = {
+  Minor: "Minor Offences",
+  Serious: "Serious Offences",
+  Dismissible: "Dismissible Offences",
+};
+
+const warningValidityByType: Record<Exclude<WarningFormState["warningType"], "">, string> = {
+  first: "6",
+  second: "6",
+  serious: "9",
+  final: "12",
+};
+
+const warningTypeLabelByValue: Record<Exclude<WarningFormState["warningType"], "">, string> = {
+  first: "First Written Warning",
+  second: "Second Written Warning",
+  serious: "Serious Written Warning",
+  final: "Final Written Warning",
+};
+
 const DiscWarningGeneratorContent = ({
   activeStep,
   isFinished,
   clientRows,
   clientForm,
+  employeeForm,
+  warningForm,
+  onEmployeeFormChange,
+  onWarningFormChange,
+  onWarningTypeChange,
+  misconductSearchOpen,
+  setMisconductSearchOpen,
+  conductOffences,
+  misconductLoadMessage,
+  onMisconductToggle,
   clientSearchOpen,
   setClientSearchOpen,
   onClientSelect,
@@ -178,6 +291,16 @@ const DiscWarningGeneratorContent = ({
   isFinished: boolean;
   clientRows: ClientRow[];
   clientForm: ClientFormState;
+  employeeForm: EmployeeFormState;
+  warningForm: WarningFormState;
+  onEmployeeFormChange: (field: keyof EmployeeFormState, value: string) => void;
+  onWarningFormChange: (field: Exclude<keyof WarningFormState, "misconductTypes" | "warningType">, value: string) => void;
+  onWarningTypeChange: (value: Exclude<WarningFormState["warningType"], "">) => void;
+  misconductSearchOpen: boolean;
+  setMisconductSearchOpen: (open: boolean) => void;
+  conductOffences: ConductOffence[];
+  misconductLoadMessage: string;
+  onMisconductToggle: (name: string) => void;
   clientSearchOpen: boolean;
   setClientSearchOpen: (open: boolean) => void;
   onClientSelect: (clientId: string) => void;
@@ -187,11 +310,52 @@ const DiscWarningGeneratorContent = ({
   const currentStep = stepShellCopy[currentIndex];
   const selectedClientLabel = clientForm.clientName || "Select client";
   const isClientStep = activeStep === 0 && !isFinished;
+  const isEmployeeStep = activeStep === 1 && !isFinished;
+  const isWarningStep = activeStep === 2 && !isFinished;
+  const isPreviewStep = isFinished;
+  const misconductSelectionLabel =
+    warningForm.misconductTypes.length === 0
+      ? "Select misconduct type(s)"
+      : warningForm.misconductTypes.length === 1
+        ? warningForm.misconductTypes[0]
+        : `${warningForm.misconductTypes.length} misconduct type(s) selected`;
+  const warningTypeLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "";
+  const previewLine = "______________________________";
+  const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
+  const employerRows = [
+    { label: "Company Name:", value: clientForm.clientName || previewLine },
+    { label: "Registration No:", value: clientForm.registrationNumber || previewLine },
+    { label: "Employer Number:", value: clientForm.clientContactNumber || previewLine },
+    { label: "Employer Email:", value: clientForm.clientEmail || previewLine },
+    { label: "Employer Address:", value: clientForm.clientAddress || previewLine },
+  ];
+  const employeeRows = [
+    { label: "Employee Name:", value: employeeFullName || previewLine },
+    { label: "ID Number:", value: employeeForm.employeeIdOrPassportNumber || previewLine },
+  ];
+  const warningRows = [
+    {
+      label: "Offence(s):",
+      value: warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : previewLine,
+    },
+    { label: "Description:", value: warningForm.misconductDescription || previewLine },
+    { label: "Warning Type:", value: warningTypeLabel || previewLine },
+    {
+      label: "Validity Period:",
+      value: warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : previewLine,
+    },
+    { label: "Issued By:", value: warningForm.issuedBy || previewLine },
+  ];
+  const signatureRows = [
+    ["Employer/Issuer", "Date", "Employee", "Date"],
+    ["Representative", "Date", "Interpreter", "Date"],
+    ["Witness 1 (optional)", "Date", "Witness 2 (optional)", "Date"],
+  ] as const;
 
   return (
     <div className="h-full overflow-y-auto py-1">
       <div className="h-full">
-        {!isClientStep ? (
+        {!isClientStep && !isEmployeeStep && !isWarningStep && !isPreviewStep ? (
           <div className="space-y-3 border-b border-slate-100 pb-5">
             <Badge variant="outline" className="w-fit border-[#2D4256]/20 text-[#2D4256]">
               {currentStep.eyebrow}
@@ -202,67 +366,71 @@ const DiscWarningGeneratorContent = ({
             </div>
           </div>
         ) : null}
-        <div className={cn("space-y-4", isClientStep ? "pt-0" : "pt-5")}>
+        <div className={cn("space-y-4", isClientStep || isEmployeeStep ? "pt-0" : "pt-5")}>
           {isClientStep ? (
             <>
-              <div className="space-y-2">
-                <Label htmlFor="discWarningClientName" className="text-[10px] font-semibold text-slate-600">
-                  Client Name
-                </Label>
-                <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="discWarningClientName"
-                      type="button"
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={clientSearchOpen}
-                      className={cn(
-                        inputClassName,
-                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                        !clientForm.clientName && "text-[10px]",
-                        !clientForm.clientName && "text-slate-400",
-                      )}
-                    >
-                      <span className="truncate">{selectedClientLabel}</span>
-                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[420px] p-0">
-                    <Command shouldFilter>
-                      <CommandInput
-                        placeholder="Search registered or trading name..."
-                        className="h-8 text-[11px] placeholder:text-[10px]"
-                      />
-                      <CommandList className="max-h-[320px]">
-                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
-                        <CommandGroup>
-                          {clientRows.map((client) => {
-                            const label = formatClientDisplayName(client);
-                            const searchable = `${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`;
-                            return (
-                              <CommandItem
-                                key={client.id}
-                                value={`${label} ${searchable}`}
-                                onSelect={() => {
-                                  onClientSelect(client.id);
-                                  setClientSearchOpen(false);
-                                }}
-                                className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
-                              >
-                                <p className="min-w-0 truncate text-[10px] font-medium text-slate-900">{label}</p>
-                                {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
               <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="discWarningClientName" className="text-[10px] font-semibold text-slate-600">
+                    Client Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="discWarningClientName"
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={clientSearchOpen}
+                        className={cn(
+                          inputClassName,
+                          "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                          !clientForm.clientName && "text-[10px]",
+                          !clientForm.clientName && "text-slate-400",
+                        )}
+                      >
+                        <span className="truncate">{selectedClientLabel}</span>
+                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
+                      onWheel={(event) => event.stopPropagation()}
+                    >
+                      <Command shouldFilter>
+                        <CommandInput
+                          placeholder="Search registered or trading name..."
+                          className="h-8 text-[11px] placeholder:text-[10px]"
+                        />
+                        <CommandList className="max-h-[320px] overscroll-contain">
+                          <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                          <CommandGroup>
+                            {clientRows.map((client) => {
+                              const label = formatClientDisplayName(client);
+                              const searchable = `${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`;
+                              return (
+                                <CommandItem
+                                  key={client.id}
+                                  value={`${label} ${searchable}`}
+                                  onSelect={() => {
+                                    onClientSelect(client.id);
+                                    setClientSearchOpen(false);
+                                  }}
+                                  className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
+                                >
+                                  <p className="min-w-0 truncate text-[10px] font-medium text-slate-900">{label}</p>
+                                  {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="discWarningRegistrationNumber" className="text-[10px] font-semibold text-slate-600">
                     Registration Number
@@ -316,6 +484,344 @@ const DiscWarningGeneratorContent = ({
                 />
               </div>
             </>
+          ) : isEmployeeStep ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeName" className="text-[10px] font-semibold text-slate-600">
+                  Employee Name <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="discWarningEmployeeName"
+                  value={employeeForm.employeeName}
+                  onChange={(event) => onEmployeeFormChange("employeeName", event.target.value)}
+                  placeholder="Enter employee name"
+                  className={inputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeSurname" className="text-[10px] font-semibold text-slate-600">
+                  Employee Surname <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="discWarningEmployeeSurname"
+                  value={employeeForm.employeeSurname}
+                  onChange={(event) => onEmployeeFormChange("employeeSurname", event.target.value)}
+                  placeholder="Enter employee surname"
+                  className={inputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeIdOrPassportNumber" className="text-[10px] font-semibold text-slate-600">
+                  Employee ID/Passport Number <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="discWarningEmployeeIdOrPassportNumber"
+                  value={employeeForm.employeeIdOrPassportNumber}
+                  onChange={(event) => onEmployeeFormChange("employeeIdOrPassportNumber", event.target.value)}
+                  placeholder="Enter employee ID or passport number"
+                  className={inputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeJobTitle" className="text-[10px] font-semibold text-slate-600">
+                  Job Title
+                </Label>
+                <Input
+                  id="discWarningEmployeeJobTitle"
+                  value={employeeForm.jobTitle}
+                  onChange={(event) => onEmployeeFormChange("jobTitle", event.target.value)}
+                  placeholder="Enter job title"
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+          ) : isWarningStep ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="discWarningMisconductTypes" className="text-[10px] font-semibold text-slate-600">
+                  Misconduct Type(s) <span className="text-red-500">*</span>
+                </Label>
+                <Popover open={misconductSearchOpen} onOpenChange={setMisconductSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="discWarningMisconductTypes"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={misconductSearchOpen}
+                      className={cn(
+                        inputClassName,
+                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        warningForm.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                      )}
+                    >
+                      <span className="truncate text-left">{misconductSelectionLabel}</span>
+                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    <Command shouldFilter>
+                      <CommandInput
+                        placeholder="Search misconduct types..."
+                        className="h-8 text-[11px] placeholder:text-[10px]"
+                      />
+                      <CommandList className="max-h-[248px] overscroll-contain">
+                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
+                        {offenceCategoryOrder.map((category) => {
+                          const offences = conductOffences.filter((offence) => offence.category === category);
+                          if (offences.length === 0) return null;
+                          return (
+                            <CommandGroup
+                              key={category}
+                              heading={offenceGroupLabel[category]}
+                              className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
+                            >
+                              {offences.map((offence) => {
+                                const isSelected = warningForm.misconductTypes.includes(offence.name);
+                                return (
+                                  <CommandItem
+                                    key={`${category}-${offence.name}`}
+                                    value={`${offenceGroupLabel[category]} ${offence.name}`}
+                                    onSelect={() => onMisconductToggle(offence.name)}
+                                    className={cn(
+                                      "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                      isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                    )}
+                                  >
+                                    <p
+                                      className={cn(
+                                        "min-w-0 truncate text-[10px] font-medium",
+                                        isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                      )}
+                                    >
+                                      {offence.name}
+                                    </p>
+                                    {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          );
+                        })}
+                      </CommandList>
+                    </Command>
+                    <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                      {warningForm.misconductTypes.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {warningForm.misconductTypes.map((type) => (
+                            <div
+                              key={type}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                            >
+                              <span className="truncate">{type}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${type}`}
+                                onClick={() => onMisconductToggle(type)}
+                                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {warningForm.misconductTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {warningForm.misconductTypes.map((type) => (
+                      <div
+                        key={type}
+                        className="group inline-flex items-center rounded-sm border border-[#3eca44] bg-[#3eca44]/10 px-2 py-1 text-[10px] font-medium text-[#2f9f35] transition-all"
+                      >
+                        <span>{type}</span>
+                        <span className="inline-flex w-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:ml-1 group-hover:w-3.5 group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-3.5 group-focus-within:opacity-100">
+                          <button
+                            type="button"
+                            aria-label={`Remove ${type}`}
+                            onClick={() => onMisconductToggle(type)}
+                            className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] hover:text-[#237a28]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningMisconductDescription" className="text-[10px] font-semibold text-slate-600">
+                  Misconduct Description <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="discWarningMisconductDescription"
+                  value={warningForm.misconductDescription}
+                  onChange={(event) => onWarningFormChange("misconductDescription", event.target.value)}
+                  placeholder="Provide specific details about the misconduct incident(s)"
+                  rows={5}
+                  className={`${inputClassName} min-h-[120px] resize-none py-2`}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="discWarningWarningType" className="text-[10px] font-semibold text-slate-600">
+                    Warning Type <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={warningForm.warningType || undefined}
+                    onValueChange={(value) => onWarningTypeChange(value as Exclude<WarningFormState["warningType"], "">)}
+                  >
+                    <SelectTrigger
+                      id="discWarningWarningType"
+                      className={cn(
+                        inputClassName,
+                        "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                      )}
+                    >
+                      <SelectValue placeholder="Select warning type" />
+                    </SelectTrigger>
+                    <SelectContent className="text-[10px]">
+                      <SelectItem value="first" className="text-[10px]">First Written Warning</SelectItem>
+                      <SelectItem value="second" className="text-[10px]">Second Written Warning</SelectItem>
+                      <SelectItem value="serious" className="text-[10px]">Serious Written Warning</SelectItem>
+                      <SelectItem value="final" className="text-[10px]">Final Written Warning</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="discWarningValidityPeriod" className="text-[10px] font-semibold text-slate-600">
+                    Validity Period <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="discWarningValidityPeriod"
+                    value={warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : ""}
+                    readOnly
+                    placeholder="Will populate from warning type"
+                    className={inputClassName}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="discWarningIssuedBy" className="text-[10px] font-semibold text-slate-600">
+                    Issued By
+                  </Label>
+                  <Input
+                    id="discWarningIssuedBy"
+                    value={warningForm.issuedBy}
+                    onChange={(event) => onWarningFormChange("issuedBy", event.target.value)}
+                    placeholder="Enter issuer name"
+                    className={inputClassName}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : isPreviewStep ? (
+            <div className="mx-auto max-w-[820px]">
+              <div className="bg-white px-8 py-8 text-black">
+                <h2 className="text-center text-[28px] font-bold uppercase tracking-tight text-black">
+                  Disciplinary Warning Form
+                </h2>
+
+                <section className="mt-6">
+                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                    <p className="text-[12px] font-bold uppercase text-black">A. Employer Details</p>
+                  </div>
+                  <div className="mt-4 space-y-1.5">
+                    {employerRows.map((row) => (
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                        <p className="font-bold text-black">{row.label}</p>
+                        <p className="text-black">{row.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="mt-8">
+                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                    <p className="text-[12px] font-bold uppercase text-black">B. Employee Details</p>
+                  </div>
+                  <div className="mt-4 space-y-1.5">
+                    {employeeRows.map((row) => (
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                        <p className="font-bold text-black">{row.label}</p>
+                        <p className="text-black">{row.value}</p>
+                      </div>
+                    ))}
+                    {employeeForm.jobTitle ? (
+                      <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                        <p className="font-bold text-black">Job Title:</p>
+                        <p className="text-black">{employeeForm.jobTitle}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="mt-8">
+                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                    <p className="text-[12px] font-bold uppercase text-black">C. Warning Details</p>
+                  </div>
+                  <div className="mt-4 space-y-1.5">
+                    {warningRows.map((row) => (
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                        <p className="font-bold text-black">{row.label}</p>
+                        <p className="whitespace-pre-wrap text-black">{row.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="mt-8">
+                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                    <p className="text-[12px] font-bold uppercase text-black">D. Consequences</p>
+                  </div>
+                  <p className="mt-4 text-[12px] leading-5 text-black">
+                    You are required to refrain completely from committing any further acts of misconduct. Should you
+                    commit the same or similar act of misconduct within the validity period of this warning,
+                    progressive disciplinary action will be taken which could lead to your dismissal.
+                  </p>
+                </section>
+
+                <section className="mt-8">
+                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                    <p className="text-[12px] font-bold uppercase text-black">E. Signatures</p>
+                  </div>
+                  <div className="mt-6 space-y-7">
+                    {signatureRows.map((row, index) => (
+                      <div key={index} className="grid grid-cols-[minmax(0,1.7fr)_120px_minmax(0,1.7fr)_120px] gap-x-10 gap-y-2">
+                        {row.map((label) => (
+                          <div key={label} className="min-w-0">
+                            <div className="border-b border-black" />
+                            <p className="mt-2 text-[12px] text-black">{label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-8 rounded-sm border border-slate-300 bg-slate-50 px-4 py-3">
+                    <p className="text-[12px] italic leading-5 text-slate-700">
+                      If the employee refuses to sign this warning, the witness&apos;s signature will confirm that the
+                      employee did receive the warning and that the contents were explained to him/her.
+                    </p>
+                  </div>
+                </section>
+              </div>
+            </div>
           ) : (
             <>
               <div className="grid gap-3 md:grid-cols-3">
@@ -359,9 +865,9 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-4 py-5">
-                <p className="text-sm font-medium text-slate-900">Rebuild target</p>
+                <p className="text-sm font-medium text-slate-900">Preview step</p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This shell is intentionally clean and isolated from the legacy warning generator so the new disciplinary warning workflow can be built without inherited contract or notice logic.
+                  This preview area will show the completed warning content before download.
                 </p>
               </div>
             </>
@@ -374,15 +880,30 @@ const DiscWarningGeneratorContent = ({
 
 const DiscWarningGenerator = ({
   embedded = false,
+  draftState,
+  onDraftStateChange,
   onStepChange,
   onStepMetaChange,
 }: DiscWarningGeneratorProps) => {
-  const [activeStep, setActiveStep] = useState(0);
-  const [isFinished, setIsFinished] = useState(false);
+  const { user } = useAuth();
+  const resolvedDraftState = isDiscWarningGeneratorDraftState(draftState) ? draftState : null;
+  const [activeStep, setActiveStep] = useState(resolvedDraftState?.activeStep ?? 0);
+  const [isFinished, setIsFinished] = useState(resolvedDraftState?.isFinished ?? false);
   const [clientRows, setClientRows] = useState<ClientRow[]>([]);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
   const [clientLoadMessage, setClientLoadMessage] = useState("No clients found.");
-  const [clientForm, setClientForm] = useState<ClientFormState>(emptyClientFormState);
+  const [clientForm, setClientForm] = useState<ClientFormState>(() =>
+    normalizeClientFormState(resolvedDraftState?.clientForm),
+  );
+  const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(() =>
+    normalizeEmployeeFormState(resolvedDraftState?.employeeForm),
+  );
+  const [warningForm, setWarningForm] = useState<WarningFormState>(() =>
+    normalizeWarningFormState(resolvedDraftState?.warningForm),
+  );
+  const [misconductSearchOpen, setMisconductSearchOpen] = useState(false);
+  const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
+  const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
 
   const currentStepLabel = isFinished ? steps[3] : steps[activeStep];
 
@@ -426,23 +947,147 @@ const DiscWarningGenerator = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    const loadConductOffences = async () => {
+      const { data, error } = await (supabase as any)
+        .from("company_code_of_conduct")
+        .select("data")
+        .eq("company_id", user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (error) {
+        setConductOffences([]);
+        setMisconductLoadMessage(`Unable to load misconduct types: ${error.message}`);
+        return;
+      }
+
+      const sections =
+        (
+          data?.data as {
+            sections?: Array<{
+              title?: string;
+              offences?: Array<{ name?: string; category?: string; first?: string }>;
+            }>;
+          }
+        )?.sections ?? [];
+
+      const mapped = sections
+        .flatMap((section) => {
+          const sectionCategory = section.title?.toLowerCase().includes("dismiss")
+            ? "Dismissible"
+            : section.title?.toLowerCase().includes("minor")
+              ? "Minor"
+              : section.title?.toLowerCase().includes("serious")
+                ? "Serious"
+                : undefined;
+          return (section.offences ?? []).map((offence) => {
+            const name = offence.name?.trim();
+            if (!name) return null;
+            const category =
+              (offence.category as OffenceCategory | undefined) ?? sectionCategory ?? "Serious";
+            return { name, category, firstOutcome: offence.first ?? "" };
+          });
+        })
+        .filter((item): item is ConductOffence => Boolean(item?.name));
+
+      const deduped = offenceCategoryOrder.flatMap((category) => {
+        const seen = new Set<string>();
+        return mapped.filter((item) => {
+          if (item.category !== category) return false;
+          const key = item.name.trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      });
+
+      setConductOffences(deduped);
+      setMisconductLoadMessage(deduped.length > 0 ? "No matching misconduct types found." : "No misconduct types found.");
+    };
+
+    void loadConductOffences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
   const handleClientSelect = (clientId: string) => {
     const client = clientRows.find((row) => row.id === clientId);
     if (!client) return;
     setClientForm(mapClientToFormState(client));
   };
 
+  const handleEmployeeFormChange = (field: keyof EmployeeFormState, value: string) => {
+    setEmployeeForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleWarningFormChange = (
+    field: Exclude<keyof WarningFormState, "misconductTypes" | "warningType">,
+    value: string,
+  ) => {
+    setWarningForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleWarningTypeChange = (value: Exclude<WarningFormState["warningType"], "">) => {
+    setWarningForm((current) => ({
+      ...current,
+      warningType: value,
+      validityPeriod: warningValidityByType[value],
+    }));
+  };
+
+  const handleMisconductToggle = (name: string) => {
+    setWarningForm((current) => ({
+      ...current,
+      misconductTypes: current.misconductTypes.includes(name)
+        ? current.misconductTypes.filter((item) => item !== name)
+        : [...current.misconductTypes, name],
+    }));
+  };
+
+  const isEmployeeStepComplete =
+    employeeForm.employeeName.trim().length > 0 &&
+    employeeForm.employeeSurname.trim().length > 0 &&
+    employeeForm.employeeIdOrPassportNumber.trim().length > 0;
+  const isWarningStepComplete =
+    warningForm.misconductTypes.length > 0 &&
+    warningForm.misconductDescription.trim().length > 0 &&
+    Boolean(warningForm.warningType) &&
+    warningForm.validityPeriod.trim().length > 0;
+
   const stepMeta = useMemo(
     () => ({
       steps,
       activeStep: isFinished ? 3 : activeStep,
       icons: stepIcons,
-      canGoNext: isFinished || (activeStep === 0 ? Boolean(clientForm.clientId) : activeStep <= 2),
+      canGoNext:
+        isFinished ||
+        (activeStep === 0
+          ? Boolean(clientForm.clientId)
+          : activeStep === 1
+            ? isEmployeeStepComplete
+            : activeStep === 2
+              ? isWarningStepComplete
+              : activeStep <= 2),
       canGoBack: isFinished || activeStep > 0,
       canSelectStep: (index: number) => index >= 0 && index < 3,
       onNext: () => {
         if (isFinished) return;
         if (activeStep === 0 && !clientForm.clientId) return;
+        if (activeStep === 1 && !isEmployeeStepComplete) return;
+        if (activeStep === 2 && !isWarningStepComplete) return;
         if (activeStep < 2) {
           setActiveStep((current) => Math.min(current + 1, 2));
           return;
@@ -462,17 +1107,39 @@ const DiscWarningGenerator = ({
       },
       onClear: () => {
         setIsFinished(false);
-        setActiveStep(0);
-        setClientForm(emptyClientFormState);
+        if (activeStep === 0) {
+          setClientForm(emptyClientFormState);
+          setClientSearchOpen(false);
+          return;
+        }
+        if (activeStep === 1) {
+          setEmployeeForm(emptyEmployeeFormState);
+          return;
+        }
+        if (activeStep === 2) {
+          setWarningForm(emptyWarningFormState);
+          setMisconductSearchOpen(false);
+        }
       },
       isFinished,
+      supportsResetAtFirstStep: activeStep === 0 && Boolean(clientForm.clientId),
     }),
-    [activeStep, clientForm.clientId, isFinished],
+    [activeStep, clientForm.clientId, isEmployeeStepComplete, isFinished, isWarningStepComplete],
   );
 
   useEffect(() => {
     onStepMetaChange?.(stepMeta);
   }, [onStepMetaChange, stepMeta]);
+
+  useEffect(() => {
+    onDraftStateChange?.({
+      activeStep,
+      isFinished,
+      clientForm,
+      employeeForm,
+      warningForm,
+    } satisfies DiscWarningGeneratorDraftState);
+  }, [activeStep, clientForm, employeeForm, isFinished, onDraftStateChange, warningForm]);
 
   const content = (
     <DiscWarningGeneratorContent
@@ -480,6 +1147,16 @@ const DiscWarningGenerator = ({
       isFinished={isFinished}
       clientRows={clientRows}
       clientForm={clientForm}
+      employeeForm={employeeForm}
+      warningForm={warningForm}
+      onEmployeeFormChange={handleEmployeeFormChange}
+      onWarningFormChange={handleWarningFormChange}
+      onWarningTypeChange={handleWarningTypeChange}
+      misconductSearchOpen={misconductSearchOpen}
+      setMisconductSearchOpen={setMisconductSearchOpen}
+      conductOffences={conductOffences}
+      misconductLoadMessage={misconductLoadMessage}
+      onMisconductToggle={handleMisconductToggle}
       clientSearchOpen={clientSearchOpen}
       setClientSearchOpen={setClientSearchOpen}
       onClientSelect={handleClientSelect}

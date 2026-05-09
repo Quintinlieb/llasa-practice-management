@@ -1,46 +1,40 @@
-import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 import { Icon } from "@iconify/react";
+import { Bell, Headset, Settings } from "lucide-react";
 
 interface DashboardLayoutProps {
   children: ReactNode;
   headerTitle?: string;
   headerDescription?: string;
   profileSubtitleMode?: "email" | "company";
+  headerInlineContent?: ReactNode;
 }
 
-interface Profile {
+interface UserHeaderProfile {
   user_name: string;
   user_surname: string;
   user_email: string;
 }
 
-interface HeaderInfo {
-  account_type: string | null;
-  company_name: string | null;
-  company_type: string | null;
-  user_surname: string | null;
-}
-
 const STORAGE_KEYS = {
-  COMPANY: "header:companyName",
-  COMPANY_TYPE: "header:companyType",
-  PROFILE: "header:profile",
   SIDEBAR_COLLAPSED: "sidebar:collapsed",
 } as const;
 
-const getStoredProfile = (): Profile | null => {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEYS.PROFILE);
-    return raw ? (JSON.parse(raw) as Profile) : null;
-  } catch {
-    return null;
-  }
+const getPageTitleFromPathname = (pathname: string) => {
+  if (pathname.startsWith("/documents")) return "Documents";
+  if (pathname.startsWith("/clients-2") || pathname.startsWith("/clients")) return "Clients";
+  if (pathname.startsWith("/dashboard")) return "Dashboard";
+  if (pathname.startsWith("/case-files")) return "Case Files";
+  if (pathname.startsWith("/settings")) return "Settings";
+  if (pathname.startsWith("/terms")) return "Terms and Conditions";
+  if (pathname.startsWith("/auth")) return "Authentication";
+  if (pathname.startsWith("/reset-password")) return "Reset Password";
+  return "";
 };
 
 export default function DashboardLayout({
@@ -48,8 +42,10 @@ export default function DashboardLayout({
   headerTitle,
   headerDescription,
   profileSubtitleMode = "email",
+  headerInlineContent,
 }: DashboardLayoutProps) {
   const { user } = useAuth();
+  const location = useLocation();
   const headerRef = useRef<HTMLElement | null>(null);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
@@ -58,29 +54,10 @@ export default function DashboardLayout({
       return false;
     }
   });
-  const [companyName, setCompanyName] = useState(() => {
-    try {
-      return sessionStorage.getItem(STORAGE_KEYS.COMPANY) || "";
-    } catch {
-      return "";
-    }
-  });
-  const [companyType, setCompanyType] = useState(() => {
-    try {
-      return sessionStorage.getItem(STORAGE_KEYS.COMPANY_TYPE) || "";
-    } catch {
-      return "";
-    }
-  });
-  const [profile, setProfile] = useState<Profile | null>(() => getStoredProfile());
-  const initials = useMemo(() => {
-    if (!profile?.user_name || !profile?.user_surname) return "U";
-    return `${profile.user_name.charAt(0)}${profile.user_surname.charAt(0)}`.toUpperCase();
-  }, [profile]);
-  const companyDisplay = [companyName, companyType].filter(Boolean).join(" ");
+  const resolvedHeaderTitle = headerTitle ?? getPageTitleFromPathname(location.pathname);
+  const [profile, setProfile] = useState<UserHeaderProfile | null>(null);
 
   useEffect(() => {
-    if (!user?.id) return;
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
       if (stored === null) {
@@ -89,10 +66,10 @@ export default function DashboardLayout({
     } catch {
       setIsCollapsed(false);
     }
-  }, [user?.id]);
+  }, []);
 
   useLayoutEffect(() => {
-    const width = isCollapsed ? "5rem" : "10.5rem";
+    const width = isCollapsed ? "5rem" : "11.5rem";
     document.documentElement.style.setProperty("--app-sidebar-width", width);
     try {
       localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, isCollapsed ? "1" : "0");
@@ -122,91 +99,62 @@ export default function DashboardLayout({
     return () => observer.disconnect();
   }, []);
 
-
-
   useEffect(() => {
-    if (user) {
-      (async () => {
-        let queryResult = await (supabase as any)
-          .from("profiles")
-          .select("account_type, company_name, company_type, user_surname")
-          .eq("id", user.id)
-          .maybeSingle();
+    if (!user?.id) {
+      setProfile(null);
+      return;
+    }
 
-        if (queryResult.error) {
-          const fallbackResult = await (supabase as any)
-            .from("profiles")
-            .select("company_name, company_type, user_surname")
-            .eq("id", user.id)
-            .maybeSingle();
-          queryResult = fallbackResult;
-        }
+    let isMounted = true;
 
-        const data = queryResult.data as HeaderInfo | null;
-        if (!data) return;
-        const isDomestic = data.account_type === "domestic";
-        if (isDomestic) {
-          const surname = data.user_surname || "";
-          setCompanyName(surname ? `${surname} Household` : "");
-          setCompanyType("");
-          return;
-        }
-        setCompanyName(data.company_name ?? "");
-        setCompanyType(data.company_type ?? "");
-      })();
-      supabase
+    const loadProfile = async () => {
+      const { data } = await supabase
         .from("profiles")
         .select("user_name, user_surname, user_email")
         .eq("id", user.id)
-        .maybeSingle()
-        .then(async ({ data }) => {
-          if (data) {
-            setProfile(data as Profile);
-            return;
-          }
+        .maybeSingle();
 
-          const { data: subuserData } = await (supabase as any)
-            .from("subusers")
-            .select("name,surname,email")
-            .eq("auth_user_id", user.id)
-            .maybeSingle();
+      if (!isMounted) return;
 
-          if (subuserData) {
-            setProfile({
-              user_name: String((subuserData as any).name || "").trim(),
-              user_surname: String((subuserData as any).surname || "").trim(),
-              user_email: String((subuserData as any).email || user.email || "").trim(),
-            });
-            return;
-          }
-
-          const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
-          const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
-          const email = String(user.email || "").trim();
-          if (metaName || metaSurname || email) {
-            setProfile({
-              user_name: metaName || "User",
-              user_surname: metaSurname || "",
-              user_email: email,
-            });
-          }
-        });
-    }
-  }, [user]);
-
-  useEffect(() => {
-    try {
-      if (companyName) sessionStorage.setItem(STORAGE_KEYS.COMPANY, companyName);
-      else sessionStorage.removeItem(STORAGE_KEYS.COMPANY);
-      if (companyType) sessionStorage.setItem(STORAGE_KEYS.COMPANY_TYPE, companyType);
-      else sessionStorage.removeItem(STORAGE_KEYS.COMPANY_TYPE);
-      if (profile) {
-        sessionStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+      if (data) {
+        setProfile(data as UserHeaderProfile);
+        return;
       }
-    } catch {
-      // ignore storage errors
-    }
-  }, [companyName, profile]);
+
+      const { data: subuserData } = await (supabase as any)
+        .from("subusers")
+        .select("name,surname,email")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (subuserData) {
+        setProfile({
+          user_name: String((subuserData as any).name || "").trim(),
+          user_surname: String((subuserData as any).surname || "").trim(),
+          user_email: String((subuserData as any).email || user.email || "").trim(),
+        });
+        return;
+      }
+
+      const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
+      const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
+      const email = String(user.email || "").trim();
+
+      setProfile({
+        user_name: metaName || "User",
+        user_surname: metaSurname,
+        user_email: email,
+      });
+    };
+
+    void loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   return (
     <SidebarProvider>
@@ -235,12 +183,12 @@ export default function DashboardLayout({
             className="fixed top-0 z-40 bg-transparent transition-[left] duration-200 ease-linear"
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
-            <div className="relative w-full bg-white pl-6 pr-6 py-1 flex items-center justify-between shadow-sm">
+            <div className="relative flex w-full items-center justify-between bg-[#2D4256] pl-6 pr-6 py-1 shadow-sm">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsCollapsed((prev) => !prev)}
-                  className="h-9 w-9 -ml-2 p-0 flex items-center justify-start text-slate-700 hover:text-blue-600"
+                  className="flex h-9 w-9 -ml-2 items-center justify-start p-0 text-white/70 transition-colors hover:text-white"
                 >
                   <Icon
                     icon="material-symbols:menu-open-sharp"
@@ -250,32 +198,49 @@ export default function DashboardLayout({
                   />
                   <span className="sr-only">Toggle sidebar</span>
                 </button>
-                {headerTitle ? (
+                {resolvedHeaderTitle ? (
                   <div className="flex flex-col gap-1">
-                    <h1 className="text-xl font-semibold text-slate-900">{headerTitle}</h1>
+                    <h1 className="text-xl font-semibold text-white/80">{resolvedHeaderTitle}</h1>
                     {headerDescription && (
-                      <p className="text-xs text-slate-600">{headerDescription}</p>
+                      <p className="text-xs text-white/60">{headerDescription}</p>
                     )}
                   </div>
-                ) : (
-                  companyName && (
-                    <h1 className="text-sm font-semibold -ml-1">
-                      <span className="text-slate-900">{companyName}</span>
-                      {companyType ? <span className="text-slate-500">{` ${companyType}`}</span> : null}
-                    </h1>
-                  )
-                )}
+                ) : null}
+                {headerInlineContent ? <div className="flex items-center gap-2">{headerInlineContent}</div> : null}
               </div>
-              {profile && (
+              {profile ? (
                 <div className="flex items-center gap-3">
-                  <span className="h-10 w-px bg-slate-200 self-center" aria-hidden="true" />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                      aria-label="Settings"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                      aria-label="Notifications"
+                    >
+                      <Bell className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                      aria-label="Support"
+                    >
+                      <Headset className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <span className="h-10 w-px bg-white/10 self-center" aria-hidden="true" />
                   <div className="flex flex-col items-end text-right leading-tight">
-                    <span className="text-xs font-medium text-slate-700">
+                    <span className="text-xs font-medium text-white/70">
                       Hi, {profile.user_name} {profile.user_surname}
                     </span>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           </header>
 

@@ -1,14 +1,14 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Search, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Minus, Search, Undo2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 type DocumentKey =
@@ -38,6 +38,8 @@ type DocumentComponentProps = {
   embedded?: boolean;
   externalNavigation?: boolean;
   onRequestClose?: () => void;
+  draftState?: unknown;
+  onDraftStateChange?: (draftState: unknown) => void;
   onStepChange?: (step: string | null) => void;
   onStepMetaChange?: (meta: {
     steps: readonly string[];
@@ -54,6 +56,7 @@ type DocumentComponentProps = {
     isFinished?: boolean;
     isPreviewEditable?: boolean;
     supportsPreviewEditToggle?: boolean;
+    supportsResetAtFirstStep?: boolean;
     temporaryEmployeeCount?: number;
   }) => void;
 };
@@ -73,6 +76,12 @@ type StepNotes = readonly [
   readonly string[],
   readonly string[],
 ];
+
+type MinimizedGeneratorTab = {
+  id: string;
+  documentKey: ModalDocumentKey;
+  draftState?: unknown;
+};
 
 const lazyDocumentComponent = (loader: () => Promise<any>) =>
   lazy(async () => {
@@ -233,15 +242,18 @@ const getShellCategoryTitle = (documentKey: DocumentKey) => {
 
 const Documents = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const isDocumentsRoute = location.pathname.startsWith("/documents");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
-  const [modalDocument, setModalDocument] = useState<ModalDocumentKey | null>(null);
+  const [activeSession, setActiveSession] = useState<MinimizedGeneratorTab | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>([]);
+  const [minimizedTabs, setMinimizedTabs] = useState<MinimizedGeneratorTab[]>([]);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -257,16 +269,43 @@ const Documents = () => {
     isFinished?: boolean;
     isPreviewEditable?: boolean;
     supportsPreviewEditToggle?: boolean;
+    supportsResetAtFirstStep?: boolean;
     temporaryEmployeeCount?: number;
   } | null>(null);
 
   useEffect(() => {
     window.dispatchEvent(
       new CustomEvent("documents-modal-state", {
-        detail: { open: Boolean(modalDocument), documentKey: modalDocument },
+        detail: {
+          open: Boolean(isDocumentsRoute && activeSession?.documentKey),
+          documentKey: isDocumentsRoute ? activeSession?.documentKey ?? null : null,
+        },
       }),
     );
-  }, [modalDocument]);
+  }, [activeSession, isDocumentsRoute]);
+
+  const closeModal = () => {
+    setActiveSession(null);
+    setStepMeta(null);
+    setBreadcrumbStep(null);
+  };
+
+  const minimizeModal = () => {
+    if (!activeSession) return;
+    setMinimizedTabs((prev) => [...prev, activeSession]);
+    closeModal();
+  };
+
+  const restoreModal = (tabId: string) => {
+    const tab = minimizedTabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    setActiveSession(tab);
+    setMinimizedTabs((prev) => prev.filter((item) => item.id !== tabId));
+  };
+
+  const dismissMinimizedTab = (tabId: string) => {
+    setMinimizedTabs((prev) => prev.filter((item) => item.id !== tabId));
+  };
 
   useEffect(() => {
     const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
@@ -274,13 +313,35 @@ const Documents = () => {
       setSelectedDocument(nextSelected);
       setStepMeta(null);
       setBreadcrumbStep(null);
-      setModalDocument(nextSelected);
+      setActiveSession({ id: crypto.randomUUID(), documentKey: nextSelected });
+      const nextState = { ...((location.state as Record<string, unknown> | null) ?? {}) };
+      delete nextState.selectedDocument;
+      navigate(location.pathname, {
+        replace: true,
+        state: Object.keys(nextState).length > 0 ? nextState : null,
+      });
     }
-  }, [location.state]);
+  }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
     setBreadcrumbStep(null);
   }, [selectedDocument]);
+
+  useEffect(() => {
+    if (isDocumentsRoute || !activeSession) return;
+    setMinimizedTabs((prev) => (prev.some((item) => item.id === activeSession.id) ? prev : [...prev, activeSession]));
+    setActiveSession(null);
+    setStepMeta(null);
+    setBreadcrumbStep(null);
+  }, [activeSession, isDocumentsRoute]);
+
+  useEffect(() => {
+    const handleForceClose = () => {
+      closeModal();
+    };
+    window.addEventListener("documents-force-close", handleForceClose);
+    return () => window.removeEventListener("documents-force-close", handleForceClose);
+  }, []);
 
   useEffect(() => {
     const el = contentScrollRef.current;
@@ -342,6 +403,7 @@ const Documents = () => {
   }, []);
 
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
+  const modalDocument = activeSession?.documentKey ?? null;
   const ModalComponent = modalDocument ? documentComponents[modalDocument] : null;
   const activeDocumentMeta = selectedDocument ? documentMeta[selectedDocument] : null;
   const activeCategoryTitle = activeDocumentMeta?.category ?? "";
@@ -354,6 +416,13 @@ const Documents = () => {
   const isDarkStepperModal = modalDocument ? darkStepperDocumentSet.has(modalDocument) : false;
   const isCodeOfConductModal = modalDocument === "codeOfConduct";
   const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
+  const minimizedHeaderTabs = minimizedTabs.map((tab, index) => {
+    const isWarningTab = tab.documentKey === "warnings" || tab.documentKey === "discWarningGenerator";
+    return {
+      ...tab,
+      label: isWarningTab ? `Warning (${index + 1})` : `${modalTitleByDocument[tab.documentKey]} (${index + 1})`,
+    };
+  });
   const modalSteps =
     modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
@@ -747,7 +816,38 @@ const Documents = () => {
   };
 
   return (
-    <DashboardLayout profileSubtitleMode="company">
+    <DashboardLayout
+      profileSubtitleMode="company"
+      headerInlineContent={
+        isDocumentsRoute && minimizedHeaderTabs.length ? (
+          <div className="ml-[100px] flex items-center gap-2 overflow-x-auto py-1">
+            <span className="h-6 w-px bg-white/10 self-center" aria-hidden="true" />
+            {minimizedHeaderTabs.map((tab) => (
+              <div
+                key={tab.id}
+                className="group inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
+              >
+                <button
+                  type="button"
+                  onClick={() => restoreModal(tab.id)}
+                  className="inline-flex h-6 items-center px-2.5 text-[10px] font-semibold text-[#2D4256] transition-colors group-hover:text-[#2D4256]"
+                >
+                  {tab.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissMinimizedTab(tab.id)}
+                  className="inline-flex h-6 w-0 items-center justify-center overflow-hidden border-l border-transparent text-[#2D4256] opacity-0 transition-all duration-150 group-hover:w-6 group-hover:border-l-[#2D4256]/20 group-hover:opacity-100 group-hover:text-[#2D4256] hover:!text-white/70"
+                  aria-label={`Close ${tab.label} tab`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null
+      }
+    >
       <div className="space-y-0 -m-6">
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
@@ -865,19 +965,15 @@ const Documents = () => {
         </div>
       </div>
       <Dialog
-        open={Boolean(modalDocument)}
+        open={isDocumentsRoute && Boolean(activeSession)}
         onOpenChange={(open) => {
           if (open) return;
-          setModalDocument(null);
-          if (!open) {
-            setStepMeta(null);
-            setBreadcrumbStep(null);
-          }
+          closeModal();
         }}
       >
       <DialogContent
         className={cn(
-          "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:right-5 [&>button]:top-4 [&>button]:text-slate-400 [&>button]:hover:text-white [&>button]:active:text-black [&>button]:hover:bg-transparent [&>button]:focus:bg-transparent [&>button]:active:bg-transparent [&>button]:border-0 [&>button]:focus-visible:ring-0 [&>button]:focus-visible:outline-none [&>button]:outline-none [&>button]:shadow-none [&>button>svg]:stroke-[2.4]",
+          "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:hidden",
           isDarkStepperModal
             ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
             : isCodeOfConductModal
@@ -887,6 +983,34 @@ const Documents = () => {
             : "h-[90vh] max-w-[1320px] overflow-hidden border border-slate-200",
         )}
       >
+          <div className="absolute right-5 top-[23px] z-20 flex -translate-y-1/2 items-center gap-2">
+            <button
+              type="button"
+              onClick={minimizeModal}
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent transition-colors focus:outline-none focus-visible:ring-0",
+                isDarkStepperModal || isCodeOfConductModal
+                  ? "text-slate-400 hover:bg-transparent hover:text-white"
+                  : "text-slate-400 hover:bg-transparent hover:text-slate-700",
+              )}
+              aria-label="Minimize generator"
+            >
+              <Minus className="h-4 w-4 stroke-[2.4]" />
+            </button>
+            <button
+              type="button"
+              onClick={closeModal}
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent transition-colors focus:outline-none focus-visible:ring-0",
+                isDarkStepperModal || isCodeOfConductModal
+                  ? "text-slate-400 hover:bg-transparent hover:text-white"
+                  : "text-slate-400 hover:bg-transparent hover:text-slate-700",
+              )}
+              aria-label="Close generator"
+            >
+              <X className="h-4 w-4 stroke-[2.4]" />
+            </button>
+          </div>
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
           {isDarkStepperModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
@@ -968,6 +1092,10 @@ const Documents = () => {
                           <ModalComponent
                             embedded
                             externalNavigation
+                            draftState={activeSession?.draftState}
+                            onDraftStateChange={(draftState) =>
+                              setActiveSession((prev) => (prev ? { ...prev, draftState } : prev))
+                            }
                             onStepChange={setBreadcrumbStep}
                             onStepMetaChange={setStepMeta}
                           />
@@ -988,7 +1116,7 @@ const Documents = () => {
                       </div>
                       <div className="justify-self-center">
                         {stepMeta?.onClear &&
-                        (((stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished) ||
+                        ((((stepMeta?.activeStep ?? 0) > 0 || stepMeta?.supportsResetAtFirstStep) && !stepMeta?.isFinished) ||
                           (stepMeta?.isFinished && stepMeta?.supportsPreviewEditToggle)) ? (
                           <button
                             type="button"
@@ -1049,6 +1177,10 @@ const Documents = () => {
                         <ModalComponent
                           embedded
                           externalNavigation
+                          draftState={activeSession?.draftState}
+                          onDraftStateChange={(draftState) =>
+                            setActiveSession((prev) => (prev ? { ...prev, draftState } : prev))
+                          }
                           onStepChange={setBreadcrumbStep}
                           onStepMetaChange={setStepMeta}
                         />
@@ -1191,7 +1323,7 @@ const Documents = () => {
                       </div>
                       <div className="justify-self-center">
                         {stepMeta?.onClear &&
-                        (((stepMeta?.activeStep ?? 0) > 0 && !stepMeta?.isFinished) ||
+                        ((((stepMeta?.activeStep ?? 0) > 0 || stepMeta?.supportsResetAtFirstStep) && !stepMeta?.isFinished) ||
                           (stepMeta?.isFinished && stepMeta?.supportsPreviewEditToggle)) ? (
                           <button
                             type="button"
@@ -1298,16 +1430,18 @@ const Documents = () => {
                   }
                 >
                   <div className="space-y-2">
-                    {ModalComponent ? (
-                      <ModalComponent
-                        embedded
-                        onRequestClose={() => {
-                          setModalDocument(null);
-                          setStepMeta(null);
-                          setBreadcrumbStep(null);
-                        }}
-                        onStepChange={setBreadcrumbStep}
-                        onStepMetaChange={setStepMeta}
+                      {ModalComponent ? (
+                        <ModalComponent
+                          embedded
+                          draftState={activeSession?.draftState}
+                          onDraftStateChange={(draftState) =>
+                            setActiveSession((prev) => (prev ? { ...prev, draftState } : prev))
+                          }
+                          onRequestClose={() => {
+                            closeModal();
+                          }}
+                          onStepChange={setBreadcrumbStep}
+                          onStepMetaChange={setStepMeta}
                       />
                     ) : null}
                   </div>

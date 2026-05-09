@@ -747,16 +747,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         loadedGroupsRef.current.add(group);
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load profile",
-        variant: "destructive",
-      });
+      console.error("Failed to load settings profile group", group, error);
+      if (!embedded) {
+        toast({
+          title: "Error",
+          description: "Failed to load profile",
+          variant: "destructive",
+        });
+      }
     } finally {
       loadingGroupsRef.current.delete(group);
       setGroupLoading(group, false);
     }
-  }, [setGroupLoading, toast, user]);
+  }, [embedded, setGroupLoading, toast, user]);
 
   useEffect(() => {
     if (!user) return;

@@ -338,7 +338,14 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                   isActive={location.pathname === "/settings"}
                   data-collapsed={isCollapsed}
                 >
-                  <NavLink to="/settings" state={{ backgroundLocation: location }} className="w-full text-xs">
+                  <NavLink
+                    to="/settings"
+                    state={{ backgroundLocation: location }}
+                    className="w-full text-xs"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent("documents-force-close"));
+                    }}
+                  >
                     <Settings className="h-5 w-5" />
                     <span className={cn(isCollapsed && "sr-only")}>Settings</span>
                   </NavLink>

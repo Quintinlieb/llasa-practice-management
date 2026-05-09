@@ -23,6 +23,7 @@ import { warningGeneratorSchema } from "@/lib/validation";
 import type { Tables } from "@/integrations/supabase/types";
 import type { WarningGeneratorFormData } from "@/lib/validation";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 
 const MISCONDUCT_TYPES = [
   "Unauthorised Absenteeism",
@@ -1063,24 +1064,21 @@ const WarningGenerator = ({
         description: formData.description,
       });
 
-      const { error } = await supabase.from("documents").insert({
-        company_id: user.id,
-        employee_id: formData.employeeId || null,
-        trading_name: validatedData.tradingName,
-        employee_name: validatedData.employeeName,
-        employee_surname: validatedData.employeeSurname,
-        employee_id_number: validatedData.employeeIdNumber,
-        warning_type: validatedData.warningType,
-        validity_months: validatedData.validityMonths,
-        issued_by: validatedData.issuedBy,
-        date_issued: validatedData.dateIssued,
-        misconduct: validatedData.misconductTypes.join(", "),
-        description: validatedData.description,
-        dates_committed: "",
+      const logResult = await logGeneratedDocument({
+        documentLabel: "Warning",
+        documentType: "Discipline",
+        employeeName: formData.employeeName,
+        employeeSurname: formData.employeeSurname,
+        tradingName: formData.tradingName,
+        registeredName: formData.companyName,
       });
-
-      if (error) throw error;
-
+      if (!logResult.ok) {
+        toast({
+          title: "Save Error",
+          description: `Could not save document row: ${logResult.error}`,
+          variant: "destructive",
+        });
+      }
       generatePDF(true);
 
       toast({
@@ -1125,7 +1123,7 @@ const WarningGenerator = ({
     await performSubmit();
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (formData.misconductTypes.length === 0) {
       toast({
         title: "Validation Error",
@@ -1133,6 +1131,21 @@ const WarningGenerator = ({
         variant: "destructive",
       });
       return;
+    }
+    const logResult = await logGeneratedDocument({
+      documentLabel: "Warning",
+      documentType: "Discipline",
+      employeeName: formData.employeeName,
+      employeeSurname: formData.employeeSurname,
+      tradingName: formData.tradingName,
+      registeredName: formData.companyName,
+    });
+    if (!logResult.ok) {
+      toast({
+        title: "Save Error",
+        description: `Could not save document row: ${logResult.error}`,
+        variant: "destructive",
+      });
     }
     generatePDF(true);
   };
@@ -2554,6 +2567,8 @@ const WarningGenerator = ({
 };
 
 export default WarningGenerator;
+
+
 
 
 

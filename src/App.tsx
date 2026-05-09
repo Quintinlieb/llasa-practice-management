@@ -10,7 +10,6 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
-import Clients from "./pages/Clients";
 import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
 import CaseFiles from "./pages/CaseFiles";
@@ -39,9 +38,9 @@ const AppRoutes = () => {
         <Route path="/auth" element={<Auth />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
         <Route path="/clients-2" element={<ProtectedRoute><ClientsTwo /></ProtectedRoute>} />
-        <Route path="/employees" element={<Navigate to="/clients" replace />} />
+        <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients-2" replace /></ProtectedRoute>} />
+        <Route path="/employees" element={<Navigate to="/clients-2" replace />} />
         <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/documents/discipline/code-of-conduct/preview" element={<ProtectedRoute><CodeOfConductPreviewPage /></ProtectedRoute>} />
         <Route path="/documents/discipline" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />

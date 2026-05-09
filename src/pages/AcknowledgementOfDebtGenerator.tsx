@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   extractDobFromId,
   calculateAgeFromDob,
@@ -2661,6 +2662,14 @@ const AcknowledgementOfDebtGenerator = ({
     doc.setPage(totalPages);
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Acknowledgement of Debt',
+        documentType: 'Other',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Acknowledgement_of_Debt_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
       toast({
         title: "Download ready",
@@ -4041,6 +4050,8 @@ const AcknowledgementOfDebtGenerator = ({
 };
 
 export default AcknowledgementOfDebtGenerator;
+
+
 
 
 

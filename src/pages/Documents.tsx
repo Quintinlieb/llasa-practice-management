@@ -1,20 +1,20 @@
-import { Suspense, lazy, useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
 import { useLocation } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import {
-  ScaleIcon,
-  DocumentTextIcon,
-  ChartBarIcon,
-  BellAlertIcon,
-  ChevronDownIcon,
-} from "@heroicons/react/24/outline";
-import { ArrowLeft, ArrowRight, Check, Menu, Undo2 } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Search, Undo2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 type DocumentKey =
   | "codeOfConduct"
   | "warnings"
+  | "discWarningGenerator"
   | "disciplinaryHearingNotice"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
@@ -33,23 +33,6 @@ type DocumentKey =
   | "poorPerformanceTermination"
   | "mutualTermination";
 type ModalDocumentKey = DocumentKey;
-
-type DocumentItem = {
-  id?: DocumentKey;
-  label: string;
-  active: boolean;
-};
-
-type DocumentCategory = {
-  title: string;
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  items: DocumentItem[];
-};
-
-type StoredProfile = {
-  user_name?: string;
-  user_surname?: string;
-};
 
 type DocumentComponentProps = {
   embedded?: boolean;
@@ -75,6 +58,22 @@ type DocumentComponentProps = {
   }) => void;
 };
 
+type DocumentTableRow = {
+  id: string;
+  documentName: string;
+  documentType: string;
+  clientName: string;
+  createdOn: string;
+  createdBy: string;
+};
+
+type StepNotes = readonly [
+  readonly string[],
+  readonly string[],
+  readonly string[],
+  readonly string[],
+];
+
 const lazyDocumentComponent = (loader: () => Promise<any>) =>
   lazy(async () => {
     const mod = await loader();
@@ -84,6 +83,7 @@ const lazyDocumentComponent = (loader: () => Promise<any>) =>
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
   warnings: lazyDocumentComponent(() => import("./WarningGenerator")),
+  discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
   disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
@@ -103,67 +103,145 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   mutualTermination: lazyDocumentComponent(() => import("./MutualTerminationGenerator")),
 };
 
-const documentCategories: DocumentCategory[] = [
-  {
-    title: "Discipline",
-    icon: ScaleIcon,
-    items: [
-      { id: "codeOfConduct", label: "Code of Conduct", active: true },
-      { id: "warnings", label: "Warnings", active: true },
-    ],
-  },
-  {
-    title: "Contracts",
-    icon: DocumentTextIcon,
-    items: [
-      { id: "permanentContract", label: "Permanent Contract", active: true },
-      { id: "temporaryContract", label: "Temporary Contract", active: true },
-      { id: "addendum", label: "Addendum", active: true },
-    ],
-  },
-  {
-    title: "Terminations",
-    icon: DocumentTextIcon,
-    items: [
-      { id: "noticeTermination", label: "Misconduct", active: true },
-      { id: "illHealthTermination", label: "Ill Health", active: true },
-      { id: "poorPerformanceTermination", label: "Poor Performance", active: true },
-      { id: "abscondmentTermination", label: "Abscondment/Desertion", active: true },
-      { id: "retrenchmentTermination", label: "Retrenchment", active: true },
-      { id: "retirementTermination", label: "Retirement", active: true },
-      { id: "mutualTermination", label: "Mutual Seperation Agreement", active: true },
-    ],
-  },
-  {
-    title: "Notices",
-    icon: BellAlertIcon,
-    items: [
-      { id: "disciplinaryHearingNotice", label: "Disciplinary Hearing", active: true },
-      { id: "incapacityPerformanceHearingNotice", label: "Incapacity Hearing (Performance)", active: true },
-      { id: "incapacityIllHealthHearingNotice", label: "Incapacity Hearing (Ill health)", active: true },
-      { id: "precautionarySuspensionNotice", label: "Precautionary Suspension", active: true },
-      { id: "contemplatedRetrenchmentNotice", label: "Contemplated Retrenchment (S189)", active: true },
-    ],
-  },
-  {
-    title: "Other",
-    icon: ChartBarIcon,
-    items: [
-      { id: "serviceCertificate", label: "Certificate of Service", active: true },
-      { id: "acknowledgementOfDebt", label: "Acknowledgement of Debt", active: true },
-    ],
-  },
-];
+const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
+  codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
+  warnings: { category: "Discipline", label: "Warnings" },
+  discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
+  disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
+  precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
+  contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
+  incapacityPerformanceHearingNotice: { category: "Notices", label: "Incapacity Hearing (Performance)" },
+  incapacityIllHealthHearingNotice: { category: "Notices", label: "Incapacity Hearing (Ill health)" },
+  serviceCertificate: { category: "Other", label: "Certificate of Service" },
+  acknowledgementOfDebt: { category: "Other", label: "Acknowledgement of Debt" },
+  permanentContract: { category: "Contracts", label: "Permanent Contract" },
+  temporaryContract: { category: "Contracts", label: "Temporary Contract" },
+  addendum: { category: "Contracts", label: "Addendum" },
+  noticeTermination: { category: "Terminations", label: "Misconduct" },
+  illHealthTermination: { category: "Terminations", label: "Ill Health" },
+  abscondmentTermination: { category: "Terminations", label: "Abscondment/Desertion" },
+  retrenchmentTermination: { category: "Terminations", label: "Retrenchment" },
+  retirementTermination: { category: "Terminations", label: "Retirement" },
+  poorPerformanceTermination: { category: "Terminations", label: "Poor Performance" },
+  mutualTermination: { category: "Terminations", label: "Mutual Separation Agreement" },
+};
+
+const terminationDocumentKeys = [
+  "noticeTermination",
+  "illHealthTermination",
+  "abscondmentTermination",
+  "retrenchmentTermination",
+  "retirementTermination",
+  "poorPerformanceTermination",
+  "mutualTermination",
+] as const satisfies readonly DocumentKey[];
+
+const terminationLetterDocumentKeys = [
+  "noticeTermination",
+  "illHealthTermination",
+  "abscondmentTermination",
+  "retrenchmentTermination",
+  "retirementTermination",
+  "poorPerformanceTermination",
+] as const satisfies readonly DocumentKey[];
+
+const noticeDocumentKeys = [
+  "disciplinaryHearingNotice",
+  "precautionarySuspensionNotice",
+  "contemplatedRetrenchmentNotice",
+  "incapacityPerformanceHearingNotice",
+  "incapacityIllHealthHearingNotice",
+] as const satisfies readonly DocumentKey[];
+
+const wizardDocumentKeys = [
+  "warnings",
+  "discWarningGenerator",
+  ...noticeDocumentKeys,
+  "serviceCertificate",
+  "acknowledgementOfDebt",
+  "addendum",
+  ...terminationDocumentKeys,
+  "permanentContract",
+  "temporaryContract",
+] as const satisfies readonly DocumentKey[];
+
+const darkStepperDocumentKeys = ["warnings", "discWarningGenerator", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
+const darkShellDocumentKeys = ["codeOfConduct", ...darkStepperDocumentKeys] as const satisfies readonly DocumentKey[];
+const lightWizardDocumentKeys = wizardDocumentKeys.filter(
+  (key) => !darkStepperDocumentKeys.includes(key),
+) as DocumentKey[];
+const modalOnlyDocumentKeys = [...wizardDocumentKeys, "codeOfConduct"] as const satisfies readonly DocumentKey[];
+
+const terminationDocumentSet = new Set<DocumentKey>(terminationDocumentKeys);
+const terminationLetterDocumentSet = new Set<DocumentKey>(terminationLetterDocumentKeys);
+const wizardDocumentSet = new Set<DocumentKey>(wizardDocumentKeys);
+const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
+const darkShellDocumentSet = new Set<DocumentKey>(darkShellDocumentKeys);
+const lightWizardDocumentSet = new Set<DocumentKey>(lightWizardDocumentKeys);
+const modalOnlyDocumentSet = new Set<DocumentKey>(modalOnlyDocumentKeys);
+
+const modalTitleByDocument: Record<DocumentKey, string> = {
+  codeOfConduct: "Code of Conduct",
+  warnings: "Warnings",
+  discWarningGenerator: "Warnings 2",
+  disciplinaryHearingNotice: "Disciplinary Hearing",
+  precautionarySuspensionNotice: "Precautionary Suspension",
+  contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
+  incapacityPerformanceHearingNotice: "Incapacity Hearing (Performance)",
+  incapacityIllHealthHearingNotice: "Incapacity Hearing (Ill health)",
+  serviceCertificate: "Certificate of Service",
+  acknowledgementOfDebt: "Acknowledgement of Debt",
+  permanentContract: "Permanent Contract",
+  temporaryContract: "Temporary Contract",
+  addendum: "Addendum",
+  noticeTermination: "Notice of Termination",
+  illHealthTermination: "Ill Health",
+  abscondmentTermination: "Abscondment/Desertion",
+  retrenchmentTermination: "Retrenchment",
+  retirementTermination: "Retirement",
+  poorPerformanceTermination: "Poor Performance",
+  mutualTermination: "Mutual Separation Agreement",
+};
+
+const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
+  warnings: "Warning Details",
+  discWarningGenerator: "Warning Details",
+  disciplinaryHearingNotice: "Notice Details",
+  precautionarySuspensionNotice: "Notice Details",
+  contemplatedRetrenchmentNotice: "Notice Details",
+  incapacityPerformanceHearingNotice: "Notice Details",
+  incapacityIllHealthHearingNotice: "Notice Details",
+  serviceCertificate: "Certificate Details",
+  acknowledgementOfDebt: "Debt Details",
+  addendum: "Addendum Details",
+  noticeTermination: "Termination Details",
+  illHealthTermination: "Termination Details",
+  abscondmentTermination: "Termination Details",
+  retrenchmentTermination: "Termination Details",
+  retirementTermination: "Termination Details",
+  poorPerformanceTermination: "Termination Details",
+  mutualTermination: "Termination Details",
+  permanentContract: "Employment Details",
+  temporaryContract: "Employment Details",
+};
+
+const getShellCategoryTitle = (documentKey: DocumentKey) => {
+  if (terminationLetterDocumentSet.has(documentKey)) return "Termination Letter";
+  if (documentKey === "mutualTermination") return "Terminations";
+  return documentMeta[documentKey].category;
+};
 
 const Documents = () => {
   const location = useLocation();
-  const [openCategory, setOpenCategory] = useState<string>("");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
-  const [profile, setProfile] = useState<StoredProfile | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
   const [modalDocument, setModalDocument] = useState<ModalDocumentKey | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
+  const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>([]);
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -205,33 +283,6 @@ const Documents = () => {
   }, [selectedDocument]);
 
   useEffect(() => {
-    const readProfile = () => {
-      try {
-        const raw = sessionStorage.getItem("header:profile");
-        return raw ? (JSON.parse(raw) as StoredProfile) : null;
-      } catch {
-        return null;
-      }
-    };
-
-    const stored = readProfile();
-    if (stored) {
-      setProfile(stored);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const next = readProfile();
-      if (next) {
-        setProfile(next);
-        clearInterval(interval);
-      }
-    }, 400);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     const el = contentScrollRef.current;
     if (!el) return;
     const checkScroll = () => {
@@ -250,131 +301,66 @@ const Documents = () => {
     };
   }, [selectedDocument]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const formatCreatedOn = (value: string) => {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    };
+    const loadDocuments = async () => {
+      let queryResult = await (supabase as any)
+        .from("documents")
+        .select("id, document_name, document_type, client_name, created_at, created_by_name")
+        .order("created_at", { ascending: false });
+      if (queryResult.error) {
+        queryResult = await (supabase as any)
+          .from("documents")
+          .select("id, document_name, document_type, client_name, created_at, created_by")
+          .order("created_at", { ascending: false });
+      }
+      if (queryResult.error || !isMounted) return;
+      const rows: DocumentTableRow[] = (queryResult.data ?? []).map((row: any) => ({
+        id: String(row.id ?? crypto.randomUUID()),
+        documentName: String(row.document_name ?? ""),
+        documentType: String(row.document_type ?? ""),
+        clientName: String(row.client_name ?? ""),
+        createdOn: formatCreatedOn(String(row.created_at ?? "")),
+        createdBy: String(row.created_by_name ?? row.created_by ?? ""),
+      }));
+      setDocumentRows(rows);
+    };
+    void loadDocuments();
+    const interval = setInterval(() => void loadDocuments(), 10000);
+    const onFocus = () => void loadDocuments();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
   const ModalComponent = modalDocument ? documentComponents[modalDocument] : null;
-  const activeCategoryTitle =
-    selectedDocument
-      ? documentCategories.find((category) =>
-          category.items.some((item) => item.id === selectedDocument),
-        )?.title ?? ""
-      : "";
-  const breadcrumbCategoryTitle =
-    selectedDocument === "noticeTermination" ||
-    selectedDocument === "illHealthTermination" ||
-    selectedDocument === "abscondmentTermination" ||
-    selectedDocument === "retrenchmentTermination" ||
-    selectedDocument === "retirementTermination" ||
-    selectedDocument === "poorPerformanceTermination"
-      ? "Termination Letter"
-    : selectedDocument === "mutualTermination"
-      ? "Terminations"
-      : activeCategoryTitle;
-  const activeDocumentLabel =
-    selectedDocument
-      ? documentCategories
-          .flatMap((category) => category.items)
-          .find((item) => item.id === selectedDocument)?.label ?? ""
-      : "";
-  const modalTitle =
-    modalDocument === "warnings"
-      ? "Warnings"
-      : modalDocument === "disciplinaryHearingNotice"
-        ? "Disciplinary Hearing"
-      : modalDocument === "precautionarySuspensionNotice"
-        ? "Precautionary Suspension"
-      : modalDocument === "contemplatedRetrenchmentNotice"
-        ? "Contemplated Retrenchment (S189)"
-      : modalDocument === "incapacityPerformanceHearingNotice"
-        ? "Incapacity Hearing (Performance)"
-      : modalDocument === "incapacityIllHealthHearingNotice"
-        ? "Incapacity Hearing (Ill health)"
-      : modalDocument === "serviceCertificate"
-        ? "Certificate of Service"
-      : modalDocument === "acknowledgementOfDebt"
-        ? "Acknowledgement of Debt"
-      : modalDocument === "addendum"
-        ? "Addendum"
-        : modalDocument === "poorPerformanceTermination"
-          ? "Poor Performance"
-        : modalDocument === "illHealthTermination"
-          ? "Ill Health"
-        : modalDocument === "abscondmentTermination"
-          ? "Abscondment/Desertion"
-        : modalDocument === "retrenchmentTermination"
-          ? "Retrenchment"
-        : modalDocument === "retirementTermination"
-          ? "Retirement"
-        : modalDocument === "mutualTermination"
-          ? "Mutual Seperation Agreement"
-        : modalDocument === "noticeTermination"
-          ? "Notice of Termination"
-        : modalDocument === "permanentContract"
-          ? "Permanent Contract"
-      : modalDocument === "temporaryContract"
-            ? "Temporary Contract"
-          : modalDocument === "codeOfConduct"
-            ? "Code of Conduct"
-          : "";
-  const isTerminationModal =
-    modalDocument === "noticeTermination" ||
-    modalDocument === "illHealthTermination" ||
-    modalDocument === "abscondmentTermination" ||
-    modalDocument === "retrenchmentTermination" ||
-    modalDocument === "retirementTermination" ||
-    modalDocument === "poorPerformanceTermination" ||
-    modalDocument === "mutualTermination";
+  const activeDocumentMeta = selectedDocument ? documentMeta[selectedDocument] : null;
+  const activeCategoryTitle = activeDocumentMeta?.category ?? "";
+  const breadcrumbCategoryTitle = selectedDocument ? getShellCategoryTitle(selectedDocument) : activeCategoryTitle;
+  const activeDocumentLabel = activeDocumentMeta?.label ?? "";
+  const modalTitle = modalDocument ? modalTitleByDocument[modalDocument] : "";
+  const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
+  const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";
+  const isTerminationModal = modalDocument ? terminationDocumentSet.has(modalDocument) : false;
+  const isDarkStepperModal = modalDocument ? darkStepperDocumentSet.has(modalDocument) : false;
+  const isCodeOfConductModal = modalDocument === "codeOfConduct";
+  const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
   const modalSteps =
-    modalDocument === "warnings" ||
-    modalDocument === "disciplinaryHearingNotice" ||
-    modalDocument === "precautionarySuspensionNotice" ||
-    modalDocument === "contemplatedRetrenchmentNotice" ||
-    modalDocument === "incapacityPerformanceHearingNotice" ||
-    modalDocument === "incapacityIllHealthHearingNotice" ||
-    modalDocument === "serviceCertificate" ||
-    modalDocument === "acknowledgementOfDebt" ||
-    modalDocument === "addendum" ||
-    modalDocument === "noticeTermination" ||
-    modalDocument === "illHealthTermination" ||
-    modalDocument === "abscondmentTermination" ||
-    modalDocument === "retrenchmentTermination" ||
-    modalDocument === "retirementTermination" ||
-    modalDocument === "poorPerformanceTermination" ||
-    modalDocument === "mutualTermination" ||
-    modalDocument === "permanentContract" ||
-    modalDocument === "temporaryContract"
+    modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
-          modalDocument === "warnings" ? "Client Details" : "Employer Details",
+          modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? "Client Details" : "Employer Details",
           "Employee Details",
-          modalDocument === "warnings"
-            ? "Warning Details"
-              : modalDocument === "disciplinaryHearingNotice"
-                ? "Notice Details"
-              : modalDocument === "precautionarySuspensionNotice"
-                ? "Notice Details"
-              : modalDocument === "contemplatedRetrenchmentNotice"
-                ? "Notice Details"
-              : modalDocument === "incapacityPerformanceHearingNotice"
-                ? "Notice Details"
-              : modalDocument === "incapacityIllHealthHearingNotice"
-                ? "Notice Details"
-              : modalDocument === "serviceCertificate"
-                ? "Certificate Details"
-              : modalDocument === "acknowledgementOfDebt"
-                ? "Debt Details"
-              : modalDocument === "addendum"
-                ? "Addendum Details"
-              : modalDocument === "noticeTermination" ||
-                modalDocument === "illHealthTermination" ||
-                modalDocument === "abscondmentTermination" ||
-                modalDocument === "retrenchmentTermination" ||
-                modalDocument === "retirementTermination" ||
-                modalDocument === "poorPerformanceTermination" ||
-                modalDocument === "mutualTermination"
-                ? "Termination Details"
-              : modalDocument === "temporaryContract"
-                ? "Employment Details"
-              : "Employment Details",
-          modalDocument === "warnings" ? "Preview / Download" : "Preview / Edit",
+          detailStepLabelByDocument[modalDocument] ?? "Employment Details",
+          modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? "Preview / Download" : "Preview / Edit",
         ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
@@ -396,8 +382,8 @@ const Documents = () => {
       "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      "You may either select from existing employees or enter employee details manually.",
-      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
+      "You may either select from saved employee records or enter employee details manually.",
+      "If the employee is not yet saved, complete the employee details manually for this document.",
     ],
     [
       "Choose one of the three addendum types and insert the applicable dates.",
@@ -410,7 +396,7 @@ const Documents = () => {
       "The general addendum is a starting point, so add the specific amendments the parties agreed to for the existing contract.",
       "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
       "Example:",
-      "Salarry / Remuneration (Clause title)",
+      "Salary / Remuneration (Clause title)",
       "Clause 5 of the employment contract is hereby amended, with effect from 3 March 2026, and the salary is R25,000 per month. (Clause body)",
     ],
   ] as const;
@@ -420,8 +406,8 @@ const Documents = () => {
       "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      "You may either select from existing employees or enter employee details manually.",
-      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
+      "You may either select from saved employee records or enter employee details manually.",
+      "If the employee is not yet saved, complete the employee details manually for this document.",
     ],
     [
       "Capture the employment details exactly as agreed between the Employer and Employee.",
@@ -438,7 +424,7 @@ const Documents = () => {
       "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      'Add a single or multiple employees by selecting the "Add employee" button and follow the easy prompts.',
+      'Add one employee or multiple employees by selecting the "Add employee" button and following the prompts.',
       "Ensure each added employee has name, surname, ID/Passport, cell number and address.",
     ],
     [
@@ -456,8 +442,8 @@ const Documents = () => {
       "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
     ],
     [
-      "You may either select from existing employees or enter employee details manually.",
-      "If not done yet, head over to the employees page and add all your employees either by single employee add or multiple upload.",
+      "You may either select from saved employee records or enter employee details manually.",
+      "If the employee is not yet saved, complete the employee details manually for this document.",
     ],
     [
       "Select one or more misconduct types, provide a detailed description, and choose the correct warning type.",
@@ -597,7 +583,48 @@ const Documents = () => {
       "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
       "Review all wording carefully before downloading the final contemplated retrenchment notice.",
     ],
-  ] as const;  const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
+  ] as const;
+  const serviceCertificateStepNotes = [
+    [
+      "This step controls how your company details appear on the certificate of service.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this certificate.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select an employee from your saved list or capture employee details manually.",
+      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Capture the employee's position, employment dates, and any other required certificate details carefully.",
+      "Review all captured details before moving to preview.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final certificate of service.",
+    ],
+  ] as const satisfies StepNotes;
+  const acknowledgementOfDebtStepNotes = [
+    [
+      "This step controls how your company details appear on the acknowledgement of debt.",
+      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this document.",
+      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
+    ],
+    [
+      "Select an employee from your saved list or capture employee details manually.",
+      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
+    ],
+    [
+      "Capture the debt details carefully, including the amount, repayment terms, and any agreed conditions.",
+      "Review the captured figures and dates before moving to preview.",
+    ],
+    [
+      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
+      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
+      "Review all wording carefully before downloading the final acknowledgement of debt.",
+    ],
+  ] as const satisfies StepNotes;
+  const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
@@ -611,17 +638,22 @@ const Documents = () => {
   const incapacityIllHealthHearingActiveNotes =
     incapacityIllHealthHearingStepNotes[modalActiveStep] ?? incapacityIllHealthHearingStepNotes[0];
   const contemplatedRetrenchmentNoticeActiveNotes =
-    contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];  const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
+    contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];
+  const serviceCertificateActiveNotes =
+    serviceCertificateStepNotes[modalActiveStep] ?? serviceCertificateStepNotes[0];
+  const acknowledgementOfDebtActiveNotes =
+    acknowledgementOfDebtStepNotes[modalActiveStep] ?? acknowledgementOfDebtStepNotes[0];
+  const mutualTerminationStepNotes = noticeTerminationStepNotes.map((notes, index) =>
     index === 0
       ? [
-          "This step sets how your company details appear on the seperation agreement.",
+          "This step sets how your company details appear on the separation agreement.",
           "Company name and registration number are populated from Company Settings. You can still add a trading name if applicable.",
         ]
     : index === 1
       ? [notes[0]]
     : index === 2
       ? [
-          "Complete all fields in this step carefully, as these selections determine how key parts of the seperation agreement are worded.",
+          "Complete all fields in this step carefully, as these selections determine how key parts of the separation agreement are worded.",
           ...notes.slice(1),
           "Generally, you should indicate the reason for termination on the UI19 form as Contract Ended.",
         ]
@@ -641,22 +673,24 @@ const Documents = () => {
   const modalActiveNotes =
     modalDocument === "warnings"
       ? warningActiveNotes
+      : modalDocument === "discWarningGenerator"
+        ? warningActiveNotes
       : modalDocument === "permanentContract"
-      ? permanentActiveNotes
+        ? permanentActiveNotes
       : modalDocument === "disciplinaryHearingNotice"
-      ? disciplinaryHearingActiveNotes
+        ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
-      ? precautionarySuspensionActiveNotes
+        ? precautionarySuspensionActiveNotes
       : modalDocument === "contemplatedRetrenchmentNotice"
-      ? contemplatedRetrenchmentNoticeActiveNotes
+        ? contemplatedRetrenchmentNoticeActiveNotes
       : modalDocument === "incapacityPerformanceHearingNotice"
-      ? incapacityPerformanceHearingActiveNotes
+        ? incapacityPerformanceHearingActiveNotes
       : modalDocument === "incapacityIllHealthHearingNotice"
-      ? incapacityIllHealthHearingActiveNotes
+        ? incapacityIllHealthHearingActiveNotes
       : modalDocument === "serviceCertificate"
-      ? incapacityIllHealthHearingActiveNotes
+        ? serviceCertificateActiveNotes
       : modalDocument === "acknowledgementOfDebt"
-      ? incapacityIllHealthHearingActiveNotes
+        ? acknowledgementOfDebtActiveNotes
       : modalDocument === "noticeTermination" ||
         modalDocument === "illHealthTermination" ||
         modalDocument === "abscondmentTermination" ||
@@ -671,31 +705,46 @@ const Documents = () => {
         ? temporaryActiveNotes
         : addendumActiveNotes;
   const shouldRenderInlineDocument = Boolean(
-    SelectedComponent &&
-      selectedDocument !== "warnings" &&
-      selectedDocument !== "disciplinaryHearingNotice" &&
-      selectedDocument !== "precautionarySuspensionNotice" &&
-      selectedDocument !== "contemplatedRetrenchmentNotice" &&
-      selectedDocument !== "incapacityPerformanceHearingNotice" &&
-      selectedDocument !== "incapacityIllHealthHearingNotice" &&
-      selectedDocument !== "serviceCertificate" &&
-      selectedDocument !== "acknowledgementOfDebt" &&
-      selectedDocument !== "addendum" &&
-      selectedDocument !== "noticeTermination" &&
-      selectedDocument !== "illHealthTermination" &&
-      selectedDocument !== "abscondmentTermination" &&
-      selectedDocument !== "retrenchmentTermination" &&
-      selectedDocument !== "retirementTermination" &&
-      selectedDocument !== "mutualTermination" &&
-      selectedDocument !== "poorPerformanceTermination" &&
-      selectedDocument !== "permanentContract" &&
-      selectedDocument !== "temporaryContract",
+    SelectedComponent && selectedDocument && !modalOnlyDocumentSet.has(selectedDocument),
   );
-  const greetingName = profile?.user_name ?? "";
   const breadcrumbParts: string[] = [];
   if (breadcrumbCategoryTitle) breadcrumbParts.push(breadcrumbCategoryTitle);
   if (activeDocumentLabel) breadcrumbParts.push(activeDocumentLabel);
   if (breadcrumbStep) breadcrumbParts.push(breadcrumbStep);
+  const filteredDocumentRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return documentRows;
+    return documentRows.filter((row) => {
+      return (
+        row.documentName.toLowerCase().includes(q) ||
+        row.documentType.toLowerCase().includes(q) ||
+        row.clientName.toLowerCase().includes(q) ||
+        row.createdBy.toLowerCase().includes(q)
+      );
+    });
+  }, [documentRows, searchQuery]);
+  const allVisibleSelected =
+    filteredDocumentRows.length > 0 &&
+    filteredDocumentRows.every((row) => selectedDocumentIds.has(row.id));
+  const toggleSelectAllVisibleDocuments = (checked: boolean) => {
+    setSelectedDocumentIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const row of filteredDocumentRows) next.add(row.id);
+      } else {
+        for (const row of filteredDocumentRows) next.delete(row.id);
+      }
+      return next;
+    });
+  };
+  const toggleSelectDocument = (documentId: string) => {
+    setSelectedDocumentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(documentId)) next.delete(documentId);
+      else next.add(documentId);
+      return next;
+    });
+  };
 
   return (
     <DashboardLayout profileSubtitleMode="company">
@@ -706,289 +755,111 @@ const Documents = () => {
               <div className="pt-5 pb-2">
                 <h1 className="text-4xl font-normal text-blue-600 -ml-1">Documents</h1>
                 <p className="text-xs text-slate-600 mt-2">
-                  Generate HR documents quickly with guided step-by-step forms.
+                  Generate labour documents quickly with guided step-by-step forms.
                 </p>
-              </div>
-              <div className="border-b border-slate-300 bg-white shadow-sm mt-2">
-                <div className="relative flex flex-wrap items-center gap-0 px-0 py-0">
-                  {documentCategories.map((category, index) => {
-                    const isSelectedCategory = activeCategoryTitle === category.title;
-                    const hasItems = category.items.length > 0;
-                    return (
-                      <div
-                        key={category.title}
-                        className="relative"
-                        onMouseEnter={() => setOpenCategory(category.title)}
-                        onMouseLeave={() => setOpenCategory("")}
-                      >
-                        <button
-                          type="button"
-                          className={cn(
-                            "h-[38px] min-w-[140px] rounded-none border-b-0 border-transparent px-3 text-xs font-medium transition-all duration-150",
-                            isSelectedCategory
-                              ? "bg-white text-black border-b-2 border-blue-500 font-semibold"
-                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 hover:border-b-0 hover:border-transparent",
-                          )}
-                        >
-                          <span className="flex w-full items-center justify-between gap-2">
-                            <span className="text-xs">{category.title}</span>
-                            <ChevronDownIcon className="h-3.5 w-3.5 text-slate-400" />
-                          </span>
-                        </button>
-                        {openCategory === category.title && hasItems && (
-                          <div className="absolute left-0 top-full z-30 min-w-[180px] rounded-b-sm border border-slate-200 bg-white">
-                            <div className="flex flex-col">
-                              {category.items.map((item) =>
-                                item.active && item.id ? (
-                                  <button
-                                    key={item.label}
-                                    type="button"
-                                    onClick={() => {
-                                      if (
-                                        item.id === "codeOfConduct" ||
-                                        item.id === "warnings" ||
-                                        item.id === "disciplinaryHearingNotice" ||
-                                        item.id === "precautionarySuspensionNotice" ||
-                                        item.id === "contemplatedRetrenchmentNotice" ||
-                                        item.id === "incapacityPerformanceHearingNotice" ||
-                                        item.id === "incapacityIllHealthHearingNotice" ||
-                                        item.id === "serviceCertificate" ||
-                                        item.id === "acknowledgementOfDebt" ||
-                                        item.id === "addendum" ||
-                                        item.id === "noticeTermination" ||
-                                        item.id === "illHealthTermination" ||
-                                        item.id === "abscondmentTermination" ||
-                                        item.id === "retrenchmentTermination" ||
-                                        item.id === "retirementTermination" ||
-                                        item.id === "mutualTermination" ||
-                                        item.id === "poorPerformanceTermination" ||
-                                        item.id === "permanentContract" ||
-                                        item.id === "temporaryContract"
-                                      ) {
-                                        setSelectedDocument(item.id);
-                                        setStepMeta(null);
-                                        setBreadcrumbStep(null);
-                                        setModalDocument(item.id as ModalDocumentKey);
-                                        return;
-                                      }
-                                      setSelectedDocument(item.id!);
-                                    }}
-                                    className={cn(
-                                      "w-full rounded-none border-b-2 border-transparent px-3 py-2 text-left text-xs transition-all duration-150",
-                                      "text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-0",
-                                      selectedDocument === item.id &&
-                                        "bg-white text-black border-b-0 border-transparent font-semibold",
-                                    )}
-                                  >
-                                    {item.label}
-                                  </button>
-                                ) : (
-                                  <div
-                                    key={item.label}
-                                    className="w-full rounded-none px-3 py-2 text-left text-xs text-slate-400"
-                                  >
-                                    {item.label}
-                                  </div>
-                                ),
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             </div>
 
-            {SelectedComponent &&
-            stepMeta?.steps?.length &&
-            selectedDocument !== "codeOfConduct" &&
-            selectedDocument !== "warnings" &&
-            selectedDocument !== "disciplinaryHearingNotice" &&
-            selectedDocument !== "precautionarySuspensionNotice" &&
-            selectedDocument !== "contemplatedRetrenchmentNotice" &&
-            selectedDocument !== "incapacityPerformanceHearingNotice" &&
-            selectedDocument !== "incapacityIllHealthHearingNotice" &&
-            selectedDocument !== "serviceCertificate" &&
-            selectedDocument !== "acknowledgementOfDebt" &&
-            selectedDocument !== "addendum" &&
-            selectedDocument !== "noticeTermination" &&
-            selectedDocument !== "illHealthTermination" &&
-            selectedDocument !== "abscondmentTermination" &&
-            selectedDocument !== "retrenchmentTermination" &&
-            selectedDocument !== "retirementTermination" &&
-            selectedDocument !== "mutualTermination" &&
-            selectedDocument !== "poorPerformanceTermination" ? (
-              <div className="pl-4 pr-2 pt-6 pb-0.5">
-                <div className="space-y-2">
-                  <div className="flex items-start">
-                    <div className="w-[140px] flex justify-start ml-[300px]">
-                      {stepMeta.onBack ? (
-                        <button
-                          type="button"
-                          onClick={stepMeta.onBack}
-                          disabled={!stepMeta.canGoBack}
-                          className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:underline disabled:text-slate-300 disabled:cursor-not-allowed"
-                        >
-                          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-                          {stepMeta.isFinished ? "Back to form" : "Previous step"}
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="flex-1">
-                      <div className="space-y-3">
-                        <div className="relative px-3">
-                          <div
-                            className={`absolute left-[96px] right-[96px] top-1/2 h-[2px] -translate-y-1/2 ${
-                              stepMeta.isFinished ? "bg-emerald-200" : "bg-blue-200"
-                            }`}
-                          >
-                            <div
-                              className={`absolute left-0 top-0 h-full transition-[width] ${
-                                stepMeta.isFinished ? "bg-emerald-500" : "bg-blue-600"
-                              }`}
-                              style={{
-                                width:
-                                  stepMeta.steps.length > 1
-                                    ? `${(stepMeta.activeStep / (stepMeta.steps.length - 1)) * 100}%`
-                                    : "0%",
-                              }}
-                            />
-                          </div>
-                          <div
-                            className="grid items-center"
-                            style={{
-                              gridTemplateColumns: `repeat(${stepMeta.steps.length}, minmax(0, 1fr))`,
-                            }}
-                          >
-                            {stepMeta.steps.map((step, index) => {
-                              const isDone = index <= stepMeta.activeStep;
-                              const isFinished = Boolean(stepMeta.isFinished);
-                              return (
-                                <div key={step} className="relative z-10 flex h-6 w-6 items-center justify-center justify-self-center rounded-full">
-                                  <span
-                                    className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
-                                      isDone
-                                        ? isFinished
-                                          ? "border-emerald-500 bg-emerald-500"
-                                          : "border-blue-600 bg-blue-600"
-                                        : "border-blue-200 bg-white"
-                                    }`}
-                                  >
-                                    {isDone ? <span className="h-2 w-2 rounded-full bg-white" /> : null}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
+            <section className="relative flex-1 min-h-0 overflow-hidden overflow-x-hidden pr-2">
+              <div className="h-full min-h-0 p-0 flex flex-col">
+                <Card className="rounded-none bg-white border-0 shadow-none h-full min-h-0 flex flex-col">
+                  <CardHeader className="pl-4 pr-4 pt-5 pb-3 space-y-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="group relative w-full sm:w-[400px]">
+                          <Input
+                            placeholder="Search documents..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className={cn(
+                              "h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44]",
+                              searchQuery.trim().length > 0 ? "pr-20" : "pr-9",
+                            )}
+                          />
+                          {searchQuery.trim().length > 0 ? (
+                            <button
+                              type="button"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                              onClick={() => setSearchQuery("")}
+                            >
+                              Clear
+                            </button>
+                          ) : (
+                            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                          )}
                         </div>
-                        <div
-                          className="grid px-3"
-                          style={{
-                            gridTemplateColumns: `repeat(${stepMeta.steps.length}, minmax(0, 1fr))`,
-                          }}
-                        >
-                          {stepMeta.steps.map((step, index) => {
-                            const Icon = stepMeta.icons?.[index];
-                            const isDone = index <= stepMeta.activeStep;
-                            const isActive = index === stepMeta.activeStep;
-                            const isFinished = Boolean(stepMeta.isFinished);
-                            return (
-                              <div key={step} className="flex flex-col items-center gap-1 text-center">
-                                {Icon ? (
-                                  <Icon
-                                    className={`h-4 w-4 ${
-                                      isFinished ? "text-black" : isActive ? "text-blue-600" : isDone ? "text-black" : "text-slate-400"
-                                    }`}
-                                  />
-                                ) : null}
-                                <span
-                                  className={`text-[11px] font-medium ${
-                                    isFinished ? "text-black" : isActive ? "text-blue-600" : isDone ? "text-black" : "text-slate-500"
-                                  }`}
-                                >
-                                  {step}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
+                          <span className="text-slate-900">
+                            {filteredDocumentRows.length > 0 ? `1-${filteredDocumentRows.length}` : "0-0"}
+                          </span>{" "}
+                          of {documentRows.length} documents
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 justify-end">
+                        <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] data-[state=open]:rounded-b-none data-[state=open]:border-[#3eca44]"
+                            >
+                              <span>Filter</span>
+                              <ChevronDown className={cn("h-4 w-4 transition-transform", isFilterOpen && "rotate-180")} aria-hidden="true" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent side="bottom" align="end" sideOffset={0} className="w-[220px] rounded-t-none border border-slate-200 border-t-0 bg-white p-3 shadow-lg">
+                            <p className="text-[11px] text-slate-600">Filter options can be added here.</p>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
-                    <div className="w-[140px] flex justify-end mr-[300px]">
-                      {stepMeta.onNext && !stepMeta.isFinished ? (
-                        <button
-                          type="button"
-                          onClick={stepMeta.onNext}
-                          disabled={!stepMeta.canGoNext}
-                          className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-blue-700 transition-colors hover:underline disabled:text-slate-300 disabled:cursor-not-allowed"
-                        >
-                          {stepMeta.activeStep >= stepMeta.steps.length - 1 ? "Finish" : "Next step"}
-                          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      ) : null}
+                  </CardHeader>
+                  <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
+                    <div className="relative overflow-hidden rounded-sm border border-slate-200">
+                      <div className="grid grid-cols-[0.39fr_2.8fr_1.6fr_1.7fr_1.3fr_1.6fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                        <div className="flex items-center justify-center">
+                          <Checkbox
+                            indicator="x"
+                            aria-label="Select all documents"
+                            checked={allVisibleSelected}
+                            onCheckedChange={(checked) => toggleSelectAllVisibleDocuments(Boolean(checked))}
+                            className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
+                          />
+                        </div>
+                        <div>Document Name</div>
+                        <div>Type</div>
+                        <div>Client Name</div>
+                        <div>Created On</div>
+                        <div>Created By</div>
+                      </div>
+                      <div className="divide-y overflow-auto min-h-0" style={{ height: "calc(100dvh - var(--app-header-height,5rem) - 300px)" }}>
+                        {filteredDocumentRows.length === 0 ? (
+                          <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
+                        ) : (
+                          filteredDocumentRows.map((row) => (
+                            <div key={row.id} className="grid w-full grid-cols-[0.39fr_2.8fr_1.6fr_1.7fr_1.3fr_1.6fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                              <div className="flex items-center justify-center">
+                                <Checkbox
+                                  indicator="x"
+                                  checked={selectedDocumentIds.has(row.id)}
+                                  onCheckedChange={() => toggleSelectDocument(row.id)}
+                                  aria-label={`Select ${row.documentName}`}
+                                  className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
+                                />
+                              </div>
+                              <div className="font-medium">{row.documentName}</div>
+                              <div>{row.documentType}</div>
+                              <div>{row.clientName}</div>
+                              <div>{row.createdOn}</div>
+                              <div>{row.createdBy}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               </div>
-            ) : null}
-
-            <section
-              ref={contentScrollRef}
-              data-documents-scroll
-              className="relative flex-1 overflow-y-auto overflow-x-hidden pr-2"
-            >
-              {shouldRenderInlineDocument ? (
-                <Suspense
-                  fallback={
-                    <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
-                      Loading document...
-                    </div>
-                  }
-                >
-                  <div className="space-y-2 mt-2 pl-4 pr-2">
-                    <SelectedComponent
-                      embedded
-                      onStepChange={setBreadcrumbStep}
-                      onStepMetaChange={setStepMeta}
-                    />
-                  </div>
-                </Suspense>
-              ) : (
-                <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-                  <div className="space-y-2">
-                    <p className="text-3xl font-semibold text-slate-800">
-                      Hi
-                      {greetingName ? (
-                        <>
-                          , <span className="text-blue-600">{greetingName}</span>
-                        </>
-                      ) : null}
-                      .
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      Please select the document you wish to generate, and let's draft it together.
-                    </p>
-                  </div>
-                  <img
-                    src="/hello_Illustration(2).png"
-                    alt="Hello"
-                    className="mt-10 w-full max-w-[420px] object-contain"
-                  />
-                </div>
-              )}
-              {showScrollHint && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-                  <div className="relative rounded-sm border border-blue-100 bg-white/95 px-4 py-1 text-xs font-semibold text-blue-900 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-                    <span
-                      className="pointer-events-none absolute inset-0 rounded-sm shadow-[0_3px_10px_rgba(59,130,246,0.35),0_-3px_10px_rgba(59,130,246,0.2)]"
-                      aria-hidden="true"
-                    ></span>
-                    <span className="relative">Scroll down</span>
-                  </div>
-                </div>
-              )}
             </section>
           </div>
         </div>
@@ -1007,45 +878,29 @@ const Documents = () => {
       <DialogContent
         className={cn(
           "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:right-5 [&>button]:top-4 [&>button]:text-slate-400 [&>button]:hover:text-white [&>button]:active:text-black [&>button]:hover:bg-transparent [&>button]:focus:bg-transparent [&>button]:active:bg-transparent [&>button]:border-0 [&>button]:focus-visible:ring-0 [&>button]:focus-visible:outline-none [&>button]:outline-none [&>button]:shadow-none [&>button>svg]:stroke-[2.4]",
-          modalDocument === "warnings" || isTerminationModal
+          isDarkStepperModal
             ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
-            : modalDocument === "codeOfConduct"
+            : isCodeOfConductModal
               ? "no-modal-shadow h-[90vh] max-w-[1020px] rounded-sm border-0 bg-[#2D4256] !shadow-none overflow-hidden"
-            : modalDocument === "disciplinaryHearingNotice"
-            || modalDocument === "precautionarySuspensionNotice"
-            || modalDocument === "contemplatedRetrenchmentNotice"
-            || modalDocument === "incapacityPerformanceHearingNotice"
-            || modalDocument === "incapacityIllHealthHearingNotice"
-            || modalDocument === "serviceCertificate"
-            || modalDocument === "acknowledgementOfDebt"
-            || modalDocument === "addendum"
-            || modalDocument === "noticeTermination"
-            || modalDocument === "illHealthTermination"
-            || modalDocument === "abscondmentTermination"
-            || modalDocument === "retrenchmentTermination"
-            || modalDocument === "retirementTermination"
-            || modalDocument === "mutualTermination"
-            || modalDocument === "poorPerformanceTermination"
-            || modalDocument === "permanentContract"
-            || modalDocument === "temporaryContract"
+            : isLightWizardModal
             ? "no-modal-shadow h-[90vh] max-w-[1240px] rounded-sm border-0 bg-[#f7f9fb] !shadow-none overflow-hidden"
             : "h-[90vh] max-w-[1320px] overflow-hidden border border-slate-200",
         )}
       >
           <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
-          {modalDocument === "warnings" || isTerminationModal ? (
+          {isDarkStepperModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
               <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
                 <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
                   <Menu className="h-3.5 w-3.5 -ml-0.5" />
                   <span className="font-semibold">
                     <span className="text-white/60">
-                      {modalDocument === "warnings"
+                      {modalDocument === "warnings" || modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
                         : "Documents / Terminations / "}
                     </span>
                     <span className="text-white">
-                      {modalDocument === "warnings" ? "Warning Form" : modalTitle}
+                      {modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? modalTitle : modalTitle}
                     </span>
                   </span>
                 </div>
@@ -1169,7 +1024,7 @@ const Documents = () => {
                 </div>
               </div>
             </div>
-          ) : modalDocument === "codeOfConduct" ? (
+          ) : isCodeOfConductModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
               <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
                 <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
@@ -1203,93 +1058,13 @@ const Documents = () => {
                 </div>
               </div>
             </div>
-          ) : modalDocument === "disciplinaryHearingNotice" ||
-          modalDocument === "precautionarySuspensionNotice" ||
-          modalDocument === "contemplatedRetrenchmentNotice" ||
-          modalDocument === "incapacityPerformanceHearingNotice" ||
-          modalDocument === "incapacityIllHealthHearingNotice" ||
-          modalDocument === "serviceCertificate" ||
-          modalDocument === "acknowledgementOfDebt" ||
-          modalDocument === "addendum" ||
-          modalDocument === "noticeTermination" ||
-          modalDocument === "illHealthTermination" ||
-          modalDocument === "abscondmentTermination" ||
-          modalDocument === "retrenchmentTermination" ||
-          modalDocument === "retirementTermination" ||
-          modalDocument === "mutualTermination" ||
-          modalDocument === "poorPerformanceTermination" ||
-          modalDocument === "permanentContract" ||
-          modalDocument === "temporaryContract" ? (
+          ) : isLightWizardModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#f7f9fb]">
               <header className="flex items-center justify-between px-6 pt-4 pb-3">
                 <div className="inline-flex items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 py-1.5 text-[10px] text-slate-500">
                   <Menu className="h-3.5 w-3.5 -ml-1" />
                   <span className="font-semibold text-slate-700">
-                    {`Documents / ${
-                      modalDocument === "warnings"
-                        ? "Discipline"
-                        : modalDocument === "disciplinaryHearingNotice"
-                          ? "Notices"
-                        : modalDocument === "precautionarySuspensionNotice"
-                          ? "Notices"
-                        : modalDocument === "contemplatedRetrenchmentNotice"
-                          ? "Notices"
-                        : modalDocument === "incapacityPerformanceHearingNotice"
-                          ? "Notices"
-                        : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Notices"
-                        : modalDocument === "serviceCertificate"
-                          ? "Other"
-                        : modalDocument === "acknowledgementOfDebt"
-                          ? "Other"
-                        : modalDocument === "noticeTermination" ||
-                          modalDocument === "illHealthTermination" ||
-                          modalDocument === "abscondmentTermination" ||
-                          modalDocument === "retrenchmentTermination" ||
-                          modalDocument === "retirementTermination" ||
-                          modalDocument === "mutualTermination" ||
-                          modalDocument === "poorPerformanceTermination"
-                          ? modalDocument === "mutualTermination"
-                            ? "Terminations"
-                            : "Termination Letter"
-                          : "Contracts"
-                    } / ${
-                      modalDocument === "addendum"
-                        ? "Addendum"
-                        : modalDocument === "disciplinaryHearingNotice"
-                          ? "Disciplinary Hearing"
-                        : modalDocument === "precautionarySuspensionNotice"
-                          ? "Precautionary Suspension"
-                        : modalDocument === "contemplatedRetrenchmentNotice"
-                          ? "Contemplated Retrenchment (S189)"
-                        : modalDocument === "incapacityPerformanceHearingNotice"
-                          ? "Incapacity Hearing (Performance)"
-                        : modalDocument === "incapacityIllHealthHearingNotice"
-                          ? "Incapacity Hearing (Ill health)"
-                        : modalDocument === "serviceCertificate"
-                          ? "Certificate of Service"
-                        : modalDocument === "acknowledgementOfDebt"
-                          ? "Acknowledgement of Debt"
-                        : modalDocument === "illHealthTermination"
-                          ? "Ill Health"
-                        : modalDocument === "abscondmentTermination"
-                          ? "Abscondment/Desertion"
-                        : modalDocument === "retrenchmentTermination"
-                          ? "Retrenchment"
-                        : modalDocument === "retirementTermination"
-                          ? "Retirement"
-                        : modalDocument === "mutualTermination"
-                          ? "Mutual Seperation Agreement"
-                        : modalDocument === "poorPerformanceTermination"
-                          ? "Poor Performance"
-                        : modalDocument === "noticeTermination"
-                          ? "Misconduct"
-                        : modalDocument === "temporaryContract"
-                          ? "Temporary Contract"
-                          : modalDocument === "permanentContract"
-                            ? "Permanent Contract"
-                            : "Warning Form"
-                    }`}
+                    {`Documents / ${modalHeaderCategoryTitle} / ${modalHeaderLabel}`}
                   </span>
                 </div>
               </header>

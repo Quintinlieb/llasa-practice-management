@@ -45,9 +45,9 @@ const Navigation = () => {
                 Dashboard
               </Button>
             </Link>
-            <Link to="/clients">
+            <Link to="/clients-2">
               <Button 
-                variant={isActive("/clients") ? "secondary" : "ghost"} 
+                variant={isActive("/clients-2") || isActive("/clients") ? "secondary" : "ghost"} 
                 size="sm"
                 className="gap-2"
               >

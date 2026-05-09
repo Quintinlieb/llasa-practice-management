@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   extractDobFromId,
@@ -2608,6 +2609,14 @@ const ServiceCertificateGenerator = ({
     doc.setPage(totalPages);
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Certificate of Service',
+        documentType: 'Other',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Certificate_of_Service_${data.employeeSurname || "employee"}_${data.terminationDate || data.issueDate}.pdf`);
       toast({
         title: "Download ready",
@@ -3942,6 +3951,8 @@ const ServiceCertificateGenerator = ({
 };
 
 export default ServiceCertificateGenerator;
+
+
 
 
 

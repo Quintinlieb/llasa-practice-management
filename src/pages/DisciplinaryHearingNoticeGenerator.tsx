@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   extractDobFromId,
@@ -2440,6 +2441,14 @@ const MisconductTerminationGenerator = ({
     doc.setPage(totalPages);
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Disciplinary Hearing Notice',
+        documentType: 'Notices',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Disciplinary_Hearing_Notice_${data.employeeSurname || "employee"}_${data.issueDate}.pdf`);
       toast({
         title: "Download ready",
@@ -3792,6 +3801,8 @@ const MisconductTerminationGenerator = ({
 };
 
 export default MisconductTerminationGenerator;
+
+
 
 
 

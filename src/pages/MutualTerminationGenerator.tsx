@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   extractDobFromId,
@@ -1629,6 +1630,14 @@ const MutualTerminationGenerator = ({
     }
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Mutual Separation Agreement',
+        documentType: 'Terminations',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Mutual_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
@@ -2929,6 +2938,8 @@ const MutualTerminationGenerator = ({
 };
 
 export default MutualTerminationGenerator;
+
+
 
 
 

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   extractDobFromId,
@@ -1546,6 +1547,14 @@ const AddendumGenerator = ({
     }
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Addendum',
+        documentType: 'Contracts',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Addendum_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
@@ -2831,6 +2840,8 @@ const AddendumGenerator = ({
 };
 
 export default AddendumGenerator;
+
+
 
 
 

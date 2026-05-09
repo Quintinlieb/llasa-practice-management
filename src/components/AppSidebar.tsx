@@ -21,8 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
-  { title: "Clients", url: "/clients", icon: Users },
-  { title: "Clients 2", url: "/clients-2", icon: Users },
+  { title: "Clients", url: "/clients-2", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Case Files", url: "/case-files", icon: BriefcaseBusiness },
 ];
@@ -40,6 +39,7 @@ const documentFlyoutItems: Record<string, Array<{ title: string; url: string; se
   Discipline: [
     { title: "Code of Conduct", url: "/documents", selectedDocument: "codeOfConduct" },
     { title: "Warnings", url: "/documents", selectedDocument: "warnings" },
+    { title: "Warnings 2", url: "/documents", selectedDocument: "discWarningGenerator" },
   ],
   Contracts: [
     { title: "Permanent Contract", url: "/documents", selectedDocument: "permanentContract" },
@@ -108,6 +108,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   useEffect(() => {
     const documentToCategory: Record<string, string> = {
       warnings: "Discipline",
+      discWarningGenerator: "Discipline",
       codeOfConduct: "Discipline",
       permanentContract: "Contracts",
       temporaryContract: "Contracts",

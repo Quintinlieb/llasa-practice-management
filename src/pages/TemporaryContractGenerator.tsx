@@ -23,6 +23,7 @@ import { temporaryContractSchema, salaryFrequencyOptions, southAfricanProvinces 
 import type { Tables } from "@/integrations/supabase/types";
 import { read, utils } from "xlsx";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 
 type SalaryFrequency = (typeof salaryFrequencyOptions)[number];
 type InterpreterOption = "yes" | "no";
@@ -1880,6 +1881,14 @@ const TemporaryContractGenerator = ({
           ...baseData,
           ...employee,
         }) as ValidatedTempData;
+        void logGeneratedDocument({
+          documentLabel: "Temporary Contract",
+          documentType: "Contracts",
+          employeeName: (parsed as any).employeeName,
+          employeeSurname: (parsed as any).employeeSurname,
+          tradingName: (parsed as any).tradingName,
+          registeredName: (parsed as any).companyName,
+        });
         const doc = buildPdfDocument(parsed);
         const arrayBuffer = doc.output("arraybuffer");
         const safeName = `${parsed.employeeSurname || "employee"}_${parsed.startDate}`.replace(/[\\/:*?"<>|]+/g, "_");

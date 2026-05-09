@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   type PermanentContractFormData,
@@ -3095,6 +3096,14 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
     drawPageNumbers();
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Contemplated Retrenchment Notice',
+        documentType: 'Notices',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Contemplated_Retrenchment_Notice_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
@@ -5847,5 +5856,7 @@ const ContemplatedRetrenchmentNoticeGenerator = ({
 };
 
 export default ContemplatedRetrenchmentNoticeGenerator;
+
+
 
 

@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import {
   salaryFrequencyOptions,
   extractDobFromId,
@@ -2483,6 +2484,14 @@ const AbscondmentTerminationGenerator = ({
     }
 
     if (download) {
+      void logGeneratedDocument({
+        documentLabel: 'Abscondment / Desertion Termination Letter',
+        documentType: 'Terminations',
+        employeeName: (data as any).employeeName,
+        employeeSurname: (data as any).employeeSurname,
+        tradingName: (data as any).tradingName,
+        registeredName: (data as any).companyName,
+      });
       doc.save(`Poor_Performance_Termination_${data.employeeSurname || "employee"}_${data.startDate}.pdf`);
       toast({
         title: "Download ready",
@@ -4400,6 +4409,8 @@ const AbscondmentTerminationGenerator = ({
 };
 
 export default AbscondmentTerminationGenerator;
+
+
 
 
 

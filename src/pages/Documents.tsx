@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "@/hooks/use-toast";
+import {
+  loadMinimizedDocumentTabs,
+  minimizedDocumentTabsChangedEvent,
+  saveMinimizedDocumentTabs,
+  type StoredMinimizedDocumentTab,
+} from "@/lib/minimizedDocumentTabs";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Minus, Search, Undo2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -68,6 +75,7 @@ type DocumentTableRow = {
   clientName: string;
   createdOn: string;
   createdBy: string;
+  fileUrl: string;
 };
 
 type StepNotes = readonly [
@@ -80,7 +88,26 @@ type StepNotes = readonly [
 type MinimizedGeneratorTab = {
   id: string;
   documentKey: ModalDocumentKey;
+  label: string;
   draftState?: unknown;
+};
+
+const formatDocumentClientName = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parts = raw.split(/\s+t\/a\s+/i);
+  return parts.length > 1 ? String(parts[parts.length - 1] || "").trim() || raw : raw;
+};
+
+const splitCreatedOnParts = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return { date: "", time: "" };
+  const parts = raw.split(", ");
+  if (parts.length < 2) return { date: raw, time: "" };
+  return {
+    date: parts.slice(0, -1).join(", "),
+    time: parts[parts.length - 1] || "",
+  };
 };
 
 const lazyDocumentComponent = (loader: () => Promise<any>) =>
@@ -253,7 +280,9 @@ const Documents = () => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>([]);
-  const [minimizedTabs, setMinimizedTabs] = useState<MinimizedGeneratorTab[]>([]);
+  const [minimizedTabs, setMinimizedTabs] = useState<MinimizedGeneratorTab[]>(() =>
+    loadMinimizedDocumentTabs() as MinimizedGeneratorTab[],
+  );
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
     activeStep: number;
@@ -292,7 +321,7 @@ const Documents = () => {
 
   const minimizeModal = () => {
     if (!activeSession) return;
-    setMinimizedTabs((prev) => [...prev, activeSession]);
+    setMinimizedTabs((prev) => (prev.some((item) => item.id === activeSession.id) ? prev : [...prev, activeSession]));
     closeModal();
   };
 
@@ -308,20 +337,41 @@ const Documents = () => {
   };
 
   useEffect(() => {
-    const nextSelected = (location.state as { selectedDocument?: DocumentKey } | null)?.selectedDocument;
+    const routeState = (location.state as { selectedDocument?: DocumentKey; restoreMinimizedTabId?: string } | null) ?? null;
+    const nextSelected = routeState?.selectedDocument;
+    const restoreMinimizedTabId = routeState?.restoreMinimizedTabId;
+
+    if (restoreMinimizedTabId) {
+      const minimizedTab = minimizedTabs.find((item) => item.id === restoreMinimizedTabId);
+      if (minimizedTab && documentComponents[minimizedTab.documentKey]) {
+        setSelectedDocument(minimizedTab.documentKey);
+        setStepMeta(null);
+        setBreadcrumbStep(null);
+        setActiveSession(minimizedTab);
+        setMinimizedTabs((prev) => prev.filter((item) => item.id !== restoreMinimizedTabId));
+      }
+      const nextState = { ...(routeState as Record<string, unknown>) };
+      delete nextState.restoreMinimizedTabId;
+      navigate(location.pathname, {
+        replace: true,
+        state: Object.keys(nextState).length > 0 ? nextState : null,
+      });
+      return;
+    }
+
     if (nextSelected && documentComponents[nextSelected]) {
       setSelectedDocument(nextSelected);
       setStepMeta(null);
       setBreadcrumbStep(null);
-      setActiveSession({ id: crypto.randomUUID(), documentKey: nextSelected });
-      const nextState = { ...((location.state as Record<string, unknown> | null) ?? {}) };
+      setActiveSession({ id: crypto.randomUUID(), documentKey: nextSelected, label: modalTitleByDocument[nextSelected] });
+      const nextState = { ...((routeState as Record<string, unknown> | null) ?? {}) };
       delete nextState.selectedDocument;
       navigate(location.pathname, {
         replace: true,
         state: Object.keys(nextState).length > 0 ? nextState : null,
       });
     }
-  }, [location.pathname, location.state, navigate]);
+  }, [location.pathname, location.state, minimizedTabs, navigate]);
 
   useEffect(() => {
     setBreadcrumbStep(null);
@@ -334,6 +384,16 @@ const Documents = () => {
     setStepMeta(null);
     setBreadcrumbStep(null);
   }, [activeSession, isDocumentsRoute]);
+
+  useEffect(() => {
+    saveMinimizedDocumentTabs(minimizedTabs as StoredMinimizedDocumentTab[]);
+  }, [minimizedTabs]);
+
+  useEffect(() => {
+    const syncMinimizedTabs = () => setMinimizedTabs(loadMinimizedDocumentTabs() as MinimizedGeneratorTab[]);
+    window.addEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
+    return () => window.removeEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
+  }, []);
 
   useEffect(() => {
     const handleForceClose = () => {
@@ -367,17 +427,24 @@ const Documents = () => {
     const formatCreatedOn = (value: string) => {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value;
-      return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      return date.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
     };
     const loadDocuments = async () => {
       let queryResult = await (supabase as any)
         .from("documents")
-        .select("id, document_name, document_type, client_name, created_at, created_by_name")
+        .select("id, document_name, document_type, client_name, created_at, created_by_name, file_url")
         .order("created_at", { ascending: false });
       if (queryResult.error) {
         queryResult = await (supabase as any)
           .from("documents")
-          .select("id, document_name, document_type, client_name, created_at, created_by")
+          .select("id, document_name, document_type, client_name, created_at, created_by, file_url")
           .order("created_at", { ascending: false });
       }
       if (queryResult.error || !isMounted) return;
@@ -388,17 +455,21 @@ const Documents = () => {
         clientName: String(row.client_name ?? ""),
         createdOn: formatCreatedOn(String(row.created_at ?? "")),
         createdBy: String(row.created_by_name ?? row.created_by ?? ""),
+        fileUrl: String(row.file_url ?? ""),
       }));
       setDocumentRows(rows);
     };
     void loadDocuments();
     const interval = setInterval(() => void loadDocuments(), 10000);
     const onFocus = () => void loadDocuments();
+    const onDocumentsRowCreated = () => void loadDocuments();
     window.addEventListener("focus", onFocus);
+    window.addEventListener("documents-row-created", onDocumentsRowCreated);
     return () => {
       isMounted = false;
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("documents-row-created", onDocumentsRowCreated);
     };
   }, []);
 
@@ -416,13 +487,6 @@ const Documents = () => {
   const isDarkStepperModal = modalDocument ? darkStepperDocumentSet.has(modalDocument) : false;
   const isCodeOfConductModal = modalDocument === "codeOfConduct";
   const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
-  const minimizedHeaderTabs = minimizedTabs.map((tab, index) => {
-    const isWarningTab = tab.documentKey === "warnings" || tab.documentKey === "discWarningGenerator";
-    return {
-      ...tab,
-      label: isWarningTab ? `Warning (${index + 1})` : `${modalTitleByDocument[tab.documentKey]} (${index + 1})`,
-    };
-  });
   const modalSteps =
     modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
@@ -787,7 +851,7 @@ const Documents = () => {
       return (
         row.documentName.toLowerCase().includes(q) ||
         row.documentType.toLowerCase().includes(q) ||
-        row.clientName.toLowerCase().includes(q) ||
+        formatDocumentClientName(row.clientName).toLowerCase().includes(q) ||
         row.createdBy.toLowerCase().includes(q)
       );
     });
@@ -814,39 +878,47 @@ const Documents = () => {
       return next;
     });
   };
+  const openDocumentRowFile = (fileUrl: string) => {
+    const resolvedUrl = String(fileUrl || "").trim();
+    if (!resolvedUrl) return;
+    window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+  };
+  const handleDeleteSelectedDocuments = async (idsToDelete: string[]) => {
+    if (idsToDelete.length === 0) return;
+
+    const { error } = await (supabase as any).from("documents").delete().in("id", idsToDelete);
+
+    if (error) {
+      toast({
+        title: "Delete Error",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDocumentRows((prev) => prev.filter((row) => !idsToDelete.includes(row.id)));
+    setSelectedDocumentIds((prev) => {
+      const next = new Set(prev);
+      idsToDelete.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+  const promptDeleteSelectedDocuments = () => {
+    const idsToDelete = Array.from(selectedDocumentIds);
+    if (idsToDelete.length === 0) return;
+    const confirmed = window.confirm(
+      idsToDelete.length === 1
+        ? "Are you sure you want to delete this document?"
+        : `Are you sure you want to delete these ${idsToDelete.length} documents?`,
+    );
+    if (!confirmed) return;
+    void handleDeleteSelectedDocuments(idsToDelete);
+  };
 
   return (
     <DashboardLayout
       profileSubtitleMode="company"
-      headerInlineContent={
-        isDocumentsRoute && minimizedHeaderTabs.length ? (
-          <div className="ml-[100px] flex items-center gap-2 overflow-x-auto py-1">
-            <span className="h-6 w-px bg-white/10 self-center" aria-hidden="true" />
-            {minimizedHeaderTabs.map((tab) => (
-              <div
-                key={tab.id}
-                className="group inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
-              >
-                <button
-                  type="button"
-                  onClick={() => restoreModal(tab.id)}
-                  className="inline-flex h-6 items-center px-2.5 text-[10px] font-semibold text-[#2D4256] transition-colors group-hover:text-[#2D4256]"
-                >
-                  {tab.label}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => dismissMinimizedTab(tab.id)}
-                  className="inline-flex h-6 w-0 items-center justify-center overflow-hidden border-l border-transparent text-[#2D4256] opacity-0 transition-all duration-150 group-hover:w-6 group-hover:border-l-[#2D4256]/20 group-hover:opacity-100 group-hover:text-[#2D4256] hover:!text-white/70"
-                  aria-label={`Close ${tab.label} tab`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null
-      }
     >
       <div className="space-y-0 -m-6">
         <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
@@ -896,6 +968,16 @@ const Documents = () => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
+                        {selectedDocumentIds.size > 0 ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={promptDeleteSelectedDocuments}
+                            className="h-8 rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-red-400 hover:bg-white hover:text-red-600"
+                          >
+                            Delete
+                          </Button>
+                        ) : null}
                         <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -916,7 +998,7 @@ const Documents = () => {
                   </CardHeader>
                   <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
                     <div className="relative overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.39fr_2.8fr_1.6fr_1.7fr_1.3fr_1.6fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                      <div className="grid grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -937,7 +1019,7 @@ const Documents = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
                           filteredDocumentRows.map((row) => (
-                            <div key={row.id} className="grid w-full grid-cols-[0.39fr_2.8fr_1.6fr_1.7fr_1.3fr_1.6fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                            <div key={row.id} className="group grid w-full grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -947,10 +1029,31 @@ const Documents = () => {
                                   className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                                 />
                               </div>
-                              <div className="font-medium">{row.documentName}</div>
+                              <div>
+                                {row.fileUrl ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDocumentRowFile(row.fileUrl)}
+                                    className="text-left transition-colors group-hover:font-semibold group-hover:underline group-hover:underline-offset-2 hover:text-[#2f9f35]"
+                                  >
+                                    {row.documentName}
+                                  </button>
+                                ) : (
+                                  <span className="transition-colors group-hover:font-semibold group-hover:underline group-hover:underline-offset-2">
+                                    {row.documentName}
+                                  </span>
+                                )}
+                              </div>
                               <div>{row.documentType}</div>
-                              <div>{row.clientName}</div>
-                              <div>{row.createdOn}</div>
+                              <div>{formatDocumentClientName(row.clientName)}</div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span>{splitCreatedOnParts(row.createdOn).date}</span>
+                                {splitCreatedOnParts(row.createdOn).time ? (
+                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                    {splitCreatedOnParts(row.createdOn).time}
+                                  </span>
+                                ) : null}
+                              </div>
                               <div>{row.createdBy}</div>
                             </div>
                           ))

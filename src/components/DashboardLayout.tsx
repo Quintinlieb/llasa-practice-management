@@ -4,8 +4,15 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  loadMinimizedDocumentTabs,
+  minimizedDocumentTabsChangedEvent,
+  saveMinimizedDocumentTabs,
+  type StoredMinimizedDocumentTab,
+} from "@/lib/minimizedDocumentTabs";
 import { Icon } from "@iconify/react";
 import { Bell, Headset, Settings } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -46,6 +53,7 @@ export default function DashboardLayout({
 }: DashboardLayoutProps) {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const headerRef = useRef<HTMLElement | null>(null);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
@@ -56,6 +64,9 @@ export default function DashboardLayout({
   });
   const resolvedHeaderTitle = headerTitle ?? getPageTitleFromPathname(location.pathname);
   const [profile, setProfile] = useState<UserHeaderProfile | null>(null);
+  const [minimizedDocumentTabs, setMinimizedDocumentTabs] = useState<StoredMinimizedDocumentTab[]>(() =>
+    loadMinimizedDocumentTabs(),
+  );
 
   useEffect(() => {
     try {
@@ -156,6 +167,21 @@ export default function DashboardLayout({
     };
   }, [user]);
 
+  useEffect(() => {
+    const syncTabs = () => setMinimizedDocumentTabs(loadMinimizedDocumentTabs());
+    syncTabs();
+    window.addEventListener(minimizedDocumentTabsChangedEvent, syncTabs);
+    return () => window.removeEventListener(minimizedDocumentTabsChangedEvent, syncTabs);
+  }, []);
+
+  const restoreMinimizedDocumentTab = (tabId: string) => {
+    navigate("/documents", { state: { restoreMinimizedTabId: tabId } });
+  };
+
+  const dismissMinimizedDocumentTab = (tabId: string) => {
+    saveMinimizedDocumentTabs(minimizedDocumentTabs.filter((tab) => tab.id !== tabId));
+  };
+
   return (
     <SidebarProvider>
       <div className="app-shell relative min-h-screen w-screen flex bg-[#f3f4f6] overflow-hidden">
@@ -207,6 +233,33 @@ export default function DashboardLayout({
                   </div>
                 ) : null}
                 {headerInlineContent ? <div className="flex items-center gap-2">{headerInlineContent}</div> : null}
+                {minimizedDocumentTabs.length > 0 ? (
+                  <div className="absolute left-[320px] right-[260px] flex items-center gap-2 overflow-x-auto py-1">
+                    <span className="h-6 w-px bg-white/10 self-center" aria-hidden="true" />
+                    {minimizedDocumentTabs.map((tab, index) => (
+                      <div
+                        key={tab.id}
+                        className="group inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => restoreMinimizedDocumentTab(tab.id)}
+                          className="inline-flex h-6 items-center px-2.5 text-[10px] font-semibold text-[#2D4256] transition-colors group-hover:text-[#2D4256]"
+                        >
+                          {`${tab.label} (${index + 1})`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => dismissMinimizedDocumentTab(tab.id)}
+                          className="inline-flex h-6 w-0 items-center justify-center overflow-hidden border-l border-transparent text-[#2D4256] opacity-0 transition-all duration-150 group-hover:w-6 group-hover:border-l-[#2D4256]/20 group-hover:opacity-100 group-hover:text-[#2D4256] hover:!text-white/70"
+                          aria-label={`Close ${tab.label} tab`}
+                        >
+                          <span className="text-[10px] leading-none">x</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               {profile ? (
                 <div className="flex items-center gap-3">

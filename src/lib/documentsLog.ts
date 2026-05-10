@@ -3,6 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 type LogGeneratedDocumentArgs = {
   documentLabel: string;
   documentType: string;
+  documentName?: string | null;
+  clientName?: string | null;
+  fileUrl?: string | null;
   employeeName?: string | null;
   employeeSurname?: string | null;
   tradingName?: string | null;
@@ -18,20 +21,42 @@ const firstNonEmpty = (...values: Array<string | null | undefined>) => {
   return "";
 };
 
-const getSessionUserName = () => {
-  try {
-    const raw = sessionStorage.getItem("header:profile");
-    if (!raw) return "";
-    const parsed = JSON.parse(raw) as { user_name?: string; user_surname?: string };
-    return `${String(parsed.user_name ?? "").trim()} ${String(parsed.user_surname ?? "").trim()}`.trim();
-  } catch {
-    return "";
-  }
+const getSessionAuthUser = async () => {
+  const { data } = await supabase.auth.getUser();
+  return data.user ?? null;
+};
+
+const getResolvedCurrentUserName = async () => {
+  const user = await getSessionAuthUser();
+  if (!user?.id) return "";
+
+  const { data: profileData } = await (supabase as any)
+    .from("profiles")
+    .select("user_name, user_surname")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const profileName = `${String((profileData as any)?.user_name || "").trim()} ${String((profileData as any)?.user_surname || "").trim()}`.trim();
+  if (profileName) return profileName;
+
+  const { data: subuserData } = await (supabase as any)
+    .from("subusers")
+    .select("name,surname")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  const subuserName = `${String((subuserData as any)?.name || "").trim()} ${String((subuserData as any)?.surname || "").trim()}`.trim();
+  if (subuserName) return subuserName;
+
+  return `${String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim()} ${String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim()}`.trim();
 };
 
 export const logGeneratedDocument = async ({
   documentLabel,
   documentType,
+  documentName,
+  clientName: explicitClientName,
+  fileUrl,
   employeeName,
   employeeSurname,
   tradingName,
@@ -41,20 +66,27 @@ export const logGeneratedDocument = async ({
   const employeeFullName = `${String(employeeName ?? "").trim()} ${String(employeeSurname ?? "").trim()}`.trim();
   const safeEmployeeName = employeeFullName || "Employee";
   const safeLabel = String(documentLabel || "Document").trim() || "Document";
-  const clientName =
-    firstNonEmpty(tradingName, registeredName, "Unknown client");
-  const actorName = firstNonEmpty(createdByName, getSessionUserName(), "System User");
+  const resolvedDocumentName = firstNonEmpty(documentName, `${safeEmployeeName} - ${safeLabel}`);
+  const clientName = firstNonEmpty(explicitClientName, tradingName, registeredName, "Unknown client");
+  const resolvedCurrentUserName = await getResolvedCurrentUserName();
+  const actorName = firstNonEmpty(createdByName, resolvedCurrentUserName, "User");
+  const authUserId = String((await getSessionAuthUser())?.id || "").trim();
 
   const payload = {
-    document_name: `${safeEmployeeName} - ${safeLabel}`,
+    document_name: resolvedDocumentName,
     document_type: String(documentType || "Other").trim() || "Other",
     client_name: clientName,
     created_by_name: actorName,
+    ...(String(fileUrl ?? "").trim() ? { file_url: String(fileUrl).trim() } : {}),
   };
   const attempts: Array<Record<string, unknown>> = [
     payload,
     {
-      document_name: `${safeEmployeeName} - ${safeLabel}`,
+      ...payload,
+      ...(authUserId ? { created_by: authUserId } : {}),
+    },
+    {
+      document_name: resolvedDocumentName,
       document_type: String(documentType || "Other").trim() || "Other",
       client_name: clientName,
     },

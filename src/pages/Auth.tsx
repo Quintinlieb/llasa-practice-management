@@ -38,6 +38,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const clearedSessionRef = useRef(false);
+  const authActionStartedRef = useRef(false);
 
   useEffect(() => {
     const draft = readAuthFormDraft();
@@ -215,7 +216,7 @@ const Auth = () => {
         }
 
         // Never block auth if profile schema changed again.
-        if (!profileCreated) {
+        if (!profileCreated && authActionStartedRef.current) {
           toast({
             title: "Profile sync warning",
             description: "Signed in, but profile record could not be created automatically.",
@@ -269,6 +270,7 @@ const Auth = () => {
     }
     
     setIsLoading(true);
+    authActionStartedRef.current = true;
 
     try {
       if (isLogin) {

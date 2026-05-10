@@ -9,8 +9,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { jsPDF } from "jspdf";
 import { Building2, Check, ChevronsUpDown, FileText, User2, X } from "lucide-react";
 
 type DiscWarningGeneratorProps = {
@@ -120,7 +123,7 @@ const emptyWarningFormState: WarningFormState = {
   misconductDescription: "",
   warningType: "",
   validityPeriod: "",
-  issuedBy: "",
+  issuedBy: "Management",
 };
 
 type DiscWarningGeneratorDraftState = {
@@ -241,7 +244,7 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientName: formatClientDisplayName(client),
   registrationNumber: String(client.registration_number || "").trim(),
   clientContactNumber: String(client.primary_number || "").trim(),
-  clientEmail: String(client.owner_email || client.primary_email || "").trim(),
+  clientEmail: String(client.primary_email || "").trim(),
   clientAddress: formatClientAddress(client),
 });
 
@@ -266,6 +269,9 @@ const warningTypeLabelByValue: Record<Exclude<WarningFormState["warningType"], "
   serious: "Serious Written Warning",
   final: "Final Written Warning",
 };
+
+const generatedDocumentsBucket = "documents";
+const employeeIdOrPassportMaxLength = 13;
 
 const DiscWarningGeneratorContent = ({
   activeStep,
@@ -521,6 +527,7 @@ const DiscWarningGeneratorContent = ({
                   value={employeeForm.employeeIdOrPassportNumber}
                   onChange={(event) => onEmployeeFormChange("employeeIdOrPassportNumber", event.target.value)}
                   placeholder="Enter employee ID or passport number"
+                  maxLength={employeeIdOrPassportMaxLength}
                   className={inputClassName}
                 />
               </div>
@@ -732,18 +739,18 @@ const DiscWarningGeneratorContent = ({
             </div>
           ) : isPreviewStep ? (
             <div className="mx-auto max-w-[820px]">
-              <div className="bg-white px-8 py-8 text-black">
-                <h2 className="text-center text-[28px] font-bold uppercase tracking-tight text-black">
-                  Disciplinary Warning Form
+              <div className="bg-white px-8 pt-3 pb-8 text-black">
+                <h2 className="text-center text-[20px] font-bold uppercase tracking-tight text-black">
+                  {warningTypeLabel || "Disciplinary Warning Form"}
                 </h2>
 
-                <section className="mt-6">
+                <section className="mt-5">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[12px] font-bold uppercase text-black">A. Employer Details</p>
+                    <p className="text-[11px] font-bold uppercase text-black">A. Employer Details</p>
                   </div>
-                  <div className="mt-4 space-y-1.5">
+                  <div className="mt-3 space-y-1">
                     {employerRows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
                         <p className="font-bold text-black">{row.label}</p>
                         <p className="text-black">{row.value}</p>
                       </div>
@@ -751,19 +758,19 @@ const DiscWarningGeneratorContent = ({
                   </div>
                 </section>
 
-                <section className="mt-8">
+                <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[12px] font-bold uppercase text-black">B. Employee Details</p>
+                    <p className="text-[11px] font-bold uppercase text-black">B. Employee Details</p>
                   </div>
-                  <div className="mt-4 space-y-1.5">
+                  <div className="mt-3 space-y-1">
                     {employeeRows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
                         <p className="font-bold text-black">{row.label}</p>
                         <p className="text-black">{row.value}</p>
                       </div>
                     ))}
                     {employeeForm.jobTitle ? (
-                      <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                      <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
                         <p className="font-bold text-black">Job Title:</p>
                         <p className="text-black">{employeeForm.jobTitle}</p>
                       </div>
@@ -771,13 +778,13 @@ const DiscWarningGeneratorContent = ({
                   </div>
                 </section>
 
-                <section className="mt-8">
+                <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[12px] font-bold uppercase text-black">C. Warning Details</p>
+                    <p className="text-[11px] font-bold uppercase text-black">C. Warning Details</p>
                   </div>
-                  <div className="mt-4 space-y-1.5">
+                  <div className="mt-3 space-y-1">
                     {warningRows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[12px] leading-5">
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
                         <p className="font-bold text-black">{row.label}</p>
                         <p className="whitespace-pre-wrap text-black">{row.value}</p>
                       </div>
@@ -785,36 +792,39 @@ const DiscWarningGeneratorContent = ({
                   </div>
                 </section>
 
-                <section className="mt-8">
+                <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[12px] font-bold uppercase text-black">D. Consequences</p>
+                    <p className="text-[11px] font-bold uppercase text-black">D. Consequences</p>
                   </div>
-                  <p className="mt-4 text-[12px] leading-5 text-black">
+                  <p className="mt-3 text-[11px] leading-5 text-black">
                     You are required to refrain completely from committing any further acts of misconduct. Should you
                     commit the same or similar act of misconduct within the validity period of this warning,
                     progressive disciplinary action will be taken which could lead to your dismissal.
                   </p>
                 </section>
 
-                <section className="mt-8">
+                <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[12px] font-bold uppercase text-black">E. Signatures</p>
+                    <p className="text-[11px] font-bold uppercase text-black">E. Signatures</p>
                   </div>
-                  <div className="mt-6 space-y-7">
+                  <div className="mt-3 space-y-6">
                     {signatureRows.map((row, index) => (
-                      <div key={index} className="grid grid-cols-[minmax(0,1.7fr)_120px_minmax(0,1.7fr)_120px] gap-x-10 gap-y-2">
+                      <div
+                        key={index}
+                        className="grid max-w-full grid-cols-[minmax(0,1fr)_92px_minmax(0,1fr)_92px] gap-x-6 gap-y-1.5"
+                      >
                         {row.map((label) => (
                           <div key={label} className="min-w-0">
                             <div className="border-b border-black" />
-                            <p className="mt-2 text-[12px] text-black">{label}</p>
+                            <p className="mt-1.5 text-[11px] text-black">{label}</p>
                           </div>
                         ))}
                       </div>
                     ))}
                   </div>
 
-                  <div className="mt-8 rounded-sm border border-slate-300 bg-slate-50 px-4 py-3">
-                    <p className="text-[12px] italic leading-5 text-slate-700">
+                  <div className="mt-6 rounded-sm border border-slate-300 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] italic leading-5 text-slate-700">
                       If the employee refuses to sign this warning, the witness&apos;s signature will confirm that the
                       employee did receive the warning and that the contents were explained to him/her.
                     </p>
@@ -1026,7 +1036,7 @@ const DiscWarningGenerator = ({
   const handleEmployeeFormChange = (field: keyof EmployeeFormState, value: string) => {
     setEmployeeForm((current) => ({
       ...current,
-      [field]: value,
+      [field]: field === "employeeIdOrPassportNumber" ? value.slice(0, employeeIdOrPassportMaxLength) : value,
     }));
   };
 
@@ -1057,6 +1067,279 @@ const DiscWarningGenerator = ({
     }));
   };
 
+  const handleDownloadPdf = async () => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - margin * 2;
+    const bottomLimit = pageHeight - 18;
+    const sectionFill = [239, 242, 246] as const;
+    const sectionBorder = [203, 213, 225] as const;
+    const lineFallback = "______________________________";
+    const resolvedTitle = warningTypeLabelByValue[warningForm.warningType || "first"] ?? "Disciplinary Warning Form";
+    const resolvedEmployeeName =
+      [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim() || lineFallback;
+    const resolvedEmployerRows = [
+      ["Company Name:", clientForm.clientName || lineFallback],
+      ["Registration No:", clientForm.registrationNumber || lineFallback],
+      ["Employer Number:", clientForm.clientContactNumber || lineFallback],
+      ["Employer Email:", clientForm.clientEmail || lineFallback],
+      ["Employer Address:", clientForm.clientAddress || lineFallback],
+    ] as const;
+    const resolvedEmployeeRows = [
+      ["Employee Name:", resolvedEmployeeName],
+      ["ID Number:", employeeForm.employeeIdOrPassportNumber || lineFallback],
+    ] as const;
+    const resolvedWarningRows = [
+      ["Offence(s):", warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : lineFallback],
+      ["Description:", warningForm.misconductDescription || lineFallback],
+      ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
+      ["Issued By:", warningForm.issuedBy || lineFallback],
+    ] as const;
+    const signatureRows = [
+      ["Employer/Issuer", "Date", "Employee", "Date"],
+      ["Representative", "Date", "Interpreter", "Date"],
+      ["Witness 1 (optional)", "Date", "Witness 2 (optional)", "Date"],
+    ] as const;
+    const consequenceText =
+      "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
+    const witnessNote =
+      "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
+
+    let y = 14;
+
+    const ensureSpace = (needed: number) => {
+      if (y + needed <= bottomLimit) return;
+      doc.addPage();
+      y = 18;
+    };
+
+    const drawSectionHeader = (title: string) => {
+      ensureSpace(10);
+      doc.setDrawColor(...sectionBorder);
+      doc.setFillColor(...sectionFill);
+      doc.roundedRect(margin, y, contentWidth, 8.5, 0.8, 0.8, "FD");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(0, 0, 0);
+      doc.text(title, margin + 4.5, y + 5.4);
+      y += 15;
+    };
+
+    const drawKeyValueRows = (
+      rows: readonly (readonly [string, string])[],
+      options?: { extraTopByLabel?: Partial<Record<string, number>> },
+    ) => {
+      const labelWidth = 42;
+      const valueWidth = contentWidth - labelWidth - 4;
+      const lineHeight = 3.7;
+      rows.forEach(([label, value]) => {
+        const extraTop = options?.extraTopByLabel?.[label] ?? 0;
+        if (extraTop > 0) {
+          ensureSpace(extraTop);
+          y += extraTop;
+        }
+        const valueLines = doc.splitTextToSize(value, valueWidth);
+        const rowHeight = Math.max(4.2, valueLines.length * lineHeight);
+        ensureSpace(rowHeight);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text(label, margin, y);
+        doc.setFont("helvetica", "normal");
+        valueLines.forEach((line, index) => {
+          const lineY = y + index * lineHeight;
+          const isLastLine = index === valueLines.length - 1;
+          const words = String(line).trim().split(/\s+/).filter(Boolean);
+          if (isLastLine || words.length <= 1) {
+            doc.text(String(line), margin + labelWidth, lineY);
+            return;
+          }
+          const lineWidth = doc.getTextWidth(String(line));
+          const extraSpace = valueWidth - lineWidth;
+          const gapCount = words.length - 1;
+          let x = margin + labelWidth;
+          words.forEach((word, wordIndex) => {
+            doc.text(word, x, lineY);
+            x += doc.getTextWidth(word);
+            if (wordIndex < gapCount) {
+              x += doc.getTextWidth(" ") + extraSpace / gapCount;
+            }
+          });
+        });
+        y += rowHeight + 0.5;
+      });
+    };
+
+    const drawJustifiedParagraph = (text: string, lineHeight = 4.9) => {
+      const lines = doc.splitTextToSize(text, contentWidth) as string[];
+      lines.forEach((line, index) => {
+        ensureSpace(lineHeight);
+        const isLastLine = index === lines.length - 1;
+        const words = line.trim().split(/\s+/).filter(Boolean);
+        if (isLastLine || words.length <= 1) {
+          doc.text(line, margin, y);
+          y += lineHeight;
+          return;
+        }
+        const lineWidth = doc.getTextWidth(line);
+        const extraSpace = contentWidth - lineWidth;
+        const gapCount = words.length - 1;
+        let x = margin;
+        words.forEach((word, wordIndex) => {
+          doc.text(word, x, y);
+          x += doc.getTextWidth(word);
+          if (wordIndex < gapCount) {
+            x += doc.getTextWidth(" ") + extraSpace / gapCount;
+          }
+        });
+        y += lineHeight;
+      });
+    };
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text(resolvedTitle.toUpperCase(), pageWidth / 2, y, { align: "center" });
+    y += 10;
+
+    drawSectionHeader("A. EMPLOYER DETAILS");
+    drawKeyValueRows(resolvedEmployerRows);
+
+    y += 4;
+    drawSectionHeader("B. EMPLOYEE DETAILS");
+    drawKeyValueRows(resolvedEmployeeRows);
+    if (employeeForm.jobTitle.trim()) {
+      drawKeyValueRows([["Job Title:", employeeForm.jobTitle.trim()]]);
+    }
+
+    y += 4;
+    drawSectionHeader("C. WARNING DETAILS");
+    drawKeyValueRows(resolvedWarningRows, { extraTopByLabel: { "Validity Period:": 0.6 } });
+
+    y += 4;
+    drawSectionHeader("D. CONSEQUENCES");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    drawJustifiedParagraph(consequenceText, 3.7);
+
+    y += 4;
+    drawSectionHeader("E. SIGNATURES");
+    y += 10;
+
+    const signatureGap = 10;
+    const totalSignatureGap = signatureGap * 3;
+    const availableSignatureWidth = contentWidth - totalSignatureGap;
+    const signatureColumnWidths = [
+      availableSignatureWidth * 0.35,
+      availableSignatureWidth * 0.15,
+      availableSignatureWidth * 0.35,
+      availableSignatureWidth * 0.15,
+    ];
+    signatureRows.forEach((row) => {
+      ensureSpace(19);
+      let x = margin;
+      row.forEach((label, index) => {
+        const width = signatureColumnWidths[index];
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.2);
+        doc.line(x, y, x + width, y);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text(label, x, y + 4.2);
+        x += width + signatureGap;
+      });
+      y += 17;
+    });
+
+    ensureSpace(12);
+    doc.setDrawColor(...sectionBorder);
+    doc.setFillColor(...sectionFill);
+    doc.roundedRect(margin, y, contentWidth, 11, 0.8, 0.8, "FD");
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105);
+    const noteLines = doc.splitTextToSize(witnessNote, contentWidth - 6);
+    const noteLineHeight = 3.7;
+    const noteTextHeight = noteLines.length * noteLineHeight;
+    const noteStartY = y + (11 - noteTextHeight) / 2 + 3;
+    doc.text(noteLines, margin + 3, noteStartY);
+
+    const fileTitle =
+      (warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Disciplinary Warning Form")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "disciplinary-warning-form";
+    const employeeInitial = employeeForm.employeeName.trim().charAt(0).toUpperCase();
+    const employeeSurname = employeeForm.employeeSurname.trim();
+    const documentNameSuffix =
+      employeeInitial && employeeSurname ? ` (${employeeInitial} ${employeeSurname})` : "";
+    const warningLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Warning";
+    const documentName = `${warningLabel}${documentNameSuffix}`;
+    const downloadFileName = `${fileTitle}.pdf`;
+    const uploadBlob = doc.output("blob");
+    const uploadSafeClientName =
+      (clientForm.clientName || "client")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "client";
+    const uploadSafeDocumentName =
+      documentName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "warning";
+    const uploadFilePath = [
+      "warnings-2",
+      uploadSafeClientName,
+      `${Date.now()}-${uploadSafeDocumentName}.pdf`,
+    ].join("/");
+    let uploadedFileUrl = "";
+
+    const { error: uploadError } = await supabase.storage
+      .from(generatedDocumentsBucket)
+      .upload(uploadFilePath, uploadBlob, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: "application/pdf",
+      });
+
+    if (uploadError) {
+      toast({
+        title: "Upload Error",
+        description: `Could not save document file: ${uploadError.message}`,
+        variant: "destructive",
+      });
+    } else {
+      const { data: publicUrlData } = supabase.storage.from(generatedDocumentsBucket).getPublicUrl(uploadFilePath);
+      uploadedFileUrl = String(publicUrlData?.publicUrl ?? "").trim();
+    }
+
+    const logResult = await logGeneratedDocument({
+      documentLabel: warningLabel,
+      documentName,
+      documentType: "Warning",
+      clientName: clientForm.clientName,
+      fileUrl: uploadedFileUrl,
+      createdByName: user
+        ? `${String((user as any)?.user_metadata?.user_name || "").trim()} ${String((user as any)?.user_metadata?.user_surname || "").trim()}`.trim()
+        : "",
+      employeeName: employeeForm.employeeName,
+      employeeSurname: employeeForm.employeeSurname,
+    });
+
+    if (!logResult.ok) {
+      toast({
+        title: "Save Error",
+        description: `Could not save document row: ${logResult.error}`,
+        variant: "destructive",
+      });
+    } else {
+      window.dispatchEvent(new CustomEvent("documents-row-created"));
+    }
+
+    doc.save(downloadFileName);
+  };
+
   const isEmployeeStepComplete =
     employeeForm.employeeName.trim().length > 0 &&
     employeeForm.employeeSurname.trim().length > 0 &&
@@ -1084,7 +1367,10 @@ const DiscWarningGenerator = ({
       canGoBack: isFinished || activeStep > 0,
       canSelectStep: (index: number) => index >= 0 && index < 3,
       onNext: () => {
-        if (isFinished) return;
+        if (isFinished) {
+          handleDownloadPdf();
+          return;
+        }
         if (activeStep === 0 && !clientForm.clientId) return;
         if (activeStep === 1 && !isEmployeeStepComplete) return;
         if (activeStep === 2 && !isWarningStepComplete) return;
@@ -1124,7 +1410,14 @@ const DiscWarningGenerator = ({
       isFinished,
       supportsResetAtFirstStep: activeStep === 0 && Boolean(clientForm.clientId),
     }),
-    [activeStep, clientForm.clientId, isEmployeeStepComplete, isFinished, isWarningStepComplete],
+    [
+      activeStep,
+      clientForm.clientId,
+      handleDownloadPdf,
+      isEmployeeStepComplete,
+      isFinished,
+      isWarningStepComplete,
+    ],
   );
 
   useEffect(() => {

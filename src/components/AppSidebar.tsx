@@ -1,4 +1,4 @@
-import { FolderOpen, Users, Home, Headset, Bell, Settings, LogOut, BriefcaseBusiness, ChevronRight } from "lucide-react";
+import { FolderOpen, Users, Home, LogOut, BriefcaseBusiness, ChevronRight } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
@@ -38,8 +38,7 @@ const documentSubmenuItems = [
 const documentFlyoutItems: Record<string, Array<{ title: string; url: string; selectedDocument?: string }>> = {
   Discipline: [
     { title: "Code of Conduct", url: "/documents", selectedDocument: "codeOfConduct" },
-    { title: "Warnings", url: "/documents", selectedDocument: "warnings" },
-    { title: "Warnings 2", url: "/documents", selectedDocument: "discWarningGenerator" },
+    { title: "Disciplinary Warning", url: "/documents", selectedDocument: "discWarningGenerator" },
   ],
   Contracts: [
     { title: "Permanent Contract", url: "/documents", selectedDocument: "permanentContract" },
@@ -107,7 +106,6 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
 
   useEffect(() => {
     const documentToCategory: Record<string, string> = {
-      warnings: "Discipline",
       discWarningGenerator: "Discipline",
       codeOfConduct: "Discipline",
       permanentContract: "Contracts",
@@ -326,61 +324,6 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
 
         <SidebarFooter className="px-0 py-4 mt-auto border-t border-white/10">
           <SidebarMenu className="gap-0">
-            <SidebarMenuItem>
-              {withTooltip(
-                <SidebarMenuButton
-                  asChild
-                  className={cn(
-                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
-                    location.pathname === "/settings" &&
-                      "bg-[#010D1A] text-white border-b-2 border-[#3eca44] data-[active=true]:!bg-[#010D1A] [&>svg]:text-white",
-                  )}
-                  isActive={location.pathname === "/settings"}
-                  data-collapsed={isCollapsed}
-                >
-                  <NavLink
-                    to="/settings"
-                    state={{ backgroundLocation: location }}
-                    className="w-full text-xs"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent("documents-force-close"));
-                    }}
-                  >
-                    <Settings className="h-5 w-5" />
-                    <span className={cn(isCollapsed && "sr-only")}>Settings</span>
-                  </NavLink>
-                </SidebarMenuButton>,
-                "Settings"
-              )}
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              {withTooltip(
-                <SidebarMenuButton
-                  className={cn(
-                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
-                  )}
-                  data-collapsed={isCollapsed}
-                >
-                  <Bell className="h-5 w-5" />
-                  <span className={cn(isCollapsed && "sr-only")}>Notifications</span>
-                </SidebarMenuButton>,
-                "Notifications"
-              )}
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              {withTooltip(
-                <SidebarMenuButton
-                  className={cn(
-                    "rounded-none px-7 !py-5 text-white text-xs transition-all duration-150 hover:bg-[#010D1A] hover:text-white data-[active=true]:text-white data-[active=true]:[&>svg]:text-white [&>svg]:text-white hover:[&>svg]:text-white",
-                  )}
-                  data-collapsed={isCollapsed}
-                >
-                  <Headset className="h-5 w-5" />
-                  <span className={cn(isCollapsed && "sr-only")}>Support</span>
-                </SidebarMenuButton>,
-                "Support"
-              )}
-            </SidebarMenuItem>
             <SidebarMenuItem>
               {withTooltip(
                 <SidebarMenuButton

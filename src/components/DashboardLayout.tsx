@@ -30,7 +30,9 @@ interface UserHeaderProfile {
 
 const STORAGE_KEYS = {
   SIDEBAR_COLLAPSED: "sidebar:collapsed",
+  HEADER_PROFILE: "header:profile",
 } as const;
+const APP_HEADER_HEIGHT = "52px";
 
 const getPageTitleFromPathname = (pathname: string) => {
   if (pathname.startsWith("/documents")) return "Documents";
@@ -63,7 +65,33 @@ export default function DashboardLayout({
     }
   });
   const resolvedHeaderTitle = headerTitle ?? getPageTitleFromPathname(location.pathname);
-  const [profile, setProfile] = useState<UserHeaderProfile | null>(null);
+  const readCachedHeaderProfile = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEYS.HEADER_PROFILE);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<UserHeaderProfile> | null;
+      if (!parsed) return null;
+      return {
+        user_name: String(parsed.user_name || "").trim(),
+        user_surname: String(parsed.user_surname || "").trim(),
+        user_email: String(parsed.user_email || "").trim(),
+      } satisfies UserHeaderProfile;
+    } catch {
+      return null;
+    }
+  };
+  const getMetadataHeaderProfile = () => {
+    const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
+    const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
+    const email = String(user?.email || "").trim();
+    if (!metaName && !metaSurname && !email) return null;
+    return {
+      user_name: metaName || "User",
+      user_surname: metaSurname,
+      user_email: email,
+    } satisfies UserHeaderProfile;
+  };
+  const [profile, setProfile] = useState<UserHeaderProfile | null>(() => readCachedHeaderProfile());
   const [minimizedDocumentTabs, setMinimizedDocumentTabs] = useState<StoredMinimizedDocumentTab[]>(() =>
     loadMinimizedDocumentTabs(),
   );
@@ -90,33 +118,25 @@ export default function DashboardLayout({
   }, [isCollapsed]);
 
   useLayoutEffect(() => {
-    const headerEl = headerRef.current;
-    if (!headerEl) return;
-
-    const setHeaderHeight = () => {
-      const height = headerEl.offsetHeight;
-      document.documentElement.style.setProperty("--app-header-height", `${height}px`);
-    };
-
-    setHeaderHeight();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", setHeaderHeight);
-      return () => window.removeEventListener("resize", setHeaderHeight);
-    }
-
-    const observer = new ResizeObserver(() => setHeaderHeight());
-    observer.observe(headerEl);
-    return () => observer.disconnect();
+    document.documentElement.style.setProperty("--app-header-height", APP_HEADER_HEIGHT);
   }, []);
 
   useEffect(() => {
     if (!user?.id) {
       setProfile(null);
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.HEADER_PROFILE);
+      } catch {
+        // ignore storage errors
+      }
       return;
     }
 
     let isMounted = true;
+    const metadataProfile = getMetadataHeaderProfile();
+    if (metadataProfile) {
+      setProfile((current) => current ?? metadataProfile);
+    }
 
     const loadProfile = async () => {
       const { data } = await supabase
@@ -128,7 +148,13 @@ export default function DashboardLayout({
       if (!isMounted) return;
 
       if (data) {
-        setProfile(data as UserHeaderProfile);
+        const resolvedProfile = data as UserHeaderProfile;
+        setProfile(resolvedProfile);
+        try {
+          sessionStorage.setItem(STORAGE_KEYS.HEADER_PROFILE, JSON.stringify(resolvedProfile));
+        } catch {
+          // ignore storage errors
+        }
         return;
       }
 
@@ -141,23 +167,33 @@ export default function DashboardLayout({
       if (!isMounted) return;
 
       if (subuserData) {
-        setProfile({
+        const resolvedProfile = {
           user_name: String((subuserData as any).name || "").trim(),
           user_surname: String((subuserData as any).surname || "").trim(),
           user_email: String((subuserData as any).email || user.email || "").trim(),
-        });
+        } satisfies UserHeaderProfile;
+        setProfile(resolvedProfile);
+        try {
+          sessionStorage.setItem(STORAGE_KEYS.HEADER_PROFILE, JSON.stringify(resolvedProfile));
+        } catch {
+          // ignore storage errors
+        }
         return;
       }
 
-      const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
-      const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
-      const email = String(user.email || "").trim();
-
-      setProfile({
-        user_name: metaName || "User",
-        user_surname: metaSurname,
-        user_email: email,
-      });
+      const fallbackProfile =
+        metadataProfile ??
+        ({
+          user_name: "User",
+          user_surname: "",
+          user_email: String(user.email || "").trim(),
+        } satisfies UserHeaderProfile);
+      setProfile(fallbackProfile);
+      try {
+        sessionStorage.setItem(STORAGE_KEYS.HEADER_PROFILE, JSON.stringify(fallbackProfile));
+      } catch {
+        // ignore storage errors
+      }
     };
 
     void loadProfile();
@@ -180,6 +216,10 @@ export default function DashboardLayout({
 
   const dismissMinimizedDocumentTab = (tabId: string) => {
     saveMinimizedDocumentTabs(minimizedDocumentTabs.filter((tab) => tab.id !== tabId));
+  };
+  const openSettingsModal = () => {
+    window.dispatchEvent(new CustomEvent("documents-force-close"));
+    navigate("/settings", { state: { backgroundLocation: location } });
   };
 
   return (
@@ -206,10 +246,10 @@ export default function DashboardLayout({
         <div className="flex flex-1 min-h-screen flex-col bg-transparent">
           <header
             ref={headerRef}
-            className="fixed top-0 z-40 bg-transparent transition-[left] duration-200 ease-linear"
+            className="fixed top-0 z-40 h-[52px] bg-transparent transition-[left] duration-200 ease-linear"
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
-            <div className="relative flex w-full items-center justify-between bg-[#2D4256] pl-6 pr-6 py-1 shadow-sm">
+            <div className="relative flex h-full w-full items-center justify-between bg-[#2D4256] pl-6 pr-6 shadow-sm">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -234,12 +274,12 @@ export default function DashboardLayout({
                 ) : null}
                 {headerInlineContent ? <div className="flex items-center gap-2">{headerInlineContent}</div> : null}
                 {minimizedDocumentTabs.length > 0 ? (
-                  <div className="absolute left-[320px] right-[260px] flex items-center gap-2 overflow-x-auto py-1">
+                  <div className="pointer-events-none absolute left-[320px] right-[260px] flex items-center gap-2 overflow-x-auto py-1">
                     <span className="h-6 w-px bg-white/10 self-center" aria-hidden="true" />
                     {minimizedDocumentTabs.map((tab, index) => (
                       <div
                         key={tab.id}
-                        className="group inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
+                        className="group pointer-events-auto inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
                       >
                         <button
                           type="button"
@@ -261,39 +301,38 @@ export default function DashboardLayout({
                   </div>
                 ) : null}
               </div>
-              {profile ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
-                      aria-label="Settings"
-                    >
-                      <Settings className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
-                      aria-label="Notifications"
-                    >
-                      <Bell className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
-                      aria-label="Support"
-                    >
-                      <Headset className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <span className="h-10 w-px bg-white/10 self-center" aria-hidden="true" />
-                  <div className="flex flex-col items-end text-right leading-tight">
-                    <span className="text-xs font-medium text-white/70">
-                      Hi, {profile.user_name} {profile.user_surname}
-                    </span>
-                  </div>
+              <div className="relative z-10 flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={openSettingsModal}
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                    aria-label="Settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                    aria-label="Notifications"
+                  >
+                    <Bell className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
+                    aria-label="Support"
+                  >
+                    <Headset className="h-4 w-4" />
+                  </button>
                 </div>
-              ) : null}
+                <span className="h-10 w-px bg-white/10 self-center" aria-hidden="true" />
+                <div className="flex flex-col items-end text-right leading-tight min-w-[120px]">
+                  <span className="text-xs font-medium text-white/70">
+                    {profile ? `Hi, ${profile.user_name} ${profile.user_surname}`.trim() : "Hi, User"}
+                  </span>
+                </div>
+              </div>
             </div>
           </header>
 

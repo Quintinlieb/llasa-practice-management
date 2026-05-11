@@ -143,6 +143,27 @@ const cropClientLogoPadding = (dataUrl: string): Promise<string> =>
     img.src = dataUrl;
   });
 
+const clientsTableCacheKey = "clients:table-cache";
+
+const loadCachedClientRows = () => {
+  try {
+    const raw = sessionStorage.getItem(clientsTableCacheKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCachedClientRows = (rows: any[]) => {
+  try {
+    sessionStorage.setItem(clientsTableCacheKey, JSON.stringify(rows));
+  } catch {
+    // ignore storage errors
+  }
+};
+
 const ClientsTwo = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -183,7 +204,7 @@ const ClientsTwo = () => {
     province: "",
     areaCode: "",
   });
-  const [clientRows, setClientRows] = useState<any[]>([]);
+  const [clientRows, setClientRows] = useState<any[]>(() => loadCachedClientRows());
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
   const [isSavingClient, setIsSavingClient] = useState(false);
   const [selectedClientRow, setSelectedClientRow] = useState<any | null>(null);
@@ -839,6 +860,9 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchClients();
   }, [fetchClients]);
+  useEffect(() => {
+    saveCachedClientRows(clientRows);
+  }, [clientRows]);
   useEffect(() => {
     void fetchClientGroups();
   }, [fetchClientGroups]);

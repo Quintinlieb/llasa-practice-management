@@ -10,9 +10,9 @@ type DisciplineDocument = {
 
 const disciplineDocuments: DisciplineDocument[] = [
   {
-    name: "Warnings",
+    name: "Warnings 2",
     description: "Generate formal warnings with pre-filled employee and company data.",
-    href: "/documents/discipline/warnings",
+    href: "/documents",
     isActive: true,
   },
   {
@@ -59,7 +59,8 @@ const DisciplineDocumentsPage = () => {
               <div className="mt-6 pt-2">
                 {doc.isActive ? (
                   <Link
-                    to={doc.href}
+                    to={doc.name === "Warnings 2" ? "/documents" : doc.href}
+                    state={doc.name === "Warnings 2" ? { selectedDocument: "discWarningGenerator" } : undefined}
                     aria-label={`Open ${doc.name}`}
                     className="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600"
                   >

@@ -20,7 +20,6 @@ import { supabase } from "@/integrations/supabase/client";
 
 type DocumentKey =
   | "codeOfConduct"
-  | "warnings"
   | "discWarningGenerator"
   | "disciplinaryHearingNotice"
   | "precautionarySuspensionNotice"
@@ -92,6 +91,8 @@ type MinimizedGeneratorTab = {
   draftState?: unknown;
 };
 
+const documentsTableCacheKey = "documents:table-cache";
+
 const formatDocumentClientName = (value: string) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -110,6 +111,37 @@ const splitCreatedOnParts = (value: string) => {
   };
 };
 
+const loadCachedDocumentRows = (): DocumentTableRow[] => {
+  try {
+    const raw = sessionStorage.getItem(documentsTableCacheKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (row): row is DocumentTableRow =>
+        Boolean(row) &&
+        typeof row === "object" &&
+        typeof (row as DocumentTableRow).id === "string" &&
+        typeof (row as DocumentTableRow).documentName === "string" &&
+        typeof (row as DocumentTableRow).documentType === "string" &&
+        typeof (row as DocumentTableRow).clientName === "string" &&
+        typeof (row as DocumentTableRow).createdOn === "string" &&
+        typeof (row as DocumentTableRow).createdBy === "string" &&
+        typeof (row as DocumentTableRow).fileUrl === "string",
+    );
+  } catch {
+    return [];
+  }
+};
+
+const saveCachedDocumentRows = (rows: DocumentTableRow[]) => {
+  try {
+    sessionStorage.setItem(documentsTableCacheKey, JSON.stringify(rows));
+  } catch {
+    // ignore storage errors
+  }
+};
+
 const lazyDocumentComponent = (loader: () => Promise<any>) =>
   lazy(async () => {
     const mod = await loader();
@@ -118,7 +150,6 @@ const lazyDocumentComponent = (loader: () => Promise<any>) =>
 
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
-  warnings: lazyDocumentComponent(() => import("./WarningGenerator")),
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
   disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
@@ -141,7 +172,6 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
 
 const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
-  warnings: { category: "Discipline", label: "Warnings" },
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
@@ -190,7 +220,6 @@ const noticeDocumentKeys = [
 ] as const satisfies readonly DocumentKey[];
 
 const wizardDocumentKeys = [
-  "warnings",
   "discWarningGenerator",
   ...noticeDocumentKeys,
   "serviceCertificate",
@@ -201,25 +230,22 @@ const wizardDocumentKeys = [
   "temporaryContract",
 ] as const satisfies readonly DocumentKey[];
 
-const darkStepperDocumentKeys = ["warnings", "discWarningGenerator", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
+const darkStepperDocumentKeys = ["discWarningGenerator", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
+const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const darkShellDocumentKeys = ["codeOfConduct", ...darkStepperDocumentKeys] as const satisfies readonly DocumentKey[];
-const lightWizardDocumentKeys = wizardDocumentKeys.filter(
-  (key) => !darkStepperDocumentKeys.includes(key),
-) as DocumentKey[];
+const lightWizardDocumentKeys = wizardDocumentKeys.filter((key) => !darkStepperDocumentSet.has(key)) as DocumentKey[];
 const modalOnlyDocumentKeys = [...wizardDocumentKeys, "codeOfConduct"] as const satisfies readonly DocumentKey[];
 
 const terminationDocumentSet = new Set<DocumentKey>(terminationDocumentKeys);
 const terminationLetterDocumentSet = new Set<DocumentKey>(terminationLetterDocumentKeys);
 const wizardDocumentSet = new Set<DocumentKey>(wizardDocumentKeys);
-const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const darkShellDocumentSet = new Set<DocumentKey>(darkShellDocumentKeys);
 const lightWizardDocumentSet = new Set<DocumentKey>(lightWizardDocumentKeys);
 const modalOnlyDocumentSet = new Set<DocumentKey>(modalOnlyDocumentKeys);
 
 const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
-  warnings: "Warnings",
-  discWarningGenerator: "Warnings 2",
+  discWarningGenerator: "Disciplinary Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
@@ -240,7 +266,6 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
 };
 
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
-  warnings: "Warning Details",
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
   precautionarySuspensionNotice: "Notice Details",
@@ -279,7 +304,8 @@ const Documents = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
-  const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>([]);
+  const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>(() => loadCachedDocumentRows());
+  const [isDocumentsLoading, setIsDocumentsLoading] = useState(() => loadCachedDocumentRows().length === 0);
   const [minimizedTabs, setMinimizedTabs] = useState<MinimizedGeneratorTab[]>(() =>
     loadMinimizedDocumentTabs() as MinimizedGeneratorTab[],
   );
@@ -390,6 +416,10 @@ const Documents = () => {
   }, [minimizedTabs]);
 
   useEffect(() => {
+    saveCachedDocumentRows(documentRows);
+  }, [documentRows]);
+
+  useEffect(() => {
     const syncMinimizedTabs = () => setMinimizedTabs(loadMinimizedDocumentTabs() as MinimizedGeneratorTab[]);
     window.addEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
     return () => window.removeEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
@@ -437,6 +467,9 @@ const Documents = () => {
       });
     };
     const loadDocuments = async () => {
+      if (isMounted && documentRows.length === 0) {
+        setIsDocumentsLoading(true);
+      }
       let queryResult = await (supabase as any)
         .from("documents")
         .select("id, document_name, document_type, client_name, created_at, created_by_name, file_url")
@@ -447,7 +480,11 @@ const Documents = () => {
           .select("id, document_name, document_type, client_name, created_at, created_by, file_url")
           .order("created_at", { ascending: false });
       }
-      if (queryResult.error || !isMounted) return;
+      if (!isMounted) return;
+      if (queryResult.error) {
+        setIsDocumentsLoading(false);
+        return;
+      }
       const rows: DocumentTableRow[] = (queryResult.data ?? []).map((row: any) => ({
         id: String(row.id ?? crypto.randomUUID()),
         documentName: String(row.document_name ?? ""),
@@ -458,6 +495,7 @@ const Documents = () => {
         fileUrl: String(row.file_url ?? ""),
       }));
       setDocumentRows(rows);
+      setIsDocumentsLoading(false);
     };
     void loadDocuments();
     const interval = setInterval(() => void loadDocuments(), 10000);
@@ -471,7 +509,7 @@ const Documents = () => {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("documents-row-created", onDocumentsRowCreated);
     };
-  }, []);
+  }, [documentRows.length]);
 
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
   const modalDocument = activeSession?.documentKey ?? null;
@@ -490,10 +528,10 @@ const Documents = () => {
   const modalSteps =
     modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
-          modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? "Client Details" : "Employer Details",
+          modalDocument === "discWarningGenerator" ? "Client Details" : "Employer Details",
           "Employee Details",
           detailStepLabelByDocument[modalDocument] ?? "Employment Details",
-          modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? "Preview / Download" : "Preview / Edit",
+          modalDocument === "discWarningGenerator" ? "Preview / Download" : "Preview / Edit",
         ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
@@ -804,10 +842,8 @@ const Documents = () => {
     return baseNotes;
   })();
   const modalActiveNotes =
-    modalDocument === "warnings"
+    modalDocument === "discWarningGenerator"
       ? warningActiveNotes
-      : modalDocument === "discWarningGenerator"
-        ? warningActiveNotes
       : modalDocument === "permanentContract"
         ? permanentActiveNotes
       : modalDocument === "disciplinaryHearingNotice"
@@ -825,18 +861,18 @@ const Documents = () => {
       : modalDocument === "acknowledgementOfDebt"
         ? acknowledgementOfDebtActiveNotes
       : modalDocument === "noticeTermination" ||
-        modalDocument === "illHealthTermination" ||
-        modalDocument === "abscondmentTermination" ||
-        modalDocument === "retrenchmentTermination" ||
-        modalDocument === "retirementTermination" ||
-        modalDocument === "poorPerformanceTermination" ||
-        modalDocument === "mutualTermination"
+          modalDocument === "illHealthTermination" ||
+          modalDocument === "abscondmentTermination" ||
+          modalDocument === "retrenchmentTermination" ||
+          modalDocument === "retirementTermination" ||
+          modalDocument === "poorPerformanceTermination" ||
+          modalDocument === "mutualTermination"
         ? modalDocument === "mutualTermination"
           ? mutualTerminationActiveNotes
           : noticeTerminationActiveNotes
-      : modalDocument === "temporaryContract"
-        ? temporaryActiveNotes
-        : addendumActiveNotes;
+        : modalDocument === "temporaryContract"
+          ? temporaryActiveNotes
+          : addendumActiveNotes;
   const shouldRenderInlineDocument = Boolean(
     SelectedComponent && selectedDocument && !modalOnlyDocumentSet.has(selectedDocument),
   );
@@ -1015,7 +1051,9 @@ const Documents = () => {
                         <div>Created By</div>
                       </div>
                       <div className="divide-y overflow-auto min-h-0" style={{ height: "calc(100dvh - var(--app-header-height,5rem) - 300px)" }}>
-                        {filteredDocumentRows.length === 0 ? (
+                        {isDocumentsLoading ? (
+                          <div className="px-4 py-6 text-xs text-slate-500">Loading documents...</div>
+                        ) : filteredDocumentRows.length === 0 ? (
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
                           filteredDocumentRows.map((row) => (
@@ -1120,16 +1158,14 @@ const Documents = () => {
               <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
                 <div className="inline-flex items-center gap-1.5 text-[11px] text-white/90">
                   <Menu className="h-3.5 w-3.5 -ml-0.5" />
-                  <span className="font-semibold">
-                    <span className="text-white/60">
-                      {modalDocument === "warnings" || modalDocument === "discWarningGenerator"
+                    <span className="font-semibold">
+                      <span className="text-white/60">
+                      {modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
                         : "Documents / Terminations / "}
+                      </span>
+                    <span className="text-white">{modalTitle}</span>
                     </span>
-                    <span className="text-white">
-                      {modalDocument === "warnings" || modalDocument === "discWarningGenerator" ? modalTitle : modalTitle}
-                    </span>
-                  </span>
                 </div>
               </header>
               <div className="mt-[46px] h-[calc(90vh-46px)] bg-white">
@@ -1387,7 +1423,7 @@ const Documents = () => {
                     <section
                       className={cn(
                         "relative min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4",
-                        modalDocument === "warnings"
+                        modalDocument === "discWarningGenerator"
                           ? stepMeta?.isFinished
                             ? "flex-1"
                             : "overflow-visible"

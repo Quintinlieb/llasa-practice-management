@@ -63,41 +63,7 @@ type NewCaseForm = {
   shortDescription: string;
   openingNote: string;
 };
-
-const CASE_FILES_MOCK: CaseFile[] = [
-  {
-    id: "1",
-    fileNo: "CF-2026-0012",
-    client: "ABC Manufacturing (Pty) Ltd",
-    parties: "ABC Manufacturing (Pty) Ltd // John Smith",
-    caseType: "CCMA",
-    forumVenue: "CCMA Johannesburg",
-    nextDate: "2026-05-08",
-    consultant: "N. Dlamini",
-    status: "Active",
-    priority: "Urgent",
-    lastUpdated: "2026-04-27",
-    caseTitle: "ABC Manufacturing (Pty) Ltd // John Smith",
-    subtype: "Unfair Dismissal",
-    caseNumber: "GAJB1234-26",
-    employerRepresentative: "T. Mokoena",
-    currentStage: "Arbitration",
-    shortDescription: "Dismissal dispute referred to CCMA after internal disciplinary process.",
-    dates: {
-      referralDate: "2026-03-21",
-      dismissalEventDate: "2026-03-14",
-      conciliationDate: "2026-04-05",
-      arbitrationDate: "2026-05-08",
-      labourCourtDate: "--",
-      consultationDate: "2026-04-02",
-      nextActionDate: "2026-05-03",
-      deadlineDate: "2026-05-01",
-    },
-    notes: [{ date: "2026-04-20", addedBy: "N. Dlamini", noteType: "Hearing Prep", body: "Received witness bundle from HR.", followUpDate: "2026-04-30" }],
-    tasks: [{ title: "Finalize witness pack", assignedTo: "A. Pillay", dueDate: "2026-05-01", priority: "High", status: "Open" }],
-    outcome: { outcomeType: "Pending", outcomeDate: "--", result: "Awaiting arbitration", amount: "R 0.00", closingNote: "--", closedBy: "--", closedDate: "--" },
-  },
-];
+const caseFilesTableCacheKey = "case-files:table-cache";
 
 const CASE_TYPE_OPTIONS = [
   "Disciplinary Hearing",
@@ -151,10 +117,30 @@ const formatDisplayDate = (value?: string) => {
   return `${d}/${m}/${y}`;
 };
 
+const loadCachedCaseFiles = (): CaseFile[] => {
+  try {
+    const raw = sessionStorage.getItem(caseFilesTableCacheKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveCachedCaseFiles = (rows: CaseFile[]) => {
+  try {
+    sessionStorage.setItem(caseFilesTableCacheKey, JSON.stringify(rows));
+  } catch {
+    // ignore storage errors
+  }
+};
+
 const CaseFiles = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [caseFiles, setCaseFiles] = useState<CaseFile[]>(CASE_FILES_MOCK);
+  const [caseFiles, setCaseFiles] = useState<CaseFile[]>(() => loadCachedCaseFiles());
+  const [isCaseFilesLoading, setIsCaseFilesLoading] = useState(() => loadCachedCaseFiles().length === 0);
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
   const [clientLoadMessage, setClientLoadMessage] = useState("No clients found.");
   const [searchQuery, setSearchQuery] = useState("");
@@ -189,12 +175,16 @@ const CaseFiles = () => {
   };
 
   const fetchCaseFiles = useCallback(async () => {
+    if (caseFiles.length === 0) {
+      setIsCaseFilesLoading(true);
+    }
     const { data, error } = await (supabase as any)
       .from("case_files")
       .select("*")
       .order("created_at", { ascending: false, nullsFirst: false });
 
     if (error) {
+      setIsCaseFilesLoading(false);
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
     }
@@ -253,7 +243,8 @@ const CaseFiles = () => {
     });
 
     setCaseFiles(mapped);
-  }, [toast]);
+    setIsCaseFilesLoading(false);
+  }, [caseFiles.length, toast]);
 
   useEffect(() => {
     const loadClients = async () => {
@@ -297,6 +288,10 @@ const CaseFiles = () => {
   useEffect(() => {
     void fetchCaseFiles();
   }, [fetchCaseFiles]);
+
+  useEffect(() => {
+    saveCachedCaseFiles(caseFiles);
+  }, [caseFiles]);
 
   const getNextFileNumber = (caseType: string) => {
     const code = CASE_TYPE_CODE_MAP[caseType as keyof typeof CASE_TYPE_CODE_MAP];
@@ -632,27 +627,33 @@ const CaseFiles = () => {
                         <div>File No.</div><div>Client</div><div>Parties</div><div>Case Type</div><div>Forum / Venue</div><div>Next Date</div><div>Consultant</div><div>Status</div>
                       </div>
                       <div className="divide-y overflow-auto min-h-0" style={{ height: "calc(100dvh - var(--app-header-height,5rem) - 300px)" }}>
-                        {filteredCaseFiles.map((caseFile) => (
-                          <div key={caseFile.id} className="grid w-full grid-cols-[0.45fr_1.2fr_1.5fr_1.9fr_1.3fr_1.4fr_1fr_1fr_0.95fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
-                            <div className="flex items-center justify-center">
-                              <Checkbox
-                                indicator="x"
-                                checked={selectedCaseIds.has(caseFile.id)}
-                                onCheckedChange={() => toggleSelectCase(caseFile.id)}
-                                aria-label={`Select ${caseFile.fileNo}`}
-                                className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
-                              />
+                        {isCaseFilesLoading ? (
+                          <div className="px-4 py-6 text-xs text-slate-500">Loading case files...</div>
+                        ) : filteredCaseFiles.length === 0 ? (
+                          <div className="px-4 py-6 text-xs text-slate-500">No case files found.</div>
+                        ) : (
+                          filteredCaseFiles.map((caseFile) => (
+                            <div key={caseFile.id} className="grid w-full grid-cols-[0.45fr_1.2fr_1.5fr_1.9fr_1.3fr_1.4fr_1fr_1fr_0.95fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                              <div className="flex items-center justify-center">
+                                <Checkbox
+                                  indicator="x"
+                                  checked={selectedCaseIds.has(caseFile.id)}
+                                  onCheckedChange={() => toggleSelectCase(caseFile.id)}
+                                  aria-label={`Select ${caseFile.fileNo}`}
+                                  className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
+                                />
+                              </div>
+                              <button type="button" onClick={() => setSelectedCase(caseFile)} className="font-medium text-left hover:underline">{caseFile.fileNo}</button>
+                              <div>{caseFile.client}</div>
+                              <div>{caseFile.parties}</div>
+                              <div>{caseFile.caseType}</div>
+                              <div>{caseFile.forumVenue}</div>
+                              <div>{caseFile.nextDate}</div>
+                              <div>{caseFile.consultant}</div>
+                              <div><Badge className="border border-slate-300 bg-white text-slate-700">{caseFile.status}</Badge></div>
                             </div>
-                            <button type="button" onClick={() => setSelectedCase(caseFile)} className="font-medium text-left hover:underline">{caseFile.fileNo}</button>
-                            <div>{caseFile.client}</div>
-                            <div>{caseFile.parties}</div>
-                            <div>{caseFile.caseType}</div>
-                            <div>{caseFile.forumVenue}</div>
-                            <div>{caseFile.nextDate}</div>
-                            <div>{caseFile.consultant}</div>
-                            <div><Badge className="border border-slate-300 bg-white text-slate-700">{caseFile.status}</Badge></div>
-                          </div>
-                        ))}
+                          ))
+                        )}
                       </div>
                     </div>
                   </CardContent>

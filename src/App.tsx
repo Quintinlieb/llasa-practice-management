@@ -14,7 +14,6 @@ import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
 import CaseFiles from "./pages/CaseFiles";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
-import WarningGenerator from "./pages/WarningGenerator";
 import PermanentContractGenerator from "./pages/PermanentContractGenerator";
 import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
@@ -47,12 +46,10 @@ const AppRoutes = () => {
         <Route path="/documents/performance" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/notices" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/contracts" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
-        <Route path="/documents/discipline/warnings" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
         <Route path="/case-files" element={<ProtectedRoute><CaseFiles /></ProtectedRoute>} />
-        <Route path="/warning-generator" element={<ProtectedRoute><WarningGenerator /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/terms" element={<TermsAndConditions />} />
         <Route path="*" element={<NotFound />} />

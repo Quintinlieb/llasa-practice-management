@@ -611,7 +611,7 @@ const Auth = () => {
           <a href="mailto:support@zappir.co.za" className="group inline-flex items-center gap-1.5 text-xs text-slate-100 hover:text-white">
             <span>Support queries:</span>
             <Mail className="h-3.5 w-3.5" />
-            <span className="group-hover:underline">support@zappir.co.za</span>
+            <span className="group-hover:underline">support@llasa.co.za</span>
           </a>
         </div>
       </header>

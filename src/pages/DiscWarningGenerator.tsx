@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { BriefcaseIcon, EnvelopeIcon, MapPinIcon, PhoneIcon as HeroPhoneIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -78,6 +79,15 @@ type ClientRow = {
   area_code: string | null;
 };
 
+type ClientLogoRecord = {
+  storage_path?: string | null;
+  logo_path?: string | null;
+  logo_url?: string | null;
+  company_logo_url?: string | null;
+};
+
+type DiscWarningLogoOrientation = "portrait" | "landscape";
+
 type ClientFormState = {
   clientId: string;
   clientName: string;
@@ -85,6 +95,13 @@ type ClientFormState = {
   clientContactNumber: string;
   clientEmail: string;
   clientAddress: string;
+  clientAddressLine1: string;
+  clientAddressLine2: string;
+  clientCity: string;
+  clientProvince: string;
+  clientAreaCode: string;
+  companyLogoDataUrl: string;
+  companyLogoOrientation: DiscWarningLogoOrientation | "";
 };
 
 const emptyClientFormState: ClientFormState = {
@@ -94,6 +111,13 @@ const emptyClientFormState: ClientFormState = {
   clientContactNumber: "",
   clientEmail: "",
   clientAddress: "",
+  clientAddressLine1: "",
+  clientAddressLine2: "",
+  clientCity: "",
+  clientProvince: "",
+  clientAreaCode: "",
+  companyLogoDataUrl: "",
+  companyLogoOrientation: "",
 };
 
 type EmployeeFormState = {
@@ -246,6 +270,13 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientContactNumber: String(client.primary_number || "").trim(),
   clientEmail: String(client.primary_email || "").trim(),
   clientAddress: formatClientAddress(client),
+  clientAddressLine1: String(client.physical_address_line1 || "").trim(),
+  clientAddressLine2: String(client.physical_address_line2 || "").trim(),
+  clientCity: String(client.city || "").trim(),
+  clientProvince: String(client.province || "").trim(),
+  clientAreaCode: String(client.area_code || "").trim(),
+  companyLogoDataUrl: "",
+  companyLogoOrientation: "",
 });
 
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
@@ -272,6 +303,302 @@ const warningTypeLabelByValue: Record<Exclude<WarningFormState["warningType"], "
 
 const generatedDocumentsBucket = "documents";
 const employeeIdOrPassportMaxLength = 13;
+const clientLogosBucket = "client-logos";
+type UntypedSupabaseResult = Promise<{ data: unknown; error: { message: string } | null }>;
+type UntypedSupabaseQuery = {
+  select: (query: string) => UntypedSupabaseQuery;
+  order: (column: string, options?: Record<string, unknown>) => UntypedSupabaseResult;
+  eq: (column: string, value: unknown) => UntypedSupabaseQuery;
+  maybeSingle: () => UntypedSupabaseResult;
+  limit: (count: number) => UntypedSupabaseResult;
+};
+const supabaseUntyped = supabase as unknown as {
+  from: (relation: string) => UntypedSupabaseQuery;
+};
+
+const getClientLogoStoragePathFromUrl = (url?: string | null) => {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  if (!value.startsWith("http")) return value;
+  const marker = "/client-logos/";
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex === -1) return "";
+  return decodeURIComponent(value.slice(markerIndex + marker.length));
+};
+
+const getClientLogoUrlFromRecord = (record?: ClientLogoRecord | null) => {
+  if (!record) return "";
+  const storagePath = String(
+    record.storage_path ||
+      record.logo_path ||
+      getClientLogoStoragePathFromUrl(record.logo_url) ||
+      getClientLogoStoragePathFromUrl(record.company_logo_url) ||
+      "",
+  ).trim();
+  if (storagePath) {
+    const { data } = supabase.storage.from(clientLogosBucket).getPublicUrl(storagePath);
+    return String(data?.publicUrl || "").trim();
+  }
+  return String(record.logo_url || record.company_logo_url || "").trim();
+};
+
+const trimDiscWarningLogoWhitespace = (dataUrl: string): Promise<string> =>
+  new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+
+    image.onload = () => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      let pixels: Uint8ClampedArray;
+      try {
+        context.drawImage(image, 0, 0, width, height);
+        const imageData = context.getImageData(0, 0, width, height);
+        pixels = imageData.data;
+      } catch {
+        resolve(dataUrl);
+        return;
+      }
+
+      const findBounds = (ignoreNearWhite: boolean) => {
+        let minX = width;
+        let minY = height;
+        let maxX = -1;
+        let maxY = -1;
+
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const index = (y * width + x) * 4;
+            const red = pixels[index];
+            const green = pixels[index + 1];
+            const blue = pixels[index + 2];
+            const alpha = pixels[index + 3];
+
+            if (alpha <= 20) continue;
+            if (ignoreNearWhite && red >= 245 && green >= 245 && blue >= 245) continue;
+
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+
+        if (maxX < 0 || maxY < 0) return null;
+        return { minX, minY, maxX, maxY };
+      };
+
+      let bounds = findBounds(true);
+      if (!bounds) {
+        bounds = findBounds(false);
+      }
+
+      if (!bounds) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const padding = 2;
+      const cropX = Math.max(0, bounds.minX - padding);
+      const cropY = Math.max(0, bounds.minY - padding);
+      const cropWidth = Math.min(width - cropX, bounds.maxX - bounds.minX + 1 + padding * 2);
+      const cropHeight = Math.min(height - cropY, bounds.maxY - bounds.minY + 1 + padding * 2);
+
+      const croppedCanvas = document.createElement("canvas");
+      croppedCanvas.width = cropWidth;
+      croppedCanvas.height = cropHeight;
+      const croppedContext = croppedCanvas.getContext("2d");
+      if (!croppedContext) {
+        resolve(dataUrl);
+        return;
+      }
+
+      croppedContext.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+      resolve(croppedCanvas.toDataURL("image/png"));
+    };
+
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+
+const inferDiscWarningLogoOrientation = (dataUrl: string): Promise<DiscWarningLogoOrientation> =>
+  new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) {
+        resolve("landscape");
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        resolve(width >= height ? "landscape" : "portrait");
+        return;
+      }
+
+      try {
+        context.drawImage(image, 0, 0, width, height);
+        const { data } = context.getImageData(0, 0, width, height);
+        let minX = width;
+        let maxX = -1;
+        let minY = height;
+        let maxY = -1;
+
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const index = (y * width + x) * 4;
+            const alpha = data[index + 3];
+            const red = data[index];
+            const green = data[index + 1];
+            const blue = data[index + 2];
+            const transparentPixel = alpha < 18;
+            const whitePixel = red > 246 && green > 246 && blue > 246;
+            if (transparentPixel || whitePixel) continue;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+
+        if (maxX < minX || maxY < minY) {
+          resolve(width >= height ? "landscape" : "portrait");
+          return;
+        }
+
+        const croppedWidth = maxX - minX + 1;
+        const croppedHeight = maxY - minY + 1;
+        resolve(croppedWidth >= croppedHeight ? "landscape" : "portrait");
+      } catch {
+        resolve(width >= height ? "landscape" : "portrait");
+      }
+    };
+    image.onerror = () => resolve("landscape");
+    image.src = dataUrl;
+  });
+
+const getDiscWarningPdfLogoBox = (orientation: DiscWarningLogoOrientation | "") =>
+  orientation === "portrait"
+    ? { maxWidth: 30, maxHeight: 24, spacingAfter: 8 }
+    : { maxWidth: 72, maxHeight: 16, spacingAfter: 7 };
+
+const getDiscWarningFooterLogoDimensions = (orientation: DiscWarningLogoOrientation | "") =>
+  orientation === "portrait"
+    ? {
+        previewMaxHeight: 76,
+        previewMaxWidth: 92,
+        pdfMaxHeight: 22,
+        pdfMaxWidth: 22,
+      }
+    : {
+        previewMaxHeight: 74,
+        previewMaxWidth: 184,
+        pdfMaxHeight: 17,
+        pdfMaxWidth: 64,
+      };
+
+const createDiscWarningPdfIconDataUrl = (
+  draw: (ctx: CanvasRenderingContext2D) => void,
+  options?: { size?: number; strokeColor?: string },
+): string | null => {
+  if (typeof document === "undefined" || typeof Path2D === "undefined") return null;
+  const size = options?.size ?? 24;
+  const strokeColor = options?.strokeColor ?? "#334155";
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  draw(ctx);
+
+  return canvas.toDataURL("image/png");
+};
+
+const createDiscWarningPdfPhoneIconDataUrl = (strokeColor = "#000000") =>
+  createDiscWarningPdfIconDataUrl((ctx) => {
+    const path = new Path2D(
+      "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z",
+    );
+    ctx.stroke(path);
+  }, { strokeColor });
+
+const createDiscWarningPdfMailIconDataUrl = (strokeColor = "#000000") =>
+  createDiscWarningPdfIconDataUrl((ctx) => {
+    const x = 2;
+    const y = 4;
+    const width = 20;
+    const height = 16;
+    const radius = 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width / 2, y + height / 2 + 1);
+    ctx.lineTo(x + width, y);
+    ctx.stroke();
+  }, { strokeColor });
+
+const createDiscWarningPdfLocationIconDataUrl = (strokeColor = "#000000") =>
+  createDiscWarningPdfIconDataUrl((ctx) => {
+    const center = new Path2D("M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z");
+    const shell = new Path2D("M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z");
+    ctx.stroke(center);
+    ctx.stroke(shell);
+  }, { strokeColor });
+
+const createDiscWarningPdfBriefcaseIconDataUrl = (strokeColor = "#000000") =>
+  createDiscWarningPdfIconDataUrl((ctx) => {
+    const path = new Path2D(
+      "M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 0 0 .75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 0 0-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0 1 12 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 0 1-.673-.38m0 0A2.18 2.18 0 0 1 3 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 0 1 3.413-.387m7.5 0V5.25A2.25 2.25 0 0 0 13.5 3h-3a2.25 2.25 0 0 0-2.25 2.25v.894m7.5 0a48.667 48.667 0 0 0-7.5 0M12 12.75h.008v.008H12v-.008Z",
+    );
+    ctx.stroke(path);
+  }, { strokeColor });
+
+
+const buildDiscWarningFooterAddressLines = (clientForm: ClientFormState) => {
+  const lineOne = [clientForm.clientAddressLine1, clientForm.clientAddressLine2].filter(Boolean).join(", ");
+  const lineTwo = [clientForm.clientCity, clientForm.clientProvince, clientForm.clientAreaCode].filter(Boolean).join(", ");
+  const fallback = String(clientForm.clientAddress || "").trim();
+  return [lineOne, lineTwo].filter(Boolean).length > 0 ? [lineOne, lineTwo].filter(Boolean) : (fallback ? [fallback] : []);
+};
 
 const DiscWarningGeneratorContent = ({
   activeStep,
@@ -292,6 +619,7 @@ const DiscWarningGeneratorContent = ({
   setClientSearchOpen,
   onClientSelect,
   clientLoadMessage,
+  onClientLogoRemove,
 }: {
   activeStep: number;
   isFinished: boolean;
@@ -311,6 +639,7 @@ const DiscWarningGeneratorContent = ({
   setClientSearchOpen: (open: boolean) => void;
   onClientSelect: (clientId: string) => void;
   clientLoadMessage: string;
+  onClientLogoRemove: () => void;
 }) => {
   const currentIndex = isFinished ? 3 : activeStep;
   const currentStep = stepShellCopy[currentIndex];
@@ -326,7 +655,11 @@ const DiscWarningGeneratorContent = ({
         ? warningForm.misconductTypes[0]
         : `${warningForm.misconductTypes.length} misconduct type(s) selected`;
   const warningTypeLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "";
+  const hasClientLogo = Boolean(clientForm.companyLogoDataUrl);
+  const showClientLogoField = Boolean(clientForm.clientId && clientForm.companyLogoDataUrl);
+  const previewTitle = hasClientLogo ? "Disciplinary Warning Form" : warningTypeLabel || "Disciplinary Warning Form";
   const previewLine = "______________________________";
+  const footerLogoDimensions = getDiscWarningFooterLogoDimensions(clientForm.companyLogoOrientation);
   const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
   const employerRows = [
     { label: "Company Name:", value: clientForm.clientName || previewLine },
@@ -345,18 +678,25 @@ const DiscWarningGeneratorContent = ({
       value: warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : previewLine,
     },
     { label: "Description:", value: warningForm.misconductDescription || previewLine },
-    { label: "Warning Type:", value: warningTypeLabel || previewLine },
     {
       label: "Validity Period:",
       value: warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : previewLine,
     },
     { label: "Issued By:", value: warningForm.issuedBy || previewLine },
   ];
+  const logoWarningRows = [
+    warningRows[0],
+    warningRows[1],
+    { label: "Warning Type:", value: warningTypeLabel || previewLine },
+    warningRows[2],
+    warningRows[3],
+  ];
   const signatureRows = [
     ["Employer/Issuer", "Date", "Employee", "Date"],
     ["Representative", "Date", "Interpreter", "Date"],
     ["Witness 1 (optional)", "Date", "Witness 2 (optional)", "Date"],
   ] as const;
+  const footerAddressLines = buildDiscWarningFooterAddressLines(clientForm);
 
   return (
     <div className="h-full overflow-y-auto py-1">
@@ -489,6 +829,34 @@ const DiscWarningGeneratorContent = ({
                   className={inputClassName}
                 />
               </div>
+
+              {showClientLogoField ? (
+                <div className="max-w-[320px] space-y-2">
+                  <Label className="text-[10px] font-semibold text-slate-600">
+                    Client Logo
+                  </Label>
+                  <div className="flex min-h-[132px] items-center justify-center rounded-sm border border-slate-300 bg-white px-4 py-5">
+                    <img
+                      src={clientForm.companyLogoDataUrl}
+                      alt="Client logo preview"
+                      className={cn(
+                        "h-auto w-auto object-contain",
+                        clientForm.companyLogoOrientation === "portrait"
+                          ? "max-h-24 max-w-[96px]"
+                          : "max-h-16 max-w-[220px]",
+                      )}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onClientLogoRemove}
+                    className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-700 transition hover:border-rose-500 hover:text-rose-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Remove logo
+                  </button>
+                </div>
+              ) : null}
             </>
           ) : isEmployeeStep ? (
             <div className="grid gap-4 md:grid-cols-2">
@@ -741,49 +1109,72 @@ const DiscWarningGeneratorContent = ({
             <div className="mx-auto max-w-[820px]">
               <div className="bg-white px-8 pt-3 pb-8 text-black">
                 <h2 className="text-center text-[20px] font-bold uppercase tracking-tight text-black">
-                  {warningTypeLabel || "Disciplinary Warning Form"}
+                  {previewTitle}
                 </h2>
 
                 <section className="mt-5">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[11px] font-bold uppercase text-black">A. Employer Details</p>
+                    <p className="text-[11px] font-bold uppercase text-black">
+                      {hasClientLogo ? "A. Employee Details" : "A. Employer Details"}
+                    </p>
                   </div>
                   <div className="mt-3 space-y-1">
-                    {employerRows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                        <p className="font-bold text-black">{row.label}</p>
-                        <p className="text-black">{row.value}</p>
-                      </div>
-                    ))}
+                    {hasClientLogo ? (
+                      <>
+                        {employeeRows.map((row) => (
+                          <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                            <p className="font-bold text-black">{row.label}</p>
+                            <p className="text-black">{row.value}</p>
+                          </div>
+                        ))}
+                        {employeeForm.jobTitle ? (
+                          <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                            <p className="font-bold text-black">Job Title:</p>
+                            <p className="text-black">{employeeForm.jobTitle}</p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      employerRows.map((row) => (
+                        <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                          <p className="font-bold text-black">{row.label}</p>
+                          <p className="text-black">{row.value}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </section>
 
-                <section className="mt-6">
-                  <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[11px] font-bold uppercase text-black">B. Employee Details</p>
-                  </div>
-                  <div className="mt-3 space-y-1">
-                    {employeeRows.map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                        <p className="font-bold text-black">{row.label}</p>
-                        <p className="text-black">{row.value}</p>
-                      </div>
-                    ))}
-                    {employeeForm.jobTitle ? (
-                      <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                        <p className="font-bold text-black">Job Title:</p>
-                        <p className="text-black">{employeeForm.jobTitle}</p>
-                      </div>
-                    ) : null}
-                  </div>
-                </section>
+                {!hasClientLogo ? (
+                  <section className="mt-6">
+                    <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
+                      <p className="text-[11px] font-bold uppercase text-black">B. Employee Details</p>
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      {employeeRows.map((row) => (
+                        <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                          <p className="font-bold text-black">{row.label}</p>
+                          <p className="text-black">{row.value}</p>
+                        </div>
+                      ))}
+                      {employeeForm.jobTitle ? (
+                        <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                          <p className="font-bold text-black">Job Title:</p>
+                          <p className="text-black">{employeeForm.jobTitle}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
 
                 <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[11px] font-bold uppercase text-black">C. Warning Details</p>
+                    <p className="text-[11px] font-bold uppercase text-black">
+                      {hasClientLogo ? "B. Warning Details" : "C. Warning Details"}
+                    </p>
                   </div>
                   <div className="mt-3 space-y-1">
-                    {warningRows.map((row) => (
+                    {(hasClientLogo ? logoWarningRows : warningRows).map((row) => (
                       <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
                         <p className="font-bold text-black">{row.label}</p>
                         <p className="whitespace-pre-wrap text-black">{row.value}</p>
@@ -794,7 +1185,9 @@ const DiscWarningGeneratorContent = ({
 
                 <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[11px] font-bold uppercase text-black">D. Consequences</p>
+                    <p className="text-[11px] font-bold uppercase text-black">
+                      {hasClientLogo ? "C. Consequences" : "D. Consequences"}
+                    </p>
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-black">
                     You are required to refrain completely from committing any further acts of misconduct. Should you
@@ -805,7 +1198,9 @@ const DiscWarningGeneratorContent = ({
 
                 <section className="mt-6">
                   <div className="rounded-sm border border-slate-300 bg-slate-50 px-4 py-2.5">
-                    <p className="text-[11px] font-bold uppercase text-black">E. Signatures</p>
+                    <p className="text-[11px] font-bold uppercase text-black">
+                      {hasClientLogo ? "D. Signatures" : "E. Signatures"}
+                    </p>
                   </div>
                   <div className="mt-3 space-y-6">
                     {signatureRows.map((row, index) => (
@@ -830,6 +1225,55 @@ const DiscWarningGeneratorContent = ({
                     </p>
                   </div>
                 </section>
+
+                {hasClientLogo ? (
+                  <footer className="mt-7 border-t border-slate-300 pt-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_136px] items-start gap-5">
+                      <div className="space-y-1 text-left text-[9px] leading-4 text-slate-700">
+                        <p className="font-semibold text-slate-900">{clientForm.clientName}</p>
+                        {clientForm.registrationNumber ? (
+                          <div className="flex items-start gap-2">
+                            <BriefcaseIcon className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                            <span>{clientForm.registrationNumber}</span>
+                          </div>
+                        ) : null}
+                        {clientForm.clientContactNumber ? (
+                          <div className="flex items-start gap-2">
+                            <HeroPhoneIcon className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                            <span>{clientForm.clientContactNumber}</span>
+                          </div>
+                        ) : null}
+                        {clientForm.clientEmail ? (
+                          <div className="flex items-start gap-2">
+                            <EnvelopeIcon className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                            <span>{clientForm.clientEmail}</span>
+                          </div>
+                        ) : null}
+                        {footerAddressLines.length > 0 ? (
+                          <div className="flex items-start gap-2">
+                            <MapPinIcon className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                            <div>
+                              {footerAddressLines.map((line) => (
+                                <p key={line}>{line}</p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="flex min-h-[72px] items-end justify-end">
+                        <img
+                          src={clientForm.companyLogoDataUrl}
+                          alt="Client logo"
+                          className="h-auto w-auto object-contain"
+                          style={{
+                            maxHeight: `${footerLogoDimensions.previewMaxHeight}px`,
+                            maxWidth: `${footerLogoDimensions.previewMaxWidth}px`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </footer>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -925,7 +1369,7 @@ const DiscWarningGenerator = ({
     let isMounted = true;
 
     const loadClients = async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabaseUntyped
         .from("clients")
         .select(
           "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
@@ -940,7 +1384,7 @@ const DiscWarningGenerator = ({
         return;
       }
 
-      const nextRows = ((data as ClientRow[] | null) ?? []).sort((a, b) =>
+      const nextRows = (((data as unknown) as ClientRow[] | null) ?? []).sort((a, b) =>
         formatClientDisplayName(a).localeCompare(formatClientDisplayName(b), undefined, {
           sensitivity: "base",
         }),
@@ -962,7 +1406,7 @@ const DiscWarningGenerator = ({
     let isMounted = true;
 
     const loadConductOffences = async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabaseUntyped
         .from("company_code_of_conduct")
         .select("data")
         .eq("company_id", user.id)
@@ -976,15 +1420,17 @@ const DiscWarningGenerator = ({
         return;
       }
 
-      const sections =
-        (
-          data?.data as {
-            sections?: Array<{
-              title?: string;
-              offences?: Array<{ name?: string; category?: string; first?: string }>;
-            }>;
+      const conductRecord = data as
+        | {
+            data?: {
+              sections?: Array<{
+                title?: string;
+                offences?: Array<{ name?: string; category?: string; first?: string }>;
+              }>;
+            };
           }
-        )?.sections ?? [];
+        | null;
+      const sections = conductRecord?.data?.sections ?? [];
 
       const mapped = sections
         .flatMap((section) => {
@@ -1027,10 +1473,79 @@ const DiscWarningGenerator = ({
     };
   }, [user]);
 
+  const applyClientLogoToForm = useCallback(async (logoUrl: string) => {
+    const trimmedLogoUrl = String(logoUrl || "").trim();
+    if (!trimmedLogoUrl) {
+      setClientForm((current) => ({
+        ...current,
+        companyLogoDataUrl: "",
+        companyLogoOrientation: "",
+      }));
+      return;
+    }
+
+    const croppedLogoUrl = await trimDiscWarningLogoWhitespace(trimmedLogoUrl);
+
+    setClientForm((current) => ({
+      ...current,
+      companyLogoDataUrl: croppedLogoUrl,
+    }));
+
+    const orientation = await inferDiscWarningLogoOrientation(croppedLogoUrl);
+    setClientForm((current) => ({
+      ...current,
+      companyLogoDataUrl: croppedLogoUrl,
+      companyLogoOrientation: orientation,
+    }));
+  }, []);
+
+  const loadClientProfileLogo = useCallback(async (clientId: string) => {
+    try {
+      const { data, error } = await supabaseUntyped
+        .from("client_logos")
+        .select("*")
+        .eq("client_id", clientId)
+        .limit(1);
+
+      if (error) {
+        setClientForm((current) => ({
+          ...current,
+          companyLogoDataUrl: "",
+          companyLogoOrientation: "",
+        }));
+        return;
+      }
+
+      const logoRecord = (Array.isArray(data) ? data[0] : data) as ClientLogoRecord | null;
+      const logoUrl = getClientLogoUrlFromRecord(logoRecord);
+      await applyClientLogoToForm(logoUrl);
+    } catch {
+      setClientForm((current) => ({
+        ...current,
+        companyLogoDataUrl: "",
+        companyLogoOrientation: "",
+      }));
+    }
+  }, [applyClientLogoToForm]);
+
   const handleClientSelect = (clientId: string) => {
     const client = clientRows.find((row) => row.id === clientId);
     if (!client) return;
+    setIsFinished(false);
+    setActiveStep(0);
     setClientForm(mapClientToFormState(client));
+    setEmployeeForm(emptyEmployeeFormState);
+    setWarningForm(emptyWarningFormState);
+    setMisconductSearchOpen(false);
+    void loadClientProfileLogo(clientId);
+  };
+
+  const handleClientLogoRemove = () => {
+    setClientForm((current) => ({
+      ...current,
+      companyLogoDataUrl: "",
+      companyLogoOrientation: "",
+    }));
   };
 
   const handleEmployeeFormChange = (field: keyof EmployeeFormState, value: string) => {
@@ -1067,17 +1582,21 @@ const DiscWarningGenerator = ({
     }));
   };
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = useCallback(async () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 20;
     const contentWidth = pageWidth - margin * 2;
-    const bottomLimit = pageHeight - 18;
-    const sectionFill = [239, 242, 246] as const;
-    const sectionBorder = [203, 213, 225] as const;
+    const hasLogoLayout = Boolean(clientForm.companyLogoDataUrl);
+    const footerReserve = hasLogoLayout ? 34 : 18;
+    const bottomLimit = pageHeight - footerReserve;
+    const sectionFill = [237, 237, 239] as const;
+    const sectionBorder = [161, 161, 170] as const;
     const lineFallback = "______________________________";
-    const resolvedTitle = warningTypeLabelByValue[warningForm.warningType || "first"] ?? "Disciplinary Warning Form";
+    const resolvedTitle = hasLogoLayout
+      ? "Disciplinary Warning Form"
+      : warningTypeLabelByValue[warningForm.warningType || "first"] ?? "Disciplinary Warning Form";
     const resolvedEmployeeName =
       [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim() || lineFallback;
     const resolvedEmployerRows = [
@@ -1097,6 +1616,13 @@ const DiscWarningGenerator = ({
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
       ["Issued By:", warningForm.issuedBy || lineFallback],
     ] as const;
+    const resolvedLogoWarningRows = [
+      ["Offence(s):", warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : lineFallback],
+      ["Description:", warningForm.misconductDescription || lineFallback],
+      ["Warning Type:", warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : lineFallback],
+      ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
+      ["Issued By:", warningForm.issuedBy || lineFallback],
+    ] as const;
     const signatureRows = [
       ["Employer/Issuer", "Date", "Employee", "Date"],
       ["Representative", "Date", "Interpreter", "Date"],
@@ -1106,6 +1632,7 @@ const DiscWarningGenerator = ({
       "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
     const witnessNote =
       "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
+    const footerAddressLines = buildDiscWarningFooterAddressLines(clientForm);
 
     let y = 14;
 
@@ -1201,30 +1728,34 @@ const DiscWarningGenerator = ({
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
     doc.text(resolvedTitle.toUpperCase(), pageWidth / 2, y, { align: "center" });
-    y += 10;
+    y += hasLogoLayout ? 14 : 10;
 
-    drawSectionHeader("A. EMPLOYER DETAILS");
-    drawKeyValueRows(resolvedEmployerRows);
+    if (!hasLogoLayout) {
+      drawSectionHeader("A. EMPLOYER DETAILS");
+      drawKeyValueRows(resolvedEmployerRows);
+      y += 4;
+    }
 
-    y += 4;
-    drawSectionHeader("B. EMPLOYEE DETAILS");
+    drawSectionHeader(hasLogoLayout ? "A. EMPLOYEE DETAILS" : "B. EMPLOYEE DETAILS");
     drawKeyValueRows(resolvedEmployeeRows);
     if (employeeForm.jobTitle.trim()) {
       drawKeyValueRows([["Job Title:", employeeForm.jobTitle.trim()]]);
     }
 
     y += 4;
-    drawSectionHeader("C. WARNING DETAILS");
-    drawKeyValueRows(resolvedWarningRows, { extraTopByLabel: { "Validity Period:": 0.6 } });
+    drawSectionHeader(hasLogoLayout ? "B. WARNING DETAILS" : "C. WARNING DETAILS");
+    drawKeyValueRows(hasLogoLayout ? resolvedLogoWarningRows : resolvedWarningRows, {
+      extraTopByLabel: { "Validity Period:": 0.6 },
+    });
 
     y += 4;
-    drawSectionHeader("D. CONSEQUENCES");
+    drawSectionHeader(hasLogoLayout ? "C. CONSEQUENCES" : "D. CONSEQUENCES");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     drawJustifiedParagraph(consequenceText, 3.7);
 
     y += 4;
-    drawSectionHeader("E. SIGNATURES");
+    drawSectionHeader(hasLogoLayout ? "D. SIGNATURES" : "E. SIGNATURES");
     y += 10;
 
     const signatureGap = 10;
@@ -1258,12 +1789,103 @@ const DiscWarningGenerator = ({
     doc.roundedRect(margin, y, contentWidth, 11, 0.8, 0.8, "FD");
     doc.setFont("helvetica", "italic");
     doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(63, 63, 70);
     const noteLines = doc.splitTextToSize(witnessNote, contentWidth - 6);
     const noteLineHeight = 3.7;
     const noteTextHeight = noteLines.length * noteLineHeight;
     const noteStartY = y + (11 - noteTextHeight) / 2 + 3;
     doc.text(noteLines, margin + 3, noteStartY);
+
+    if (hasLogoLayout) {
+      const footerTop = pageHeight - 30;
+      const footerLogoDimensions = getDiscWarningFooterLogoDimensions(clientForm.companyLogoOrientation);
+      const footerLogoWidthLimit = footerLogoDimensions.pdfMaxWidth;
+      const footerLogoHeightLimit = footerLogoDimensions.pdfMaxHeight;
+      const footerTextX = margin;
+      const footerTextWidth = contentWidth - 40;
+      const footerLineHeight = 3.4;
+      const footerIconX = footerTextX;
+      const footerValueX = footerTextX + 5.2;
+      const footerIconSize = 2.6;
+      const pdfBriefcaseIconDataUrl = createDiscWarningPdfBriefcaseIconDataUrl();
+      const pdfPhoneIconDataUrl = createDiscWarningPdfPhoneIconDataUrl();
+      const pdfMailIconDataUrl = createDiscWarningPdfMailIconDataUrl();
+      const pdfLocationIconDataUrl = createDiscWarningPdfLocationIconDataUrl();
+      const drawFooterIcon = (dataUrl: string | null, lineY: number) => {
+        if (!dataUrl) return;
+        try {
+          doc.addImage(dataUrl, "PNG", footerIconX, lineY - 2.15, footerIconSize, footerIconSize);
+        } catch {
+          // Keep generating even if a footer icon fails to render.
+        }
+      };
+
+      doc.setDrawColor(203, 213, 225);
+      doc.line(margin, footerTop - 3, pageWidth - margin, footerTop - 3);
+
+      if (clientForm.companyLogoDataUrl) {
+        try {
+          const imageProperties = doc.getImageProperties(clientForm.companyLogoDataUrl);
+          const imageRatio = imageProperties.width / imageProperties.height;
+          let logoWidth = footerLogoWidthLimit;
+          let logoHeight = logoWidth / imageRatio;
+          if (logoHeight > footerLogoHeightLimit) {
+            const scale = footerLogoHeightLimit / logoHeight;
+            logoHeight = footerLogoHeightLimit;
+            logoWidth *= scale;
+          }
+          const imageSource = clientForm.companyLogoDataUrl.toLowerCase();
+          const imageType =
+            imageSource.includes(".jpg") || imageSource.includes(".jpeg") || imageSource.includes("image/jpeg")
+              ? "JPEG"
+              : "PNG";
+          const logoX = pageWidth - margin - logoWidth;
+          doc.addImage(clientForm.companyLogoDataUrl, imageType, logoX, footerTop, logoWidth, logoHeight);
+        } catch {
+          // Keep generating even if footer logo rendering fails.
+        }
+      }
+
+      let footerY = footerTop + 3;
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.8);
+      const companyNameLines = doc.splitTextToSize(clientForm.clientName || "", footerTextWidth);
+      doc.text(companyNameLines, footerTextX, footerY);
+      footerY += companyNameLines.length * footerLineHeight;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.2);
+      if (clientForm.registrationNumber) {
+        drawFooterIcon(pdfBriefcaseIconDataUrl, footerY);
+        const registrationLines = doc.splitTextToSize(clientForm.registrationNumber, footerTextWidth - 5.2);
+        doc.text(registrationLines, footerValueX, footerY);
+        footerY += registrationLines.length * footerLineHeight;
+      }
+      if (clientForm.clientContactNumber) {
+        drawFooterIcon(pdfPhoneIconDataUrl, footerY);
+        doc.text(clientForm.clientContactNumber, footerValueX, footerY);
+        footerY += footerLineHeight;
+      }
+      if (clientForm.clientEmail) {
+        drawFooterIcon(pdfMailIconDataUrl, footerY);
+        const emailLines = doc.splitTextToSize(clientForm.clientEmail, footerTextWidth - 5.2);
+        doc.text(emailLines, footerValueX, footerY);
+        footerY += emailLines.length * footerLineHeight;
+      }
+      if (footerAddressLines.length > 0) {
+        drawFooterIcon(pdfLocationIconDataUrl, footerY);
+        const [firstAddressLine, ...remainingAddressLines] = footerAddressLines;
+        const firstAddressLines = doc.splitTextToSize(firstAddressLine, footerTextWidth - 5.2);
+        doc.text(firstAddressLines, footerValueX, footerY);
+        footerY += firstAddressLines.length * footerLineHeight;
+        remainingAddressLines.forEach((line) => {
+          const addressLines = doc.splitTextToSize(line, footerTextWidth - 5.2);
+          doc.text(addressLines, footerValueX, footerY);
+          footerY += addressLines.length * footerLineHeight;
+        });
+      }
+    }
 
     const fileTitle =
       (warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Disciplinary Warning Form")
@@ -1314,6 +1936,11 @@ const DiscWarningGenerator = ({
       uploadedFileUrl = String(publicUrlData?.publicUrl ?? "").trim();
     }
 
+    const userMetadata =
+      user?.user_metadata && typeof user.user_metadata === "object"
+        ? (user.user_metadata as Record<string, unknown>)
+        : {};
+
     const logResult = await logGeneratedDocument({
       documentLabel: warningLabel,
       documentName,
@@ -1321,16 +1948,17 @@ const DiscWarningGenerator = ({
       clientName: clientForm.clientName,
       fileUrl: uploadedFileUrl,
       createdByName: user
-        ? `${String((user as any)?.user_metadata?.user_name || "").trim()} ${String((user as any)?.user_metadata?.user_surname || "").trim()}`.trim()
+        ? `${String(userMetadata.user_name || "").trim()} ${String(userMetadata.user_surname || "").trim()}`.trim()
         : "",
       employeeName: employeeForm.employeeName,
       employeeSurname: employeeForm.employeeSurname,
     });
 
-    if (!logResult.ok) {
+    if ("error" in logResult) {
+      const errorMessage = logResult.error;
       toast({
         title: "Save Error",
-        description: `Could not save document row: ${logResult.error}`,
+        description: `Could not save document row: ${errorMessage}`,
         variant: "destructive",
       });
     } else {
@@ -1338,7 +1966,7 @@ const DiscWarningGenerator = ({
     }
 
     doc.save(downloadFileName);
-  };
+  }, [clientForm, employeeForm, user, warningForm]);
 
   const isEmployeeStepComplete =
     employeeForm.employeeName.trim().length > 0 &&
@@ -1365,7 +1993,14 @@ const DiscWarningGenerator = ({
               ? isWarningStepComplete
               : activeStep <= 2),
       canGoBack: isFinished || activeStep > 0,
-      canSelectStep: (index: number) => index >= 0 && index < 3,
+      canSelectStep: (index: number) => {
+        if (index < 0 || index > 3) return false;
+        if (isFinished) return index >= 0 && index <= 3;
+        if (activeStep === 0) return index === 0;
+        if (activeStep === 1) return index >= 0 && index <= 1;
+        if (activeStep === 2) return index >= 0 && index <= 2;
+        return false;
+      },
       onNext: () => {
         if (isFinished) {
           handleDownloadPdf();
@@ -1388,6 +2023,10 @@ const DiscWarningGenerator = ({
         setActiveStep((current) => Math.max(current - 1, 0));
       },
       onStepSelect: (index: number) => {
+        if (index < 0 || index > 3) return;
+        if (!isFinished && activeStep === 0 && index !== 0) return;
+        if (!isFinished && activeStep === 1 && index > 1) return;
+        if (!isFinished && activeStep === 2 && index > 2) return;
         setIsFinished(false);
         setActiveStep(Math.max(0, Math.min(index, 2)));
       },
@@ -1454,6 +2093,7 @@ const DiscWarningGenerator = ({
       setClientSearchOpen={setClientSearchOpen}
       onClientSelect={handleClientSelect}
       clientLoadMessage={clientLoadMessage}
+      onClientLogoRemove={handleClientLogoRemove}
     />
   );
 

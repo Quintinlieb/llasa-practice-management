@@ -38,7 +38,7 @@ const documentSubmenuItems = [
 const documentFlyoutItems: Record<string, Array<{ title: string; url: string; selectedDocument?: string }>> = {
   Discipline: [
     { title: "Code of Conduct", url: "/documents", selectedDocument: "codeOfConduct" },
-    { title: "Disciplinary Warning", url: "/documents", selectedDocument: "discWarningGenerator" },
+    { title: "Warning", url: "/documents", selectedDocument: "discWarningGenerator" },
   ],
   Contracts: [
     { title: "Permanent Contract", url: "/documents", selectedDocument: "permanentContract" },
@@ -84,6 +84,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   const flyoutRef = useRef<HTMLDivElement | null>(null);
   const sidebarRootRef = useRef<HTMLDivElement | null>(null);
   const submenuItemRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const flyoutCloseTimerRef = useRef<number | null>(null);
   const [flyoutPosition, setFlyoutPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [isFlyoutPositionReady, setIsFlyoutPositionReady] = useState(false);
 
@@ -162,6 +163,23 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
     return true;
   };
 
+  const clearFlyoutCloseTimer = () => {
+    if (flyoutCloseTimerRef.current !== null) {
+      window.clearTimeout(flyoutCloseTimerRef.current);
+      flyoutCloseTimerRef.current = null;
+    }
+  };
+
+  const queueFlyoutClose = () => {
+    clearFlyoutCloseTimer();
+    flyoutCloseTimerRef.current = window.setTimeout(() => {
+      setOpenDocumentCategory(null);
+      setActiveFlyoutItemKey(null);
+      setIsFlyoutPositionReady(false);
+      flyoutCloseTimerRef.current = null;
+    }, 120);
+  };
+
   useEffect(() => {
     if (!openDocumentCategory) return;
     const closeFlyout = () => setOpenDocumentCategory(null);
@@ -172,6 +190,8 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       window.removeEventListener("scroll", closeFlyout, true);
     };
   }, [openDocumentCategory]);
+
+  useEffect(() => () => clearFlyoutCloseTimer(), []);
 
   const withTooltip = (element: ReactElement, label: string) =>
     isCollapsed ? (
@@ -280,9 +300,13 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                                     key={subItem.title}
                                     className="relative"
                                     onMouseEnter={() => {
+                                      clearFlyoutCloseTimer();
                                       const ready = positionFlyoutForCategory(subItem.title);
                                       setIsFlyoutPositionReady(ready);
                                       setOpenDocumentCategory(subItem.title);
+                                    }}
+                                    onMouseLeave={() => {
+                                      queueFlyoutClose();
                                     }}
                                     ref={(node) => {
                                       submenuItemRefs.current[subItem.title] = node;
@@ -352,8 +376,14 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       {openDocumentCategory && isFlyoutPositionReady && documentFlyoutItems[openDocumentCategory]?.length ? (
         <div
           ref={flyoutRef}
-          className="fixed z-50 w-64 rounded-r-sm rounded-l-none border border-l-0 border-white/10 bg-[#2D4256] p-2 shadow-xl"
+          className="fixed z-50 w-56 rounded-r-sm rounded-l-none border border-l-0 border-white/10 bg-[#2D4256] p-2 shadow-xl"
           style={{ top: flyoutPosition.top - 7, left: flyoutPosition.left }}
+          onMouseEnter={() => {
+            clearFlyoutCloseTimer();
+          }}
+          onMouseLeave={() => {
+            queueFlyoutClose();
+          }}
         >
           <ul className="space-y-0">
             {documentFlyoutItems[openDocumentCategory].map((flyoutItem) => {

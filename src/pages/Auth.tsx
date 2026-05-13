@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Info, Eye, EyeOff, Mail } from "lucide-react";
+import { Info, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
-import { readAuthFormDraft, writeAuthFormDraft } from "@/lib/authFormDraft";
+import { clearAuthFormDraft, readAuthFormDraft, writeAuthFormDraft } from "@/lib/authFormDraft";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -51,8 +51,9 @@ const Auth = () => {
     }
 
     if (forceLogin || draft.isLogin) {
-      setEmail(draft.email);
-      setPassword(draft.password);
+      clearAuthFormDraft();
+      setEmail("");
+      setPassword("");
       setConfirmPassword("");
       setName("");
       setSurname("");
@@ -82,9 +83,9 @@ const Auth = () => {
       name,
       surname,
       contactNumber,
-      email,
-      password,
-      confirmPassword,
+      email: isLogin ? "" : email,
+      password: isLogin ? "" : password,
+      confirmPassword: isLogin ? "" : confirmPassword,
     });
   }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
 
@@ -117,7 +118,7 @@ const Auth = () => {
           .maybeSingle();
 
         if (profile) {
-          if (location.pathname !== "/dashboard") navigate("/dashboard");
+          if (location.pathname !== "/clients-2") navigate("/clients-2");
           return;
         }
 
@@ -129,7 +130,7 @@ const Auth = () => {
           .maybeSingle();
 
         if (subuser) {
-          if (location.pathname !== "/dashboard") navigate("/dashboard");
+          if (location.pathname !== "/clients-2") navigate("/clients-2");
           return;
         }
 
@@ -137,7 +138,7 @@ const Auth = () => {
         // Manual subuser creation stores company_id in auth user metadata.
         const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
         if (metadataCompanyId) {
-          if (location.pathname !== "/dashboard") navigate("/dashboard");
+          if (location.pathname !== "/clients-2") navigate("/clients-2");
           return;
         }
 
@@ -223,7 +224,7 @@ const Auth = () => {
             variant: "destructive",
           });
         }
-        if (location.pathname !== "/dashboard") navigate("/dashboard");
+        if (location.pathname !== "/clients-2") navigate("/clients-2");
       }
     };
 
@@ -384,188 +385,201 @@ const Auth = () => {
     password.trim().length > 0 &&
     confirmPassword.trim().length > 0;
   const signupFieldClass =
-    "h-[34px] rounded border-[1.75px] border-slate-300 bg-white text-[11px] font-medium text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44] ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
+    "h-[30px] rounded-[3px] border-[1.75px] border-slate-300 bg-white px-2 text-[8px] font-medium text-slate-900 shadow-none placeholder:text-[8px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44] ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
+  const loginFieldClass =
+    "h-9 rounded-[3px] border-white/15 bg-white px-2 !text-[12px] text-slate-900 placeholder:text-[12px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44]";
   const authFormContent = (
     <div className="w-full max-w-md space-y-4">
       <div className="text-center space-y-3">
         <div className="mx-auto flex items-center justify-center">
-          <img src="/llasa_thumbnail.png" alt="LLASA thumbnail logo" className="h-12 w-12" />
+          <img src="/Vertical Logo (2).png" alt="LLASA vertical logo" className="h-32 w-auto" />
         </div>
-        <div className="space-y-1">
-          <h1 className="text-[1.35rem] font-semibold text-foreground">
-            {isLogin ? "Welcome back" : "Create account"}
-          </h1>
-          <p className="text-[0.8rem] text-muted-foreground">
-            {isLogin ? "Go ahead and log in below" : "Go ahead and fill out the form to get started."}
-          </p>
+        <div className={isLogin ? "space-y-1 translate-y-2" : "space-y-1"}>
+          {!isLogin && (
+            <h1 className="text-[1.35rem] font-semibold text-foreground">
+              Create account
+            </h1>
+          )}
+          {!isLogin && (
+            <p className="text-[0.8rem] text-muted-foreground">
+              Go ahead and fill out the form to get started.
+            </p>
+          )}
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="pt-6 space-y-4" autoComplete={isLogin ? "on" : "off"}>
+      <form onSubmit={handleSubmit} className="pt-6 space-y-4" autoComplete={isLogin ? "on" : "off"} noValidate>
         {(
           <>
-            {!isLogin && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="group space-y-1">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Type your name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    autoComplete="given-name"
-                    required
-                    className={signupFieldClass}
-                  />
-                </div>
-                <div className="group space-y-1">
-                  <Label htmlFor="surname">Surname</Label>
-                  <Input
-                    id="surname"
-                    type="text"
-                    placeholder="Type your surname"
-                    value={surname}
-                    onChange={(e) => setSurname(e.target.value)}
-                    autoComplete="family-name"
-                    required
-                    className={signupFieldClass}
-                  />
-                </div>
-                <div className="group space-y-1 sm:col-span-2">
-                  <Label htmlFor="contactNumber">Contact Number</Label>
-                  <Input
-                    id="contactNumber"
-                    type="text"
-                    placeholder="Type your contact number"
-                    value={contactNumber}
-                    onChange={(e) => setContactNumber(e.target.value)}
-                    autoComplete="tel"
-                    required
-                    className={signupFieldClass}
-                  />
-                </div>
-              </div>
-            )}
-            <div className="group space-y-1">
-              <Label htmlFor="email">Username:</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Type your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete={isLogin ? "username" : "off"}
-                required
-                className={isLogin ? "h-11 group-hover:border-[#3eca44]" : signupFieldClass}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password:</Label>
-                  {!isLogin && (
-                    <div className="relative group inline-flex items-center gap-2 cursor-help text-[11px] text-muted-foreground">
-                      <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                      <span className="font-medium">Password requirements</span>
-                      <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded border border-[#3eca44] bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
-                        <p className="mb-1 font-medium text-[#3eca44]">Include:</p>
-                        <ul className="space-y-0.5 list-disc list-inside">
-                          <li>At least 8 characters</li>
-                          <li>One uppercase letter</li>
-                          <li>One lowercase letter</li>
-                          <li>One number</li>
-                          <li>One special character</li>
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="group relative pb-1">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Type your password"
-                    value={password}
-                    onChange={handlePasswordChange}
-                    autoComplete={isLogin ? "current-password" : "new-password"}
-                    required
-                    minLength={isLogin ? 6 : 8}
-                    className={
-                      isLogin
-                        ? "h-11 pr-10 group-hover:border-[#3eca44]"
-                        : `${signupFieldClass} pr-10 ${passwordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    tabIndex={-1}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {isLogin && (
-                  <div className="mt-2 flex justify-start">
-                    <button
-                      type="button"
-                      onClick={handleResetPassword}
-                      tabIndex={-1}
-                      className="text-[11px] font-normal text-muted-foreground underline hover:text-[#3eca44] disabled:opacity-60"
-                      disabled={isSendingReset || resetCooldownSeconds > 0}
-                    >
-                      {isSendingReset
-                        ? "Sending..."
-                        : resetCooldownSeconds > 0
-                          ? `Try again in ${resetCooldownSeconds}s`
-                          : "Forgot your password?"}
-                    </button>
-                  </div>
-                )}
-                {!isLogin && passwordError && (
-                  <p className="text-sm text-destructive">{passwordError}</p>
-                )}
-              </div>
+            <div className={isLogin ? "rounded-md border border-white/10 bg-[#2D4256] p-6 shadow-xl shadow-slate-900/15" : ""}>
+              {isLogin && (
+                <p className="mb-6 text-center text-[0.9rem] text-white/75">
+                  Sign in to your account
+                </p>
+              )}
               {!isLogin && (
-                <div className="space-y-1">
-                  <Label htmlFor="confirmPassword">Confirm Password</Label>
-                    <div className="group relative">
-                      <Input
-                        id="confirmPassword"
-                        type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Retype your password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        autoComplete="new-password"
-                        required
-                        minLength={8}
-                        className={`${signupFieldClass} pr-10 ${confirmPasswordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        tabIndex={-1}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  {confirmPasswordError && (
-                    <p className="text-sm text-destructive">{confirmPasswordError}</p>
-                  )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="group space-y-1">
+                    <Label htmlFor="name">Name</Label>
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="Type your name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoComplete="given-name"
+                      required
+                      className={signupFieldClass}
+                    />
+                  </div>
+                  <div className="group space-y-1">
+                    <Label htmlFor="surname">Surname</Label>
+                    <Input
+                      id="surname"
+                      type="text"
+                      placeholder="Type your surname"
+                      value={surname}
+                      onChange={(e) => setSurname(e.target.value)}
+                      autoComplete="family-name"
+                      required
+                      className={signupFieldClass}
+                    />
+                  </div>
+                  <div className="group space-y-1 sm:col-span-2">
+                    <Label htmlFor="contactNumber">Contact Number</Label>
+                    <Input
+                      id="contactNumber"
+                      type="text"
+                      placeholder="Type your contact number"
+                      value={contactNumber}
+                      onChange={(e) => setContactNumber(e.target.value)}
+                      autoComplete="tel"
+                      required
+                      className={signupFieldClass}
+                    />
+                  </div>
                 </div>
               )}
-            </div>
-            <div className="pt-6">
-              <Button
-                type="submit"
-                className="w-full bg-[#3eca44] text-white hover:bg-[#3eca44]"
-                disabled={isLoading || (isLogin ? false : !isSignupReady)}
-              >
+              <div className="group space-y-1">
+                {!isLogin && <Label htmlFor="email">Username:</Label>}
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder={isLogin ? "Username" : "Type your email"}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete={isLogin ? "username" : "off"}
+                  required
+                  className={isLogin ? loginFieldClass : signupFieldClass}
+                />
+              </div>
+              <div className="mt-4 space-y-2">
+                <div className="space-y-1">
+                  <div className={isLogin ? "" : "flex items-center justify-between"}>
+                    {!isLogin && <Label htmlFor="password">Password:</Label>}
+                    {!isLogin && (
+                      <div className="relative group inline-flex items-center gap-2 cursor-help text-[11px] text-muted-foreground">
+                        <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                        <span className="font-medium">Password requirements</span>
+                        <div className="invisible absolute right-0 top-full z-10 mt-2 w-56 rounded border border-[#3eca44] bg-background p-3 text-[11px] leading-relaxed opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+                          <p className="mb-1 font-medium text-[#3eca44]">Include:</p>
+                          <ul className="space-y-0.5 list-disc list-inside">
+                            <li>At least 8 characters</li>
+                            <li>One uppercase letter</li>
+                            <li>One lowercase letter</li>
+                            <li>One number</li>
+                            <li>One special character</li>
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="group relative pb-1">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder={isLogin ? "Password" : "Type your password"}
+                      value={password}
+                      onChange={handlePasswordChange}
+                      autoComplete={isLogin ? "current-password" : "new-password"}
+                      required
+                      minLength={isLogin ? 6 : 8}
+                      className={
+                        isLogin
+                          ? `${loginFieldClass} pr-10`
+                          : `${signupFieldClass} pr-10 ${passwordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {isLogin && (
+                    <div className="mt-2 flex justify-start">
+                      <button
+                        type="button"
+                        onClick={handleResetPassword}
+                        tabIndex={-1}
+                        className="text-[11px] font-normal text-white/70 underline hover:text-[#3eca44] disabled:opacity-60"
+                        disabled={isSendingReset || resetCooldownSeconds > 0}
+                      >
+                        {isSendingReset
+                          ? "Sending..."
+                          : resetCooldownSeconds > 0
+                            ? `Try again in ${resetCooldownSeconds}s`
+                            : "Forgot your password?"}
+                      </button>
+                    </div>
+                  )}
+                  {!isLogin && passwordError && (
+                    <p className="text-sm text-destructive">{passwordError}</p>
+                  )}
+                </div>
+                {!isLogin && (
+                  <div className="space-y-1">
+                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                      <div className="group relative">
+                        <Input
+                          id="confirmPassword"
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Retype your password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          autoComplete="new-password"
+                          required
+                          minLength={8}
+                          className={`${signupFieldClass} pr-10 ${confirmPasswordError ? "border-destructive hover:border-destructive focus:border-destructive focus-visible:border-destructive" : ""}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          tabIndex={-1}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    {confirmPasswordError && (
+                      <p className="text-sm text-destructive">{confirmPasswordError}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="pt-6">
+                <Button
+                  type="submit"
+                  className="w-full rounded-[3px] bg-[#3eca44] text-white hover:bg-[#3eca44]"
+                  disabled={isLoading || (isLogin ? false : !isSignupReady)}
+                >
                   {isLoading ? "Please wait..." : isLogin ? "Sign in" : "Sign up"}
                 </Button>
               </div>
+            </div>
           </>
         )}
       </form>
@@ -599,23 +613,7 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <header className="border-b border-slate-800 bg-[#3b4454]">
-        <div className="mx-auto flex h-11 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          <Link to="/landing" className="inline-flex items-center" aria-label="Go to website landing page">
-            <img
-              src="/llasa_logo_white_horizontal.png"
-              alt="LLASA"
-              className="h-6 w-auto"
-            />
-          </Link>
-          <a href="mailto:support@zappir.co.za" className="group inline-flex items-center gap-1.5 text-xs text-slate-100 hover:text-white">
-            <span>Support queries:</span>
-            <Mail className="h-3.5 w-3.5" />
-            <span className="group-hover:underline">support@llasa.co.za</span>
-          </a>
-        </div>
-      </header>
-      <main className="flex min-h-[calc(100vh-44px)] items-center justify-center px-6 py-12">
+      <main className="flex min-h-screen items-center justify-center px-6 py-12">
         <section className="w-full max-w-md px-2 py-2">
           {authFormContent}
         </section>

@@ -91,6 +91,8 @@ type DiscWarningLogoOrientation = "portrait" | "landscape";
 type ClientFormState = {
   clientId: string;
   clientName: string;
+  clientRegisteredName: string;
+  clientTradingAsName: string;
   registrationNumber: string;
   clientContactNumber: string;
   clientEmail: string;
@@ -107,6 +109,8 @@ type ClientFormState = {
 const emptyClientFormState: ClientFormState = {
   clientId: "",
   clientName: "",
+  clientRegisteredName: "",
+  clientTradingAsName: "",
   registrationNumber: "",
   clientContactNumber: "",
   clientEmail: "",
@@ -125,6 +129,8 @@ type EmployeeFormState = {
   employeeSurname: string;
   employeeIdOrPassportNumber: string;
   jobTitle: string;
+  department: string;
+  employeeNumber: string;
 };
 
 const emptyEmployeeFormState: EmployeeFormState = {
@@ -132,6 +138,8 @@ const emptyEmployeeFormState: EmployeeFormState = {
   employeeSurname: "",
   employeeIdOrPassportNumber: "",
   jobTitle: "",
+  department: "",
+  employeeNumber: "",
 };
 
 type WarningFormState = {
@@ -263,9 +271,18 @@ const formatClientAddress = (client: ClientRow) =>
     .filter(Boolean)
     .join(", ");
 
+const formatWarningOffences = (offences: string[], fallback: string) => {
+  const normalizedOffences = offences.map((offence) => String(offence || "").trim()).filter(Boolean);
+  if (normalizedOffences.length === 0) return fallback;
+  if (normalizedOffences.length === 1) return normalizedOffences[0];
+  return normalizedOffences.map((offence, index) => `${index + 1}) ${offence}`).join(", ");
+};
+
 const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientId: client.id,
   clientName: formatClientDisplayName(client),
+  clientRegisteredName: String(client.registered_name || "").trim(),
+  clientTradingAsName: String(client.trading_as || "").trim(),
   registrationNumber: String(client.registration_number || "").trim(),
   clientContactNumber: String(client.primary_number || "").trim(),
   clientEmail: String(client.primary_email || "").trim(),
@@ -657,7 +674,7 @@ const DiscWarningGeneratorContent = ({
   const warningTypeLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "";
   const hasClientLogo = Boolean(clientForm.companyLogoDataUrl);
   const showClientLogoField = Boolean(clientForm.clientId && clientForm.companyLogoDataUrl);
-  const previewTitle = hasClientLogo ? "Disciplinary Warning Form" : warningTypeLabel || "Disciplinary Warning Form";
+  const previewTitle = "Disciplinary Warning";
   const previewLine = "______________________________";
   const footerLogoDimensions = getDiscWarningFooterLogoDimensions(clientForm.companyLogoOrientation);
   const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
@@ -671,11 +688,16 @@ const DiscWarningGeneratorContent = ({
   const employeeRows = [
     { label: "Employee Name:", value: employeeFullName || previewLine },
     { label: "ID Number:", value: employeeForm.employeeIdOrPassportNumber || previewLine },
+    ...(employeeForm.jobTitle.trim() ? [{ label: "Job Title:", value: employeeForm.jobTitle.trim() }] : []),
+    ...(employeeForm.department.trim() ? [{ label: "Department:", value: employeeForm.department.trim() }] : []),
+    ...(employeeForm.employeeNumber.trim()
+      ? [{ label: "Employee Number:", value: employeeForm.employeeNumber.trim() }]
+      : []),
   ];
   const warningRows = [
     {
       label: "Offence(s):",
-      value: warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : previewLine,
+      value: formatWarningOffences(warningForm.misconductTypes, previewLine),
     },
     { label: "Description:", value: warningForm.misconductDescription || previewLine },
     {
@@ -691,6 +713,10 @@ const DiscWarningGeneratorContent = ({
     warningRows[2],
     warningRows[3],
   ];
+  const consequenceText =
+    warningForm.warningType === "final"
+      ? "You are required to completely refrain from committing any further act(s) of misconduct. Should you commit the same or similar offence(s) within the validity period of this warning, you will be subjected to a disciplinary hearing and if found guilty, dismissal will result."
+      : "You are required to completely refrain from committing any further act(s) of misconduct. Should you commit the same or similar offence(s) within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
   const signatureRows = [
     ["Employer/Issuer", "Date", "Employee", "Date"],
     ["Representative", "Date", "Interpreter", "Date"],
@@ -912,6 +938,32 @@ const DiscWarningGeneratorContent = ({
                   className={inputClassName}
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeDepartment" className="text-[10px] font-semibold text-slate-600">
+                  Department
+                </Label>
+                <Input
+                  id="discWarningEmployeeDepartment"
+                  value={employeeForm.department}
+                  onChange={(event) => onEmployeeFormChange("department", event.target.value)}
+                  placeholder="Enter department"
+                  className={inputClassName}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="discWarningEmployeeNumber" className="text-[10px] font-semibold text-slate-600">
+                  Employee Number
+                </Label>
+                <Input
+                  id="discWarningEmployeeNumber"
+                  value={employeeForm.employeeNumber}
+                  onChange={(event) => onEmployeeFormChange("employeeNumber", event.target.value)}
+                  placeholder="Enter employee number"
+                  className={inputClassName}
+                />
+              </div>
             </div>
           ) : isWarningStep ? (
             <div className="space-y-4">
@@ -1045,9 +1097,14 @@ const DiscWarningGeneratorContent = ({
                   id="discWarningMisconductDescription"
                   value={warningForm.misconductDescription}
                   onChange={(event) => onWarningFormChange("misconductDescription", event.target.value)}
+                  onInput={(event) => {
+                    const textarea = event.currentTarget;
+                    textarea.style.height = "auto";
+                    textarea.style.height = `${textarea.scrollHeight}px`;
+                  }}
                   placeholder="Provide specific details about the misconduct incident(s)"
-                  rows={5}
-                  className={`${inputClassName} min-h-[120px] resize-none py-2`}
+                  rows={2}
+                  className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
                 />
               </div>
 
@@ -1127,12 +1184,6 @@ const DiscWarningGeneratorContent = ({
                             <p className="text-black">{row.value}</p>
                           </div>
                         ))}
-                        {employeeForm.jobTitle ? (
-                          <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                            <p className="font-bold text-black">Job Title:</p>
-                            <p className="text-black">{employeeForm.jobTitle}</p>
-                          </div>
-                        ) : null}
                       </>
                     ) : (
                       employerRows.map((row) => (
@@ -1157,12 +1208,6 @@ const DiscWarningGeneratorContent = ({
                           <p className="text-black">{row.value}</p>
                         </div>
                       ))}
-                      {employeeForm.jobTitle ? (
-                        <div className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                          <p className="font-bold text-black">Job Title:</p>
-                          <p className="text-black">{employeeForm.jobTitle}</p>
-                        </div>
-                      ) : null}
                     </div>
                   </section>
                 ) : null}
@@ -1189,11 +1234,7 @@ const DiscWarningGeneratorContent = ({
                       {hasClientLogo ? "C. Consequences" : "D. Consequences"}
                     </p>
                   </div>
-                  <p className="mt-3 text-[11px] leading-5 text-black">
-                    You are required to refrain completely from committing any further acts of misconduct. Should you
-                    commit the same or similar act of misconduct within the validity period of this warning,
-                    progressive disciplinary action will be taken which could lead to your dismissal.
-                  </p>
+                  <p className="mt-3 text-[11px] leading-5 text-black">{consequenceText}</p>
                 </section>
 
                 <section className="mt-6">
@@ -1219,7 +1260,7 @@ const DiscWarningGeneratorContent = ({
                   </div>
 
                   <div className="mt-6 rounded-sm border border-slate-300 bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] italic leading-5 text-slate-700">
+                    <p className="text-[11px] italic font-normal leading-5 text-slate-600">
                       If the employee refuses to sign this warning, the witness&apos;s signature will confirm that the
                       employee did receive the warning and that the contents were explained to him/her.
                     </p>
@@ -1334,6 +1375,7 @@ const DiscWarningGeneratorContent = ({
 
 const DiscWarningGenerator = ({
   embedded = false,
+  onRequestClose,
   draftState,
   onDraftStateChange,
   onStepChange,
@@ -1594,9 +1636,7 @@ const DiscWarningGenerator = ({
     const sectionFill = [237, 237, 239] as const;
     const sectionBorder = [161, 161, 170] as const;
     const lineFallback = "______________________________";
-    const resolvedTitle = hasLogoLayout
-      ? "Disciplinary Warning Form"
-      : warningTypeLabelByValue[warningForm.warningType || "first"] ?? "Disciplinary Warning Form";
+    const resolvedTitle = "Disciplinary Warning";
     const resolvedEmployeeName =
       [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim() || lineFallback;
     const resolvedEmployerRows = [
@@ -1609,15 +1649,20 @@ const DiscWarningGenerator = ({
     const resolvedEmployeeRows = [
       ["Employee Name:", resolvedEmployeeName],
       ["ID Number:", employeeForm.employeeIdOrPassportNumber || lineFallback],
+      ...(employeeForm.jobTitle.trim() ? ([["Job Title:", employeeForm.jobTitle.trim()]] as const) : []),
+      ...(employeeForm.department.trim() ? ([["Department:", employeeForm.department.trim()]] as const) : []),
+      ...(employeeForm.employeeNumber.trim()
+        ? ([["Employee Number:", employeeForm.employeeNumber.trim()]] as const)
+        : []),
     ] as const;
     const resolvedWarningRows = [
-      ["Offence(s):", warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : lineFallback],
+      ["Offence(s):", formatWarningOffences(warningForm.misconductTypes, lineFallback)],
       ["Description:", warningForm.misconductDescription || lineFallback],
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
       ["Issued By:", warningForm.issuedBy || lineFallback],
     ] as const;
     const resolvedLogoWarningRows = [
-      ["Offence(s):", warningForm.misconductTypes.length > 0 ? warningForm.misconductTypes.join(", ") : lineFallback],
+      ["Offence(s):", formatWarningOffences(warningForm.misconductTypes, lineFallback)],
       ["Description:", warningForm.misconductDescription || lineFallback],
       ["Warning Type:", warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : lineFallback],
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
@@ -1629,7 +1674,9 @@ const DiscWarningGenerator = ({
       ["Witness 1 (optional)", "Date", "Witness 2 (optional)", "Date"],
     ] as const;
     const consequenceText =
-      "You are required to refrain completely from committing any further acts of misconduct. Should you commit the same or similar act of misconduct within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
+      warningForm.warningType === "final"
+        ? "You are required to completely refrain from committing any further act(s) of misconduct. Should you commit the same or similar offence(s) within the validity period of this warning, you will be subjected to a disciplinary hearing and if found guilty, dismissal will result."
+        : "You are required to completely refrain from committing any further act(s) of misconduct. Should you commit the same or similar offence(s) within the validity period of this warning, progressive disciplinary action will be taken which could lead to your dismissal.";
     const witnessNote =
       "If the employee refuses to sign this warning, the witness's signature will confirm that the employee did receive the warning and that the contents were explained to him/her.";
     const footerAddressLines = buildDiscWarningFooterAddressLines(clientForm);
@@ -1656,7 +1703,10 @@ const DiscWarningGenerator = ({
 
     const drawKeyValueRows = (
       rows: readonly (readonly [string, string])[],
-      options?: { extraTopByLabel?: Partial<Record<string, number>> },
+      options?: {
+        extraTopByLabel?: Partial<Record<string, number>>;
+        fullWidthValueByLabel?: Partial<Record<string, boolean>>;
+      },
     ) => {
       const labelWidth = 42;
       const valueWidth = contentWidth - labelWidth - 4;
@@ -1667,13 +1717,42 @@ const DiscWarningGenerator = ({
           ensureSpace(extraTop);
           y += extraTop;
         }
-        const valueLines = doc.splitTextToSize(value, valueWidth);
-        const rowHeight = Math.max(4.2, valueLines.length * lineHeight);
+        const useFullWidthValue = Boolean(options?.fullWidthValueByLabel?.[label]);
+        const fullWidthValueX = margin + labelWidth;
+        const fullWidthValueWidth = contentWidth - labelWidth;
+        const valueLines = doc.splitTextToSize(value, useFullWidthValue ? fullWidthValueWidth : valueWidth);
+        const rowHeight = useFullWidthValue
+          ? Math.max(4.2, valueLines.length * lineHeight)
+          : Math.max(4.2, valueLines.length * lineHeight);
         ensureSpace(rowHeight);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.text(label, margin, y);
         doc.setFont("helvetica", "normal");
+        if (useFullWidthValue) {
+          valueLines.forEach((line, index) => {
+            const lineY = y + index * lineHeight;
+            const isLastLine = index === valueLines.length - 1;
+            const words = String(line).trim().split(/\s+/).filter(Boolean);
+            if (isLastLine || words.length <= 1) {
+              doc.text(String(line), fullWidthValueX, lineY);
+              return;
+            }
+            const lineWidth = doc.getTextWidth(String(line));
+            const extraSpace = fullWidthValueWidth - lineWidth;
+            const gapCount = words.length - 1;
+            let x = fullWidthValueX;
+            words.forEach((word, wordIndex) => {
+              doc.text(word, x, lineY);
+              x += doc.getTextWidth(word);
+              if (wordIndex < gapCount) {
+                x += doc.getTextWidth(" ") + extraSpace / gapCount;
+              }
+            });
+          });
+          y += rowHeight + 0.5;
+          return;
+        }
         valueLines.forEach((line, index) => {
           const lineY = y + index * lineHeight;
           const isLastLine = index === valueLines.length - 1;
@@ -1738,14 +1817,12 @@ const DiscWarningGenerator = ({
 
     drawSectionHeader(hasLogoLayout ? "A. EMPLOYEE DETAILS" : "B. EMPLOYEE DETAILS");
     drawKeyValueRows(resolvedEmployeeRows);
-    if (employeeForm.jobTitle.trim()) {
-      drawKeyValueRows([["Job Title:", employeeForm.jobTitle.trim()]]);
-    }
 
     y += 4;
     drawSectionHeader(hasLogoLayout ? "B. WARNING DETAILS" : "C. WARNING DETAILS");
     drawKeyValueRows(hasLogoLayout ? resolvedLogoWarningRows : resolvedWarningRows, {
       extraTopByLabel: { "Validity Period:": 0.6 },
+      fullWidthValueByLabel: { "Description:": true },
     });
 
     y += 4;
@@ -1788,7 +1865,7 @@ const DiscWarningGenerator = ({
     doc.setFillColor(...sectionFill);
     doc.roundedRect(margin, y, contentWidth, 11, 0.8, 0.8, "FD");
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(9);
+    doc.setFontSize(8.6);
     doc.setTextColor(63, 63, 70);
     const noteLines = doc.splitTextToSize(witnessNote, contentWidth - 6);
     const noteLineHeight = 3.7;
@@ -1887,18 +1964,45 @@ const DiscWarningGenerator = ({
       }
     }
 
+    const generatedByPrefix = "Document generated by ";
+    const generatedByUrl = "www.llasa.co.za";
+    const generatedByY = pageHeight - 5.5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.2);
+    doc.setTextColor(63, 63, 70);
+    const generatedByPrefixWidth = doc.getTextWidth(generatedByPrefix);
+    const generatedByUrlWidth = doc.getTextWidth(generatedByUrl);
+    const generatedByStartX = (pageWidth - (generatedByPrefixWidth + generatedByUrlWidth)) / 2;
+    const generatedByUrlX = generatedByStartX + generatedByPrefixWidth;
+    doc.text(generatedByPrefix, generatedByStartX, generatedByY);
+    doc.setTextColor(62, 202, 68);
+    doc.text(generatedByUrl, generatedByUrlX, generatedByY);
+    doc.setDrawColor(62, 202, 68);
+    doc.setLineWidth(0.15);
+    doc.line(generatedByUrlX, generatedByY + 0.35, generatedByUrlX + generatedByUrlWidth, generatedByY + 0.35);
+
     const fileTitle =
       (warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Disciplinary Warning Form")
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "") || "disciplinary-warning-form";
-    const employeeInitial = employeeForm.employeeName.trim().charAt(0).toUpperCase();
+    const employeeInitials = employeeForm.employeeName
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((namePart) => `${namePart.charAt(0).toUpperCase()}.`)
+      .join("");
     const employeeSurname = employeeForm.employeeSurname.trim();
     const documentNameSuffix =
-      employeeInitial && employeeSurname ? ` (${employeeInitial} ${employeeSurname})` : "";
+      employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
     const warningLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Warning";
     const documentName = `${warningLabel}${documentNameSuffix}`;
-    const downloadFileName = `${fileTitle}.pdf`;
+    const downloadFileTitle =
+      warningLabel
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "") || "warning";
+    const downloadFileName = `${downloadFileTitle}${documentNameSuffix}.pdf`;
     const uploadBlob = doc.output("blob");
     const uploadSafeClientName =
       (clientForm.clientName || "client")
@@ -1966,7 +2070,8 @@ const DiscWarningGenerator = ({
     }
 
     doc.save(downloadFileName);
-  }, [clientForm, employeeForm, user, warningForm]);
+    onRequestClose?.();
+  }, [clientForm, employeeForm, onRequestClose, user, warningForm]);
 
   const isEmployeeStepComplete =
     employeeForm.employeeName.trim().length > 0 &&

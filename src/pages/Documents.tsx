@@ -100,6 +100,19 @@ const formatDocumentClientName = (value: string) => {
   return parts.length > 1 ? String(parts[parts.length - 1] || "").trim() || raw : raw;
 };
 
+const getDiscWarningBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const clientForm = (draftState as { clientForm?: unknown }).clientForm;
+  if (!clientForm || typeof clientForm !== "object") return "";
+  const candidate = clientForm as {
+    clientTradingAsName?: unknown;
+    clientRegisteredName?: unknown;
+  };
+  const tradingAsName = String(candidate.clientTradingAsName || "").trim();
+  if (tradingAsName) return tradingAsName;
+  return String(candidate.clientRegisteredName || "").trim();
+};
+
 const splitCreatedOnParts = (value: string) => {
   const raw = String(value || "").trim();
   if (!raw) return { date: "", time: "" };
@@ -245,7 +258,7 @@ const modalOnlyDocumentSet = new Set<DocumentKey>(modalOnlyDocumentKeys);
 
 const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
-  discWarningGenerator: "Disciplinary Warning",
+  discWarningGenerator: "Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
@@ -519,6 +532,12 @@ const Documents = () => {
   const breadcrumbCategoryTitle = selectedDocument ? getShellCategoryTitle(selectedDocument) : activeCategoryTitle;
   const activeDocumentLabel = activeDocumentMeta?.label ?? "";
   const modalTitle = modalDocument ? modalTitleByDocument[modalDocument] : "";
+  const discWarningBreadcrumbClientName =
+    modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
+  const modalBreadcrumbTitle =
+    modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
+      ? `${modalTitle} (${discWarningBreadcrumbClientName})`
+      : modalTitle;
   const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
   const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";
   const isTerminationModal = modalDocument ? terminationDocumentSet.has(modalDocument) : false;
@@ -1152,7 +1171,7 @@ const Documents = () => {
               <X className="h-4 w-4 stroke-[2.4]" />
             </button>
           </div>
-          <DialogTitle className="sr-only">{modalTitle} Generator</DialogTitle>
+          <DialogTitle className="sr-only">{modalBreadcrumbTitle} Generator</DialogTitle>
           {isDarkStepperModal ? (
             <div className="flex h-full min-h-0 flex-col bg-[#2D4256]">
               <header className="absolute inset-x-0 top-0 flex h-[46px] items-center px-4">
@@ -1164,7 +1183,7 @@ const Documents = () => {
                         ? "Documents / Discipline / "
                         : "Documents / Terminations / "}
                       </span>
-                    <span className="text-white">{modalTitle}</span>
+                    <span className="text-white">{modalBreadcrumbTitle}</span>
                     </span>
                 </div>
               </header>
@@ -1235,6 +1254,9 @@ const Documents = () => {
                             onDraftStateChange={(draftState) =>
                               setActiveSession((prev) => (prev ? { ...prev, draftState } : prev))
                             }
+                            onRequestClose={() => {
+                              closeModal();
+                            }}
                             onStepChange={setBreadcrumbStep}
                             onStepMetaChange={setStepMeta}
                           />

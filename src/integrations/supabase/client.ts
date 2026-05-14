@@ -4,13 +4,15 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: isLocalhost ? sessionStorage : localStorage,
     persistSession: true,
     autoRefreshToken: true,
   }

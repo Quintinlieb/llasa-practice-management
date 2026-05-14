@@ -31,12 +31,10 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isResettingSession, setIsResettingSession] = useState(false);
   const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const clearedSessionRef = useRef(false);
   const authActionStartedRef = useRef(false);
 
   useEffect(() => {
@@ -80,35 +78,12 @@ const Auth = () => {
     });
   }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
 
-  // When starting a new auth flow, clear any existing session once.
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const fromLogin = params.get("login") === "1";
-    if (!fromLogin) return;
-    setIsLogin(fromLogin);
-    if (loading) return;
-    if (!user) {
-      setIsResettingSession(false);
-      return;
-    }
-    if (clearedSessionRef.current) return;
-    clearedSessionRef.current = true;
-    setIsResettingSession(true);
-    void (async () => {
-      try {
-        await signOut();
-      } finally {
-        setIsResettingSession(false);
-      }
-    })();
-  }, [location.search, loading, user, signOut]);
-
   useEffect(() => {
     const checkProfileAndRedirect = async () => {
       const params = new URLSearchParams(location.search);
       const fromLogin = params.get("login") === "1";
-      // Skip auto-redirects while explicitly forcing a fresh login flow.
-      if (fromLogin && (isResettingSession || !user)) return;
+      // Skip auto-redirects while still unauthenticated when explicitly starting a login flow.
+      if (fromLogin && !user) return;
       if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -228,7 +203,7 @@ const Auth = () => {
     };
 
     void checkProfileAndRedirect();
-  }, [user, loading, navigate, location.pathname, location.search, isResettingSession]);
+  }, [user, loading, navigate, location.pathname, location.search]);
 
   const validatePassword = (pwd: string): boolean => {
     if (isLogin) return true; // Skip validation for login

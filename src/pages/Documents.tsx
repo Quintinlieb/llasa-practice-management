@@ -29,6 +29,7 @@ type DocumentKey =
   | "serviceCertificate"
   | "acknowledgementOfDebt"
   | "permanentContract"
+  | "permContract"
   | "temporaryContract"
   | "addendum"
   | "noticeTermination"
@@ -113,6 +114,22 @@ const getDiscWarningBreadcrumbClientName = (draftState: unknown) => {
   return String(candidate.clientRegisteredName || "").trim();
 };
 
+const getPermContractBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const company = (draftState as { company?: unknown }).company;
+  if (!company || typeof company !== "object") return "";
+  const candidate = company as {
+    tradingName?: unknown;
+    registeredName?: unknown;
+    companyName?: unknown;
+  };
+  const tradingName = String(candidate.tradingName || "").trim();
+  if (tradingName) return tradingName;
+  const registeredName = String(candidate.registeredName || "").trim();
+  if (registeredName) return registeredName;
+  return String(candidate.companyName || "").trim();
+};
+
 const splitCreatedOnParts = (value: string) => {
   const raw = String(value || "").trim();
   if (!raw) return { date: "", time: "" };
@@ -172,6 +189,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   serviceCertificate: lazyDocumentComponent(() => import("./ServiceCertificateGenerator")),
   acknowledgementOfDebt: lazyDocumentComponent(() => import("./AcknowledgementOfDebtGenerator")),
   permanentContract: lazyDocumentComponent(() => import("./PermanentContractGenerator")),
+  permContract: lazyDocumentComponent(() => import("./PermContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
   noticeTermination: lazyDocumentComponent(() => import("./MisconductTerminationGenerator")),
@@ -194,6 +212,7 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   serviceCertificate: { category: "Other", label: "Certificate of Service" },
   acknowledgementOfDebt: { category: "Other", label: "Acknowledgement of Debt" },
   permanentContract: { category: "Contracts", label: "Permanent Contract" },
+  permContract: { category: "Contracts", label: "Permanent" },
   temporaryContract: { category: "Contracts", label: "Temporary Contract" },
   addendum: { category: "Contracts", label: "Addendum" },
   noticeTermination: { category: "Terminations", label: "Misconduct" },
@@ -240,10 +259,11 @@ const wizardDocumentKeys = [
   "addendum",
   ...terminationDocumentKeys,
   "permanentContract",
+  "permContract",
   "temporaryContract",
 ] as const satisfies readonly DocumentKey[];
 
-const darkStepperDocumentKeys = ["discWarningGenerator", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
+const darkStepperDocumentKeys = ["discWarningGenerator", "permContract", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
 const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const darkShellDocumentKeys = ["codeOfConduct", ...darkStepperDocumentKeys] as const satisfies readonly DocumentKey[];
 const lightWizardDocumentKeys = wizardDocumentKeys.filter((key) => !darkStepperDocumentSet.has(key)) as DocumentKey[];
@@ -267,6 +287,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   serviceCertificate: "Certificate of Service",
   acknowledgementOfDebt: "Acknowledgement of Debt",
   permanentContract: "Permanent Contract",
+  permContract: "Permanent",
   temporaryContract: "Temporary Contract",
   addendum: "Addendum",
   noticeTermination: "Notice of Termination",
@@ -296,6 +317,7 @@ const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   poorPerformanceTermination: "Termination Details",
   mutualTermination: "Termination Details",
   permanentContract: "Employment Details",
+  permContract: "Contract Details",
   temporaryContract: "Employment Details",
 };
 
@@ -534,9 +556,13 @@ const Documents = () => {
   const modalTitle = modalDocument ? modalTitleByDocument[modalDocument] : "";
   const discWarningBreadcrumbClientName =
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
+  const permContractBreadcrumbClientName =
+    modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
   const modalBreadcrumbTitle =
     modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
+      : modalDocument === "permContract" && permContractBreadcrumbClientName
+        ? `${modalTitle} (${permContractBreadcrumbClientName})`
       : modalTitle;
   const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
   const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";
@@ -547,10 +573,10 @@ const Documents = () => {
   const modalSteps =
     modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
-          modalDocument === "discWarningGenerator" ? "Client Details" : "Employer Details",
+          modalDocument === "discWarningGenerator" || modalDocument === "permContract" ? "Client Details" : "Employer Details",
           "Employee Details",
           detailStepLabelByDocument[modalDocument] ?? "Employment Details",
-          modalDocument === "discWarningGenerator" ? "Preview / Download" : "Preview / Edit",
+          modalDocument === "discWarningGenerator" || modalDocument === "permContract" ? "Preview / Download" : "Preview / Edit",
         ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
@@ -606,6 +632,24 @@ const Documents = () => {
     [
       "Review and finalize the editable preview before downloading.",
       "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
+    ],
+  ] as const;
+  const permContractStepNotes = [
+    [
+      "Select the client record that should be used as the employer for this contract.",
+      "The company profile is pulled in automatically so the draft starts from the correct business details.",
+    ],
+    [
+      "Capture the employee manually in this first version of the new generator.",
+      "This keeps the new permanent contract flow clean while we build the later step refinements.",
+    ],
+    [
+      "Capture the appointment summary that should feed the permanent contract output.",
+      "Only the new employment-term fields in this screen are used for the generated preview and PDF.",
+    ],
+    [
+      "Review the fresh contract summary before downloading the generated PDF.",
+      "This preview is intentionally not using the legacy permanent contract clause pack.",
     ],
   ] as const;
   const temporaryStepNotes = [
@@ -816,6 +860,7 @@ const Documents = () => {
   ] as const satisfies StepNotes;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
   const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
+  const permContractActiveNotes = permContractStepNotes[modalActiveStep] ?? permContractStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
     noticeTerminationStepNotes[modalActiveStep] ?? noticeTerminationStepNotes[0];
@@ -865,6 +910,8 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permanentContract"
         ? permanentActiveNotes
+      : modalDocument === "permContract"
+        ? permContractActiveNotes
       : modalDocument === "disciplinaryHearingNotice"
         ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
@@ -1181,7 +1228,9 @@ const Documents = () => {
                       <span className="text-white/60">
                       {modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
-                        : "Documents / Terminations / "}
+                        : modalDocument === "permContract"
+                          ? "Documents / Contracts / "
+                          : "Documents / Terminations / "}
                       </span>
                     <span className="text-white">{modalBreadcrumbTitle}</span>
                     </span>

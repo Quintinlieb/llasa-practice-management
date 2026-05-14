@@ -18,7 +18,8 @@ import { supabase } from "@/integrations/supabase/client";
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
 const SLA_RECORD_TYPE = "Service Level Agreement";
-const FILE_NOTE_EDIT_TAG_REGEX = /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on \d{1,2}\s+[A-Za-z]+\s+\d{4}))\s*$/i;
+const FILE_NOTE_EDIT_TAG_REGEX =
+  /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
 const formatDisplayDate = (value: string) => {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "--";
@@ -62,8 +63,29 @@ const ensureEditedTagHasTime = (tag: string, updatedAt?: string | null) => {
   if (!fallbackTime) return normalized;
   return `${normalized} at ${fallbackTime}`;
 };
+const sanitizeEditedTag = (tag: string, updatedAt?: string | null) => {
+  const value = String(tag || "").trim();
+  if (!value) return "";
+  const actorMatch = value.match(/^Edited by\s+(.+?)\s+on\s+/i);
+  const actor = String(actorMatch?.[1] || "").trim();
+  if (!actor) return ensureEditedTagHasTime(value, updatedAt);
+  const displayDate = updatedAt ? formatDisplayDate(updatedAt) : "";
+  const displayTime = formatDisplayTime(String(updatedAt || "").trim());
+  if (displayDate && displayTime) return `Edited by ${actor} on ${displayDate} at ${displayTime}`;
+  if (displayDate) return `Edited by ${actor} on ${displayDate}`;
+  return ensureEditedTagHasTime(value, updatedAt);
+};
 const splitFileNoteContentAndEditTag = (raw: string) => {
-  const value = String(raw || "");
+  const value = String(raw || "").trim();
+  if (!value) return { content: "", editTag: "" };
+
+  const editedIndex = value.toLowerCase().lastIndexOf("edited by ");
+  if (editedIndex >= 0) {
+    const content = value.slice(0, editedIndex).trim();
+    const editTag = value.slice(editedIndex).trim();
+    return { content, editTag };
+  }
+
   const match = value.match(FILE_NOTE_EDIT_TAG_REGEX);
   const editTag = match ? String(match[1] || match[2] || "").trim() : "";
   const content = editTag ? value.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim() : value;
@@ -3124,7 +3146,7 @@ const ClientsTwo = () => {
             </div>
             {fileNotePreviewEditTag ? (
               <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
-                {ensureEditedTagHasTime(fileNotePreviewEditTag, fileNotePreviewUpdatedAt)}
+                {sanitizeEditedTag(fileNotePreviewEditTag, fileNotePreviewUpdatedAt)}
               </div>
             ) : null}
           </div>

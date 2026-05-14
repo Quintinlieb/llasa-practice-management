@@ -358,7 +358,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                   onClick={async () => {
                     const { error } = await signOut();
                     if (!error) {
-                      navigate("/");
+                      navigate("/auth?login=1", { replace: true });
                     }
                   }}
                 >

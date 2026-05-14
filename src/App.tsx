@@ -8,6 +8,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import ClientsTwo from "./pages/clientsTwo";
@@ -35,6 +36,7 @@ const AppRoutes = () => {
         <Route path="/" element={<Navigate to="/auth?login=1" replace />} />
         <Route path="/landing" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/clients-2" element={<ProtectedRoute><ClientsTwo /></ProtectedRoute>} />

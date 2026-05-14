@@ -19,7 +19,7 @@ const Navigation = () => {
         variant: "destructive",
       });
     } else {
-      navigate("/");
+      navigate("/auth?login=1", { replace: true });
     }
   };
 

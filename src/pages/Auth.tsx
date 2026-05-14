@@ -31,9 +31,8 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSendingReset, setIsSendingReset] = useState(false);
-  const [resetCooldownSeconds, setResetCooldownSeconds] = useState(0);
-  const { signUp, signIn, signOut, resetPassword, user, loading } = useAuth();
+  const [isResettingSession, setIsResettingSession] = useState(false);
+  const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,14 +69,6 @@ const Auth = () => {
   }, [location.search]);
 
   useEffect(() => {
-    if (resetCooldownSeconds <= 0) return;
-    const timer = window.setInterval(() => {
-      setResetCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [resetCooldownSeconds]);
-
-  useEffect(() => {
     writeAuthFormDraft({
       isLogin,
       name,
@@ -95,21 +86,29 @@ const Auth = () => {
     const fromLogin = params.get("login") === "1";
     if (!fromLogin) return;
     setIsLogin(fromLogin);
-    if (clearedSessionRef.current || loading) return;
-    clearedSessionRef.current = true;
-    if (user) {
-      (async () => {
-        await signOut();
-      })();
+    if (loading) return;
+    if (!user) {
+      setIsResettingSession(false);
+      return;
     }
+    if (clearedSessionRef.current) return;
+    clearedSessionRef.current = true;
+    setIsResettingSession(true);
+    void (async () => {
+      try {
+        await signOut();
+      } finally {
+        setIsResettingSession(false);
+      }
+    })();
   }, [location.search, loading, user, signOut]);
 
   useEffect(() => {
     const checkProfileAndRedirect = async () => {
       const params = new URLSearchParams(location.search);
       const fromLogin = params.get("login") === "1";
-      // Skip auto-redirects while still unauthenticated when explicitly starting a new flow
-      if (fromLogin && !user) return;
+      // Skip auto-redirects while explicitly forcing a fresh login flow.
+      if (fromLogin && (isResettingSession || !user)) return;
       if (!loading && user) {
         const { data: profile } = await supabase
           .from("profiles")
@@ -228,8 +227,8 @@ const Auth = () => {
       }
     };
 
-    checkProfileAndRedirect();
-  }, [user, loading, navigate, location.pathname]);
+    void checkProfileAndRedirect();
+  }, [user, loading, navigate, location.pathname, location.search, isResettingSession]);
 
   const validatePassword = (pwd: string): boolean => {
     if (isLogin) return true; // Skip validation for login
@@ -319,60 +318,6 @@ const Auth = () => {
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleResetPassword = async () => {
-    if (!email) {
-      toast({
-        title: "Email required",
-        description: "Enter your account email to get a reset link.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (resetCooldownSeconds > 0) {
-      toast({
-        title: "Please wait",
-        description: `Try again in ${resetCooldownSeconds}s.`,
-      });
-      return;
-    }
-
-    setIsSendingReset(true);
-    try {
-      const { error } = await resetPassword(email);
-      if (error) {
-        const message = getSafeErrorMessage(error).toLowerCase();
-        if (message.includes("rate limit")) {
-          setResetCooldownSeconds(60);
-          toast({
-            title: "Too many reset attempts",
-            description: "Please wait a minute and try again.",
-            variant: "destructive",
-          });
-          return;
-        }
-        toast({
-          title: "Error",
-          description: getSafeErrorMessage(error),
-          variant: "destructive",
-        });
-      } else {
-        setResetCooldownSeconds(60);
-        toast({
-          title: "Reset link sent",
-          description: "Check your inbox for password reset instructions.",
-        });
-      }
-    } catch (error: unknown) {
-      toast({
-        title: "Error",
-        description: getSafeErrorMessage(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsSendingReset(false);
     }
   };
 
@@ -523,16 +468,10 @@ const Auth = () => {
                     <div className="mt-2 flex justify-start">
                       <button
                         type="button"
-                        onClick={handleResetPassword}
-                        tabIndex={-1}
-                        className="text-[11px] font-normal text-white/70 underline hover:text-[#3eca44] disabled:opacity-60"
-                        disabled={isSendingReset || resetCooldownSeconds > 0}
+                        onClick={() => navigate("/forgot-password")}
+                        className="text-[11px] font-normal text-white/70 underline hover:text-[#3eca44]"
                       >
-                        {isSendingReset
-                          ? "Sending..."
-                          : resetCooldownSeconds > 0
-                            ? `Try again in ${resetCooldownSeconds}s`
-                            : "Forgot your password?"}
+                        Forgot your password?
                       </button>
                     </div>
                   )}

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { z } from "zod";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
-import { X } from "lucide-react";
+
+const loginFieldClass =
+  "h-9 rounded-[3px] border-white/15 bg-white px-2 !text-[12px] text-slate-900 placeholder:text-[12px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44]";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -17,24 +19,34 @@ const passwordSchema = z.string()
   .regex(/[^A-Za-z0-9]/, "Must contain at least one special character");
 
 const ResetPassword = () => {
-  const [formData, setFormData] = useState({
-    newPassword: "",
-    confirmPassword: "",
-  });
-  const [status, setStatus] = useState<"checking" | "ready" | "missing" | "error" | "success">("checking");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [username, setUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const [status, setStatus] = useState<"checking" | "ready" | "missing" | "error">("checking");
+  const [statusMessage, setStatusMessage] = useState("Validating reset link...");
+  const navigate = useNavigate();
   const { toast } = useToast();
 
+  const showManualTypingToast = () => {
+    toast({
+      title: "Manual entry required",
+      description: "Please type the confirm password field manually.",
+    });
+  };
+
   useEffect(() => {
-    const run = async () => {
+    const validateResetLink = async () => {
       const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
       const hashParams = new URLSearchParams(hash);
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
-      const type = hashParams.get("type");
+      const hashType = hashParams.get("type");
+
       const searchParams = new URLSearchParams(window.location.search);
       const code = searchParams.get("code");
       const tokenHash = searchParams.get("token_hash");
@@ -45,6 +57,7 @@ const ResetPassword = () => {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
           setStatus("ready");
+          setStatusMessage("");
         } else if (tokenHash && queryType === "recovery") {
           const { error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
@@ -52,13 +65,15 @@ const ResetPassword = () => {
           });
           if (error) throw error;
           setStatus("ready");
-        } else if (type === "recovery" && accessToken && refreshToken) {
+          setStatusMessage("");
+        } else if (hashType === "recovery" && accessToken && refreshToken) {
           const { error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
           });
           if (error) throw error;
           setStatus("ready");
+          setStatusMessage("");
         } else {
           setStatus("missing");
           setStatusMessage("Reset link is missing or expired. Please request a new link.");
@@ -68,162 +83,188 @@ const ResetPassword = () => {
         setStatusMessage(getSafeErrorMessage(error));
       } finally {
         if (hash) {
-          window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+          window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
         }
       }
     };
 
-    run();
+    validateResetLink();
   }, []);
 
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPasswordError("");
+    setConfirmPasswordError("");
+
+    if (status !== "ready") {
+      toast({
+        title: "Reset link invalid",
+        description: statusMessage || "Please request a new password reset link.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      passwordSchema.parse(newPassword);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setPasswordError(error.errors[0].message);
+      }
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setConfirmPasswordError("Passwords do not match");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        throw error;
+      }
+
+      await supabase.auth.signOut();
+      toast({
+        title: "Password updated",
+        description: "You can now sign in with your new password.",
+      });
+      navigate("/auth?login=1", { replace: true });
+    } catch (error: unknown) {
+      toast({
+        title: "Password update failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-black">
-      <div className="min-h-screen grid lg:grid-cols-2">
-        <section className="relative hidden lg:flex">
-          <div className="absolute inset-0 bg-black">
-            <img
-              src="/AuthImage.png"
-              alt="Team collaborating"
-              className="h-full w-full object-cover opacity-[0.28]"
-              style={{ objectPosition: "20% center" }}
-            />
-          </div>
-          <div className="relative z-10 flex h-full w-full flex-col items-center justify-center p-14 text-white">
-            <img src="/mainlogo2.png" alt="Hure Systems" className="mx-auto h-auto w-64" />
-            <p className="mt-10 max-w-lg text-center text-[0.8125rem] text-white/80">
-              Reset your Nudoc\u2122 password to keep your account secure and continue working on your HR documents.
-            </p>
-          </div>
-        </section>
-
-        <section className="relative flex items-center justify-center bg-white px-6 py-12 sm:px-10">
-          <div className="absolute right-6 top-6">
-            <Link
-              to="/"
-              aria-label="Close and return home"
-              tabIndex={-1}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:text-blue-600 hover:ring-1 hover:ring-blue-500"
-            >
-              <X className="h-4 w-4" />
-            </Link>
-          </div>
-
+    <div className="min-h-screen bg-slate-100">
+      <main className="flex min-h-screen items-center justify-center px-6 py-12">
+        <section className="w-full max-w-md px-2 py-2">
           <div className="w-full max-w-md space-y-4">
             <div className="text-center space-y-3">
               <div className="mx-auto flex items-center justify-center">
-                <img src="/thumbnail-logo.svg" alt="thumbnail logo" className="h-12 w-12" />
-              </div>
-              <div className="space-y-1">
-                <h1 className="text-[1.35rem] font-semibold text-foreground">Reset password</h1>
-                <p className="text-[0.8rem] text-muted-foreground">
-                  Enter a new password for your account below.
-                </p>
+                <img src="/Vertical Logo (2).png" alt="LLASA vertical logo" className="h-32 w-auto" />
               </div>
             </div>
 
-            {(status === "checking" || status === "missing" || status === "error") && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                {status === "checking" ? "Validating reset link..." : statusMessage}
-              </div>
-            )}
-
-            {status === "success" && (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                Password updated. You can now sign in with your new password.
-              </div>
-            )}
-
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                setPasswordError("");
-                setConfirmPasswordError("");
-                if (status !== "ready") return;
-                try {
-                  passwordSchema.parse(formData.newPassword);
-                } catch (error) {
-                  if (error instanceof z.ZodError) {
-                    setPasswordError(error.errors[0].message);
-                  }
-                  return;
-                }
-                if (formData.newPassword !== formData.confirmPassword) {
-                  setConfirmPasswordError("Passwords do not match");
-                  return;
-                }
-
-                setIsSaving(true);
-                supabase.auth
-                  .updateUser({ password: formData.newPassword })
-                  .then(({ error }) => {
-                    if (error) throw error;
-                    toast({
-                      title: "Password updated",
-                      description: "You can now sign in with your new password.",
-                    });
-                    setStatus("success");
-                  })
-                  .catch((error: unknown) => {
-                    toast({
-                      title: "Error",
-                      description: getSafeErrorMessage(error),
-                      variant: "destructive",
-                    });
-                  })
-                  .finally(() => setIsSaving(false));
-              }}
-              className="pt-6 space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="newPassword">New Password</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  value={formData.newPassword}
-                  onChange={(event) =>
-                    setFormData({ ...formData, newPassword: event.target.value })
-                  }
-                  className={passwordError ? "h-11 border-destructive" : "h-11"}
-                />
-                {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={(event) =>
-                    setFormData({ ...formData, confirmPassword: event.target.value })
-                  }
-                  className={confirmPasswordError ? "h-11 border-destructive" : "h-11"}
-                />
-                {confirmPasswordError && (
-                  <p className="text-sm text-destructive">{confirmPasswordError}</p>
+            <form onSubmit={handleSubmit} className="pt-6 space-y-4" autoComplete="off" noValidate>
+              <div className="rounded-md border border-white/10 bg-[#2D4256] p-6 shadow-xl shadow-slate-900/15">
+                <p className="mb-6 text-center text-[0.9rem] text-white/75">
+                  Insert your new password.
+                </p>
+                {status !== "ready" && (
+                  <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                    {statusMessage}
+                  </div>
                 )}
-              </div>
-              <div className="pt-2">
-                <Button
-                  type="submit"
-                  className="w-full bg-blue-600 text-white hover:bg-blue-700"
-                  disabled={status !== "ready" || isSaving}
-                >
-                  {isSaving ? "Updating..." : "Update Password"}
-                </Button>
+                <div className="space-y-4">
+                  <div className="group space-y-1">
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Username"
+                      value={username}
+                      onChange={(event) => setUsername(event.target.value)}
+                      autoComplete="username"
+                      required
+                      className={loginFieldClass}
+                    />
+                  </div>
+                  <div className="group space-y-1">
+                    <div className="relative">
+                      <Input
+                        id="newPassword"
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="New Password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        onCopy={(event) => {
+                          event.preventDefault();
+                          showManualTypingToast();
+                        }}
+                        onCut={(event) => {
+                          event.preventDefault();
+                          showManualTypingToast();
+                        }}
+                        autoComplete="new-password"
+                        required
+                        className={`${loginFieldClass} pr-10 ${passwordError ? "border-destructive" : ""}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
+                  </div>
+                  <div className="group space-y-1">
+                    <div className="relative">
+                      <Input
+                        id="confirmNewPassword"
+                        type={showConfirmNewPassword ? "text" : "password"}
+                        placeholder="Confirm New Password"
+                        value={confirmNewPassword}
+                        onChange={(event) => setConfirmNewPassword(event.target.value)}
+                        onPaste={(event) => {
+                          event.preventDefault();
+                          showManualTypingToast();
+                        }}
+                        autoComplete="new-password"
+                        required
+                        className={`${loginFieldClass} pr-10 ${confirmPasswordError ? "border-destructive" : ""}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showConfirmNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {confirmPasswordError && <p className="text-sm text-destructive">{confirmPasswordError}</p>}
+                  </div>
+                </div>
+                <div className="pt-6">
+                  <Button
+                    type="submit"
+                    className="w-full rounded-[3px] bg-[#3eca44] text-white hover:bg-[#3eca44]"
+                    disabled={
+                      status !== "ready" ||
+                      isSaving ||
+                      !username.trim() ||
+                      !newPassword.trim() ||
+                      !confirmNewPassword.trim()
+                    }
+                  >
+                    {isSaving ? "Updating..." : "Submit"}
+                  </Button>
+                </div>
               </div>
             </form>
 
             <div className="text-center text-xs text-muted-foreground">
-              <Link
-                to="/auth?login=1"
-                className="text-muted-foreground hover:text-blue-600 hover:underline"
+              Back to{" "}
+              <button
+                type="button"
+                onClick={() => navigate("/auth?login=1")}
+                className="font-semibold text-muted-foreground hover:text-[#3eca44] hover:underline"
               >
-                Back to sign in
-              </Link>
+                Sign In
+              </button>
             </div>
           </div>
         </section>
-      </div>
+      </main>
     </div>
   );
 };

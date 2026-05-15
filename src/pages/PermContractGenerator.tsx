@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { logGeneratedDocument } from "@/lib/documentsLog";
 import { nationalityOptions } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -98,6 +99,7 @@ type ContractStepState = {
   permContractStartDate: string;
   permContractJobTitle: string;
   permContractDepartment: string;
+  permContractBargainingCouncil: string;
   permContractSalaryAmount: string;
   permContractSalaryType: "per_hour" | "per_day" | "per_week" | "per_fortnight" | "per_month" | "";
   permContractPayCycle: "daily" | "weekly" | "fortnightly" | "monthly" | "";
@@ -171,11 +173,14 @@ const emptyEmployeeState: EmployeeStepState = {
 };
 
 const todayDateValue = new Date().toISOString().split("T")[0] || "";
+const currentYear = new Date().getFullYear();
+const generatedDocumentsBucket = "documents";
 
 const emptyContractState: ContractStepState = {
   permContractStartDate: "",
   permContractJobTitle: "",
   permContractDepartment: "",
+  permContractBargainingCouncil: "None",
   permContractSalaryAmount: "",
   permContractSalaryType: "",
   permContractPayCycle: "",
@@ -492,8 +497,32 @@ const payCycleLabelByValue: Record<ContractStepState["permContractPayCycle"], st
   monthly: "Monthly",
 };
 
+const bargainingCouncilOptions = [
+  { label: "None", value: "None" },
+  { label: "National Bargaining Council for the Road Freight and Logistics Industry (NBCRFLI)", value: "NBCRFLI" },
+  { label: "Motor Industry Bargaining Council (MIBCO)", value: "MIBCO" },
+  { label: "Metal and Engineering Industries Bargaining Council (MEIBC)", value: "MEIBC" },
+  { label: "National Bargaining Council for the Electrical Industry of South Africa (NBCEI)", value: "NBCEI" },
+  { label: "National Bargaining Council for the Private Security Sector (NBCPSS)", value: "NBCPSS" },
+  { label: "Bargaining Council for the Civil Engineering Industry (BCCEI)", value: "BCCEI" },
+  { label: "National Bargaining Council for the Chemical Industry (NBCCI)", value: "NBCCI" },
+  { label: "National Bargaining Council for the Clothing Manufacturing Industry (NBCMI)", value: "NBCMI" },
+  { label: "National Bargaining Council for the Leather Industry of South Africa (NBCLI)", value: "NBCLI" },
+  { label: "National Bargaining Council for the Wood and Paper Sector (NBCWPS)", value: "NBCWPS" },
+  { label: "National Bargaining Council for the Hairdressing, Cosmetology, Beauty and Skincare Industry (HCSBC)", value: "HCSBC" },
+  { label: "National Bargaining Council for the Food Retail, Restaurant, Catering and Allied Trades (NBCFRRCAT)", value: "NBCFRRCAT" },
+  { label: "Bargaining Council for the Furniture Manufacturing Industry of the Western Cape (BCFMIWC)", value: "BCFMIWC" },
+  { label: "Building Industry Bargaining Council Cape of Good Hope (BIBC)", value: "BIBC" },
+  { label: "Bargaining Council for the Restaurant, Catering and Allied Trades (BCRCAT)", value: "BCRCAT" },
+  { label: "South African Local Government Bargaining Council (SALGBC)", value: "SALGBC" },
+  { label: "Education Labour Relations Council (ELRC)", value: "ELRC" },
+  { label: "Public Service Co-ordinating Bargaining Council (PSCBC)", value: "PSCBC" },
+  { label: "General Public Service Sectoral Bargaining Council (GPSSBC)", value: "GPSSBC" },
+  { label: "Public Health and Social Development Sectoral Bargaining Council (PHSDSBC)", value: "PHSDSBC" },
+] as const;
+
 const PreviewRow = ({ label, value }: { label: string; value: string }) => (
-  <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
+  <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-[11px] leading-6 text-slate-900">
     <p className="font-semibold text-slate-700">{label}</p>
     <p>{value || "--"}</p>
   </div>
@@ -567,216 +596,462 @@ const generateCustomClauseId = () =>
 
 const buildPreviewClauses = ({
   salarySummary,
+  bargainingCouncil,
 }: {
   salarySummary: string;
+  bargainingCouncil: string;
 }): PreviewClause[] => {
-  const annualLeaveSummary =
-    "The Employee is entitled to annual leave in accordance with the BCEA and the Employer's leave rules applicable to the workplace.";
+  void salarySummary;
   const clauses: Array<Omit<PreviewClause, "id">> = [
     {
       title: "Introduction",
       paragraphs: normalizeParagraphs(
-        "This employment agreement is entered into between the Employer and the Employee willingly and voluntarily. The Employee confirms that he or she has had an opportunity to read, consider, and discuss the contents of this agreement and understands the terms that follow.",
+        "This employment contract is entered into between the Employer and the Employee willingly and voluntarily. The Employee confirms that he/she has been granted the opportunity to peruse and discuss the contract with his/her counsel, where required, and that he/she understands the contents that follow.",
       ),
     },
     {
       title: "Recordal",
-      paragraphs: normalizeParagraphs(
-        "The Employer appoints the Employee in a permanent capacity, which the Employee accepts on the terms of this agreement. This agreement records the essential conditions of employment, including duties, remuneration, working hours, leave, and termination, and constitutes the full understanding between the parties, subject to applicable South African labour legislation.",
-      ),
-    },
-    {
-      title: "Probation",
-      paragraphs: normalizeParagraphs(
-        "The Employee is appointed subject to a probationary period commencing on the Start Date, during which the Employer will assess performance, conduct, skills, and suitability for the position. If the required standards are not met, the Employer may act in accordance with labour law.",
-      ),
-    },
-    {
-      title: "Performance and Adaptability",
       paragraphs: normalizeParagraphs([
-        "The Employee shall diligently perform all duties associated with the position and comply with all reasonable and lawful instructions issued by the Employer or its authorised representatives.",
-        "The Employee acknowledges that the Employer may assign additional or alternative duties within the Employee's reasonable skills or capabilities, and refusal to perform such duties may constitute insubordination. Where suitable alternative work is available, the Employee may be required to perform it without loss of remuneration.",
+        "The Employer wishes to employ the Employee in a permanent capacity, and the Employee accepts such employment on the terms and conditions set out in this agreement.",
+        "This contract sets forth the terms and conditions governing the Employee’s employment, including but not limited to remuneration, duties, working hours, leave entitlement, and termination provisions.",
+        "The parties acknowledge that this agreement constitutes the entire understanding between them regarding the employment relationship, and it supersedes any prior discussions or agreements, whether written or verbal, except where expressly stated otherwise.",
+        "The following sections of this contract shall detail the Employee’s rights and obligations, as well as the Employer’s expectations and responsibilities, in accordance with applicable labour laws in South Africa.",
+      ]),
+    },
+    {
+      title: "Effective Date",
+      paragraphs: normalizeParagraphs([
+        "The Employee’s “Effective Date” shall be specified as the “start date” in the employment particulars section of this agreement.",
+        "The Employee’s job title is specified in the employment particulars section of this agreement, and he/she shall perform all duties and responsibilities associated with this position, as determined by the Employer from time to time.",
+        "The Employee agrees that the Employer may reasonably amend or vary the Employee’s job title, duties, and responsibilities in accordance with operational requirements, provided that such changes remain within the general scope of the Employee’s skills and expertise.",
+      ]),
+    },
+    {
+      title: "Probationary Period",
+      paragraphs: normalizeParagraphs([
+        "The Employee is appointed subject to a probationary period, commencing on the “Effective Date” of employment. During this period, the Employer shall assess the Employee’s performance, skills, conduct, adaptability, knowledge, and overall suitability for the position.",
+        "Should the Employee fail to meet the required standards in any of these aspects during the probationary period, the Employer reserves the right to terminate the employment relationship prior to or at the conclusion of the probationary period, in accordance with applicable labour laws.",
+      ]),
+    },
+    {
+      title: "Training and Development",
+      paragraphs: normalizeParagraphs([
+        "The Employee acknowledges that the Employer may, from time to time, require the Employee to undergo training and development programmes to ensure the effective execution of his/her duties, particularly as the operational requirements of the Employer evolve. The Employer, at its sole discretion, may incur costs for such training.",
+        "In the event that the Employer incurs costs for the Employee’s training, the Employee agrees that he/she shall remain in the Employer’s service for a minimum period of twelve (12) months following the successful completion of such training.",
+        "Should the Employee voluntarily terminate his/her employment, or should the Employer lawfully terminate the Employee’s employment due to misconduct or poor performance within this 12-month period, the Employee shall be liable for a pro-rata portion of the training costs. The repayment amount shall be calculated as if the training costs were amortised equally over a 12-month period, with the Employee being liable only for the outstanding balance for the remaining months not worked.",
+        "The Employer shall be entitled to deduct any outstanding amount from the Employee’s remuneration, benefits, or any other monies due to the Employee at the date of termination, to the extent permitted by applicable labour laws.",
+      ]),
+    },
+    {
+      title: "Performance and Adaptability Commitment",
+      paragraphs: normalizeParagraphs([
+        "The Employee shall diligently and satisfactorily perform all tasks and responsibilities reasonably associated with his/her position, as required by the Employer.",
+        "The Employee shall comply with all reasonable and lawful instructions issued by the Employer or by any managerial or supervisory employee acting on behalf of the Employer.",
+        "The Employee confirms that he/she possesses the necessary skills, qualifications, experience, and competence to perform the duties for which he/she has been employed. The Employee further acknowledges that he/she is capable of performing these duties to the satisfaction of the Employer.",
+        "The Employee acknowledges that the Employer may, from time to time, require him/her to perform additional or alternative duties that are not expressly included in his/her job description, provided that such duties fall within the Employee’s reasonable capabilities, skills, or experience. The Employee expressly agrees that a refusal to perform such additional duties will be regarded as insubordination.",
+        "Should the work specified in the Employee’s job description become unavailable, the Employee agrees to perform any other suitable work that falls within his/her vocational abilities, provided that such work shall be without loss of remuneration. The Employee acknowledges that the performance of alternative work in such circumstances does not create an automatic right to continued employment. The Employer reserves the right to initiate retrenchment proceedings in accordance with applicable labour laws should no suitable alternative work be available.",
       ]),
     },
     {
       title: "Guarantee",
+      paragraphs: normalizeParagraphs([
+        "The Employee warrants that all documentation, information, and credentials submitted to the Employer in support of his/her application for employment are true, accurate, and authentic.",
+        "Should any such documentation, information, or credentials be found to be false, fraudulent, or misleading, the Employer shall be entitled to initiate disciplinary action on the grounds of dishonesty, which may result in termination of employment.",
+      ]),
+    },
+    {
+      title: "Access to Workplace",
+      paragraphs: normalizeParagraphs([
+        "The Employee acknowledges that his/her right to be present on the Employer’s premises is contingent upon the adequate performance of his/her allocated duties as required by the Employer. Should the Employee, for any reason, refuse or fail to perform his/her assigned duties, the Employer may request the Employee to vacate the premises.",
+        "The Employee agrees to comply with such a request in an orderly manner within twenty (20) minutes of being instructed to do so. Failure or refusal to leave the premises as directed shall constitute a material breach of contract, which may result in disciplinary action, including possible termination of employment in accordance with applicable labour laws. For the avoidance of doubt, any instruction to vacate the premises or workplace does not constitute a dismissal and shall not affect the Employee’s employment status.",
+      ]),
+    },
+    {
+      title: "Transfer",
       paragraphs: normalizeParagraphs(
-        "The Employee warrants that all information, documentation, and credentials submitted to the Employer are true and accurate. Any false, fraudulent, or misleading submission may result in disciplinary action, including possible termination.",
+        "Should the need arise, the Employer retains the right to transfer the Employee to any other business of the Employer in any position on a temporary or permanent basis, after fair consultation and reasonable notice to the Employee. Refusal by the Employee of such a transfer, without an acceptable or lawful reason, will amount to breach of contract.",
       ),
     },
     {
       title: "Remuneration",
       paragraphs: normalizeParagraphs([
-        `The Employee shall receive a gross salary of ${salarySummary !== "--" ? salarySummary : "the agreed amount"}, subject to all applicable legislation. Unauthorised or unapproved absence from work shall result in no payment for the period of absence.`,
-        "Any future salary increases shall be considered at the Employer's discretion, taking into account performance and the Employer's financial position. No expectation of an increase is created by this clause.",
-        "The Employee will be remunerated for public holiday work and any other statutory payment categories in accordance with applicable legislation.",
+        "The Employee shall receive a gross monthly salary as specified in the employment particulars section of this agreement, which shall be compliant with the National Minimum Wage Act where applicable.",
+        "The Employee’s salary shall be paid monthly in arrears, no later than seven (7) days after the date on which payment becomes due.",
+        "Salary payments shall be made via electronic transfer into a bank account held at a financial institution of the Employee’s choice, as designated by the Employee.",
+        "Unauthorised absence from work or absence without approved leave shall result in no payment for the absence.",
+        "Overtime remuneration, where applicable, shall be calculated at a rate of one and a half (1.5) times the Employee’s normal wage for overtime hours worked, in compliance with the BCEA.",
+        "If the Employee is entitled to commission earnings, such commission shall be paid in the month following the month in which it was earned, subject to the completion of all necessary verifications and checks.",
+        "The Employer shall not provide meals or accommodation and shall not be responsible for any transport allowance to and from the workplace.",
       ]),
     },
     {
       title: "Deductions",
-      paragraphs: normalizeParagraphs(
-        "The Employee consents to all lawful and statutory deductions from remuneration, including PAYE, UIF, and any agreed contributions or deductions permitted by law.",
-      ),
+      paragraphs: normalizeParagraphs([
+        "The Employee acknowledges and agrees that the following statutory and agreed deductions may be made from his/her remuneration, only where applicable: Pay-As-You-Earn (PAYE), Unemployment Insurance Fund contributions (UIF), trade union subscriptions, staff loans, savings, medical aid, provident fund, pension fund, retirement fund, funeral cover, or any other lawful deduction agreed to by the Employee.",
+        "By signing this agreement, the Employee expressly consents to any lawful deductions from his/her remuneration for amounts owed to the Employer for any reason, whether at the termination of employment or when such amounts become due and payable. This includes, but is not limited to, deductions for damages to company property or financial losses incurred due to the Employee’s negligence or misconduct. The validity of such deductions may be determined through a disciplinary inquiry, where applicable.",
+        "The Employee agrees that the Employer may deduct from his/her salary any shortages of cash or stock resulting from the Employee’s negligence or dishonesty, provided such deductions comply with labour law regulations and are duly recorded and communicated to the Employee.",
+      ]),
     },
     {
       title: "Hours of Work",
-      paragraphs: normalizeParagraphs(
-        "The Employee's ordinary working hours shall not exceed forty-five hours per week, subject to the operational requirements of the Employer and the limits imposed by the BCEA.",
-      ),
+      paragraphs: normalizeParagraphs([
+        "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week.",
+        "The Employee shall be entitled to a one (1) hour unpaid lunch break daily, unless otherwise agreed upon based on operational requirements.",
+      ]),
     },
     {
       title: "Overtime",
-      paragraphs: normalizeParagraphs(
-        "The Employee may be required to work overtime subject to the BCEA. Overtime will be handled and remunerated in accordance with applicable law, where such entitlement applies.",
-      ),
+      paragraphs: normalizeParagraphs([
+        "The Employee may be required to work overtime, subject to a maximum of three (3) hours per day and ten (10) hours per week, in accordance with applicable labour laws. The Employer shall provide reasonable notice of overtime requirements, except in cases of emergency overtime, which the Employee agrees to work on short notice.",
+        "Overtime shall be remunerated in accordance with prevailing legislation, as amended from time to time. Site/store managers are top management, and not entitled to overtime payment.",
+        "Any employee earning above the Minister of Employment and Labour’s prescribed earnings threshold is not entitled to overtime remuneration under the Basic Conditions of Employment Act.",
+      ]),
+    },
+    {
+      title: "Salary Increase",
+      paragraphs: normalizeParagraphs([
+        "Future salary increases shall be determined based on the Employee’s individual performance and the Employer’s overall financial performance in the preceding financial year. The granting of any increase remains solely at the Employer’s discretion and, where applicable, shall take effect from 1 March each year.",
+        "No payment of an increase will create an expectation of an increase or the same percentage increase the following year.",
+      ]),
     },
     {
       title: "Retirement",
-      paragraphs: normalizeParagraphs(
-        "The Employee shall retire at the age recorded on page 1 of this agreement, unless otherwise agreed in writing. If employment continues beyond that age, the Employer may terminate on the basis of retirement in accordance with applicable law.",
-      ),
+      paragraphs: normalizeParagraphs([
+        "The Employee shall retire at the age specified in the employment particulars section of this agreement, or at such other age as may be agreed upon in writing.",
+        "Should the Employee continue working beyond his/her retirement birthday, the Employee acknowledges and agrees that the Employer may terminate the employment contract solely on the basis of reaching the agreed retirement age, without further consultation, by providing at least one (1) month’s written notice.",
+      ]),
     },
     {
       title: "Exclusivity of Employment",
-      paragraphs: normalizeParagraphs(
-        "The Employee shall not undertake outside work or business activity without the Employer's prior written consent.",
-      ),
+      paragraphs: normalizeParagraphs([
+        "The Employee shall not engage in any other employment, work, or business activities outside of this employment contract for any third party, unless the Employer has granted prior written consent.",
+        "Any approved external engagement shall not directly or indirectly compete with the Employer’s business or negatively impact the Employee’s performance, duties, or working relationship with the Employer in any manner.",
+        "Non-compliance with this clause will result in disciplinary action which could lead to termination of employment due to breach of contract.",
+      ]),
     },
     {
-      title: "Annual Bonus",
+      title: "Discretionary Annual Bonus",
       paragraphs: normalizeParagraphs([
-        "Any annual bonus is ex gratia and granted entirely at the Employer's discretion, subject to the Employer's financial position and the Employee's conduct and performance.",
-        "No pro-rata bonus shall be payable upon termination of employment unless the Employer agrees otherwise in writing.",
+        "The Employer may, at its sole discretion, grant an ex-gratia annual bonus to the Employee. The Employee acknowledges and agrees that the payment of any such bonus shall be entirely at the Employer’s discretion and shall not create any entitlement, expectation, or contractual right to future bonus payments, irrespective of whether bonuses have been granted in consecutive years.",
+        "The decision to award a bonus shall be based on the financial capacity of the Employer, as well as the Employee’s conduct and performance. Under no circumstances shall the Employee have an automatic right to a bonus, and the Employer reserves the right to withhold such payment at any time without reason or recourse.",
+        "The Employee expressly agrees that in the event of termination of employment, for any reason whatsoever, he/she shall not be entitled to a pro-rata bonus for the period worked prior to termination.",
       ]),
     },
     {
       title: "Termination of Employment",
       paragraphs: normalizeParagraphs([
-        "Either party may terminate the employment relationship by giving written notice in accordance with the BCEA. The Employer may elect to make payment in lieu of notice where permitted.",
-        "The Employer reserves the right to summarily dismiss the Employee for gross misconduct following a fair process and in accordance with the principles of substantive and procedural fairness.",
+        "The Employee may terminate his/her employment by providing written notice as follows: one (1) week’s notice during the first six (6) months of employment, two (2) weeks’ notice after six (6) months but within the first year, and four (4) weeks’ notice upon completing one (1) year or more of service. Notice of termination by the Employee must be given on the first day of the month. Should the Employee provide short notice, the Employer shall be entitled to deduct any shortfall from the Employee’s final remuneration due in that month.",
+        "The Employer reserves the right to terminate this agreement without notice or payment in lieu of notice in the event of the Employee’s dismissal for misconduct or poor performance. Any such termination shall be conducted in accordance with the Employer’s disciplinary code and procedure and in compliance with applicable labour laws.",
+        "The Employee shall return all company-issued clothing, tools, and equipment upon termination of employment, unless otherwise agreed in writing by the Employer. Failure to return such items shall result in a deduction from the Employee’s final remuneration, as provided for in this agreement.",
+        "The Employee acknowledges that, during the course of employment, he/she will have access to the Employer’s trade secrets and confidential information, including but not limited to business operations, clients, suppliers, advertising and promotional methods, properties handled by the Employer, and any other sensitive business information.",
       ]),
     },
     {
       title: "Annual Leave",
       paragraphs: normalizeParagraphs([
-        annualLeaveSummary,
-        "The Employee agrees to take annual leave during any annual shutdown period implemented by the Employer, subject to operational requirements and applicable law.",
+        "The Employee shall be entitled to twenty-one (21) consecutive days’ annual leave per annual leave cycle.",
+        "Annual leave shall be taken at a time determined at the Employer’s discretion, subject to operational requirements, and may be scheduled at any time during the 12-month leave cycle but must be taken within six (6) months following the end of the leave cycle.",
+        "Leave not taken within the applicable leave cycle shall be forfeited and will not be carried over to the next cycle unless otherwise agreed in writing by the Employer.",
+        "If a public holiday falls during the Employee’s approved leave period and such day would have otherwise been a normal working day, the Employee shall be entitled to an additional day’s paid leave.",
+        "The Employee agrees to take his/her annual leave during the Employer’s annual shutdown period, where applicable. Any additional leave approved during the leave cycle shall be deducted from the Employee’s total annual leave entitlement.",
       ]),
     },
     {
       title: "Sick Leave",
       paragraphs: normalizeParagraphs([
-        "The Employee is entitled to sick leave in accordance with the BCEA and must provide a valid medical certificate when required by law or reasonably required by the Employer.",
-        "In cases of prolonged or recurring illness, the Employer may initiate a fair incapacity process in accordance with labour legislation.",
-        "Medical proof must confirm incapacity for duty for the relevant period and be issued by a properly registered practitioner.",
+        "The Employee shall be entitled to one (1) day’s paid sick leave for every 26 days worked during the first six (6) months of employment.",
+        "The Employee shall be entitled to paid sick leave equal to the number of days he/she would normally work during a six-week period within every 36-month cycle of continuous employment, in accordance with applicable labour laws. An Employee working a five-day week shall be entitled to 30 days’ sick leave over three years, while an Employee working a six-day week shall be entitled to 36 days’ sick leave over the same period. Unused sick leave shall not be carried over to the next cycle nor converted to cash upon termination of employment.",
+        "Should the Employee experience persistent or recurrent illness, the Employer reserves the right to request the Employee to undergo a medical examination at a reasonable time, with the Employer bearing the cost. The Employee agrees to comply with such a request and grants the Employer access to all relevant medical reports related to his/her fitness for work. If the Employee’s absence due to illness is prolonged, the Employer may conduct a procedurally fair investigation into his/her health status, and if deemed necessary, may terminate the Employee’s contract due to incapacity, in accordance with applicable labour legislation.",
+      ]),
+    },
+    {
+      title: "Proof of Sickness",
+      paragraphs: normalizeParagraphs([
+        "An Employee who is absent from work due to illness must provide a valid medical certificate issued by a registered medical practitioner or traditional healer. The medical certificate must state the full name and surname of the medical practitioner or traditional healer, include the practice number of the issuing practitioner or healer, contain the physical address, contact number and email address of the practitioner or healer, indicate the date of examination of the Employee, clearly state the specific medical condition diagnosed with, clearly declare that the Employee has been unfit for duty, and specify the exact dates for which the Employee is deemed unfit to work.",
+        "The medical certificate must be issued and signed by a qualified medical practitioner, or any other person certified to diagnose and treat patients and registered with a professional council.",
+        "An Employer is not required to pay an Employee for sick leave if the Employee has been absent for more than two consecutive days or on more than two occasions within an eight-week period, and upon request, fails to produce a medical certificate confirming that he/she was unable to work for the duration of the absence due to sickness or injury.",
+        "The Employer shall not accept any medical certificates that have been altered, including any struck-through or replaced words, letters, or numbers. Additionally, hospital or clinic attendance notes that merely confirm an Employee’s visit without explicitly stating that he/she was unfit for duty shall not be accepted.",
+        "The Employee is responsible for ensuring that any medical certificate submitted complies with these requirements. Failure to do so may result in the non-approval of sick leave.",
+        "The Employee expressly agrees that any medical certificate submitted as proof of sickness shall clearly specify the diagnosed medical condition for which the Employee was deemed unfit for duty. The Employee further acknowledges and agrees that a medical certificate stating only “medical condition” shall not be accepted as valid proof of illness. This requirement shall apply to all medical certificates submitted throughout the duration of employment, and failure to comply with this provision will result in the non-approval of sick leave.",
       ]),
     },
     {
       title: "Parental Leave",
       paragraphs: normalizeParagraphs([
-        "Parental, adoptive, commissioning, and related family leave shall be administered in accordance with the BCEA and any amendments to applicable legislation.",
-        "The Employee must give the Employer written notice of intended leave dates within the time periods required by law or, where possible, as early as reasonably practicable.",
+        "Parental, adoption, and commissioning parental leave shall replace maternity, paternity, and adoption leave as previously provided under the Basic Conditions of Employment Act, to the extent required by applicable law.",
+        "The Employee acknowledges that no additional paid leave will be granted in relation to parental leave, and he/she shall be required to claim benefits from the UIF where applicable.",
+        "Employees who fail to provide written notice of their elected parental leave arrangement within the required timeframe may be subject to disciplinary action or may forfeit their entitlement to elect a shared parental leave arrangement, to the extent permitted by law.",
+        "The Employer reserves the right to amend these provisions in accordance with any future legislative amendments or changes in South African labour law.",
+        "The Employee who is a single parent shall be entitled to four (4) consecutive months and ten (10) consecutive days of parental leave.",
+        "Where there are two parents, they shall be collectively entitled to four (4) consecutive months and ten (10) consecutive days of parental leave, which shall be taken in accordance with their joint election, as follows: one parent may take the entire period, or both parents may alternate or share the leave between them.",
+        "Both parents shall notify their respective employers in writing prior to the date of birth regarding their elected parental leave arrangement. If they choose to share the parental leave period, they must specify which periods each parent will take.",
+        "In the case of a pregnant mother, she may commence parental leave at any time from four (4) weeks before the expected due date, unless otherwise agreed or if a medical practitioner deems it necessary for health reasons.",
+        "Any parental leave granted shall be unpaid, and the Employee shall be required to claim benefits from the Unemployment Insurance Fund, where applicable.",
+      ]),
+    },
+    {
+      title: "Adoption Leave",
+      paragraphs: normalizeParagraphs([
+        "Where the Employee adopts a child younger than two (2) years, the adoptive parents shall be collectively entitled to four (4) consecutive months and ten (10) consecutive days of parental leave, which may be allocated between them in accordance with their joint election.",
+        "If the adoption involves two adoptive parents, they shall collectively share the parental leave in accordance with their joint election and notify their respective employers in writing of the periods they will each take.",
+        "Adoption leave shall be unpaid, and the Employee shall be required to claim benefits from the Unemployment Insurance Fund, where applicable.",
+      ]),
+    },
+    {
+      title: "Surrogacy / Commissioning Parental Leave",
+      paragraphs: normalizeParagraphs([
+        "In the case of surrogacy, where the Employee is a commissioning parent under a surrogate motherhood agreement, the commissioning parent or commissioning parents shall be collectively entitled to four (4) consecutive months and ten (10) consecutive days of parental leave, which may be allocated between them in accordance with their joint election.",
+        "If there are two commissioning parents, they shall collectively share the parental leave and must notify their respective employers in writing of the agreed allocation of leave before the birth of the child.",
+        "Commissioning parental leave shall be unpaid, and the Employee shall be required to claim benefits from the Unemployment Insurance Fund, where applicable.",
       ]),
     },
     {
       title: "Family Responsibility Leave",
       paragraphs: normalizeParagraphs([
-        "Eligible Employees are entitled to family responsibility leave in accordance with the BCEA.",
-        "The Employer may request reasonable proof for leave taken under this clause.",
+        "An Employee who has completed at least four (4) months of continuous employment and who works a minimum of four (4) days per week shall be entitled to only three (3) days of paid family responsibility leave per annual leave cycle, and not per incident, to attend to the illness of the Employee’s child or in the event of the death of the Employee’s spouse or life partner, parent, adoptive parent, grandparent, child, adopted child, grandchild, brother or sister.",
+        "The Employee must notify the Employer before the commencement of his/her shift if he/she needs to take family responsibility leave due to the illness of his/her child or the death of a qualifying family member as outlined in this clause. In the case of a funeral for any of the individuals listed above, the Employee must provide the Employer with at least four (4) days’ prior notice, where reasonably possible.",
+        "The Employer reserves the right to request reasonable proof of the reason for leave, including but not limited to a medical certificate confirming the illness of the Employee’s child, a death certificate or other acceptable documentary proof in the case of bereavement, and proof of relationship to the person in case of bereavement.",
+        "Failure to provide the required notice or proof, where requested, may result in non-approval of family responsibility leave and the leave may be treated as unpaid leave.",
+        "Family responsibility leave does not accumulate and cannot be carried over to the next leave cycle. Any unused family responsibility leave at the end of the annual leave cycle shall lapse.",
+      ]),
+    },
+    {
+      title: "Public Holidays",
+      paragraphs: normalizeParagraphs([
+        "In the event that the Employee is required to work on a public holiday, as designated under the Public Holidays Act, he/she shall be remunerated at twice (2x) his/her normal daily wage.",
+        "The Employee shall not be entitled to remuneration for public holidays that occur during periods of strike action in which he/she participates.",
+        "The Employee agrees that he/she will avail himself/herself to tender services as requested from time to time on any public holiday.",
       ]),
     },
     {
       title: "Absence from Work",
       paragraphs: normalizeParagraphs([
-        "The Employee must notify the Employer before the start of the shift if unable to attend work. Where absence is foreseeable, the Employee must apply for leave in advance where reasonably possible.",
-        "Unjustified absence may result in disciplinary action. Failure to report for work for an extended period without communication may be treated as abscondment and handled in accordance with fair procedure.",
+        "The Employee agrees that in the event of being unable to attend work for any reason, he/she shall notify the Employer before the commencement of his/her shift, stating the reason for the absence and the expected duration thereof.",
+        "If the Employee is aware of the need for absence in advance, he/she shall discuss and arrange such leave with the Employer at least 24 hours before the commencement of his/her shift, where reasonably possible.",
+        "Failure to provide sufficient justification for any absence may result in disciplinary action being taken against the Employee.",
+        "The Employee’s entitlement to sick leave shall be determined in accordance with the provisions of the Basic Conditions of Employment Act or any other applicable wage-regulating measure.",
+        "The Employee acknowledges that attendance at a disciplinary hearing is mandatory once formally notified. If unable to attend due to illness, the Employee must provide an affidavit from the medical practitioner confirming he/she was unfit to attend the hearing and ensure the practitioner is available to verify the affidavit.",
+        "If the Employee fails to attend a disciplinary hearing without valid justification or without providing the required affidavit, the Employer may proceed with the hearing in the Employee’s absence, provided that the Employer has acted reasonably and fairly in the circumstances. Nothing in this clause shall prevent the Employee from exercising any statutory right to refer a dispute to the CCMA, bargaining council, or any other competent forum.",
+      ]),
+    },
+    {
+      title: "Desertion / Abscondment",
+      paragraphs: normalizeParagraphs([
+        "The Employee agrees that failure to report for work for more than five (5) consecutive workdays without notifying the Employer shall constitute desertion. A disciplinary enquiry will be conducted to determine the reasons for the absence.",
+        "The Employer will issue a notice via WhatsApp, SMS, normal or registered post, instructing the Employee to return to work or contact the office, along with the date of the enquiry. Failure to return, make contact, or attend the hearing shall result in dismissal.",
+      ]),
+    },
+    {
+      title: "Confidentiality",
+      paragraphs: normalizeParagraphs([
+        "The Employee will not divulge any information to any unauthorised persons or bodies relating to any aspect of his/her work or to any of the operations or processes of the Employer.",
+        "Such information will include methods, processes, computer software, documentation, client lists, programmes, trade secrets, technical information, chemical formulae, drawings, financial information, or any other information which could be damaging to the Employer’s operations or which could benefit other parties to the detriment of the Employer. Such restrictions will apply during and after the Employee’s employment with the Employer.",
       ]),
     },
     {
       title: "Protection of Personal Information",
       paragraphs: normalizeParagraphs([
-        "The Employee consents to the lawful collection, use, storage, and processing of personal information for purposes related to the employment relationship and compliance obligations.",
-        "Where necessary, the Employer may share relevant personal information with lawful service providers, administrators, clients, or platforms that support operational and statutory requirements.",
+        "By signing this agreement, the Employee expressly consents to the collection, processing, and storage of his/her Personal Information, including Special Personal Information such as race, trade union membership, and biometric data, as defined in the Protection of Personal Information Act, 4 of 2013, for purposes related to the employment relationship, including payroll administration, benefits, statutory reporting, risk management, CCTV monitoring, vehicle and equipment tracking, internet and email usage monitoring, alcohol and drug screening, identification verification, access control, operational security, internal and external communication, compliance with legal and contractual obligations, and protecting the Employer’s legitimate business interests and those of clients and service providers.",
+        "The Employee further consents to the processing and transfer of relevant Personal Information, where necessary, to third-party service providers such as medical aid, pension fund administrators and insurers for employee benefit administration, clients and service providers of the Employer where required for operational and contractual purposes, and cloud-based storage facilities or foreign entities in jurisdictions that provide adequate data protection in line with POPIA or other binding agreements ensuring data security.",
+        "The Employee warrants that all Personal Information provided is accurate and undertakes to immediately update the Employer should any information become outdated or incorrect.",
+        "The Employee further agrees to comply with the Employer’s Protection of Personal Information policies and acknowledges that failure to do so may result in disciplinary action.",
       ]),
     },
     {
       title: "Rules and Regulations",
       paragraphs: normalizeParagraphs([
-        "The Employee agrees to comply with all workplace rules, policies, procedures, and lawful instructions communicated by the Employer.",
-        "Failure to disclose misconduct, dishonesty, or material breaches of workplace rules may itself constitute misconduct.",
+        "The Employee agrees to observe, comply with, and be bound by all rules, regulations, policies, and procedures established by the Employer or, where applicable, those prescribed by a Bargaining Council. The Employer shall take reasonable steps to ensure that the Employee is made aware of such rules, regulations, and procedures.",
+        "The Employer reserves the right, at its sole discretion, to amend, modify, or introduce additional rules, regulations, and procedures as necessary, provided that the Employee is given reasonable notice of any such changes.",
+        "The Employee confirms that he/she has been provided with a copy of the Employer’s Disciplinary Code as part of this agreement and that its contents have been explained and understood. The Employee further acknowledges that compliance with these provisions is a condition of employment, and any failure to adhere to them may result in disciplinary action.",
+      ]),
+    },
+    {
+      title: "Disclosure of Misconduct",
+      paragraphs: normalizeParagraphs([
+        "The Employee agrees to immediately notify the Employer upon becoming aware of, or when he/she reasonably ought to have been aware of, any offence, misconduct, or violation of company policies committed by himself/herself, or any other Employee.",
+        "Failure to disclose such information shall be regarded as dishonesty and a breach of trust, which may result in disciplinary action, including possible dismissal for withholding information from the Employer.",
       ]),
     },
     {
       title: "Industrial Action",
       paragraphs: normalizeParagraphs([
-        "The Employee may not participate in unprotected industrial action.",
-        "Any participation in industrial action must comply with the Labour Relations Act and applicable legal requirements.",
+        "The Employee agrees not to engage in, incite, or encourage any form of illegal industrial action that may disrupt the Employer’s operations or the work of other employees. Such actions include, but are not limited to, unprotected strikes, go-slows, work-to-rule actions, boycotts, stay-aways, or any conduct that obstructs, prevents, or delays the Employer’s business activities.",
+        "The Employee further agrees to participate only in legally sanctioned industrial action, which may occur only after all statutory dispute resolution procedures have been followed in compliance with applicable labour laws.",
+        "The Employee undertakes to actively promote, support, and maintain industrial peace and harmony in the workplace. This agreement, including all rights and obligations under the employment contract, shall be automatically suspended during any period of strike action.",
+        "The Employee acknowledges and agrees that he/she shall be held liable for any damages to property, financial losses, or other harm suffered by the Employer as a result of his/her involvement in any illegal industrial action, whether directly or indirectly. Furthermore, the Employee agrees that should any damage, loss, or harm occur during a legally protected strike, he/she may still be held individually liable if his/her conduct contributed to such damage or financial loss, regardless of the strike’s legal status.",
+        "The Employee further agrees to disclose any affiliation with a registered trade union upon signing this contract or within seven (7) days of becoming a union member.",
       ]),
     },
     {
       title: "Health and Fitness",
       paragraphs: normalizeParagraphs([
-        "The Employee confirms being medically fit to perform the duties of the position.",
-        "Where fitness for duty becomes a concern, the Employer may require a lawful medical assessment at its cost and may follow incapacity procedures where appropriate.",
+        "The Employee confirms that he/she is in good physical and mental health and capable of performing his/her duties. Should the Employee become incapable of fulfilling his/her duties due to health reasons, the Employer may, after following the procedures prescribed by the Labour Relations Act, terminate the Employee’s services on the grounds of incapacity.",
+        "The Employer reserves the right to require the Employee to undergo a medical examination at the Employer’s expense to assess his/her fitness for duty. Unreasonable and unsubstantiated refusal to comply with such a request will result in disciplinary action.",
+      ]),
+    },
+    {
+      title: "Safety and Security",
+      paragraphs: normalizeParagraphs([
+        "The Employee agrees to comply with all safety and security rules and regulations as prescribed by the Employer and in accordance with the Occupational Health and Safety Act, 85 of 1993.",
+        "For security and safety reasons, the Employee consents to the Employer, or any appointed representative, conducting searches of his/her person, personal possessions, and any vehicle he/she brings onto the Employer’s premises. Such searches may be conducted at the Employer’s discretion and in a reasonable manner.",
+        "The Employee further agrees to wear and display any security identity card issued by the Employer at all times while entering, exiting, or being present on the Employer’s premises.",
       ]),
     },
     {
       title: "Change of Status",
-      paragraphs: normalizeParagraphs([
-        "The Employee must promptly notify the Employer in writing of any change to personal details, contact information, address, immigration status, or other material employment information.",
-        "The Employer shall not be liable for consequences arising from the Employee's failure to update these details timeously.",
-      ]),
+      paragraphs: normalizeParagraphs(
+        "The Employee agrees to promptly notify the Employer of any changes to his/her personal information as recorded in the employment particulars section of this agreement. Such notification shall be made within seven (7) days to ensure the Employer’s records remain accurate and up to date.",
+      ),
     },
     {
-      title: "Domicilium Citandi",
-      paragraphs: normalizeParagraphs([
-        "The parties choose the physical addresses recorded on page 1 of this agreement as their domicilium citandi et executandi for all purposes relating to this agreement.",
-        "Notices may be sent by hand, email, SMS, WhatsApp, post, or registered post where legally permissible, and proof of transmission may serve as proof of dispatch.",
-      ]),
+      title: "Address Domicilia",
+      paragraphs: normalizeParagraphs(
+        "The parties agree that any notice or correspondence required under this agreement shall be in writing and may be delivered by hand, SMS, WhatsApp, email, registered post or regular post to the addresses recorded in the employment particulars section of this agreement, which shall serve as their domicilium citandi et executandi for all legal purposes.",
+      ),
     },
     {
       title: "Alcohol and Drug Testing",
       paragraphs: normalizeParagraphs([
-        "The Employee agrees to undergo alcohol or drug testing when reasonably required by the Employer and where such testing is conducted lawfully and reasonably.",
-        "Unreasonable refusal to undergo a required test may lead to disciplinary consequences.",
+        "The Employee agrees to submit to alcohol and/or drug testing when deemed necessary by the Employer. Such testing shall be conducted in a lawful and reasonable manner.",
+        "The Employee acknowledges that the Employer enforces a zero-tolerance policy regarding alcohol and drug abuse, due to the nature of its business irrespective of the capacity in which he/she is employed. The Employee further understands that a positive test result may lead to a disciplinary enquiry, which could result in dismissal.",
+        "Should the Employee unreasonably refuse to undergo an alcohol and/or drug test, the Employee agrees that the Employer may draw a negative inference from such refusal, which may be treated as a presumptive positive result and may lead to disciplinary action, including possible dismissal. Refusal will further be regarded as breach of contract and/or insubordination.",
+        "The Employee bears the responsibility to inform the Employer of any addiction to alcohol or drugs, and failure to disclose such dependency will result in disciplinary steps taken for testing positive for drugs or alcohol.",
       ]),
     },
     {
-      title: "Polygraph Testing",
+      title: "Emails and Internet",
       paragraphs: normalizeParagraphs([
-        "The Employee may be required to undergo polygraph testing when reasonably necessary for investigative or security purposes and where lawful to do so.",
-        "Refusal to undergo a required test may justify an adverse inference and may constitute misconduct.",
+        "The Employee acknowledges that, for the proper and efficient conduct of business, the Employer may intercept and/or monitor the Employee’s communications from time to time. By signing this agreement, the Employee expressly consents to the Employer intercepting, monitoring, and reviewing any direct or indirect communication to which the Employee is a party, provided that such communication occurs wholly or partly on the Employer’s premises, during working hours, involves the use of the Employer’s property or facilities, or otherwise relates to the Employer’s business.",
+        "The Employee understands that such monitoring may include, but is not limited to, the listening, recording, viewing, examining, or inspecting of emails, correspondence, text messages, and internet usage. The Employee further grants permission to the Employer to monitor his/her email and internet communications, acknowledging that this is necessary to ensure compliance with workplace policies, protect business interests, and prevent unauthorised or inappropriate use of company resources.",
+      ]),
+    },
+    {
+      title: "Consent to Recording",
+      paragraphs: normalizeParagraphs([
+        "The Employee expressly agrees that the Employer may record, monitor, and store any verbal, electronic, or written communication involving the Employee, even in the absence of prior express consent, where such recording is conducted for legitimate business purposes. This includes, but is not limited to, workplace meetings, telephone conversations, virtual communications, and any other interactions related to the Employer’s business operations.",
+        "The Employee acknowledges that such recordings may be used for training, quality control, compliance, security, dispute resolution, and other operational needs, in accordance with applicable laws and company policies.",
+      ]),
+    },
+    {
+      title: "Consent to Polygraph Testing",
+      paragraphs: normalizeParagraphs([
+        "The Employee agrees to submit to polygraph testing when reasonably required by the Employer for investigative or security purposes, including but not limited to cases involving theft, fraud, dishonesty, misconduct, or breach of company policies. The Employee acknowledges that such tests shall be conducted by a qualified and accredited examiner in a fair and lawful manner.",
+        "Should the Employee unreasonably refuse to undergo a polygraph test, the Employee agrees that the Employer may draw an adverse inference from such refusal, which may be considered as a factor in disciplinary proceedings. However, the Employee understands that a polygraph test result alone will not be the sole basis for disciplinary action or dismissal but may form part of a broader investigation. Refusal will further be regarded as breach of contract and/or insubordination.",
       ]),
     },
     {
       title: "Temporary Lay-Off",
       paragraphs: normalizeParagraphs([
-        "The Employer may implement a temporary lay-off where operational circumstances beyond its control require it, subject to fair process and applicable law.",
-        "Where reasonably possible, the Employer will give advance notice of the reason and expected duration.",
+        "The Employee agrees that the Employer shall have the right to implement a temporary lay-off, provided that where reasonably possible, the Employer shall give at least one (1) day’s notice, specifying the reason and anticipated duration of the lay-off. The Employee acknowledges that the Employer shall not be liable to remunerate the Employee for the period of the temporary lay-off.",
+        "Temporary lay-offs may be implemented due to circumstances beyond the Employer’s control, including but not limited to adverse weather conditions, shortages of material, or a temporary shortage of work.",
+        "The Employee further agrees that any temporary lay-off in accordance with this clause shall not constitute a unilateral change to the terms and conditions of employment and shall not be deemed a dismissal, retrenchment, or breach of contract.",
       ]),
     },
     {
       title: "Proof of Citizenship",
       paragraphs: normalizeParagraphs([
-        "The Employee must provide proof of South African citizenship or, where applicable, valid proof of the right to work in South Africa.",
-        "It remains the Employee's responsibility to maintain any required permit, visa, or residency document throughout employment.",
+        "Upon commencement of employment, the Employee shall be required to provide proof of South African citizenship. If the Employee is not a South African citizen, he/she shall be required to submit a valid work permit or proof of permanent residency within seven (7) days from such request. This will be a continued responsibility of the Employee throughout the duration of this agreement.",
+        "The Employee acknowledges that it is his/her sole responsibility to ensure that any required work permits remain valid for the duration of his/her employment. Failure to maintain a valid work permit or to provide updated documentation when required may result in dismissal for breach of contract.",
       ]),
     },
     {
-      title: "Confidentiality",
-      paragraphs: normalizeParagraphs(
-        "The Employee shall keep confidential information, trade secrets, client data, and business affairs of the Employer strictly confidential and shall not disclose or use such information other than for authorised work purposes.",
-      ),
+      title: "Confidentiality and Intellectual Property",
+      paragraphs: normalizeParagraphs([
+        "The Employee acknowledges that during the course of employment, he/she will have access to and become acquainted with various types of confidential and proprietary information, including but not limited to formulas, customer lists, operational methods, marketing strategies, and other materials collectively referred to as “Confidential Information” that are owned by the Employer and are vital to the Employer’s business.",
+        "The Employee agrees to maintain the confidentiality of all Confidential Information obtained during employment and shall not disclose, directly or indirectly, any such information to any individual or entity without the prior written consent of the Employer, both during and after the termination of employment. The Employee further agrees to use Confidential Information solely for the performance of his/her duties and shall not utilise or disclose such information for any other purpose or in any manner that may cause harm or financial loss to the Employer.",
+        "Upon termination of employment, or at the Employer’s request at any other time, the Employee shall immediately return all materials containing Confidential Information, including but not limited to documents, electronic files, and any other records in his/her possession.",
+        "The obligations contained in this clause shall survive the termination of employment indefinitely. Any breach of these confidentiality obligations may result in irreparable harm to the Employer, for which monetary damages may not be an adequate remedy. Accordingly, in addition to any other legal recourse available, the Employer shall be entitled to seek injunctive relief to enforce compliance with this clause.",
+      ]),
     },
     {
       title: "Entire Agreement and Acknowledgement",
       paragraphs: normalizeParagraphs([
-        "This agreement constitutes the entire agreement between the parties. No variation, amendment, or addition shall be valid unless reduced to writing and signed by both parties.",
-        "By signing this agreement, the parties confirm that they have read and understood its contents and agree to be bound by its terms.",
-        "Any matter not specifically addressed in this agreement shall be governed by the Employer's lawful workplace rules and, where applicable, the BCEA and other South African labour legislation.",
+        "This contract constitutes the entire agreement between the parties, and no variation, alteration, or addition shall be of any force or effect unless reduced to writing and signed by both parties.",
+        "No indulgence, leniency, or extension of time granted by either party in the event of any claim or dispute shall prejudice their rights, preclude them from exercising such rights, or be deemed a waiver or limitation of any right under this agreement.",
+        "By signing this contract, both parties acknowledge receipt of a copy, confirm that they have read and understood its contents, and agree to be bound by its terms. The Employee further undertakes to comply with the provisions contained herein.",
+        "The Employee acknowledges that all terms and conditions of employment are contained in this agreement, and any matters not specifically provided for shall be governed by the Employer’s rules, regulations, and procedures. Where both this contract and the Employer’s policies are silent on any particular issue, the relevant provisions of the Basic Conditions of Employment Act shall apply.",
+        "The Employee confirms that the terms of this contract have been explained and interpreted, where necessary, and that he/she voluntarily accepts its conditions.",
       ]),
     },
   ];
+
+  if (bargainingCouncil === "MIBCO") {
+    const mibcoClauseOverrides: Record<string, Omit<PreviewClause, "id">> = {
+      Remuneration: {
+        title: "Remuneration",
+        paragraphs: normalizeParagraphs([
+          "The Employee shall receive a gross monthly salary as specified in Section C on Page 1 of this agreement, which shall be compliant with the MIBCO Agreement and/or the National Minimum Wage Act, where applicable.",
+          "The Employee’s salary shall be paid monthly in arrears, no later than seven (7) days after the date on which payment becomes due.",
+          "Salary payments shall be made via electronic transfer into a bank account held at a financial institution of the Employee’s choice, as designated by the Employee.",
+          "Unauthorised absence from work or absence without approved leave shall result in no payment for the period of absence.",
+          "Overtime remuneration, where applicable, shall be calculated at a rate of one and a half (1.5) times the Employee’s normal wage for overtime hours worked, or as otherwise prescribed by the MIBCO Agreement.",
+          "The Employer shall not provide meals or accommodation and shall not be responsible for any transport allowance to and from the workplace, unless otherwise required by the MIBCO Agreement or agreed to in writing.",
+        ]),
+      },
+      "Hours of Work": {
+        title: "Hours of Work",
+        paragraphs: normalizeParagraphs([
+          "The Employee’s normal working hours shall be forty-five (45) hours per week, in accordance with the work roster prepared by management. The specific daily working hours shall be determined by the Employee’s Manager and may be adjusted as necessary to meet operational requirements.",
+          "The Employee acknowledges that, due to the nature of the Employer’s business, management reserves the right to amend or vary working hours as required, subject to applicable labour laws and the MIBCO Agreement.",
+          "The Employee further agrees that he/she may be required to work on Sundays and public holidays, as well as to perform overtime duties when operational demands necessitate, subject to the applicable provisions of the MIBCO Agreement.",
+          "The Employee expressly agrees to work a compressed work week, where working hours may exceed the standard daily limit but remain within the prescribed weekly limit, in compliance with applicable labour laws and/or collective agreements.",
+          "The Employee shall be entitled to a lunch break of sixty (60) minutes during the course of each workday, unless otherwise regulated by the MIBCO Agreement or applicable law.",
+        ]),
+      },
+      Overtime: {
+        title: "Short Time and Overtime",
+        paragraphs: normalizeParagraphs([
+          "A shorter workday or workweek may be implemented in circumstances and contingencies as prescribed by the MIBCO Agreement. The Employer shall provide written notice of the intention to implement short time to the Employees, relevant trade unions, and MIBCO, in accordance with the applicable provisions of the agreement.",
+          "The Employer shall provide reasonable notice of overtime requirements, except in cases of emergency overtime, which the Employee agrees to work on short notice.",
+          "Overtime shall be remunerated subject to the MIBCO Agreement and/or prevailing labour legislation, as amended from time to time.",
+          "Any employee earning above the Minister of Employment and Labour’s prescribed earnings threshold is not entitled to overtime remuneration under the Basic Conditions of Employment Act, unless otherwise provided for by the MIBCO Agreement or any applicable collective agreement.",
+        ]),
+      },
+      "Salary Increase": {
+        title: "Salary Increase",
+        paragraphs: normalizeParagraphs([
+          "Future salary increases shall be regulated by and implemented in accordance with the MIBCO Agreement, where applicable.",
+          "Where the MIBCO Agreement does not prescribe an increase applicable to the Employee, any salary increase shall remain within the discretion of the Employer and may be determined with reference to the Employer’s financial position, operational requirements, and the Employee’s performance.",
+        ]),
+      },
+      "Annual Leave": {
+        title: "Annual Leave and Leave Enhancement Pay",
+        paragraphs: normalizeParagraphs([
+          "The Employee shall be entitled to twenty-one (21) consecutive days’ annual leave for every twelve (12) months of employment.",
+          "An Employee who has more than eight (8) consecutive years’ service with the Employer shall be entitled to twenty-eight (28) consecutive days’ leave at full pay per annum, where prescribed by the MIBCO Agreement.",
+          "Casual employees shall be entitled to one (1) day’s leave for every seventeen (17) days worked, where applicable.",
+          "Annual leave shall be taken at a time determined at the Employer’s discretion, subject to operational requirements, and may be scheduled at any time during the twelve-month leave cycle but must be taken within six (6) months following the end of the leave cycle.",
+          "Leave not taken within the applicable leave cycle shall be forfeited and will not be carried over to the next cycle unless otherwise agreed in writing by the Employer.",
+          "If a public holiday falls during the Employee’s approved leave period and such day would otherwise have been a normal working day, the Employee shall be entitled to an additional day’s paid leave.",
+          "The Employee agrees to take his/her annual leave during the Employer’s annual shutdown period, where applicable. Any additional leave approved during the leave cycle shall be deducted from the Employee’s total annual leave entitlement.",
+          "In terms of MIBCO’s additional paid leave provisions, an Employee qualifying for his/her fourth or subsequent consecutive paid leave arising from continuous employment with the Employer shall be entitled to additional paid leave of one (1) week, as prescribed by the MIBCO Agreement.",
+          "Leave enhancement pay shall be regulated by the provisions of the MIBCO Agreement.",
+        ]),
+      },
+      "Proof of Sickness": {
+        title: "Proof of Sickness",
+        paragraphs: normalizeParagraphs([
+          "An Employee who is absent from work due to illness must provide a valid medical certificate issued by a registered medical practitioner or traditional healer. The medical certificate must state the full name and surname of the practitioner or healer, include the practice number of the issuing practitioner or healer, contain the physical address, contact number and email address of the practitioner or healer, indicate the date of examination of the Employee, clearly declare that the Employee was unfit for duty, and specify the exact dates for which the Employee was deemed unfit to work.",
+          "The medical certificate must be issued and signed by a qualified medical practitioner, or any other person certified to diagnose and treat patients and registered with a professional council.",
+          "The Employer is not required to pay the Employee for sick leave if the Employee has been absent for more than two consecutive days or on more than two occasions within an eight-week period, and upon request, fails to produce a medical certificate confirming that he/she was unable to work for the duration of the absence due to sickness or injury.",
+          "The Employer shall not accept any medical certificates that have been altered, including any struck-through or replaced words, letters, or numbers. Hospital or clinic attendance notes that merely confirm the Employee’s visit, without explicitly stating that he/she was unfit for duty, shall not be accepted.",
+          "The Employee is responsible for ensuring that any medical certificate submitted complies with these requirements. Failure to do so may result in the non-approval of sick leave.",
+          "The Employee agrees that if he/she is absent from work due to sick leave on any day from Friday to Monday, inclusive, and such days form part of his/her normal working week, he/she shall be required to provide a valid medical certificate as proof of illness.",
+          "If the Employee is absent on the working day before or after a public holiday, he/she shall be required to submit a valid medical certificate for the period of absence.",
+          "The Employee expressly agrees that any medical certificate submitted as proof of sickness shall clearly specify the diagnosed medical condition for which the Employee was deemed unfit for duty. The Employee further acknowledges and agrees that a medical certificate stating only “medical condition” shall not be accepted as valid proof of illness. This requirement shall apply to all medical certificates submitted throughout the duration of employment, and failure to comply with this provision may result in the non-approval of sick leave and may be subject to disciplinary action.",
+        ]),
+      },
+    };
+
+    return clauses.map((clause) => {
+      const override = mibcoClauseOverrides[clause.title];
+      const nextClause = override || clause;
+      return {
+        ...nextClause,
+        id: makePreviewClauseId(nextClause.title),
+      };
+    });
+  }
 
   return clauses.map((clause) => ({
     ...clause,
@@ -802,7 +1077,7 @@ const PreviewClauseBlock = ({
   <section className="space-y-1.5">
     <div className="flex items-start justify-between gap-3">
       <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[#2D4256]">{clause.title.toUpperCase()}</h3>
+        <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{clause.title.toUpperCase()}</h3>
         {isAdded ? (
           <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
             Added
@@ -830,8 +1105,8 @@ const PreviewClauseBlock = ({
     <div className="space-y-1.5">
       {clause.paragraphs.map((paragraph, index) => (
         <div key={`${clause.title}-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
-          <span className="font-normal text-slate-500">{paragraphNumberStart + index}.</span>
-          <p className="text-justify font-normal text-slate-800">{paragraph}</p>
+          <span className="font-normal text-black">{paragraphNumberStart + index}.</span>
+          <p className="text-justify font-normal text-black">{paragraph}</p>
         </div>
       ))}
     </div>
@@ -849,7 +1124,7 @@ const PreviewPartiesBlock = ({
   employeeName: string;
   employeeReference: string;
 }) => (
-  <section className="mt-5 border-b border-slate-200 pb-6">
+  <section className="mt-5 pb-6">
     <p className="text-[11px] text-black">Entered into by and between:</p>
 
     <div className="mt-4 grid grid-cols-[minmax(0,1fr)_220px] items-start gap-6">
@@ -857,7 +1132,7 @@ const PreviewPartiesBlock = ({
         <p className="text-[12px] font-bold uppercase text-black">{employerName}</p>
         <p className="mt-1 text-[11px] text-black">{`Reg. number: ${employerRegistration}`}</p>
       </div>
-      <p className="pt-0.5 text-right text-[11px] italic text-black">Hereinafter referred to as "the Employer"</p>
+      <p className="pt-0.5 text-right text-[11px] italic text-black">The Employer</p>
     </div>
 
     <p className="mt-4 text-[11px] italic text-black">and</p>
@@ -867,7 +1142,7 @@ const PreviewPartiesBlock = ({
         <p className="text-[12px] font-bold uppercase text-black">{employeeName}</p>
         <p className="mt-1 text-[11px] text-black">{employeeReference}</p>
       </div>
-      <p className="pt-0.5 text-right text-[11px] italic text-black">Hereinafter referred to as "the Employee"</p>
+      <p className="pt-0.5 text-right text-[11px] italic text-black">The Employee</p>
     </div>
   </section>
 );
@@ -885,36 +1160,88 @@ const PreviewClauseDividerTitle = ({ title }: { title: string }) => (
 const PreviewSignatureBlock = () => (
   <section className="mt-10 space-y-8">
     <p className="text-[12px] text-black">
-      Done and Signed at <span className="inline-block min-w-[180px] border-b border-black align-middle" /> on this{" "}
-      <span className="inline-block min-w-[44px] border-b border-black align-middle" /> day of{" "}
-      <span className="inline-block min-w-[140px] border-b border-black align-middle" /> 2026.
+      Done and Signed at <span className="inline-block min-w-[120px] border-b border-black align-middle" /> on this{" "}
+      <span className="inline-block min-w-[32px] border-b border-black align-middle" /> day of{" "}
+      <span className="inline-block min-w-[96px] border-b border-black align-middle" /> {currentYear}.
     </p>
 
     <div className="space-y-8">
       <h3 className="text-[13px] font-bold uppercase text-black">Signatures</h3>
 
       {[
-        "For the Employer",
-        "Employer Witness",
-        "Employee",
-        "Employee Witness",
-      ].map((label) => (
-        <div key={label} className="grid grid-cols-[minmax(0,1fr)_160px] gap-10">
-          <div>
-            <div className="h-5 border-b border-black" />
-            <p className="pt-1 text-[11px] text-black">{label}</p>
-          </div>
-          <div>
-            <div className="flex items-end gap-1">
-              <span className="text-[11px] text-black">Date:</span>
-              <div className="h-5 flex-1 border-b border-black" />
+        ["For the Employer", "For the Employee"],
+        ["Employer Witness", "Employee Witness"],
+      ].map((row, rowIndex) => (
+        <div
+          key={row.join("-")}
+          className={cn("grid grid-cols-2 gap-10", rowIndex === 0 ? "pt-4" : "pt-2")}
+        >
+          {row.map((label) => (
+            <div key={label}>
+              <div className="h-5 border-b border-black" />
+              <p className="pt-1 text-[11px] text-black">{label}</p>
             </div>
-          </div>
+          ))}
         </div>
       ))}
     </div>
   </section>
 );
+
+const HoverMarqueeText = ({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) => {
+  const containerRef = useRef<HTMLSpanElement | null>(null);
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [overflowOffset, setOverflowOffset] = useState(0);
+
+  useEffect(() => {
+    const updateOverflow = () => {
+      const container = containerRef.current;
+      const textNode = textRef.current;
+      if (!container || !textNode) return;
+      const nextOffset = Math.max(textNode.scrollWidth - container.clientWidth, 0);
+      setOverflowOffset(nextOffset);
+    };
+
+    updateOverflow();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateOverflow);
+    if (containerRef.current) observer.observe(containerRef.current);
+    if (textRef.current) observer.observe(textRef.current);
+    return () => observer.disconnect();
+  }, [text]);
+
+  const shouldAnimate = isHovered && overflowOffset > 0;
+  const duration = Math.max(overflowOffset / 24, 2.5);
+
+  return (
+    <span
+      ref={containerRef}
+      className={cn("block min-w-0 overflow-hidden whitespace-nowrap", className)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <span
+        ref={textRef}
+        className="inline-block whitespace-nowrap"
+        style={{
+          transform: shouldAnimate ? `translateX(-${overflowOffset}px)` : "translateX(0px)",
+          transition: shouldAnimate ? `transform ${duration}s linear` : "transform 180ms ease-out",
+          willChange: overflowOffset > 0 ? "transform" : undefined,
+        }}
+      >
+        {text}
+      </span>
+    </span>
+  );
+};
 
 const AddClauseDivider = ({
   onClick,
@@ -988,6 +1315,7 @@ const TopStepper = ({
 
 const PermContractGenerator = ({
   embedded = false,
+  onRequestClose,
   draftState,
   onDraftStateChange,
   onStepChange,
@@ -1002,6 +1330,8 @@ const PermContractGenerator = ({
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [companyLoadMessage, setCompanyLoadMessage] = useState("No clients found.");
   const [nationalityMenuOpen, setNationalityMenuOpen] = useState(false);
+  const [bargainingCouncilMenuOpen, setBargainingCouncilMenuOpen] = useState(false);
+  const [bargainingCouncilSearchQuery, setBargainingCouncilSearchQuery] = useState("");
   const [isSalaryAmountFocused, setIsSalaryAmountFocused] = useState(false);
   const [company, setCompany] = useState<CompanyStepState>(() => normalizeCompanyDraft(restored?.company));
   const [employee, setEmployee] = useState<EmployeeStepState>(() => normalizeEmployeeDraft(restored?.employee));
@@ -1077,11 +1407,33 @@ const PermContractGenerator = ({
     setCompany((current) => ({ ...current, logoUrl, logoOrientation }));
   };
 
+  const resetDownstreamState = (nextWorkplace: string) => {
+    setEmployee(emptyEmployeeState);
+    setContract({
+      ...emptyContractState,
+      permContractWorkplace: nextWorkplace,
+    });
+    setIsFinished(false);
+    setIsPreviewEditable(false);
+    setClauseBodyEdits({});
+    setClauseTitleEdits({});
+    setCustomClauses([]);
+    setEditingClauseId(null);
+    setClauseTitleDraft("");
+    setClauseBodyDraft("");
+    setAddingAfterId(undefined);
+    setNewClauseTitle("");
+    setNewClauseBody("");
+    setBargainingCouncilMenuOpen(false);
+    setBargainingCouncilSearchQuery("");
+  };
+
   const handleCompanySelect = (companyId: string) => {
     const match = companies.find((entry) => entry.id === companyId);
     if (!match) return;
-    setIsFinished(false);
-    setCompany(mapRecordToState(match));
+    const nextCompany = mapRecordToState(match);
+    resetDownstreamState(nextCompany.address);
+    setCompany(nextCompany);
     void loadLogoForCompany(companyId);
   };
 
@@ -1099,11 +1451,19 @@ const PermContractGenerator = ({
   const isContractStepComplete =
     contract.permContractStartDate.trim().length > 0 &&
     contract.permContractJobTitle.trim().length > 0 &&
-    contract.permContractDepartment.trim().length > 0 &&
     contract.permContractSalaryAmount.trim().length > 0 &&
+    contract.permContractSalaryType.trim().length > 0 &&
     contract.permContractPayCycle.trim().length > 0 &&
     contract.permContractProbation.trim().length > 0 &&
     contract.permContractRetirementAge.trim().length > 0;
+
+  const filteredBargainingCouncilOptions = useMemo(() => {
+    const query = bargainingCouncilSearchQuery.trim().toLowerCase();
+    if (!query) return bargainingCouncilOptions;
+    return bargainingCouncilOptions.filter((option) =>
+      `${option.label} ${option.value}`.toLowerCase().includes(query),
+    );
+  }, [bargainingCouncilSearchQuery]);
 
   const updateEmployee = <K extends keyof EmployeeStepState>(field: K, value: EmployeeStepState[K]) => {
     setIsFinished(false);
@@ -1276,7 +1636,10 @@ const PermContractGenerator = ({
   const startDateDisplay = formatDateForDisplay(contract.permContractStartDate) || "--";
   const probationDisplay = probationLabelByValue[contract.permContractProbation] || "--";
   const previewClauses = useMemo(() => {
-    const baseClauses = buildPreviewClauses({ salarySummary }).map((clause) => ({
+    const baseClauses = buildPreviewClauses({
+      salarySummary,
+      bargainingCouncil: contract.permContractBargainingCouncil,
+    }).map((clause) => ({
       ...clause,
       title: clauseTitleEdits[clause.id] || clause.title,
       paragraphs: clauseBodyEdits[clause.id]
@@ -1293,7 +1656,7 @@ const PermContractGenerator = ({
     }));
 
     return mergePreviewClauses(baseClauses, mergedCustomClauses);
-  }, [clauseBodyEdits, clauseTitleEdits, customClauses, salarySummary]);
+  }, [clauseBodyEdits, clauseTitleEdits, contract.permContractBargainingCouncil, customClauses, salarySummary]);
   const interpreterDisplay =
     contract.permContractInterpreterRequired === "yes"
       ? "Yes"
@@ -1306,7 +1669,7 @@ const PermContractGenerator = ({
   const passportDisplay = idNumberDisplay === "--" ? employee.permEmployeeIdentityNumber || "--" : "--";
   const activeEditingClause = editingClauseId ? previewClauses.find((clause) => clause.id === editingClauseId) ?? null : null;
   const employeeFullNameDisplay = [employee.permEmployeeName, employee.permEmployeeSurname].filter(Boolean).join(" ").trim();
-  const employeeReferenceDisplay = idNumberDisplay !== "--" ? `ID no.: ${idNumberDisplay}` : `Passport no.: ${passportDisplay}`;
+  const employeeReferenceDisplay = idNumberDisplay !== "--" ? `ID number: ${idNumberDisplay}` : `Passport no.: ${passportDisplay}`;
   const employerNameDisplay = (company.companyName || "--").toUpperCase();
   const employeeNameDisplay = (employeeFullNameDisplay || "--").toUpperCase();
 
@@ -1323,6 +1686,8 @@ const PermContractGenerator = ({
     const sectionFill = [241, 245, 249] as const;
     const sectionBorder = [203, 213, 225] as const;
     const titleLineFallback = "____________________";
+    const pdfRowSpacingIncrease = 2.11;
+    const pdfSectionHeaderBottomSpacingIncrease = 4.77;
     const logoDataUrl = await loadImageUrlAsDataUrl(company.logoUrl);
     const footerLogoDimensions = getFooterLogoDimensions(company.logoOrientation);
 
@@ -1339,7 +1704,7 @@ const PermContractGenerator = ({
     };
 
     const drawSectionHeader = (label: string) => {
-      ensureSpace(11);
+      ensureSpace(11 + pdfSectionHeaderBottomSpacingIncrease);
       pdf.setDrawColor(...sectionBorder);
       pdf.setFillColor(...sectionFill);
       pdf.roundedRect(margin, y, contentWidth, 8, 0.8, 0.8, "FD");
@@ -1347,26 +1712,32 @@ const PermContractGenerator = ({
       pdf.setFontSize(9);
       pdf.setTextColor(0, 0, 0);
       pdf.text(label, margin + 4, y + 5.1);
-      y += 12;
+      y += 12 + pdfSectionHeaderBottomSpacingIncrease;
     };
 
-    const drawLabelValueRow = (label: string, value: string, mode: "single" | "full" = "single") => {
+    const drawLabelValueRow = (
+      label: string,
+      value: string,
+      mode: "single" | "full" = "single",
+      labelWidthOverride?: number,
+    ) => {
       const safeValue = value || titleLineFallback;
-      const labelWidth = 34;
+      const labelWidth = labelWidthOverride ?? 34;
       const valueX = margin + labelWidth;
       const valueWidth = mode === "full" ? contentWidth - labelWidth : contentWidth - labelWidth - 4;
       const lines = pdf.splitTextToSize(safeValue, valueWidth) as string[];
-      const lineHeight = 4;
-      const rowHeight = Math.max(4.2, lines.length * lineHeight);
-      ensureSpace(rowHeight + 1);
+      const lineHeight = 4.4;
+      const rowHeight = Math.max(4.4, lines.length * lineHeight);
+      ensureSpace(rowHeight + 1 + pdfRowSpacingIncrease);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9);
       pdf.text(label, margin, y);
       pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
       lines.forEach((line, index) => {
         pdf.text(String(line), valueX, y + index * lineHeight);
       });
-      y += rowHeight + 1;
+      y += rowHeight + 1 + pdfRowSpacingIncrease;
     };
 
     const drawDualLabelValueRow = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) => {
@@ -1383,16 +1754,17 @@ const PermContractGenerator = ({
       const rightValueWidth = columnWidth - rightLabelWidth - 4;
       const leftLines = pdf.splitTextToSize(safeLeftValue, leftValueWidth) as string[];
       const rightLines = pdf.splitTextToSize(safeRightValue, rightValueWidth) as string[];
-      const lineHeight = 4;
-      const rowHeight = Math.max(4.2, Math.max(leftLines.length, rightLines.length) * lineHeight);
+      const lineHeight = 4.4;
+      const rowHeight = Math.max(4.4, Math.max(leftLines.length, rightLines.length) * lineHeight);
 
-      ensureSpace(rowHeight + 1);
+      ensureSpace(rowHeight + 1 + pdfRowSpacingIncrease);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9);
       pdf.text(leftLabel, margin, y);
       pdf.text(rightLabel, rightColumnX, y);
 
       pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
       leftLines.forEach((line, index) => {
         pdf.text(String(line), leftValueX, y + index * lineHeight);
       });
@@ -1400,7 +1772,7 @@ const PermContractGenerator = ({
         pdf.text(String(line), rightValueX, y + index * lineHeight);
       });
 
-      y += rowHeight + 1;
+      y += rowHeight + 1 + pdfRowSpacingIncrease;
     };
 
     const drawClauseBlock = (clause: PreviewClause, startNumber: number) => {
@@ -1424,7 +1796,7 @@ const PermContractGenerator = ({
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
-      pdf.setTextColor(31, 41, 55);
+      pdf.setTextColor(0, 0, 0);
 
       clause.paragraphs.forEach((paragraph, paragraphIndex) => {
         const numberLabel = `${startNumber + paragraphIndex}.`;
@@ -1479,7 +1851,7 @@ const PermContractGenerator = ({
       pdf.text(employerNameDisplay, margin, y);
       pdf.setFont("helvetica", "italic");
       pdf.setFontSize(8.5);
-      pdf.text('Hereinafter referred to as "the Employer"', margin + leftColumnWidth + 8, y, { align: "left" });
+      pdf.text("The Employer", pageWidth - margin, y, { align: "right" });
       y += 4.6;
 
       pdf.setFont("helvetica", "normal");
@@ -1497,7 +1869,7 @@ const PermContractGenerator = ({
       pdf.text(employeeNameDisplay, margin, y);
       pdf.setFont("helvetica", "italic");
       pdf.setFontSize(8.5);
-      pdf.text('Hereinafter referred to as "the Employee"', margin + leftColumnWidth + 8, y, { align: "left" });
+      pdf.text("The Employee", pageWidth - margin, y, { align: "right" });
       y += 4.6;
 
       pdf.setFont("helvetica", "normal");
@@ -1514,6 +1886,7 @@ const PermContractGenerator = ({
       const lineYBottom = y + 10.8;
       const halfAvailable = contentWidth;
       pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.2);
       pdf.line(margin, lineYTop, margin + halfAvailable, lineYTop);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(11.2);
@@ -1525,23 +1898,41 @@ const PermContractGenerator = ({
       pdf.text(subtitle, textX, textY);
       pdf.setCharSpace(0);
       pdf.line(margin, lineYBottom, pageWidth - margin, lineYBottom);
+      pdf.setLineWidth(0.15);
       y += 19.2;
     };
 
     const drawSignatureSection = () => {
-      const signatureLabels = ["For the Employer", "Employer Witness", "Employee", "Employee Witness"];
-      ensureSpace(66);
+      const signatureRows: [string, string][] = [
+        ["For the Employer", "For the Employee"],
+        ["Employer Witness", "Employee Witness"],
+      ];
+      ensureSpace(52);
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(9);
       pdf.setTextColor(0, 0, 0);
-      pdf.text("Done and Signed at", margin, y);
-      pdf.line(margin + 28, y + 0.2, margin + 88, y + 0.2);
-      pdf.text("on this", margin + 91, y);
-      pdf.line(margin + 105, y + 0.2, margin + 117, y + 0.2);
-      pdf.text("day of", margin + 120, y);
-      pdf.line(margin + 133, y + 0.2, margin + 173, y + 0.2);
-      pdf.text("2026.", margin + 176, y);
+      const firstPrefix = "Done and Signed at";
+      const secondPrefix = "on this";
+      const thirdPrefix = "day of";
+      const yearText = `${currentYear}.`;
+      const firstLineWidth = 48;
+      const secondLineWidth = 10;
+      const thirdLineWidth = 30;
+      let sentenceX = margin;
+      pdf.text(firstPrefix, sentenceX, y);
+      sentenceX += pdf.getTextWidth(firstPrefix) + 1.2;
+      pdf.line(sentenceX, y + 0.2, sentenceX + firstLineWidth, y + 0.2);
+      sentenceX += firstLineWidth + 2;
+      pdf.text(secondPrefix, sentenceX, y);
+      sentenceX += pdf.getTextWidth(secondPrefix) + 1.2;
+      pdf.line(sentenceX, y + 0.2, sentenceX + secondLineWidth, y + 0.2);
+      sentenceX += secondLineWidth + 2;
+      pdf.text(thirdPrefix, sentenceX, y);
+      sentenceX += pdf.getTextWidth(thirdPrefix) + 1.2;
+      pdf.line(sentenceX, y + 0.2, sentenceX + thirdLineWidth, y + 0.2);
+      sentenceX += thirdLineWidth + 2;
+      pdf.text(yearText, sentenceX, y);
       y += 16;
 
       pdf.setFont("helvetica", "bold");
@@ -1549,22 +1940,24 @@ const PermContractGenerator = ({
       pdf.text("SIGNATURES", margin, y);
       y += 10;
 
-      signatureLabels.forEach((label) => {
-        ensureSpace(17);
+      signatureRows.forEach(([leftLabel, rightLabel], rowIndex) => {
+        const topGap = rowIndex === 0 ? 8 : 4;
+        ensureSpace(17 + topGap);
+        y += topGap;
         const lineY = y;
-        const leftLineEnd = margin + 62;
-        const rightLabelX = pageWidth - margin - 34;
-        const rightLineStart = pageWidth - margin - 28;
-        const rightLineEnd = pageWidth - margin;
+        const columnGap = 20;
+        const columnWidth = (contentWidth - columnGap) / 2;
+        const leftColumnX = margin;
+        const rightColumnX = margin + columnWidth + columnGap;
 
         pdf.setDrawColor(0, 0, 0);
-        pdf.line(margin, lineY, leftLineEnd, lineY);
+        pdf.line(leftColumnX, lineY, leftColumnX + columnWidth, lineY);
+        pdf.line(rightColumnX, lineY, rightColumnX + columnWidth, lineY);
+
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(8.8);
-        pdf.text(label, margin, lineY + 4.4);
-
-        pdf.text("Date:", rightLabelX, lineY);
-        pdf.line(rightLineStart, lineY, rightLineEnd, lineY);
+        pdf.text(leftLabel, leftColumnX, lineY + 4.4);
+        pdf.text(rightLabel, rightColumnX, lineY + 4.4);
         y += 17;
       });
     };
@@ -1575,7 +1968,7 @@ const PermContractGenerator = ({
       pdf.line(margin, footerTop - 4, pageWidth - margin, footerTop - 4);
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(7);
-      pdf.setTextColor(71, 85, 105);
+      pdf.setTextColor(0, 0, 0);
       pdf.text(`Page ${pageIndex} of ${pageCount}`, pageWidth - margin, 12, { align: "right" });
 
       if (logoDataUrl) {
@@ -1650,8 +2043,8 @@ const PermContractGenerator = ({
       "Employee No.:",
       employee.permEmployeeNumber || titleLineFallback,
     );
-    drawLabelValueRow("Address:", employee.permEmployeeResidentialAddress || titleLineFallback, "full");
-    drawLabelValueRow("Postal:", employee.permEmployeePostalAddress || titleLineFallback, "full");
+    drawLabelValueRow("Address:", employee.permEmployeeResidentialAddress || titleLineFallback, "full", 28);
+    drawLabelValueRow("Postal:", employee.permEmployeePostalAddress || titleLineFallback, "full", 28);
 
     y += 3;
     drawSectionHeader("C. EMPLOYMENT DETAILS");
@@ -1665,7 +2058,7 @@ const PermContractGenerator = ({
       contract.permContractRetirementAge ? `Age ${contract.permContractRetirementAge}` : titleLineFallback,
     );
     drawDualLabelValueRow("Reports to:", contract.permContractReportsTo || titleLineFallback, "Interpreter:", interpreterDisplay);
-    drawLabelValueRow("Workplace:", contract.permContractWorkplace || titleLineFallback, "full");
+    drawLabelValueRow("Workplace:", contract.permContractWorkplace || titleLineFallback, "full", 28);
 
     pushPage();
     pdf.setFont("helvetica", "bold");
@@ -1688,15 +2081,77 @@ const PermContractGenerator = ({
       drawFooterAndPageNumber(pageIndex, pageCount);
     }
 
-    const employeeInitials = employee.permEmployeeName
+    const employeeFirstInitial = employee.permEmployeeName
       .trim()
       .split(/\s+/)
       .filter(Boolean)
-      .map((part) => `${part.charAt(0).toUpperCase()}.`)
-      .join("");
+      .map((part) => part.charAt(0).toUpperCase())
+      .find(Boolean);
     const employeeSurname = employee.permEmployeeSurname.trim();
-    const suffix = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
-    pdf.save(`permanent_employment_contract${suffix}.pdf`);
+    const documentNameSuffix = employeeFirstInitial && employeeSurname ? ` (${employeeFirstInitial}. ${employeeSurname})` : "";
+    const documentName = `Permanent Contract${documentNameSuffix}`;
+    const downloadFileName = `permanent_employment_contract${documentNameSuffix}.pdf`;
+    const uploadBlob = pdf.output("blob");
+    const uploadSafeClientName =
+      (company.companyName || "client")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "client";
+    const uploadSafeDocumentName =
+      documentName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "permanent-contract";
+    const uploadFilePath = [
+      "permanent-contracts",
+      uploadSafeClientName,
+      `${Date.now()}-${uploadSafeDocumentName}.pdf`,
+    ].join("/");
+    let uploadedFileUrl = "";
+
+    const { error: uploadError } = await supabase.storage
+      .from(generatedDocumentsBucket)
+      .upload(uploadFilePath, uploadBlob, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: "application/pdf",
+      });
+
+    if (uploadError) {
+      toast({
+        title: "Upload Error",
+        description: `Could not save document file: ${uploadError.message}`,
+        variant: "destructive",
+      });
+    } else {
+      const { data: publicUrlData } = supabase.storage.from(generatedDocumentsBucket).getPublicUrl(uploadFilePath);
+      uploadedFileUrl = String(publicUrlData?.publicUrl ?? "").trim();
+    }
+
+    const logResult = await logGeneratedDocument({
+      documentLabel: "Permanent Contract",
+      documentName,
+      documentType: "Contract",
+      clientName: company.companyName,
+      fileUrl: uploadedFileUrl,
+      employeeName: employee.permEmployeeName,
+      employeeSurname: employee.permEmployeeSurname,
+      tradingName: company.tradingName,
+      registeredName: company.registeredName,
+    });
+
+    if ("error" in logResult) {
+      toast({
+        title: "Save Error",
+        description: `Could not save document row: ${logResult.error}`,
+        variant: "destructive",
+      });
+    } else {
+      window.dispatchEvent(new CustomEvent("documents-row-created"));
+    }
+
+    pdf.save(downloadFileName);
+    onRequestClose?.();
   }
 
   const openClauseEditor = (clause: PreviewClause) => {
@@ -1731,7 +2186,14 @@ const PermContractGenerator = ({
       return;
     }
 
-    const originalClause = [...buildPreviewClauses({ salarySummary }), ...customClauses].find((item) => item.id === clause.id) ?? clause;
+    const originalClause =
+      [
+        ...buildPreviewClauses({
+          salarySummary,
+          bargainingCouncil: contract.permContractBargainingCouncil,
+        }),
+        ...customClauses,
+      ].find((item) => item.id === clause.id) ?? clause;
     const originalBody = serializeClauseParagraphs(originalClause.paragraphs).trim();
 
     setClauseTitleEdits((current) => {
@@ -1762,7 +2224,13 @@ const PermContractGenerator = ({
       return next;
     });
 
-    const originalClause = [...buildPreviewClauses({ salarySummary }), ...customClauses].find((item) => item.id === clause.id);
+    const originalClause = [
+      ...buildPreviewClauses({
+        salarySummary,
+        bargainingCouncil: contract.permContractBargainingCouncil,
+      }),
+      ...customClauses,
+    ].find((item) => item.id === clause.id);
     if (originalClause) {
       setClauseTitleDraft(originalClause.title);
       setClauseBodyDraft(serializeClauseParagraphs(originalClause.paragraphs));
@@ -2234,7 +2702,7 @@ const PermContractGenerator = ({
 
           <div className="space-y-2">
             <Label htmlFor="permContractDepartment" className="text-[10px] font-semibold text-slate-600">
-              Department <span className="text-red-500">*</span>
+              Department
             </Label>
             <Input
               id="permContractDepartment"
@@ -2243,6 +2711,73 @@ const PermContractGenerator = ({
               placeholder="Enter department"
               className={fieldClassName}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="permContractBargainingCouncil" className="text-[10px] font-semibold text-slate-600">
+              Bargaining Council
+            </Label>
+            <Popover open={bargainingCouncilMenuOpen} onOpenChange={setBargainingCouncilMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  id="permContractBargainingCouncil"
+                  className="inline-flex h-8 w-full items-center justify-between rounded-sm border border-slate-300 bg-white px-3 text-[10px] font-medium text-slate-900 shadow-none hover:border-[#3eca44] focus:outline-none focus-visible:border-[#3eca44] focus-visible:ring-0"
+                >
+                  <span
+                    className={cn(
+                      "truncate text-left text-[10px]",
+                      contract.permContractBargainingCouncil ? "font-semibold text-slate-900" : "font-normal text-slate-400",
+                    )}
+                  >
+                    {contract.permContractBargainingCouncil || "Select bargaining council"}
+                  </span>
+                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[420px] border border-slate-200 bg-white p-0 shadow-lg" align="start" sideOffset={6}>
+                <Command shouldFilter={false} className="max-h-[320px] bg-white text-slate-700">
+                  <CommandInput
+                    value={bargainingCouncilSearchQuery}
+                    onValueChange={setBargainingCouncilSearchQuery}
+                    placeholder="Search bargaining council..."
+                    className="h-8 border-b border-slate-200 text-[11px] placeholder:text-slate-400"
+                  />
+                  <div
+                    className="max-h-[260px] overflow-y-auto overscroll-contain"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    <CommandList className="max-h-none overflow-visible">
+                    <CommandEmpty className="py-3 text-[11px] text-slate-500">No councils found.</CommandEmpty>
+                    <CommandGroup>
+                      {filteredBargainingCouncilOptions.map((option) => (
+                        <CommandItem
+                          key={option.value}
+                          value={`${option.value} ${option.label}`}
+                          onSelect={() => {
+                            updateContract("permContractBargainingCouncil", option.value);
+                            setBargainingCouncilSearchQuery("");
+                            setBargainingCouncilMenuOpen(false);
+                          }}
+                          className="text-[11px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
+                        >
+                          <Check
+                            className={`mr-2 h-3.5 w-3.5 shrink-0 ${
+                              contract.permContractBargainingCouncil === option.value ? "opacity-100 text-[#2f9f35]" : "opacity-0"
+                            }`}
+                          />
+                          <HoverMarqueeText
+                            text={option.label}
+                            className={cn("flex-1", contract.permContractBargainingCouncil === option.value ? "font-semibold" : "font-normal")}
+                          />
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    </CommandList>
+                  </div>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="space-y-2">
@@ -2267,7 +2802,7 @@ const PermContractGenerator = ({
 
           <div className="space-y-2">
             <Label htmlFor="permContractSalaryType" className="text-[10px] font-semibold text-slate-600">
-              Salary Type
+              Salary Type <span className="text-red-500">*</span>
             </Label>
             <Select
               value={contract.permContractSalaryType || undefined}

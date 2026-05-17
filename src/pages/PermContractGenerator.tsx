@@ -110,6 +110,21 @@ type ContractStepState = {
   permContractRetirementAge: "55" | "60" | "65" | "70" | "";
   permContractWorkplace: string;
   permContractInterpreterRequired: "yes" | "no" | "";
+  permContractWorkingHoursMode: "undefined" | "defined" | "scheduled";
+  permContractMondayStart: string;
+  permContractMondayEnd: string;
+  permContractTuesdayStart: string;
+  permContractTuesdayEnd: string;
+  permContractWednesdayStart: string;
+  permContractWednesdayEnd: string;
+  permContractThursdayStart: string;
+  permContractThursdayEnd: string;
+  permContractFridayStart: string;
+  permContractFridayEnd: string;
+  permContractSaturdayStart: string;
+  permContractSaturdayEnd: string;
+  permContractSundayStart: string;
+  permContractSundayEnd: string;
 };
 
 type PermContractDraftState = {
@@ -192,6 +207,21 @@ const emptyContractState: ContractStepState = {
   permContractRetirementAge: "65",
   permContractWorkplace: "",
   permContractInterpreterRequired: "no",
+  permContractWorkingHoursMode: "undefined",
+  permContractMondayStart: "N/A",
+  permContractMondayEnd: "N/A",
+  permContractTuesdayStart: "N/A",
+  permContractTuesdayEnd: "N/A",
+  permContractWednesdayStart: "N/A",
+  permContractWednesdayEnd: "N/A",
+  permContractThursdayStart: "N/A",
+  permContractThursdayEnd: "N/A",
+  permContractFridayStart: "N/A",
+  permContractFridayEnd: "N/A",
+  permContractSaturdayStart: "N/A",
+  permContractSaturdayEnd: "N/A",
+  permContractSundayStart: "N/A",
+  permContractSundayEnd: "N/A",
 };
 
 const fieldClassName =
@@ -501,6 +531,16 @@ const payCycleLabelByValue: Record<ContractStepState["permContractPayCycle"], st
   monthly: "Monthly",
 };
 
+const formatWorkingHoursTimeLabel = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed || trimmed === "N/A") return "N/A";
+  const [hourText, minuteText] = trimmed.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return trimmed;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
+};
+
 const bargainingCouncilOptions = [
   { label: "None", value: "None" },
   { label: "National Bargaining Council for the Road Freight and Logistics Industry (NBCRFLI)", value: "NBCRFLI" },
@@ -529,6 +569,44 @@ const documentModeOptions: { label: string; value: DocumentMode }[] = [
   { label: "Standard Contract", value: "standard_contract" },
   { label: "Client Template", value: "client_template" },
 ];
+
+const templateNationalityOptions = [
+  "South African",
+  ...nationalityOptions.filter((option) => option !== "South African"),
+] as const;
+
+const workingHoursModeOptions = [
+  { label: "Undefined", value: "undefined" },
+  { label: "Defined", value: "defined" },
+  { label: "Scheduled", value: "scheduled" },
+] as const;
+
+const workingHoursDayDefinitions = [
+  { label: "Monday", startField: "permContractMondayStart", endField: "permContractMondayEnd" },
+  { label: "Tuesday", startField: "permContractTuesdayStart", endField: "permContractTuesdayEnd" },
+  { label: "Wednesday", startField: "permContractWednesdayStart", endField: "permContractWednesdayEnd" },
+  { label: "Thursday", startField: "permContractThursdayStart", endField: "permContractThursdayEnd" },
+  { label: "Friday", startField: "permContractFridayStart", endField: "permContractFridayEnd" },
+  { label: "Saturday", startField: "permContractSaturdayStart", endField: "permContractSaturdayEnd" },
+  { label: "Sunday", startField: "permContractSundayStart", endField: "permContractSundayEnd" },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  startField: keyof ContractStepState;
+  endField: keyof ContractStepState;
+}>;
+
+const workingHoursTimeOptions = [
+  "N/A",
+  ...Array.from({ length: 48 }, (_, index) => {
+    const hour = String(Math.floor(index / 2)).padStart(2, "0");
+    const minute = index % 2 === 0 ? "00" : "30";
+    return `${hour}:${minute}`;
+  }),
+] as const;
+
+const workingHoursTimeDropdownOptions = workingHoursTimeOptions.map((option) =>
+  option === "N/A" ? option : formatWorkingHoursTimeLabel(option),
+);
 
 const previewTemplatePlaceholder = "____________________";
 const previewTemplatePlaceholderShort = "____________";
@@ -597,6 +675,12 @@ type CustomPreviewClause = PreviewClause & {
   insertAfterId: string | null;
 };
 
+type WorkingHoursScheduleRow = {
+  label: string;
+  start: string;
+  end: string;
+};
+
 const normalizeParagraphs = (value: string | string[]) => (Array.isArray(value) ? value : [value]).filter(Boolean);
 
 const makePreviewClauseId = (title: string) =>
@@ -618,12 +702,85 @@ const generateCustomClauseId = () =>
     ? crypto.randomUUID()
     : `perm-custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const buildWorkingHoursScheduleRows = (contract: ContractStepState): WorkingHoursScheduleRow[] =>
+  workingHoursDayDefinitions.map((day) => ({
+    label: day.label,
+    start: String(contract[day.startField] || "N/A"),
+    end: String(contract[day.endField] || "N/A"),
+  }));
+
+const buildWorkingHoursScheduleParagraphs = (rows: WorkingHoursScheduleRow[], isClientTemplateMode: boolean) =>
+  rows.map((row) => {
+    if (isClientTemplateMode) {
+      return `${row.label}: ${previewTemplatePlaceholderShort} to ${previewTemplatePlaceholderShort}`;
+    }
+    if (row.start === "N/A" || row.end === "N/A") {
+      return `${row.label}: N/A`;
+    }
+    return `${row.label}: ${formatWorkingHoursTimeLabel(row.start)} to ${formatWorkingHoursTimeLabel(row.end)}`;
+  });
+
+const getEditableClauseParagraphs = ({
+  clause,
+  workingHoursMode,
+}: {
+  clause: PreviewClause;
+  workingHoursMode: ContractStepState["permContractWorkingHoursMode"];
+}) => {
+  if (clause.id !== makePreviewClauseId("Hours of Work") || workingHoursMode !== "defined") {
+    return clause.paragraphs;
+  }
+  return [clause.paragraphs[0] || "", ...clause.paragraphs.slice(1 + workingHoursDayDefinitions.length)];
+};
+
+const mergeHoursOfWorkEditedParagraphs = ({
+  editedParagraphs,
+  originalClause,
+}: {
+  editedParagraphs: string[];
+  originalClause: PreviewClause;
+}) => {
+  if (originalClause.id !== makePreviewClauseId("Hours of Work")) {
+    return editedParagraphs;
+  }
+  const scheduleParagraphs = originalClause.paragraphs.slice(1, 1 + workingHoursDayDefinitions.length);
+  const tailParagraphs = editedParagraphs.slice(1);
+  return [editedParagraphs[0] || "", ...scheduleParagraphs, ...tailParagraphs];
+};
+
+const applyWorkingHoursClauseMode = ({
+  paragraphs,
+  workingHoursMode,
+  workingHoursScheduleParagraphs,
+}: {
+  paragraphs: string[];
+  workingHoursMode: ContractStepState["permContractWorkingHoursMode"];
+  workingHoursScheduleParagraphs: string[];
+}) => {
+  if (workingHoursMode === "undefined") return paragraphs;
+  if (workingHoursMode === "scheduled") {
+    return normalizeParagraphs([
+      "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week and shall be worked in accordance with the Employer’s operational requirements and roster system, as amended from time to time. The Employee agrees that his or her ordinary working hours may be scheduled over a compressed work week, subject to the provisions of the Basic Conditions of Employment Act and any applicable bargaining council agreement or sectoral determination.",
+      ...paragraphs.slice(1),
+    ]);
+  }
+  return normalizeParagraphs([
+    "The Employee’s ordinary working hours shall not exceed forty-five (45) hours per week and shall be scheduled as follows:",
+    ...workingHoursScheduleParagraphs,
+    ...paragraphs.slice(1),
+  ]);
+};
+
 const buildPreviewClauses = ({
   salarySummary,
   bargainingCouncil,
+  workingHoursMode,
+  workingHoursScheduleParagraphs,
 }: {
   salarySummary: string;
   bargainingCouncil: string;
+  workingHoursMode: ContractStepState["permContractWorkingHoursMode"];
+  workingHoursScheduleParagraphs: string[];
 }): PreviewClause[] => {
   void salarySummary;
   const clauses: Array<Omit<PreviewClause, "id">> = [
@@ -1070,8 +1227,17 @@ const buildPreviewClauses = ({
     return clauses.map((clause) => {
       const override = mibcoClauseOverrides[clause.title];
       const nextClause = override || clause;
+      const nextParagraphs =
+        nextClause.title === "Hours of Work"
+          ? applyWorkingHoursClauseMode({
+              paragraphs: nextClause.paragraphs,
+              workingHoursMode,
+              workingHoursScheduleParagraphs,
+            })
+          : nextClause.paragraphs;
       return {
         ...nextClause,
+        paragraphs: nextParagraphs,
         id: makePreviewClauseId(nextClause.title),
       };
     });
@@ -1079,6 +1245,14 @@ const buildPreviewClauses = ({
 
   return clauses.map((clause) => ({
     ...clause,
+    paragraphs:
+      clause.title === "Hours of Work"
+        ? applyWorkingHoursClauseMode({
+            paragraphs: clause.paragraphs,
+            workingHoursMode,
+            workingHoursScheduleParagraphs,
+          })
+        : clause.paragraphs,
     id: makePreviewClauseId(clause.title),
   }));
 };
@@ -1090,6 +1264,9 @@ const PreviewClauseBlock = ({
   isAdded = false,
   isEdited = false,
   onEdit,
+  workingHoursMode,
+  workingHoursScheduleRows,
+  onWorkingHoursTimeChange,
 }: {
   clause: PreviewClause;
   paragraphNumberStart: number;
@@ -1097,45 +1274,141 @@ const PreviewClauseBlock = ({
   isAdded?: boolean;
   isEdited?: boolean;
   onEdit?: () => void;
-}) => (
-  <section className="space-y-1.5">
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{clause.title.toUpperCase()}</h3>
-        {isAdded ? (
-          <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-            Added
-          </span>
-        ) : null}
-        {isEdited ? (
-          <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-            Edited
-          </span>
+  workingHoursMode?: ContractStepState["permContractWorkingHoursMode"];
+  workingHoursScheduleRows?: WorkingHoursScheduleRow[];
+  onWorkingHoursTimeChange?: (field: keyof ContractStepState, value: string) => void;
+}) => {
+  const hoursOfWorkClauseId = makePreviewClauseId("Hours of Work");
+  const shouldRenderWorkingHoursSelectors =
+    clause.id === hoursOfWorkClauseId &&
+    workingHoursMode === "defined" &&
+    isPreviewEditable &&
+    Array.isArray(workingHoursScheduleRows) &&
+    workingHoursScheduleRows.length === workingHoursDayDefinitions.length;
+  const shouldRenderWorkingHoursGroupedPreview =
+    clause.id === hoursOfWorkClauseId &&
+    workingHoursMode === "defined" &&
+    Array.isArray(workingHoursScheduleRows) &&
+    workingHoursScheduleRows.length === workingHoursDayDefinitions.length;
+
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{clause.title.toUpperCase()}</h3>
+          {isAdded ? (
+            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+              Added
+            </span>
+          ) : null}
+          {isEdited ? (
+            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+              Edited
+            </span>
+          ) : null}
+        </div>
+        {isPreviewEditable && onEdit ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onEdit}
+            className="h-7 rounded border-slate-300 px-3 text-[11px] text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+          >
+            <Pencil className="mr-1 h-3 w-3" />
+            Edit
+          </Button>
         ) : null}
       </div>
-      {isPreviewEditable && onEdit ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onEdit}
-          className="h-7 rounded border-slate-300 px-3 text-[11px] text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-        >
-          <Pencil className="mr-1 h-3 w-3" />
-          Edit
-        </Button>
-      ) : null}
-    </div>
-    <div className="space-y-1.5">
-      {clause.paragraphs.map((paragraph, index) => (
-        <div key={`${clause.title}-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
-          <span className="font-normal text-black">{paragraphNumberStart + index}.</span>
-          <p className="text-justify font-normal text-black">{paragraph}</p>
-        </div>
-      ))}
-    </div>
-  </section>
-);
+      <div className="space-y-1.5">
+        {shouldRenderWorkingHoursGroupedPreview ? (
+          <>
+            <div className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
+              <span className="font-normal text-black">{paragraphNumberStart}.</span>
+              <div className="space-y-2">
+                <p className="text-justify font-normal text-black">{clause.paragraphs[0]}</p>
+                <div className="space-y-1.5 pl-4">
+                  {workingHoursScheduleRows.map((row, index) => {
+                    const dayDefinition = workingHoursDayDefinitions[index];
+                    return (
+                      <div key={`${clause.title}-schedule-${row.label}`} className="grid items-center gap-2 md:grid-cols-[86px_minmax(0,108px)_14px_minmax(0,108px)]">
+                        <p className="font-semibold text-black">{`${row.label}:`}</p>
+                        {shouldRenderWorkingHoursSelectors ? (
+                          <>
+                            <Select
+                              value={row.start}
+                              onValueChange={(value) => onWorkingHoursTimeChange?.(dayDefinition.startField, value)}
+                            >
+                              <SelectTrigger className={cn(selectTriggerClassName, "w-[108px]")}>
+                                <SelectValue placeholder="Select start time" />
+                              </SelectTrigger>
+                              <SelectContent className="text-[10px]">
+                                {workingHoursTimeOptions.map((option) => (
+                                  <SelectItem key={`${row.label}-preview-start-${option}`} value={option} className="text-[10px]">
+                                    {option === "N/A" ? option : formatWorkingHoursTimeLabel(option)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-center text-[11px] font-medium text-slate-500">to</p>
+                            <Select
+                              value={row.end}
+                              onValueChange={(value) => onWorkingHoursTimeChange?.(dayDefinition.endField, value)}
+                            >
+                              <SelectTrigger className={cn(selectTriggerClassName, "w-[108px]")}>
+                                <SelectValue placeholder="Select end time" />
+                              </SelectTrigger>
+                              <SelectContent className="text-[10px]">
+                                {workingHoursTimeOptions.map((option) => (
+                                  <SelectItem key={`${row.label}-preview-end-${option}`} value={option} className="text-[10px]">
+                                    {option === "N/A" ? option : formatWorkingHoursTimeLabel(option)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </>
+                        ) : (
+                          <>
+                            <p className="pl-2 font-normal text-black">
+                              {row.start === "N/A" || row.end === "N/A"
+                                ? "N/A"
+                                : formatWorkingHoursTimeLabel(row.start)}
+                            </p>
+                            <p className="text-left text-[11px] font-medium text-slate-500">
+                              {row.start === "N/A" || row.end === "N/A" ? "" : "to"}
+                            </p>
+                            <p className="pl-4 font-normal text-black">
+                              {row.start === "N/A" || row.end === "N/A"
+                                ? ""
+                                : formatWorkingHoursTimeLabel(row.end)}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            {clause.paragraphs.slice(1 + workingHoursDayDefinitions.length).map((paragraph, index) => (
+              <div key={`${clause.title}-tail-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
+                <span className="font-normal text-black">{paragraphNumberStart + 1 + index}.</span>
+                <p className="text-justify font-normal text-black">{paragraph}</p>
+              </div>
+            ))}
+          </>
+        ) : (
+          clause.paragraphs.map((paragraph, index) => (
+            <div key={`${clause.title}-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
+              <span className="font-normal text-black">{paragraphNumberStart + index}.</span>
+              <p className="text-justify font-normal text-black">{paragraph}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+};
 
 const PreviewPartiesBlock = ({
   employerName,
@@ -1511,8 +1784,30 @@ const PermContractGenerator = ({
     }));
   };
 
+  const updateWorkingHoursDay = (field: keyof ContractStepState, value: string) => {
+    setContract((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
   const updateDocumentMode = (value: DocumentMode) => {
     setIsFinished(false);
+    setContract((current) => {
+      if (value === "client_template") {
+        return {
+          ...current,
+          permContractWorkplace: "",
+        };
+      }
+      if (current.permContractWorkplace.trim().length > 0) {
+        return current;
+      }
+      return {
+        ...current,
+        permContractWorkplace: company.address,
+      };
+    });
     setCompany((current) => ({
       ...current,
       documentMode: value,
@@ -1541,6 +1836,7 @@ const PermContractGenerator = ({
 
   useEffect(() => {
     setContract((current) => {
+      if (company.documentMode === "client_template") return current;
       if (current.permContractWorkplace.trim().length > 0) return current;
       if (!company.address.trim()) return current;
       return {
@@ -1548,7 +1844,7 @@ const PermContractGenerator = ({
         permContractWorkplace: company.address,
       };
     });
-  }, [company.address]);
+  }, [company.address, company.documentMode]);
 
   const togglePreviewEditMode = useCallback(() => {
     setIsPreviewEditable((current) => {
@@ -1664,6 +1960,11 @@ const PermContractGenerator = ({
 
   const selectedCompanyLabel = company.companyName || "Select client";
   const selectedNationalityLabel = employee.permEmployeeNationality || "Select nationality";
+  const workingHoursScheduleRows = useMemo(() => buildWorkingHoursScheduleRows(contract), [contract]);
+  const workingHoursScheduleParagraphs = useMemo(
+    () => buildWorkingHoursScheduleParagraphs(workingHoursScheduleRows, isClientTemplateMode),
+    [isClientTemplateMode, workingHoursScheduleRows],
+  );
   const salarySummary =
     [
       formatCurrencyDisplay(contract.permContractSalaryAmount),
@@ -1677,6 +1978,8 @@ const PermContractGenerator = ({
     const baseClauses = buildPreviewClauses({
       salarySummary,
       bargainingCouncil: contract.permContractBargainingCouncil,
+      workingHoursMode: contract.permContractWorkingHoursMode,
+      workingHoursScheduleParagraphs,
     }).map((clause) => ({
       ...clause,
       title: clauseTitleEdits[clause.id] || clause.title,
@@ -1694,17 +1997,32 @@ const PermContractGenerator = ({
     }));
 
     return mergePreviewClauses(baseClauses, mergedCustomClauses);
-  }, [clauseBodyEdits, clauseTitleEdits, contract.permContractBargainingCouncil, customClauses, salarySummary]);
+  }, [
+    clauseBodyEdits,
+    clauseTitleEdits,
+    contract.permContractBargainingCouncil,
+    contract.permContractWorkingHoursMode,
+    customClauses,
+    salarySummary,
+    workingHoursScheduleParagraphs,
+  ]);
   const interpreterDisplay =
     contract.permContractInterpreterRequired === "yes"
       ? "Yes"
       : contract.permContractInterpreterRequired === "no"
         ? "No"
         : "--";
-  const idNumberDisplay = /^\d{13}$/.test(employee.permEmployeeIdentityNumber.replace(/\D/g, ""))
-    ? employee.permEmployeeIdentityNumber
-    : "--";
-  const passportDisplay = idNumberDisplay === "--" ? employee.permEmployeeIdentityNumber || "--" : "--";
+  const isSouthAfricanEmployee = employee.permEmployeeNationality === "South African";
+  const idNumberDisplay = isSouthAfricanEmployee
+    ? employee.permEmployeeIdentityNumber || "--"
+    : /^\d{13}$/.test(employee.permEmployeeIdentityNumber.replace(/\D/g, ""))
+      ? employee.permEmployeeIdentityNumber
+      : "--";
+  const passportDisplay = isSouthAfricanEmployee
+    ? "--"
+    : idNumberDisplay === "--"
+      ? employee.permEmployeeIdentityNumber || "--"
+      : "--";
   const activeEditingClause = editingClauseId ? previewClauses.find((clause) => clause.id === editingClauseId) ?? null : null;
   const employeeFullNameDisplay = [employee.permEmployeeName, employee.permEmployeeSurname].filter(Boolean).join(" ").trim();
   const employeeReferenceDisplay = isClientTemplateMode
@@ -1740,7 +2058,7 @@ const PermContractGenerator = ({
     retirement: contract.permContractRetirementAge ? `Age ${contract.permContractRetirementAge}` : "--",
     reportsTo: isClientTemplateMode ? previewTemplatePlaceholder : contract.permContractReportsTo || "--",
     interpreter: interpreterDisplay,
-    workplace: contract.permContractWorkplace || "--",
+    workplace: isClientTemplateMode ? previewTemplatePlaceholder : contract.permContractWorkplace || "--",
   };
 
   async function handlePdfDownload() {
@@ -2055,6 +2373,11 @@ const PermContractGenerator = ({
     };
 
     const drawClauseBlock = (clause: PreviewClause, startNumber: number) => {
+      const hoursOfWorkClauseId = makePreviewClauseId("Hours of Work");
+      const shouldRenderGroupedWorkingHours =
+        contract.permContractWorkingHoursMode === "defined" &&
+        clause.id === hoursOfWorkClauseId &&
+        !clauseBodyEdits[clause.id];
       const headingLines = pdf.splitTextToSize(clause.title, contentWidth) as string[];
       const paragraphLineHeight = 4.9;
       const paragraphTextOffset = 7;
@@ -2077,7 +2400,7 @@ const PermContractGenerator = ({
       pdf.setFontSize(10);
       pdf.setTextColor(0, 0, 0);
 
-      clause.paragraphs.forEach((paragraph, paragraphIndex) => {
+      const drawParagraph = (paragraph: string, paragraphIndex: number) => {
         const numberLabel = `${startNumber + paragraphIndex}.`;
         const lines = pdf.splitTextToSize(paragraph, paragraphWidth) as string[];
         const blockHeight = lines.length * paragraphLineHeight;
@@ -2109,7 +2432,66 @@ const PermContractGenerator = ({
           });
         });
         y += blockHeight + paragraphGap;
-      });
+      };
+
+      if (shouldRenderGroupedWorkingHours) {
+        drawParagraph(clause.paragraphs[0] || "", 0);
+
+        workingHoursScheduleRows.forEach((row) => {
+          const lineHeight = 5.48;
+          const rowTextX = margin + paragraphTextOffset + 8;
+          const dayLabelWidth = 22;
+          const startFieldWidth = 26;
+          const endFieldWidth = 26;
+          const startFieldX = rowTextX + dayLabelWidth + 6;
+          const toTextX = rowTextX + 54;
+          const endFieldX = rowTextX + 62;
+          const toText = "to";
+
+          ensureSpace(lineHeight + paragraphGap);
+          pdf.setFontSize(9.5);
+          pdf.setFont("helvetica", "bold");
+          pdf.text(`${row.label}:`, rowTextX, y);
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(10);
+          if (isClientTemplateMode) {
+            addPdfDropdownField({
+              fieldName: `template_working_hours_${row.label.toLowerCase()}_start`,
+              x: startFieldX,
+              y: y - 4.7,
+              width: startFieldWidth,
+              height: 6.8,
+              options: workingHoursTimeDropdownOptions,
+              fontSize: 8.5,
+            });
+            pdf.text(toText, toTextX, y);
+            addPdfDropdownField({
+              fieldName: `template_working_hours_${row.label.toLowerCase()}_end`,
+              x: endFieldX,
+              y: y - 4.7,
+              width: endFieldWidth,
+              height: 6.8,
+              options: workingHoursTimeDropdownOptions,
+              fontSize: 8.5,
+            });
+          } else if (row.start === "N/A" || row.end === "N/A") {
+            pdf.text("N/A", startFieldX, y);
+          } else {
+            pdf.text(formatWorkingHoursTimeLabel(row.start), startFieldX, y);
+            pdf.text(toText, toTextX, y);
+            pdf.text(formatWorkingHoursTimeLabel(row.end), endFieldX, y);
+          }
+          y += lineHeight + paragraphGap;
+        });
+
+        clause.paragraphs.slice(1 + workingHoursScheduleRows.length).forEach((paragraph, index) => {
+          drawParagraph(paragraph, 1 + index);
+        });
+      } else {
+        clause.paragraphs.forEach((paragraph, paragraphIndex) => {
+          drawParagraph(paragraph, paragraphIndex);
+        });
+      }
 
       y += 3.6;
     };
@@ -2141,7 +2523,7 @@ const PermContractGenerator = ({
       pdf.setFont("helvetica", "italic");
       pdf.setFontSize(8.7);
       pdf.text("and", margin, y);
-      y += 7;
+      y += isClientTemplateMode ? 9.82 : 7;
 
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9.2);
@@ -2170,9 +2552,9 @@ const PermContractGenerator = ({
         pdf.text("ID Number.:", margin, y);
         addPdfTextField({
           fieldName: "template_parties_employee_reference",
-          x: margin + 21,
-          y: y - 4.9,
-          width: leftColumnWidth - 21,
+          x: margin + 17,
+          y: y - 3.9,
+          width: leftColumnWidth - 17,
           height: 6.8,
           fontStyle: "normal",
           fontSize: 8,
@@ -2361,7 +2743,7 @@ const PermContractGenerator = ({
           rightField: {
             fieldName: "template_employee_nationality",
             kind: "dropdown",
-            options: nationalityOptions,
+            options: templateNationalityOptions,
           },
           columnGap: 6,
           leftValuePadding: 0,
@@ -2518,7 +2900,13 @@ const PermContractGenerator = ({
           }
         : undefined,
     );
-    drawLabelValueRow("Workplace:", infoSheetEmploymentPreview.workplace, "full", 28);
+    drawLabelValueRow(
+      "Workplace:",
+      infoSheetEmploymentPreview.workplace,
+      "full",
+      28,
+      isClientTemplateMode ? { fieldName: "template_contract_workplace" } : undefined,
+    );
 
     pushPage();
     pdf.setFont("helvetica", "bold");
@@ -2621,7 +3009,14 @@ const PermContractGenerator = ({
   const openClauseEditor = (clause: PreviewClause) => {
     setEditingClauseId(clause.id);
     setClauseTitleDraft(clause.title);
-    setClauseBodyDraft(serializeClauseParagraphs(clause.paragraphs));
+    setClauseBodyDraft(
+      serializeClauseParagraphs(
+        getEditableClauseParagraphs({
+          clause,
+          workingHoursMode: contract.permContractWorkingHoursMode,
+        }),
+      ),
+    );
   };
 
   const closeClauseEditor = () => {
@@ -2655,10 +3050,24 @@ const PermContractGenerator = ({
         ...buildPreviewClauses({
           salarySummary,
           bargainingCouncil: contract.permContractBargainingCouncil,
+          workingHoursMode: contract.permContractWorkingHoursMode,
+          workingHoursScheduleParagraphs,
         }),
         ...customClauses,
       ].find((item) => item.id === clause.id) ?? clause;
-    const originalBody = serializeClauseParagraphs(originalClause.paragraphs).trim();
+    const originalBody = serializeClauseParagraphs(
+      getEditableClauseParagraphs({
+        clause: originalClause,
+        workingHoursMode: contract.permContractWorkingHoursMode,
+      }),
+    ).trim();
+    const nextParagraphs =
+      originalClause.id === makePreviewClauseId("Hours of Work") && contract.permContractWorkingHoursMode === "defined"
+        ? mergeHoursOfWorkEditedParagraphs({
+            editedParagraphs: normalizeClauseBodyText(nextBody),
+            originalClause,
+          })
+        : normalizeClauseBodyText(nextBody);
 
     setClauseTitleEdits((current) => {
       const next = { ...current };
@@ -2668,7 +3077,7 @@ const PermContractGenerator = ({
     });
     setClauseBodyEdits((current) => {
       const next = { ...current };
-      if (nextBody !== originalBody) next[clause.id] = nextBody;
+      if (nextBody !== originalBody) next[clause.id] = serializeClauseParagraphs(nextParagraphs);
       else delete next[clause.id];
       return next;
     });
@@ -2692,12 +3101,21 @@ const PermContractGenerator = ({
       ...buildPreviewClauses({
         salarySummary,
         bargainingCouncil: contract.permContractBargainingCouncil,
+        workingHoursMode: contract.permContractWorkingHoursMode,
+        workingHoursScheduleParagraphs,
       }),
       ...customClauses,
     ].find((item) => item.id === clause.id);
     if (originalClause) {
       setClauseTitleDraft(originalClause.title);
-      setClauseBodyDraft(serializeClauseParagraphs(originalClause.paragraphs));
+      setClauseBodyDraft(
+        serializeClauseParagraphs(
+          getEditableClauseParagraphs({
+            clause: originalClause,
+            workingHoursMode: contract.permContractWorkingHoursMode,
+          }),
+        ),
+      );
     }
   };
 
@@ -2851,7 +3269,7 @@ const PermContractGenerator = ({
         </div>
 
         {!company.logoUrl ? (
-          <div className="max-w-[320px] space-y-2">
+          <div className="space-y-2">
             <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
               Document Mode
             </Label>
@@ -2886,7 +3304,7 @@ const PermContractGenerator = ({
                 Remove logo
               </button>
             </div>
-            <div className="max-w-[320px] space-y-2">
+            <div className="space-y-2">
               <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
                 Document Mode
               </Label>
@@ -3438,6 +3856,29 @@ const PermContractGenerator = ({
             </Select>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="permContractWorkingHoursMode" className="text-[10px] font-semibold text-slate-600">
+              Working Hours
+            </Label>
+            <Select
+              value={contract.permContractWorkingHoursMode || undefined}
+              onValueChange={(value) =>
+                updateContract("permContractWorkingHoursMode", value as ContractStepState["permContractWorkingHoursMode"])
+              }
+            >
+              <SelectTrigger id="permContractWorkingHoursMode" className={selectTriggerClassName}>
+                <SelectValue placeholder="Select working hours mode" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {workingHoursModeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="permContractWorkplace" className="text-[10px] font-semibold text-slate-600">
               Workplace Address
@@ -3574,6 +4015,9 @@ const PermContractGenerator = ({
                       isPreviewEditable={isPreviewEditable}
                       isAdded={isAdded}
                       isEdited={isEdited}
+                      workingHoursMode={contract.permContractWorkingHoursMode}
+                      workingHoursScheduleRows={workingHoursScheduleRows}
+                      onWorkingHoursTimeChange={updateWorkingHoursDay}
                       onEdit={() => openClauseEditor(clause)}
                     />,
                     isPreviewEditable && !isLastClause ? (

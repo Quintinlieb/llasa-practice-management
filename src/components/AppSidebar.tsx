@@ -41,7 +41,6 @@ const documentFlyoutItems: Record<string, Array<{ title: string; url: string; se
     { title: "Warning", url: "/documents", selectedDocument: "discWarningGenerator" },
   ],
   Contracts: [
-    { title: "Permanent Contract", url: "/documents/contracts/permanent" },
     { title: "Permanent", url: "/documents", selectedDocument: "permContract" },
     { title: "Temporary Contract", url: "/documents", selectedDocument: "temporaryContract" },
     { title: "Addendum", url: "/documents", selectedDocument: "addendum" },
@@ -110,7 +109,6 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
     const documentToCategory: Record<string, string> = {
       discWarningGenerator: "Discipline",
       codeOfConduct: "Discipline",
-      permanentContract: "Contracts",
       permContract: "Contracts",
       temporaryContract: "Contracts",
       addendum: "Contracts",

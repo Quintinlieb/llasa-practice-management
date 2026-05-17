@@ -15,12 +15,6 @@ type ContractDocument = {
 
 const contractDocuments: ContractDocument[] = [
   {
-    name: "Permanent Contract",
-    description: "Generate a permanent contract for your employees in a few easy steps.",
-    href: "/documents/contracts/permanent",
-    isActive: true,
-  },
-  {
     name: "Temporary Contract",
     description: "Generate temporary contracts for a single employee.",
     href: "/documents/contracts/temporary",

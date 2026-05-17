@@ -15,7 +15,6 @@ import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
 import CaseFiles from "./pages/CaseFiles";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
-import PermanentContractGenerator from "./pages/PermanentContractGenerator";
 import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
 import Settings from "./pages/Settings";
@@ -49,7 +48,6 @@ const AppRoutes = () => {
         <Route path="/documents/notices" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/contracts" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
-        <Route path="/documents/contracts/permanent" element={<ProtectedRoute><PermanentContractGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
         <Route path="/case-files" element={<ProtectedRoute><CaseFiles /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

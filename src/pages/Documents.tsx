@@ -28,7 +28,6 @@ type DocumentKey =
   | "incapacityIllHealthHearingNotice"
   | "serviceCertificate"
   | "acknowledgementOfDebt"
-  | "permanentContract"
   | "permContract"
   | "temporaryContract"
   | "addendum"
@@ -188,7 +187,6 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   incapacityIllHealthHearingNotice: lazyDocumentComponent(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   serviceCertificate: lazyDocumentComponent(() => import("./ServiceCertificateGenerator")),
   acknowledgementOfDebt: lazyDocumentComponent(() => import("./AcknowledgementOfDebtGenerator")),
-  permanentContract: lazyDocumentComponent(() => import("./PermanentContractGenerator")),
   permContract: lazyDocumentComponent(() => import("./PermContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
@@ -211,7 +209,6 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   incapacityIllHealthHearingNotice: { category: "Notices", label: "Incapacity Hearing (Ill health)" },
   serviceCertificate: { category: "Other", label: "Certificate of Service" },
   acknowledgementOfDebt: { category: "Other", label: "Acknowledgement of Debt" },
-  permanentContract: { category: "Contracts", label: "Permanent Contract" },
   permContract: { category: "Contracts", label: "Permanent" },
   temporaryContract: { category: "Contracts", label: "Temporary Contract" },
   addendum: { category: "Contracts", label: "Addendum" },
@@ -258,7 +255,6 @@ const wizardDocumentKeys = [
   "acknowledgementOfDebt",
   "addendum",
   ...terminationDocumentKeys,
-  "permanentContract",
   "permContract",
   "temporaryContract",
 ] as const satisfies readonly DocumentKey[];
@@ -286,7 +282,6 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   incapacityIllHealthHearingNotice: "Incapacity Hearing (Ill health)",
   serviceCertificate: "Certificate of Service",
   acknowledgementOfDebt: "Acknowledgement of Debt",
-  permanentContract: "Permanent Contract",
   permContract: "Permanent",
   temporaryContract: "Temporary Contract",
   addendum: "Addendum",
@@ -316,7 +311,6 @@ const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   retirementTermination: "Termination Details",
   poorPerformanceTermination: "Termination Details",
   mutualTermination: "Termination Details",
-  permanentContract: "Employment Details",
   permContract: "Contract Details",
   temporaryContract: "Employment Details",
 };
@@ -616,24 +610,6 @@ const Documents = () => {
       "Clause 5 of the employment contract is hereby amended, with effect from 3 March 2026, and the salary is R25,000 per month. (Clause body)",
     ],
   ] as const;
-  const permanentStepNotes = [
-    [
-      "The company name, registration number, and address can be changed in Company Settings.",
-      "If applicable, you may insert a trading name for your company. The contact number and email address are auto populated but can be changed by selecting the respective input fields.",
-    ],
-    [
-      "You may either select from saved employee records or enter employee details manually.",
-      "If the employee is not yet saved, complete the employee details manually for this document.",
-    ],
-    [
-      "Capture the employment details exactly as agreed between the Employer and Employee.",
-      "Complete all required fields before moving to the preview and edit step.",
-    ],
-    [
-      "Review and finalize the editable preview before downloading.",
-      "Use Edit to change clause text, Add to insert new clauses, and Delete (for custom clauses) to remove terms.",
-    ],
-  ] as const;
   const permContractStepNotes = [
     [
       "Select the client record that should be used as the employer for this contract.",
@@ -859,7 +835,6 @@ const Documents = () => {
     ],
   ] as const satisfies StepNotes;
   const addendumActiveNotes = addendumStepNotes[modalActiveStep] ?? addendumStepNotes[0];
-  const permanentActiveNotes = permanentStepNotes[modalActiveStep] ?? permanentStepNotes[0];
   const permContractActiveNotes = permContractStepNotes[modalActiveStep] ?? permContractStepNotes[0];
   const warningActiveNotes = warningStepNotes[modalActiveStep] ?? warningStepNotes[0];
   const noticeTerminationActiveNotes =
@@ -908,8 +883,6 @@ const Documents = () => {
   const modalActiveNotes =
     modalDocument === "discWarningGenerator"
       ? warningActiveNotes
-      : modalDocument === "permanentContract"
-        ? permanentActiveNotes
       : modalDocument === "permContract"
         ? permContractActiveNotes
       : modalDocument === "disciplinaryHearingNotice"

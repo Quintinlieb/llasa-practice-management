@@ -12,7 +12,7 @@ import { logGeneratedDocument } from "@/lib/documentsLog";
 import { nationalityOptions } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
-import { jsPDF } from "jspdf";
+import { jsPDF, type AcroFormComboBox, type AcroFormTextField } from "jspdf";
 import { Building2, Check, ChevronsUpDown, FileText, Info, Pencil, Plus, User2, X } from "lucide-react";
 
 type PermContractGeneratorProps = {
@@ -65,6 +65,7 @@ type CompanyLogoRecord = {
 };
 
 type CompanyLogoOrientation = "portrait" | "landscape";
+type DocumentMode = "standard_contract" | "client_template";
 
 type CompanyStepState = {
   companyId: string;
@@ -75,6 +76,7 @@ type CompanyStepState = {
   phone: string;
   email: string;
   address: string;
+  documentMode: DocumentMode;
   logoUrl: string;
   logoOrientation: CompanyLogoOrientation | "";
 };
@@ -152,6 +154,7 @@ const emptyCompanyState: CompanyStepState = {
   phone: "",
   email: "",
   address: "",
+  documentMode: "standard_contract",
   logoUrl: "",
   logoOrientation: "",
 };
@@ -325,6 +328,7 @@ const mapRecordToState = (record: CompanyRecord): CompanyStepState => ({
   phone: String(record.primary_number || "").trim(),
   email: String(record.primary_email || "").trim(),
   address: buildAddress(record),
+  documentMode: "standard_contract",
   logoUrl: "",
   logoOrientation: "",
 });
@@ -520,6 +524,26 @@ const bargainingCouncilOptions = [
   { label: "General Public Service Sectoral Bargaining Council (GPSSBC)", value: "GPSSBC" },
   { label: "Public Health and Social Development Sectoral Bargaining Council (PHSDSBC)", value: "PHSDSBC" },
 ] as const;
+
+const documentModeOptions: { label: string; value: DocumentMode }[] = [
+  { label: "Standard Contract", value: "standard_contract" },
+  { label: "Client Template", value: "client_template" },
+];
+
+const previewTemplatePlaceholder = "____________________";
+const previewTemplatePlaceholderShort = "____________";
+
+type FillablePdfFieldConfig = {
+  fieldName: string;
+  multiline?: boolean;
+  height?: number;
+  maxLength?: number;
+  textAlign?: "left" | "center" | "right";
+  fontStyle?: "normal" | "bold" | "italic" | "bolditalic";
+  fontSize?: number;
+  kind?: "text" | "dropdown";
+  options?: readonly string[];
+};
 
 const PreviewRow = ({ label, value }: { label: string; value: string }) => (
   <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-[11px] leading-6 text-slate-900">
@@ -1431,7 +1455,10 @@ const PermContractGenerator = ({
   const handleCompanySelect = (companyId: string) => {
     const match = companies.find((entry) => entry.id === companyId);
     if (!match) return;
-    const nextCompany = mapRecordToState(match);
+    const nextCompany = {
+      ...mapRecordToState(match),
+      documentMode: company.documentMode,
+    };
     resetDownstreamState(nextCompany.address);
     setCompany(nextCompany);
     void loadLogoForCompany(companyId);
@@ -1442,20 +1469,23 @@ const PermContractGenerator = ({
   };
 
   const hasCompany = Boolean(company.companyId);
+  const isClientTemplateMode = company.documentMode === "client_template";
   const isEmployeeStepComplete =
-    employee.permEmployeeName.trim().length > 0 &&
-    employee.permEmployeeSurname.trim().length > 0 &&
-    employee.permEmployeeNationality.trim().length > 0 &&
-    employee.permEmployeeIdentityNumber.trim().length > 0 &&
-    employee.permEmployeeResidentialAddress.trim().length > 0;
+    isClientTemplateMode ||
+    (employee.permEmployeeName.trim().length > 0 &&
+      employee.permEmployeeSurname.trim().length > 0 &&
+      employee.permEmployeeNationality.trim().length > 0 &&
+      employee.permEmployeeIdentityNumber.trim().length > 0 &&
+      employee.permEmployeeResidentialAddress.trim().length > 0);
   const isContractStepComplete =
-    contract.permContractStartDate.trim().length > 0 &&
-    contract.permContractJobTitle.trim().length > 0 &&
-    contract.permContractSalaryAmount.trim().length > 0 &&
-    contract.permContractSalaryType.trim().length > 0 &&
-    contract.permContractPayCycle.trim().length > 0 &&
-    contract.permContractProbation.trim().length > 0 &&
-    contract.permContractRetirementAge.trim().length > 0;
+    isClientTemplateMode ||
+    (contract.permContractStartDate.trim().length > 0 &&
+      contract.permContractJobTitle.trim().length > 0 &&
+      contract.permContractSalaryAmount.trim().length > 0 &&
+      contract.permContractSalaryType.trim().length > 0 &&
+      contract.permContractPayCycle.trim().length > 0 &&
+      contract.permContractProbation.trim().length > 0 &&
+      contract.permContractRetirementAge.trim().length > 0);
 
   const filteredBargainingCouncilOptions = useMemo(() => {
     const query = bargainingCouncilSearchQuery.trim().toLowerCase();
@@ -1478,6 +1508,14 @@ const PermContractGenerator = ({
     setContract((current) => ({
       ...current,
       [field]: value,
+    }));
+  };
+
+  const updateDocumentMode = (value: DocumentMode) => {
+    setIsFinished(false);
+    setCompany((current) => ({
+      ...current,
+      documentMode: value,
     }));
   };
 
@@ -1669,12 +1707,58 @@ const PermContractGenerator = ({
   const passportDisplay = idNumberDisplay === "--" ? employee.permEmployeeIdentityNumber || "--" : "--";
   const activeEditingClause = editingClauseId ? previewClauses.find((clause) => clause.id === editingClauseId) ?? null : null;
   const employeeFullNameDisplay = [employee.permEmployeeName, employee.permEmployeeSurname].filter(Boolean).join(" ").trim();
-  const employeeReferenceDisplay = idNumberDisplay !== "--" ? `ID number: ${idNumberDisplay}` : `Passport no.: ${passportDisplay}`;
+  const employeeReferenceDisplay = isClientTemplateMode
+    ? previewTemplatePlaceholder
+    : idNumberDisplay !== "--"
+      ? `ID number: ${idNumberDisplay}`
+      : `Passport no.: ${passportDisplay}`;
   const employerNameDisplay = (company.companyName || "--").toUpperCase();
-  const employeeNameDisplay = (employeeFullNameDisplay || "--").toUpperCase();
+  const employeeNameDisplay = (isClientTemplateMode ? previewTemplatePlaceholder : employeeFullNameDisplay || "--").toUpperCase();
+  const infoSheetEmployeePreview = {
+    surname: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeSurname || "--",
+    name: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeName || "--",
+    idNumber: isClientTemplateMode ? previewTemplatePlaceholder : idNumberDisplay,
+    passportNumber: isClientTemplateMode ? previewTemplatePlaceholder : passportDisplay,
+    age: isClientTemplateMode ? previewTemplatePlaceholderShort : employee.permEmployeeAge || "--",
+    nationality: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeNationality || "--",
+    race: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeRace || "--",
+    gender: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeGender || "--",
+    cellNumber: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeCellNumber || "--",
+    email: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeEmail || "--",
+    alternativeContact: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeAlternativeContact || "--",
+    employeeNumber: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeNumber || "--",
+    residentialAddress: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeeResidentialAddress || "--",
+    postalAddress: isClientTemplateMode ? previewTemplatePlaceholder : employee.permEmployeePostalAddress || "--",
+  };
+  const infoSheetEmploymentPreview = {
+    startDate: isClientTemplateMode ? previewTemplatePlaceholder : startDateDisplay,
+    probation: probationDisplay,
+    jobTitle: isClientTemplateMode ? previewTemplatePlaceholder : contract.permContractJobTitle || "--",
+    department: isClientTemplateMode ? previewTemplatePlaceholder : contract.permContractDepartment || "--",
+    grossSalary: isClientTemplateMode ? previewTemplatePlaceholder : salarySummary,
+    payCycle: payCycleLabelByValue[contract.permContractPayCycle] || "--",
+    retirement: contract.permContractRetirementAge ? `Age ${contract.permContractRetirementAge}` : "--",
+    reportsTo: isClientTemplateMode ? previewTemplatePlaceholder : contract.permContractReportsTo || "--",
+    interpreter: interpreterDisplay,
+    workplace: contract.permContractWorkplace || "--",
+  };
 
   async function handlePdfDownload() {
     const pdf = new jsPDF({ unit: "mm", format: "a4" });
+    const acroFormApi = pdf as jsPDF & {
+      AcroForm: {
+        TextField: new () => AcroFormTextField;
+        ComboBox: new () => AcroFormComboBox;
+      };
+    };
+    const pdfInternalApi = pdf as jsPDF & {
+      internal: jsPDF["internal"] & {
+        getFont: (fontName: string, fontStyle?: string) => { id: string };
+      };
+      __private__: {
+        encodeColorString: (color: string) => string;
+      };
+    };
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 20;
@@ -1685,7 +1769,7 @@ const PermContractGenerator = ({
     const bodyBottomLimit = pageHeight - footerReserve;
     const sectionFill = [241, 245, 249] as const;
     const sectionBorder = [203, 213, 225] as const;
-    const titleLineFallback = "____________________";
+    const titleLineFallback = previewTemplatePlaceholder;
     const pdfRowSpacingIncrease = 2.11;
     const pdfSectionHeaderBottomSpacingIncrease = 4.77;
     const logoDataUrl = await loadImageUrlAsDataUrl(company.logoUrl);
@@ -1715,47 +1799,198 @@ const PermContractGenerator = ({
       y += 12 + pdfSectionHeaderBottomSpacingIncrease;
     };
 
+    const addPdfTextField = ({
+      fieldName,
+      x,
+      y: top,
+      width,
+      height,
+      multiline = false,
+      maxLength,
+      textAlign = "left",
+      fontStyle = "normal",
+      fontSize = 9,
+    }: FillablePdfFieldConfig & {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }) => {
+      const field = new acroFormApi.AcroForm.TextField() as AcroFormTextField & {
+        getKeyValueListForStream: () => Array<{ key: string; value: string }>;
+      };
+      field.fieldName = fieldName;
+      field.x = x;
+      field.y = top;
+      field.width = width;
+      field.height = height;
+      field.fontName = "helvetica";
+      field.fontStyle = fontStyle;
+      field.fontSize = fontSize;
+      field.maxFontSize = fontSize;
+      field.color = "black";
+      field.value = "";
+      field.defaultValue = "";
+      field.textAlign = textAlign;
+      field.showWhenPrinted = true;
+      field.multiline = multiline;
+      field.doNotScroll = false;
+      field.doNotSpellCheck = false;
+      if (typeof maxLength === "number") {
+        field.maxLength = maxLength;
+      }
+      const defaultAppearanceFontKey = pdfInternalApi.internal.getFont(field.fontName, field.fontStyle).id;
+      const defaultAppearanceColor = pdfInternalApi.__private__.encodeColorString(field.color);
+      const defaultAppearance = `(/${defaultAppearanceFontKey} ${field.fontSize} Tf ${defaultAppearanceColor})`;
+      const originalGetKeyValueListForStream = field.getKeyValueListForStream.bind(field);
+      field.getKeyValueListForStream = () => {
+        const keyValueList = originalGetKeyValueListForStream();
+        keyValueList.push({
+          key: "DA",
+          value: defaultAppearance,
+        });
+        return keyValueList;
+      };
+      pdf.addField(field);
+    };
+
+    const addPdfDropdownField = ({
+      fieldName,
+      x,
+      y: top,
+      width,
+      height,
+      options,
+      textAlign = "left",
+      fontSize = 9,
+    }: FillablePdfFieldConfig & {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      options: readonly string[];
+    }) => {
+      const field = new acroFormApi.AcroForm.ComboBox() as AcroFormComboBox & {
+        getKeyValueListForStream: () => Array<{ key: string; value: string }>;
+      };
+      field.fieldName = fieldName;
+      field.x = x;
+      field.y = top;
+      field.width = width;
+      field.height = height;
+      field.fontName = "helvetica";
+      field.fontStyle = "normal";
+      field.fontSize = fontSize;
+      field.maxFontSize = fontSize;
+      field.color = "black";
+      field.value = "";
+      field.defaultValue = "";
+      field.textAlign = textAlign;
+      field.showWhenPrinted = true;
+      field.edit = false;
+      field.setOptions(["", ...options]);
+      const defaultAppearanceFontKey = pdfInternalApi.internal.getFont(field.fontName, field.fontStyle).id;
+      const defaultAppearanceColor = pdfInternalApi.__private__.encodeColorString(field.color);
+      const defaultAppearance = `(/${defaultAppearanceFontKey} ${field.fontSize} Tf ${defaultAppearanceColor})`;
+      const originalGetKeyValueListForStream = field.getKeyValueListForStream.bind(field);
+      field.getKeyValueListForStream = () => {
+        const keyValueList = originalGetKeyValueListForStream();
+        keyValueList.push({
+          key: "DA",
+          value: defaultAppearance,
+        });
+        return keyValueList;
+      };
+      pdf.addField(field);
+    };
+
     const drawLabelValueRow = (
       label: string,
       value: string,
       mode: "single" | "full" = "single",
       labelWidthOverride?: number,
+      fillableField?: FillablePdfFieldConfig,
     ) => {
-      const safeValue = value || titleLineFallback;
+      const safeValue = fillableField ? "" : value || titleLineFallback;
       const labelWidth = labelWidthOverride ?? 34;
       const valueX = margin + labelWidth;
       const valueWidth = mode === "full" ? contentWidth - labelWidth : contentWidth - labelWidth - 4;
-      const lines = pdf.splitTextToSize(safeValue, valueWidth) as string[];
+      const lines = safeValue ? (pdf.splitTextToSize(safeValue, valueWidth) as string[]) : [];
       const lineHeight = 4.4;
-      const rowHeight = Math.max(4.4, lines.length * lineHeight);
+      const fieldHeight = fillableField?.height ?? (fillableField?.multiline ? 11 : 6.8);
+      const rowHeight = Math.max(4.4, lines.length * lineHeight, fillableField ? fieldHeight : 0);
       ensureSpace(rowHeight + 1 + pdfRowSpacingIncrease);
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9);
       pdf.text(label, margin, y);
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      lines.forEach((line, index) => {
-        pdf.text(String(line), valueX, y + index * lineHeight);
-      });
+      if (fillableField) {
+        if (fillableField.kind === "dropdown" && fillableField.options) {
+          addPdfDropdownField({
+            ...fillableField,
+            x: valueX,
+            y: y - 3.9,
+            width: valueWidth,
+            height: fieldHeight,
+            options: fillableField.options,
+          });
+        } else {
+          addPdfTextField({
+            ...fillableField,
+            x: valueX,
+            y: y - 3.9,
+            width: valueWidth,
+            height: fieldHeight,
+          });
+        }
+      } else {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        lines.forEach((line, index) => {
+          pdf.text(String(line), valueX, y + index * lineHeight);
+        });
+      }
       y += rowHeight + 1 + pdfRowSpacingIncrease;
     };
 
-    const drawDualLabelValueRow = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) => {
-      const safeLeftValue = leftValue || titleLineFallback;
-      const safeRightValue = rightValue || titleLineFallback;
-      const columnGap = 8;
+    const drawDualLabelValueRow = (
+      leftLabel: string,
+      leftValue: string,
+      rightLabel: string,
+      rightValue: string,
+      options?: {
+        leftField?: FillablePdfFieldConfig;
+        rightField?: FillablePdfFieldConfig;
+        columnGap?: number;
+        leftLabelWidth?: number;
+        rightLabelWidth?: number;
+        leftValuePadding?: number;
+        rightValuePadding?: number;
+      },
+    ) => {
+      const safeLeftValue = options?.leftField ? "" : leftValue || titleLineFallback;
+      const safeRightValue = options?.rightField ? "" : rightValue || titleLineFallback;
+      const columnGap = options?.columnGap ?? 8;
       const columnWidth = (contentWidth - columnGap) / 2;
-      const leftLabelWidth = 28;
-      const rightLabelWidth = 28;
+      const leftLabelWidth = options?.leftLabelWidth ?? 28;
+      const rightLabelWidth = options?.rightLabelWidth ?? 28;
+      const leftValuePadding = options?.leftValuePadding ?? 4;
+      const rightValuePadding = options?.rightValuePadding ?? 4;
       const leftValueX = margin + leftLabelWidth;
       const rightColumnX = margin + columnWidth + columnGap;
       const rightValueX = rightColumnX + rightLabelWidth;
-      const leftValueWidth = columnWidth - leftLabelWidth - 4;
-      const rightValueWidth = columnWidth - rightLabelWidth - 4;
-      const leftLines = pdf.splitTextToSize(safeLeftValue, leftValueWidth) as string[];
-      const rightLines = pdf.splitTextToSize(safeRightValue, rightValueWidth) as string[];
+      const leftValueWidth = columnWidth - leftLabelWidth - leftValuePadding;
+      const rightValueWidth = columnWidth - rightLabelWidth - rightValuePadding;
+      const leftLines = safeLeftValue ? (pdf.splitTextToSize(safeLeftValue, leftValueWidth) as string[]) : [];
+      const rightLines = safeRightValue ? (pdf.splitTextToSize(safeRightValue, rightValueWidth) as string[]) : [];
       const lineHeight = 4.4;
-      const rowHeight = Math.max(4.4, Math.max(leftLines.length, rightLines.length) * lineHeight);
+      const leftFieldHeight = options?.leftField?.height ?? (options?.leftField?.multiline ? 11 : 6.8);
+      const rightFieldHeight = options?.rightField?.height ?? (options?.rightField?.multiline ? 11 : 6.8);
+      const rowHeight = Math.max(
+        4.4,
+        Math.max(leftLines.length, rightLines.length) * lineHeight,
+        options?.leftField ? leftFieldHeight : 0,
+        options?.rightField ? rightFieldHeight : 0,
+      );
 
       ensureSpace(rowHeight + 1 + pdfRowSpacingIncrease);
       pdf.setFont("helvetica", "bold");
@@ -1763,14 +1998,58 @@ const PermContractGenerator = ({
       pdf.text(leftLabel, margin, y);
       pdf.text(rightLabel, rightColumnX, y);
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      leftLines.forEach((line, index) => {
-        pdf.text(String(line), leftValueX, y + index * lineHeight);
-      });
-      rightLines.forEach((line, index) => {
-        pdf.text(String(line), rightValueX, y + index * lineHeight);
-      });
+      if (options?.leftField) {
+        if (options.leftField.kind === "dropdown" && options.leftField.options) {
+          addPdfDropdownField({
+            ...options.leftField,
+            x: leftValueX,
+            y: y - 3.9,
+            width: leftValueWidth,
+            height: leftFieldHeight,
+            options: options.leftField.options,
+          });
+        } else {
+          addPdfTextField({
+            ...options.leftField,
+            x: leftValueX,
+            y: y - 3.9,
+            width: leftValueWidth,
+            height: leftFieldHeight,
+          });
+        }
+      } else {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        leftLines.forEach((line, index) => {
+          pdf.text(String(line), leftValueX, y + index * lineHeight);
+        });
+      }
+      if (options?.rightField) {
+        if (options.rightField.kind === "dropdown" && options.rightField.options) {
+          addPdfDropdownField({
+            ...options.rightField,
+            x: rightValueX,
+            y: y - 3.9,
+            width: rightValueWidth,
+            height: rightFieldHeight,
+            options: options.rightField.options,
+          });
+        } else {
+          addPdfTextField({
+            ...options.rightField,
+            x: rightValueX,
+            y: y - 3.9,
+            width: rightValueWidth,
+            height: rightFieldHeight,
+          });
+        }
+      } else {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        rightLines.forEach((line, index) => {
+          pdf.text(String(line), rightValueX, y + index * lineHeight);
+        });
+      }
 
       y += rowHeight + 1 + pdfRowSpacingIncrease;
     };
@@ -1866,7 +2145,19 @@ const PermContractGenerator = ({
 
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9.2);
-      pdf.text(employeeNameDisplay, margin, y);
+      if (isClientTemplateMode) {
+        addPdfTextField({
+          fieldName: "template_parties_employee_name",
+          x: margin,
+          y: y - 5.4,
+          width: leftColumnWidth,
+          height: 7.5,
+          fontStyle: "bold",
+          fontSize: 9.5,
+        });
+      } else {
+        pdf.text(employeeNameDisplay, margin, y);
+      }
       pdf.setFont("helvetica", "italic");
       pdf.setFontSize(8.5);
       pdf.text("The Employee", pageWidth - margin, y, { align: "right" });
@@ -1874,7 +2165,21 @@ const PermContractGenerator = ({
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(8.7);
-      pdf.text(employeeReferenceDisplay, margin, y);
+      if (isClientTemplateMode) {
+        pdf.setFontSize(8.3);
+        pdf.text("ID Number.:", margin, y);
+        addPdfTextField({
+          fieldName: "template_parties_employee_reference",
+          x: margin + 21,
+          y: y - 4.9,
+          width: leftColumnWidth - 21,
+          height: 6.8,
+          fontStyle: "normal",
+          fontSize: 8,
+        });
+      } else {
+        pdf.text(employeeReferenceDisplay, margin, y);
+      }
       y += 7;
     };
 
@@ -2030,35 +2335,190 @@ const PermContractGenerator = ({
     drawLabelValueRow("Email:", company.email || titleLineFallback);
     drawLabelValueRow("Address:", company.address || titleLineFallback, "full");
 
-    y += 3;
+    y += isClientTemplateMode ? 1 : 3;
     drawSectionHeader("B. EMPLOYEE DETAILS");
-    drawDualLabelValueRow("Surname:", employee.permEmployeeSurname || titleLineFallback, "Name(s):", employee.permEmployeeName || titleLineFallback);
-    drawDualLabelValueRow("ID No.:", idNumberDisplay, "Passport No.:", passportDisplay);
-    drawDualLabelValueRow("Age:", employee.permEmployeeAge || titleLineFallback, "Nationality:", employee.permEmployeeNationality || titleLineFallback);
-    drawDualLabelValueRow("Race:", employee.permEmployeeRace || titleLineFallback, "Gender:", employee.permEmployeeGender || titleLineFallback);
-    drawDualLabelValueRow("Cell number:", employee.permEmployeeCellNumber || titleLineFallback, "Email:", employee.permEmployeeEmail || titleLineFallback);
+    drawDualLabelValueRow("Surname:", infoSheetEmployeePreview.surname, "Name(s):", infoSheetEmployeePreview.name, isClientTemplateMode
+      ? {
+          leftField: { fieldName: "template_employee_surname" },
+          rightField: { fieldName: "template_employee_name" },
+          columnGap: 6,
+          leftValuePadding: 0,
+          rightValuePadding: 0,
+        }
+      : undefined);
+    drawDualLabelValueRow("ID No.:", infoSheetEmployeePreview.idNumber, "Passport No.:", infoSheetEmployeePreview.passportNumber, isClientTemplateMode
+      ? {
+          leftField: { fieldName: "template_employee_id_number" },
+          rightField: { fieldName: "template_employee_passport_number" },
+          columnGap: 6,
+          leftValuePadding: 0,
+          rightValuePadding: 0,
+        }
+      : undefined);
+    drawDualLabelValueRow("Age:", infoSheetEmployeePreview.age, "Nationality:", infoSheetEmployeePreview.nationality, isClientTemplateMode
+      ? {
+          leftField: { fieldName: "template_employee_age", maxLength: 3 },
+          rightField: {
+            fieldName: "template_employee_nationality",
+            kind: "dropdown",
+            options: nationalityOptions,
+          },
+          columnGap: 6,
+          leftValuePadding: 0,
+          rightValuePadding: 0,
+        }
+      : undefined);
+    drawDualLabelValueRow("Race:", infoSheetEmployeePreview.race, "Gender:", infoSheetEmployeePreview.gender, isClientTemplateMode
+      ? {
+          leftField: {
+            fieldName: "template_employee_race",
+            kind: "dropdown",
+            options: ["African", "Coloured", "Indian", "White", "Other"],
+          },
+          rightField: {
+            fieldName: "template_employee_gender",
+            kind: "dropdown",
+            options: ["Male", "Female"],
+          },
+          columnGap: 6,
+          leftValuePadding: 0,
+          rightValuePadding: 0,
+        }
+      : undefined);
+    drawDualLabelValueRow("Cell number:", infoSheetEmployeePreview.cellNumber, "Email:", infoSheetEmployeePreview.email, isClientTemplateMode
+      ? {
+          leftField: { fieldName: "template_employee_cell_number" },
+          rightField: { fieldName: "template_employee_email" },
+          columnGap: 6,
+          leftValuePadding: 0,
+          rightValuePadding: 0,
+        }
+      : undefined);
     drawDualLabelValueRow(
       "Alt. contact:",
-      employee.permEmployeeAlternativeContact || titleLineFallback,
+      infoSheetEmployeePreview.alternativeContact,
       "Employee No.:",
-      employee.permEmployeeNumber || titleLineFallback,
+      infoSheetEmployeePreview.employeeNumber,
+      isClientTemplateMode
+        ? {
+            leftField: { fieldName: "template_employee_alternative_contact" },
+            rightField: { fieldName: "template_employee_number" },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
     );
-    drawLabelValueRow("Address:", employee.permEmployeeResidentialAddress || titleLineFallback, "full", 28);
-    drawLabelValueRow("Postal:", employee.permEmployeePostalAddress || titleLineFallback, "full", 28);
+    drawLabelValueRow(
+      "Address:",
+      infoSheetEmployeePreview.residentialAddress,
+      "full",
+      28,
+      isClientTemplateMode ? { fieldName: "template_employee_residential_address" } : undefined,
+    );
+    drawLabelValueRow(
+      "Postal:",
+      infoSheetEmployeePreview.postalAddress,
+      "full",
+      28,
+      isClientTemplateMode ? { fieldName: "template_employee_postal_address" } : undefined,
+    );
 
-    y += 3;
+    y += isClientTemplateMode ? 1 : 3;
     drawSectionHeader("C. EMPLOYMENT DETAILS");
-    drawDualLabelValueRow("Type:", "Permanent", "Start date:", startDateDisplay);
-    drawDualLabelValueRow("Gross salary:", salarySummary, "Job title:", contract.permContractJobTitle || titleLineFallback);
-    drawDualLabelValueRow("Department:", contract.permContractDepartment || titleLineFallback, "Probation:", probationDisplay);
+    drawDualLabelValueRow(
+      "Type:",
+      "Permanent",
+      "Start date:",
+      infoSheetEmploymentPreview.startDate,
+      isClientTemplateMode
+        ? {
+            rightField: { fieldName: "template_contract_start_date" },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
+    );
+    drawDualLabelValueRow(
+      "Job title:",
+      infoSheetEmploymentPreview.jobTitle,
+      "Department:",
+      infoSheetEmploymentPreview.department,
+      isClientTemplateMode
+        ? {
+            leftField: { fieldName: "template_contract_job_title" },
+            rightField: { fieldName: "template_contract_department" },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
+    );
+    drawDualLabelValueRow(
+      "Probation:",
+      infoSheetEmploymentPreview.probation,
+      "Gross salary:",
+      infoSheetEmploymentPreview.grossSalary,
+      isClientTemplateMode
+        ? {
+            leftField: {
+              fieldName: "template_contract_probation",
+              kind: "dropdown",
+              options: Object.entries(probationLabelByValue)
+                .filter(([value, label]) => value && label)
+                .map(([, label]) => label),
+            },
+            rightField: { fieldName: "template_contract_gross_salary" },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
+    );
     drawDualLabelValueRow(
       "Pay cycle:",
-      payCycleLabelByValue[contract.permContractPayCycle] || titleLineFallback,
+      infoSheetEmploymentPreview.payCycle,
       "Retirement:",
-      contract.permContractRetirementAge ? `Age ${contract.permContractRetirementAge}` : titleLineFallback,
+      infoSheetEmploymentPreview.retirement,
+      isClientTemplateMode
+        ? {
+            leftField: {
+              fieldName: "template_contract_pay_cycle",
+              kind: "dropdown",
+              options: ["Daily", "Weekly", "Fortnightly", "Monthly"],
+            },
+            rightField: {
+              fieldName: "template_contract_retirement",
+              kind: "dropdown",
+              options: ["Age 55", "Age 60", "Age 65", "Age 70"],
+            },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
     );
-    drawDualLabelValueRow("Reports to:", contract.permContractReportsTo || titleLineFallback, "Interpreter:", interpreterDisplay);
-    drawLabelValueRow("Workplace:", contract.permContractWorkplace || titleLineFallback, "full", 28);
+    drawDualLabelValueRow(
+      "Reports to:",
+      infoSheetEmploymentPreview.reportsTo,
+      "Interpreter:",
+      infoSheetEmploymentPreview.interpreter,
+      isClientTemplateMode
+        ? {
+            leftField: { fieldName: "template_contract_reports_to" },
+            rightField: {
+              fieldName: "template_contract_interpreter",
+              kind: "dropdown",
+              options: ["Yes", "No"],
+            },
+            columnGap: 6,
+            leftValuePadding: 0,
+            rightValuePadding: 0,
+          }
+        : undefined,
+    );
+    drawLabelValueRow("Workplace:", infoSheetEmploymentPreview.workplace, "full", 28);
 
     pushPage();
     pdf.setFont("helvetica", "bold");
@@ -2089,8 +2549,12 @@ const PermContractGenerator = ({
       .find(Boolean);
     const employeeSurname = employee.permEmployeeSurname.trim();
     const documentNameSuffix = employeeFirstInitial && employeeSurname ? ` (${employeeFirstInitial}. ${employeeSurname})` : "";
-    const documentName = `Permanent Contract${documentNameSuffix}`;
-    const downloadFileName = `permanent_employment_contract${documentNameSuffix}.pdf`;
+    const documentName = isClientTemplateMode
+      ? "Permanent Contract Template"
+      : `Permanent Contract${documentNameSuffix}`;
+    const downloadFileName = isClientTemplateMode
+      ? "permanent_employment_contract_template.pdf"
+      : `permanent_employment_contract${documentNameSuffix}.pdf`;
     const uploadBlob = pdf.output("blob");
     const uploadSafeClientName =
       (company.companyName || "client")
@@ -2129,13 +2593,13 @@ const PermContractGenerator = ({
     }
 
     const logResult = await logGeneratedDocument({
-      documentLabel: "Permanent Contract",
+      documentLabel: isClientTemplateMode ? "Permanent Contract Template" : "Permanent Contract",
       documentName,
       documentType: "Contract",
       clientName: company.companyName,
       fileUrl: uploadedFileUrl,
-      employeeName: employee.permEmployeeName,
-      employeeSurname: employee.permEmployeeSurname,
+      employeeName: isClientTemplateMode ? "Template" : employee.permEmployeeName,
+      employeeSurname: isClientTemplateMode ? "" : employee.permEmployeeSurname,
       tradingName: company.tradingName,
       registeredName: company.registeredName,
     });
@@ -2386,20 +2850,59 @@ const PermContractGenerator = ({
           />
         </div>
 
-        {company.logoUrl ? (
+        {!company.logoUrl ? (
           <div className="max-w-[320px] space-y-2">
-            <Label className="text-[10px] font-semibold text-slate-600">Client Logo</Label>
-            <div className="flex min-h-[132px] items-center justify-center rounded-sm border border-slate-300 bg-white px-4 py-5">
-              <img src={company.logoUrl} alt="Client logo preview" className="max-h-24 max-w-[220px] object-contain" />
+            <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
+              Document Mode
+            </Label>
+            <Select value={company.documentMode} onValueChange={(value) => updateDocumentMode(value as DocumentMode)}>
+              <SelectTrigger id="permContractDocumentMode" className={selectTriggerClassName}>
+                <SelectValue placeholder="Select document mode" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {documentModeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
+        {company.logoUrl ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="max-w-[320px] space-y-2">
+              <Label className="text-[10px] font-semibold text-slate-600">Client Logo</Label>
+              <div className="flex min-h-[132px] items-center justify-center rounded-sm border border-slate-300 bg-white px-4 py-5">
+                <img src={company.logoUrl} alt="Client logo preview" className="max-h-24 max-w-[220px] object-contain" />
+              </div>
+              <button
+                type="button"
+                onClick={handleLogoClear}
+                className="inline-flex w-fit items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-700 transition hover:border-rose-500 hover:text-rose-600"
+              >
+                <X className="h-3.5 w-3.5" />
+                Remove logo
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleLogoClear}
-              className="inline-flex w-fit items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-700 transition hover:border-rose-500 hover:text-rose-600"
-            >
-              <X className="h-3.5 w-3.5" />
-              Remove logo
-            </button>
+            <div className="max-w-[320px] space-y-2">
+              <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
+                Document Mode
+              </Label>
+              <Select value={company.documentMode} onValueChange={(value) => updateDocumentMode(value as DocumentMode)}>
+                <SelectTrigger id="permContractDocumentMode" className={selectTriggerClassName}>
+                  <SelectValue placeholder="Select document mode" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {documentModeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         ) : null}
       </div>
@@ -2409,6 +2912,11 @@ const PermContractGenerator = ({
   const stepTwoBody = (
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
+        {isClientTemplateMode ? (
+          <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
+            Employee details can be left blank in Client Template mode. The preview and PDF will render template placeholders instead.
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="permEmployeeName" className="text-[10px] font-semibold text-slate-600">
@@ -2653,6 +3161,11 @@ const PermContractGenerator = ({
   const stepThreeBody = (
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
+        {isClientTemplateMode ? (
+          <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
+            Keep completing drafting fields such as bargaining council and general contract settings. Employee-specific values may be left blank in Client Template mode.
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="permContractStartDate" className="text-[10px] font-semibold text-slate-600">
@@ -2960,66 +3473,71 @@ const PermContractGenerator = ({
           <PreviewSection title="B. EMPLOYEE DETAILS">
             <PreviewDualRow
               leftLabel="Surname:"
-              leftValue={employee.permEmployeeSurname || "--"}
+              leftValue={infoSheetEmployeePreview.surname}
               rightLabel="Name(s):"
-              rightValue={employee.permEmployeeName || "--"}
+              rightValue={infoSheetEmployeePreview.name}
             />
-            <PreviewDualRow leftLabel="ID No.:" leftValue={idNumberDisplay} rightLabel="Passport No.:" rightValue={passportDisplay} />
+            <PreviewDualRow
+              leftLabel="ID No.:"
+              leftValue={infoSheetEmployeePreview.idNumber}
+              rightLabel="Passport No.:"
+              rightValue={infoSheetEmployeePreview.passportNumber}
+            />
             <PreviewDualRow
               leftLabel="Age:"
-              leftValue={employee.permEmployeeAge || "--"}
+              leftValue={infoSheetEmployeePreview.age}
               rightLabel="Nationality:"
-              rightValue={employee.permEmployeeNationality || "--"}
+              rightValue={infoSheetEmployeePreview.nationality}
             />
             <PreviewDualRow
               leftLabel="Race:"
-              leftValue={employee.permEmployeeRace || "--"}
+              leftValue={infoSheetEmployeePreview.race}
               rightLabel="Gender:"
-              rightValue={employee.permEmployeeGender || "--"}
+              rightValue={infoSheetEmployeePreview.gender}
             />
             <PreviewDualRow
               leftLabel="Cell number:"
-              leftValue={employee.permEmployeeCellNumber || "--"}
+              leftValue={infoSheetEmployeePreview.cellNumber}
               rightLabel="Email:"
-              rightValue={employee.permEmployeeEmail || "--"}
+              rightValue={infoSheetEmployeePreview.email}
             />
             <PreviewDualRow
               leftLabel="Alt. contact:"
-              leftValue={employee.permEmployeeAlternativeContact || "--"}
+              leftValue={infoSheetEmployeePreview.alternativeContact}
               rightLabel="Employee No.:"
-              rightValue={employee.permEmployeeNumber || "--"}
+              rightValue={infoSheetEmployeePreview.employeeNumber}
             />
-            <PreviewRow label="Address:" value={employee.permEmployeeResidentialAddress || "--"} />
-            <PreviewRow label="Postal:" value={employee.permEmployeePostalAddress || "--"} />
+            <PreviewRow label="Address:" value={infoSheetEmployeePreview.residentialAddress} />
+            <PreviewRow label="Postal:" value={infoSheetEmployeePreview.postalAddress} />
           </PreviewSection>
 
           <PreviewSection title="C. EMPLOYMENT DETAILS">
-            <PreviewDualRow leftLabel="Type:" leftValue="Permanent" rightLabel="Start date:" rightValue={startDateDisplay} />
+            <PreviewDualRow leftLabel="Type:" leftValue="Permanent" rightLabel="Start date:" rightValue={infoSheetEmploymentPreview.startDate} />
             <PreviewDualRow
-              leftLabel="Probation:"
-              leftValue={probationDisplay}
-              rightLabel="Job title:"
-              rightValue={contract.permContractJobTitle || "--"}
+              leftLabel="Job title:"
+              leftValue={infoSheetEmploymentPreview.jobTitle}
+              rightLabel="Department:"
+              rightValue={infoSheetEmploymentPreview.department}
             />
             <PreviewDualRow
-              leftLabel="Department:"
-              leftValue={contract.permContractDepartment || "--"}
+              leftLabel="Probation:"
+              leftValue={infoSheetEmploymentPreview.probation}
               rightLabel="Gross salary:"
-              rightValue={salarySummary}
+              rightValue={infoSheetEmploymentPreview.grossSalary}
             />
             <PreviewDualRow
               leftLabel="Pay cycle:"
-              leftValue={payCycleLabelByValue[contract.permContractPayCycle] || "--"}
+              leftValue={infoSheetEmploymentPreview.payCycle}
               rightLabel="Retirement:"
-              rightValue={contract.permContractRetirementAge ? `Age ${contract.permContractRetirementAge}` : "--"}
+              rightValue={infoSheetEmploymentPreview.retirement}
             />
             <PreviewDualRow
               leftLabel="Reports to:"
-              leftValue={contract.permContractReportsTo || "--"}
+              leftValue={infoSheetEmploymentPreview.reportsTo}
               rightLabel="Interpreter:"
-              rightValue={interpreterDisplay}
+              rightValue={infoSheetEmploymentPreview.interpreter}
             />
-            <PreviewRow label="Workplace:" value={contract.permContractWorkplace || "--"} />
+            <PreviewRow label="Workplace:" value={infoSheetEmploymentPreview.workplace} />
           </PreviewSection>
 
         </div>

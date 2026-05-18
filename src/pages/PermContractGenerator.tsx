@@ -3269,22 +3269,24 @@ const PermContractGenerator = ({
         </div>
 
         {!company.logoUrl ? (
-          <div className="space-y-2">
-            <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
-              Document Mode
-            </Label>
-            <Select value={company.documentMode} onValueChange={(value) => updateDocumentMode(value as DocumentMode)}>
-              <SelectTrigger id="permContractDocumentMode" className={selectTriggerClassName}>
-                <SelectValue placeholder="Select document mode" />
-              </SelectTrigger>
-              <SelectContent className="text-[10px]">
-                {documentModeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="permContractDocumentMode" className="text-[10px] font-semibold text-slate-600">
+                Document Mode
+              </Label>
+              <Select value={company.documentMode} onValueChange={(value) => updateDocumentMode(value as DocumentMode)}>
+                <SelectTrigger id="permContractDocumentMode" className={selectTriggerClassName}>
+                  <SelectValue placeholder="Select document mode" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {documentModeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         ) : null}
 

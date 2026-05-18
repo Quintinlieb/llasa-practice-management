@@ -129,6 +129,16 @@ const getPermContractBreadcrumbClientName = (draftState: unknown) => {
   return String(candidate.companyName || "").trim();
 };
 
+const getMiscTerminationBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const client = (draftState as { client?: unknown }).client;
+  if (!client || typeof client !== "object") return "";
+  const candidate = client as {
+    tradingName?: unknown;
+  };
+  return String(candidate.tradingName || "").trim();
+};
+
 const splitCreatedOnParts = (value: string) => {
   const raw = String(value || "").trim();
   if (!raw) return { date: "", time: "" };
@@ -190,7 +200,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   permContract: lazyDocumentComponent(() => import("./PermContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
-  noticeTermination: lazyDocumentComponent(() => import("./MisconductTerminationGenerator")),
+  noticeTermination: lazyDocumentComponent(() => import("./MiscTermLetterGenerator")),
   illHealthTermination: lazyDocumentComponent(() => import("./IllHealthTerminationGenerator")),
   abscondmentTermination: lazyDocumentComponent(() => import("./AbscondmentTerminationGenerator")),
   retrenchmentTermination: lazyDocumentComponent(() => import("./RetrenchmentTerminationGenerator")),
@@ -285,7 +295,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   permContract: "Permanent",
   temporaryContract: "Temporary Contract",
   addendum: "Addendum",
-  noticeTermination: "Notice of Termination",
+  noticeTermination: "Misconduct",
   illHealthTermination: "Ill Health",
   abscondmentTermination: "Abscondment/Desertion",
   retrenchmentTermination: "Retrenchment",
@@ -552,11 +562,15 @@ const Documents = () => {
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
     modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
+  const miscTerminationBreadcrumbClientName =
+    modalDocument === "noticeTermination" ? getMiscTerminationBreadcrumbClientName(activeSession?.draftState) : "";
   const modalBreadcrumbTitle =
     modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
       : modalDocument === "permContract" && permContractBreadcrumbClientName
         ? `${modalTitle} (${permContractBreadcrumbClientName})`
+        : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName
+          ? `${modalTitle} (${miscTerminationBreadcrumbClientName})`
       : modalTitle;
   const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
   const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";

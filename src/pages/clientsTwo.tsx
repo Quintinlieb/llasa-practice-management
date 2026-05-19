@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BuildingOffice2Icon, BuildingOfficeIcon } from "@heroicons/react/24/outline";
+import ExcelJS from "exceljs";
+import jsPDF from "jspdf";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,10 +10,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Camera, Check, ChevronDown, Paperclip, Pencil, Plus, Search, Trash2, User, X } from "lucide-react";
+import { read, utils } from "xlsx";
+import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -166,6 +170,65 @@ const cropClientLogoPadding = (dataUrl: string): Promise<string> =>
   });
 
 const clientsTableCacheKey = "clients:table-cache";
+const clientBulkTemplateSheetName = "Client Table";
+const clientBulkTemplateListsSheetName = "Lists";
+const clientBulkTemplateHeaderRowIndex = 2;
+const clientBulkTemplateFirstDataRowIndex = clientBulkTemplateHeaderRowIndex + 1;
+const clientBulkTemplateMaxRows = 200;
+const clientBulkTemplateColumns = [
+  "Registered Name",
+  "Trading As",
+  "Company Type",
+  "Registration Number",
+  "VAT Number",
+  "Industry",
+  "Group",
+  "Bargaining Council",
+  "Primary Contact",
+  "Primary Number",
+  "Primary Email",
+  "Address Line 1",
+  "Address Line 2",
+  "City",
+  "Province",
+  "Area Code",
+] as const;
+
+type BulkClientImportRow = {
+  sourceRowNumber: number;
+  registeredName: string;
+  tradingAs: string;
+  companyType: string;
+  registrationNumber: string;
+  vatNumber: string;
+  industry: string;
+  groupName: string;
+  bargainingCouncil: string;
+  primaryContact: string;
+  primaryNumber: string;
+  primaryEmail: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  province: string;
+  areaCode: string;
+};
+
+const normalizeWorksheetHeader = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+
+const arrayBufferToDataUrl = (buffer: ArrayBuffer, mimeType: string) => {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+};
 
 const loadCachedClientRows = () => {
   try {
@@ -192,11 +255,13 @@ const ClientsTwo = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
+  const [isBulkClientOpen, setIsBulkClientOpen] = useState(false);
   const [newClientStep, setNewClientStep] = useState<1 | 2 | 3>(1);
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const editStartDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const slaFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bulkClientUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const [clientDetailsForm, setClientDetailsForm] = useState({
     registeredName: "",
@@ -229,6 +294,11 @@ const ClientsTwo = () => {
   const [clientRows, setClientRows] = useState<any[]>(() => loadCachedClientRows());
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
   const [isSavingClient, setIsSavingClient] = useState(false);
+  const [isParsingBulkClients, setIsParsingBulkClients] = useState(false);
+  const [isImportingBulkClients, setIsImportingBulkClients] = useState(false);
+  const [bulkClientDragActive, setBulkClientDragActive] = useState(false);
+  const [bulkClientFileName, setBulkClientFileName] = useState("");
+  const [bulkClientParsedRows, setBulkClientParsedRows] = useState<BulkClientImportRow[]>([]);
   const [selectedClientRow, setSelectedClientRow] = useState<any | null>(null);
   const [isClientEditMode, setIsClientEditMode] = useState(false);
   const [isSavingClientEdit, setIsSavingClientEdit] = useState(false);
@@ -338,17 +408,20 @@ const ClientsTwo = () => {
       addressForm.province.trim() &&
       addressForm.areaCode.trim(),
   );
-  const getNextAvailableClientNumber = useCallback(() => {
-    const maxSeq = clientRows.reduce((max, row) => {
+  const getHighestClientNumberSequence = useCallback(() => {
+    return clientRows.reduce((max, row) => {
       const value = String(row?.clientNumber ?? "").trim();
       const match = value.match(/^LL(\d+)$/i);
       if (!match) return max;
       const parsed = Number.parseInt(match[1], 10);
       return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
     }, 0);
+  }, [clientRows]);
+  const getNextAvailableClientNumber = useCallback(() => {
+    const maxSeq = getHighestClientNumberSequence();
     const nextSeq = Math.max(1, maxSeq + 1);
     return `LL${String(nextSeq).padStart(5, "0")}`;
-  }, [clientRows]);
+  }, [getHighestClientNumberSequence]);
 
   const resetNewClientForm = () => {
     setNewClientStep(1);
@@ -381,6 +454,14 @@ const ClientsTwo = () => {
       areaCode: "",
     });
   };
+  const resetBulkClientImport = useCallback(() => {
+    setBulkClientFileName("");
+    setBulkClientParsedRows([]);
+    setBulkClientDragActive(false);
+    if (bulkClientUploadInputRef.current) {
+      bulkClientUploadInputRef.current.value = "";
+    }
+  }, []);
   useEffect(() => {
     if (!isNewClientOpen) return;
     setMembershipForm((prev) => ({
@@ -706,7 +787,48 @@ const ClientsTwo = () => {
     if (normalizedName.endsWith(normalizedSuffix)) return rawName;
     return `${rawName} ${suffix}`;
   };
-
+  const normalizeImportedCompanyType = (value: string) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const normalized = normalizeWorksheetHeader(raw);
+    const lookup: Record<string, string> = {
+      "pty ltd": "Private Company ((Pty) Ltd)",
+      "private company pty ltd": "Private Company ((Pty) Ltd)",
+      "private company pty ltd ltd": "Private Company ((Pty) Ltd)",
+      "cc": "Close Corporation (CC)",
+      "close corporation cc": "Close Corporation (CC)",
+      "close corporation": "Close Corporation (CC)",
+      "public company ltd": "Public Company (Ltd)",
+      ltd: "Public Company (Ltd)",
+      "personal liability company inc": "Personal Liability Company (Inc.)",
+      "inc": "Personal Liability Company (Inc.)",
+      "state owned company soc ltd": "State-Owned Company (SOC Ltd)",
+      "soc ltd": "State-Owned Company (SOC Ltd)",
+      "non profit company npc": "Non-Profit Company (NPC)",
+      npc: "Non-Profit Company (NPC)",
+      "co operative co op": "Co-operative (Co-op)",
+      "co op": "Co-operative (Co-op)",
+      "sole proprietor sp": "Sole Proprietor (SP)",
+      "sole proprietor": "Sole Proprietor (SP)",
+      sp: "Sole Proprietor (SP)",
+      partnership: "Partnership (Partnership)",
+      trust: "Business Trust (Trust)",
+      "business trust trust": "Business Trust (Trust)",
+    };
+    return lookup[normalized] || companyTypeOptions.find((option) => normalizeWorksheetHeader(option) === normalized) || raw;
+  };
+  const normalizeImportedBargainingCouncil = useCallback((value: string) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "None";
+    const normalized = normalizeWorksheetHeader(raw);
+    if (normalized === "none") return "None";
+    const directMatch = bargainingCouncilOptions.find(
+      (option) =>
+        normalizeWorksheetHeader(option.value) === normalized ||
+        normalizeWorksheetHeader(option.label) === normalized,
+    );
+    return directMatch?.value || raw;
+  }, [bargainingCouncilOptions]);
   const mapClientRow = (row: any) => ({
     id: row.id,
     companyName: row.registered_name || "--",
@@ -932,6 +1054,796 @@ const ClientsTwo = () => {
     setClientFileNotesSearchQuery("");
     void fetchClientFileNotes(selectedClientRow.id);
   }, [fetchClientFileNotes, selectedClientRow?.id]);
+
+  const parseBulkClientWorkbook = useCallback((fileData: ArrayBuffer) => {
+    const workbook = read(fileData, { type: "array" });
+    const sheet =
+      workbook.Sheets[clientBulkTemplateSheetName] ??
+      workbook.Sheets[workbook.SheetNames[0] ?? ""];
+    if (!sheet) {
+      throw new Error("No worksheet found in the uploaded file.");
+    }
+
+    const rows = utils.sheet_to_json<Array<string | number>>(sheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+    const headerRowIndex = rows.findIndex((row) =>
+      row.some((cell) => normalizeWorksheetHeader(cell) === "registered name") &&
+      row.some((cell) => normalizeWorksheetHeader(cell) === "company type"),
+    );
+    if (headerRowIndex === -1) {
+      throw new Error("We could not find the client template header row.");
+    }
+
+    const headerRow = rows[headerRowIndex] ?? [];
+    const findColumnIndex = (...aliases: string[]) => {
+      const normalizedAliases = aliases.map((alias) => normalizeWorksheetHeader(alias));
+      return headerRow.findIndex((cell) => normalizedAliases.includes(normalizeWorksheetHeader(cell)));
+    };
+    const valueAt = (row: Array<string | number>, ...aliases: string[]) => {
+      const columnIndex = findColumnIndex(...aliases);
+      if (columnIndex === -1) return "";
+      return String(row[columnIndex] ?? "").trim();
+    };
+
+    return rows
+      .slice(headerRowIndex + 1)
+      .map((row, index) => ({
+        sourceRowNumber: headerRowIndex + index + 2,
+        registeredName: valueAt(row, "Registered Name"),
+        tradingAs: valueAt(row, "Trading As"),
+        companyType: normalizeImportedCompanyType(valueAt(row, "Company Type")),
+        registrationNumber: valueAt(row, "Registration Number"),
+        vatNumber: valueAt(row, "VAT Number"),
+        industry: valueAt(row, "Industry"),
+        groupName: valueAt(row, "Group"),
+        bargainingCouncil: normalizeImportedBargainingCouncil(valueAt(row, "Bargaining Council")),
+        primaryContact: valueAt(row, "Primary Contact", "Contact Person"),
+        primaryNumber: valueAt(row, "Primary Number", "Contact Number").replace(/\D/g, "").slice(0, 10),
+        primaryEmail: valueAt(row, "Primary Email", "Email").toLowerCase(),
+        addressLine1: valueAt(row, "Address Line 1"),
+        addressLine2: valueAt(row, "Address Line 2"),
+        city: valueAt(row, "City"),
+        province: valueAt(row, "Province"),
+        areaCode: valueAt(row, "Area Code"),
+      }))
+      .filter((row) =>
+        [
+          row.registeredName,
+          row.tradingAs,
+          row.companyType,
+          row.registrationNumber,
+          row.vatNumber,
+          row.industry,
+          row.groupName,
+          row.bargainingCouncil === "None" ? "" : row.bargainingCouncil,
+          row.primaryContact,
+          row.primaryNumber,
+          row.primaryEmail,
+          row.addressLine1,
+          row.addressLine2,
+          row.city,
+          row.province,
+          row.areaCode,
+        ].some((value) => String(value || "").trim().length > 0),
+      );
+  }, [normalizeImportedBargainingCouncil, normalizeImportedCompanyType]);
+
+  const handleBulkClientFileSelection = useCallback(async (file: File) => {
+    setIsParsingBulkClients(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsedRows = parseBulkClientWorkbook(buffer);
+      if (parsedRows.length === 0) {
+        toast({
+          title: "No rows found",
+          description: "The file does not contain any populated client rows yet.",
+          variant: "destructive",
+        });
+        resetBulkClientImport();
+        return;
+      }
+      setBulkClientFileName(file.name);
+      setBulkClientParsedRows(parsedRows);
+      toast({
+        title: "File ready",
+        description: `${parsedRows.length} client row${parsedRows.length === 1 ? "" : "s"} loaded and ready to import.`,
+      });
+    } catch (error: any) {
+      resetBulkClientImport();
+      toast({
+        title: "Could not read file",
+        description: error?.message || "Please upload a valid Excel workbook based on the template.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsParsingBulkClients(false);
+      setBulkClientDragActive(false);
+    }
+  }, [parseBulkClientWorkbook, resetBulkClientImport, toast]);
+
+  const handleBulkClientUploadInputChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await handleBulkClientFileSelection(file);
+  }, [handleBulkClientFileSelection]);
+
+  const handleDownloadBulkClientTemplate = useCallback(async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(clientBulkTemplateSheetName);
+      const listSheet = workbook.addWorksheet(clientBulkTemplateListsSheetName);
+
+      worksheet.properties.defaultRowHeight = 22;
+      worksheet.views = [{ state: "frozen", ySplit: clientBulkTemplateHeaderRowIndex }];
+      worksheet.columns = [
+        { header: "Registered Name", key: "registeredName", width: 28 },
+        { header: "Trading As", key: "tradingAs", width: 24 },
+        { header: "Company Type", key: "companyType", width: 30 },
+        { header: "Registration Number", key: "registrationNumber", width: 22 },
+        { header: "VAT Number", key: "vatNumber", width: 20 },
+        { header: "Industry", key: "industry", width: 28 },
+        { header: "Group", key: "groupName", width: 24 },
+        { header: "Bargaining Council", key: "bargainingCouncil", width: 28 },
+        { header: "Primary Contact", key: "primaryContact", width: 22 },
+        { header: "Primary Number", key: "primaryNumber", width: 18 },
+        { header: "Primary Email", key: "primaryEmail", width: 28 },
+        { header: "Address Line 1", key: "addressLine1", width: 24 },
+        { header: "Address Line 2", key: "addressLine2", width: 24 },
+        { header: "City", key: "city", width: 18 },
+        { header: "Province", key: "province", width: 20 },
+        { header: "Area Code", key: "areaCode", width: 14 },
+      ];
+
+      worksheet.mergeCells("A1:P1");
+      worksheet.getCell("A1").value = "LLASA - Multiple Client Upload";
+      worksheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF17324D" } };
+      worksheet.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
+      worksheet.getRow(1).height = 24;
+
+      const headerRow = worksheet.getRow(clientBulkTemplateHeaderRowIndex);
+      clientBulkTemplateColumns.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.value = header;
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF3ECA44" },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD1D5DB" } },
+          left: { style: "thin", color: { argb: "FFD1D5DB" } },
+          bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+          right: { style: "thin", color: { argb: "FFD1D5DB" } },
+        };
+      });
+      headerRow.height = 24;
+
+      const listTitleRow = listSheet.getRow(1);
+      listTitleRow.getCell(1).value = "Company Type";
+      listTitleRow.getCell(2).value = "Province";
+      listTitleRow.getCell(3).value = "Industry";
+      listTitleRow.getCell(4).value = "Group";
+      listTitleRow.getCell(5).value = "Bargaining Council";
+      listTitleRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3ECA44" } };
+      });
+      companyTypeOptions.forEach((value, index) => {
+        listSheet.getCell(index + 2, 1).value = value;
+      });
+      provinceOptions.forEach((value, index) => {
+        listSheet.getCell(index + 2, 2).value = value;
+      });
+      industryOptions.forEach((value, index) => {
+        listSheet.getCell(index + 2, 3).value = value;
+      });
+      ["None", ...groupOptions.map((group) => group.group_name).filter(Boolean)].forEach((value, index) => {
+        listSheet.getCell(index + 2, 4).value = value;
+      });
+      bargainingCouncilOptions.forEach((option, index) => {
+        listSheet.getCell(index + 2, 5).value = option.label;
+      });
+      listSheet.state = "hidden";
+
+      for (let rowIndex = clientBulkTemplateFirstDataRowIndex; rowIndex < clientBulkTemplateFirstDataRowIndex + clientBulkTemplateMaxRows; rowIndex += 1) {
+        const row = worksheet.getRow(rowIndex);
+        row.getCell(4).numFmt = "@";
+        row.getCell(5).numFmt = "@";
+        row.getCell(10).numFmt = "@";
+        row.getCell(16).numFmt = "@";
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFE2E8F0" } },
+            left: { style: "thin", color: { argb: "FFE2E8F0" } },
+            bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+            right: { style: "thin", color: { argb: "FFE2E8F0" } },
+          };
+        });
+        row.getCell(3).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$A$2:$A$${companyTypeOptions.length + 1}`],
+          showErrorMessage: true,
+        };
+        row.getCell(6).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$C$2:$C$${industryOptions.length + 1}`],
+          showErrorMessage: true,
+        };
+        row.getCell(7).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$D$2:$D$${groupOptions.length + 2}`],
+          showErrorMessage: true,
+        };
+        row.getCell(8).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$${bargainingCouncilOptions.length + 1}`],
+          showErrorMessage: true,
+        };
+        row.getCell(15).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$B$2:$B$${provinceOptions.length + 1}`],
+          showErrorMessage: true,
+        };
+      }
+
+      const sampleRow = worksheet.getRow(clientBulkTemplateFirstDataRowIndex);
+      sampleRow.getCell(1).value = "Example Trading Company";
+      sampleRow.getCell(2).value = "Example Trade";
+      sampleRow.getCell(3).value = companyTypeOptions[0];
+      sampleRow.getCell(4).value = "2024/123456/07";
+      sampleRow.getCell(5).value = "";
+      sampleRow.getCell(6).value = industryOptions[0];
+      sampleRow.getCell(7).value = "None";
+      sampleRow.getCell(8).value = "None";
+      sampleRow.getCell(9).value = "Jane Doe";
+      sampleRow.getCell(10).value = "0821234567";
+      sampleRow.getCell(11).value = "jane@example.co.za";
+      sampleRow.getCell(12).value = "123 Main Street";
+      sampleRow.getCell(13).value = "Unit 4";
+      sampleRow.getCell(14).value = "Johannesburg";
+      sampleRow.getCell(15).value = "Gauteng";
+      sampleRow.getCell(16).value = "2001";
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "llasa_bulk_clients_template.xlsx";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({
+        title: "Template failed",
+        description: error?.message || "Unable to build the client import template right now.",
+        variant: "destructive",
+      });
+    }
+  }, [bargainingCouncilOptions, groupOptions, industryOptions, provinceOptions, toast]);
+
+  const handleImportBulkClients = useCallback(async () => {
+    if (!bulkClientParsedRows.length) return;
+    setIsImportingBulkClients(true);
+    try {
+      let nextSequence = getHighestClientNumberSequence();
+      const reservedNumbers = new Set(
+        clientRows
+          .map((row) => String(row?.clientNumber ?? "").trim().toUpperCase())
+          .filter(Boolean),
+      );
+      const knownGroups = new Map(
+        groupOptions.map((group) => [group.group_name.trim().toLowerCase(), { id: group.id, group_name: group.group_name }] as const),
+      );
+      const failures: string[] = [];
+      let successCount = 0;
+
+      for (let index = 0; index < bulkClientParsedRows.length; index += 1) {
+        const row = bulkClientParsedRows[index];
+        const rowLabel = String(row.sourceRowNumber);
+        const requiredFields = [
+          row.registeredName,
+          row.companyType,
+          row.registrationNumber,
+          row.primaryContact,
+          row.primaryNumber,
+          row.primaryEmail,
+          row.addressLine1,
+          row.city,
+          row.province,
+          row.areaCode,
+        ];
+        if (requiredFields.some((value) => !String(value || "").trim())) {
+          failures.push(`Row ${rowLabel}: missing one or more required fields.`);
+          continue;
+        }
+
+        const resolvedCompanyType = normalizeImportedCompanyType(row.companyType);
+        if (!companyTypeOptions.includes(resolvedCompanyType as (typeof companyTypeOptions)[number])) {
+          failures.push(`Row ${rowLabel}: company type is not one of the allowed values.`);
+          continue;
+        }
+        if (row.industry && !industryOptions.includes(row.industry as (typeof industryOptions)[number])) {
+          failures.push(`Row ${rowLabel}: industry must match one of the template dropdown values.`);
+          continue;
+        }
+        if (row.province && !provinceOptions.includes(row.province as (typeof provinceOptions)[number])) {
+          failures.push(`Row ${rowLabel}: province must match one of the template dropdown values.`);
+          continue;
+        }
+        const normalizedCouncil = normalizeImportedBargainingCouncil(row.bargainingCouncil);
+        if (
+          normalizedCouncil &&
+          !bargainingCouncilOptions.some((option) => option.value === normalizedCouncil)
+        ) {
+          failures.push(`Row ${rowLabel}: bargaining council must match one of the template dropdown values.`);
+          continue;
+        }
+
+        let resolvedGroupId: string | null = null;
+        let resolvedGroupName: string | null = null;
+        const requestedGroupName = row.groupName.trim();
+        if (requestedGroupName && requestedGroupName.toLowerCase() !== "none") {
+          const existingGroup = knownGroups.get(requestedGroupName.toLowerCase());
+          if (existingGroup) {
+            resolvedGroupId = existingGroup.id;
+            resolvedGroupName = existingGroup.group_name;
+          } else {
+            try {
+              const { data: createdGroup, error: createGroupError } = await (supabase as any)
+                .from("client_groups")
+                .insert({ group_name: requestedGroupName })
+                .select("id, group_name")
+                .single();
+              if (createGroupError) throw createGroupError;
+              resolvedGroupId = createdGroup?.id ?? null;
+              resolvedGroupName = createdGroup?.group_name ?? requestedGroupName;
+              knownGroups.set(requestedGroupName.toLowerCase(), {
+                id: resolvedGroupId || "",
+                group_name: resolvedGroupName,
+              });
+              await fetchClientGroups();
+            } catch (error: any) {
+              failures.push(`Row ${rowLabel}: ${error?.message || "group could not be created"}`);
+              continue;
+            }
+          }
+        }
+
+        let clientNumber = "";
+        do {
+          nextSequence += 1;
+          clientNumber = `LL${String(nextSequence).padStart(5, "0")}`;
+        } while (reservedNumbers.has(clientNumber));
+        reservedNumbers.add(clientNumber);
+
+        const payload: Record<string, unknown> = {
+          client_number: clientNumber,
+          status: "active",
+          registered_name: row.registeredName.trim(),
+          trading_as: row.tradingAs.trim() || null,
+          trading_name: row.tradingAs.trim() || null,
+          company_type: resolvedCompanyType,
+          registration_number: row.registrationNumber.trim(),
+          vat_number: row.vatNumber.trim() || null,
+          industry: row.industry.trim() || null,
+          group_name: resolvedGroupName,
+          group_id: resolvedGroupId,
+          primary_name: row.primaryContact.trim(),
+          primary_number: row.primaryNumber.trim(),
+          primary_email: row.primaryEmail.trim().toLowerCase(),
+          physical_address_line1: row.addressLine1.trim(),
+          physical_address_line2: row.addressLine2.trim() || null,
+          city: row.city.trim(),
+          province: row.province.trim(),
+          area_code: row.areaCode.trim(),
+          bargaining_council: normalizedCouncil || "None",
+        };
+
+        const getMissingColumn = (error: any) => {
+          const message = String(error?.message ?? "");
+          const match = message.match(/'([^']+)' column/);
+          return match?.[1] ?? null;
+        };
+        const tried = new Set<string>();
+        try {
+          while (true) {
+            const { error } = await (supabase as any).from("clients").insert(payload);
+            if (!error) break;
+            const missingColumn = getMissingColumn(error);
+            if (missingColumn && Object.prototype.hasOwnProperty.call(payload, missingColumn) && !tried.has(missingColumn)) {
+              delete payload[missingColumn];
+              tried.add(missingColumn);
+              continue;
+            }
+            throw error;
+          }
+          successCount += 1;
+        } catch (error: any) {
+          failures.push(`Row ${rowLabel}: ${error?.message || "import failed"}`);
+        }
+      }
+
+      if (successCount > 0) {
+        await fetchClients();
+      }
+
+      if (successCount > 0 && failures.length === 0) {
+        toast({
+          title: "Import complete",
+          description: `${successCount} client${successCount === 1 ? "" : "s"} imported successfully.`,
+        });
+        setIsBulkClientOpen(false);
+        resetBulkClientImport();
+        return;
+      }
+
+      toast({
+        title: successCount > 0 ? "Import completed with issues" : "Import failed",
+        description:
+          successCount > 0
+            ? `${successCount} imported. ${failures.length} row${failures.length === 1 ? "" : "s"} failed. ${failures.slice(0, 2).join(" ")}`
+            : failures[0] || "No client rows were imported.",
+        variant: failures.length > 0 ? "destructive" : undefined,
+      });
+    } finally {
+      setIsImportingBulkClients(false);
+    }
+  }, [
+    bargainingCouncilOptions,
+    bulkClientParsedRows,
+    clientRows,
+    companyTypeOptions,
+    fetchClientGroups,
+    fetchClients,
+    getHighestClientNumberSequence,
+    groupOptions,
+    industryOptions,
+    normalizeImportedBargainingCouncil,
+    normalizeImportedCompanyType,
+    provinceOptions,
+    resetBulkClientImport,
+    toast,
+  ]);
+
+  const handleExportClientsPdf = useCallback(async () => {
+    if (tableRows.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: "There are no client rows to export.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+      const contentWidth = pageWidth - margin * 2;
+      const footerHeight = 20;
+      const contentBottom = pageHeight - footerHeight - 3;
+      const introPrefix = "Overview:";
+      const introText =
+        "This Client Directory lists the currently visible client records grouped by subscribed service. Clients assigned to more than one service appear in each relevant section, giving you a practical service-by-service view of your active client portfolio.";
+      const footerTopRowCenter = "This document is confidential and for internal use only.";
+      const firstPageTopContentY = 22;
+      const continuationTopContentY = 12;
+      const columns = [
+        { key: "clientNumber", label: "Client No", width: 20 },
+        { key: "companyName", label: "Company Name", width: 52 },
+        { key: "tradingAs", label: "Trading As", width: 47 },
+        { key: "groupName", label: "Group", width: 32 },
+        { key: "contactPerson", label: "Primary Contact", width: 34 },
+        { key: "contactNumber", label: "Number", width: 22 },
+        { key: "email", label: "Email", width: 50 },
+        { key: "status", label: "Status", width: 16 },
+      ] as const;
+      let y = firstPageTopContentY;
+
+      const serviceSections = [
+        { title: membershipLabelByValue.LR, rows: [] as any[] },
+        { title: membershipLabelByValue.EE, rows: [] as any[] },
+        { title: membershipLabelByValue.PR, rows: [] as any[] },
+        { title: membershipLabelByValue.OHS, rows: [] as any[] },
+        { title: "Unspecified", rows: [] as any[] },
+      ];
+      const serviceSectionByCode: Record<string, any[]> = {
+        LR: serviceSections[0].rows,
+        EE: serviceSections[1].rows,
+        PR: serviceSections[2].rows,
+        OHS: serviceSections[3].rows,
+      };
+
+      tableRows.forEach((row) => {
+        const memberTypes = Array.isArray(row.memberTypes) ? row.memberTypes.filter(Boolean) : [];
+        if (memberTypes.length === 0) {
+          serviceSections[4].rows.push(row);
+          return;
+        }
+        memberTypes.forEach((serviceCode: string) => {
+          const targetSection = serviceSectionByCode[serviceCode];
+          if (targetSection) targetSection.push(row);
+        });
+      });
+
+      const compareClientNumberAscending = (left: any, right: any) => {
+        const leftRaw = String(left?.clientNumber || "").trim().toUpperCase();
+        const rightRaw = String(right?.clientNumber || "").trim().toUpperCase();
+        const leftMatch = leftRaw.match(/^LL(\d+)$/);
+        const rightMatch = rightRaw.match(/^LL(\d+)$/);
+        if (leftMatch && rightMatch) {
+          return Number(leftMatch[1]) - Number(rightMatch[1]);
+        }
+        return leftRaw.localeCompare(rightRaw);
+      };
+      serviceSections.forEach((section) => {
+        section.rows.sort(compareClientNumberAscending);
+      });
+
+      const populatedSections = serviceSections.filter((section) => section.rows.length > 0);
+
+      const drawPageHeader = () => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(15, 23, 42);
+        doc.text("Client Directory", pageWidth / 2, 11, { align: "center" });
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, 14.5, margin + contentWidth, 14.5);
+      };
+      const drawContinuationPageHeader = (continuedSectionTitle?: string) => {
+        if (continuedSectionTitle) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(15, 23, 42);
+          doc.text(`${continuedSectionTitle} (Continued...)`, margin, 10.5, { align: "left" });
+        }
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, 13, margin + contentWidth, 13);
+      };
+
+      const drawSectionHeader = (title: string) => {
+        const sectionHeaderHeight = 7;
+        doc.setFillColor(51, 65, 85);
+        doc.setDrawColor(51, 65, 85);
+        doc.setLineWidth(0.16);
+        doc.rect(margin, y, contentWidth, sectionHeaderHeight, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(255, 255, 255);
+        const match = title.match(/^(.*?)(\s*\([^)]*\))$/);
+        const baseTitle = match ? match[1] : title;
+        const suffix = match ? match[2] : "";
+        const titleX = margin + 3;
+        const titleY = y + 4.8;
+        doc.text(baseTitle, titleX, titleY);
+        if (suffix) {
+          doc.setFontSize(7);
+          doc.text(suffix, margin + contentWidth - 3, titleY, { align: "right" });
+          doc.setFontSize(9);
+        }
+        y += sectionHeaderHeight + 1.8;
+      };
+
+      const drawTableHeader = () => {
+        const headerHeight = 7;
+        let x = margin;
+        columns.forEach((column) => {
+          doc.setFillColor(226, 232, 240);
+          doc.rect(x, y, column.width, headerHeight, "F");
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.15);
+          doc.rect(x, y, column.width, headerHeight, "S");
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7);
+          doc.setTextColor(0, 0, 0);
+          doc.text(column.label, x + 2, y + 4.6);
+          x += column.width;
+        });
+        y += headerHeight;
+      };
+
+      const startNewPage = (continuedSectionTitle?: string) => {
+        doc.addPage();
+        y = 15.5;
+        drawContinuationPageHeader(continuedSectionTitle);
+      };
+
+      const ensureSpace = (height: number) => {
+        if (y + height > contentBottom) {
+          startNewPage();
+        }
+      };
+
+      const loadFooterLogoDataUrl = async () => {
+        const response = await fetch("/Horizontal Logo (3).png");
+        if (!response.ok) return "";
+        const buffer = await response.arrayBuffer();
+        return arrayBufferToDataUrl(buffer, response.headers.get("content-type") || "image/png");
+      };
+
+      drawPageHeader();
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      const introLineHeight = 3.8;
+      const prefixWithSpace = `${introPrefix} `;
+      doc.setFont("helvetica", "bold");
+      const prefixWidth = doc.getTextWidth(prefixWithSpace);
+      doc.setFont("helvetica", "normal");
+
+      const drawJustifiedLine = (text: string, x: number, yPos: number, width: number, isLastLine: boolean) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        if (isLastLine || !trimmed.includes(" ")) {
+          doc.text(trimmed, x, yPos);
+          return;
+        }
+        const words = trimmed.split(/\s+/);
+        const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+        const gaps = Math.max(words.length - 1, 1);
+        const gapWidth = (width - wordsWidth) / gaps;
+        let cursorX = x;
+        words.forEach((word, idx) => {
+          doc.text(word, cursorX, yPos);
+          cursorX += doc.getTextWidth(word);
+          if (idx < words.length - 1) cursorX += gapWidth;
+        });
+      };
+
+      const introWords = introText.split(/\s+/).filter(Boolean);
+      const firstLineWidth = Math.max(contentWidth - prefixWidth, 20);
+      const wrappedIntroLines: string[] = [];
+      let currentLine = "";
+      let currentMaxWidth = firstLineWidth;
+      introWords.forEach((word) => {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (!currentLine || doc.getTextWidth(candidate) <= currentMaxWidth) {
+          currentLine = candidate;
+          return;
+        }
+        wrappedIntroLines.push(currentLine);
+        currentLine = word;
+        currentMaxWidth = contentWidth;
+      });
+      if (currentLine) wrappedIntroLines.push(currentLine);
+      if (wrappedIntroLines.length === 0) wrappedIntroLines.push("");
+
+      const introHeight = wrappedIntroLines.length * introLineHeight + 2;
+      ensureSpace(introHeight);
+
+      const firstLineY = y + 2.5;
+      doc.setFont("helvetica", "bold");
+      doc.text(prefixWithSpace, margin, firstLineY);
+      doc.setFont("helvetica", "normal");
+      drawJustifiedLine(
+        wrappedIntroLines[0] ?? "",
+        margin + prefixWidth,
+        firstLineY,
+        firstLineWidth,
+        wrappedIntroLines.length === 1,
+      );
+      for (let lineIndex = 1; lineIndex < wrappedIntroLines.length; lineIndex += 1) {
+        const lineY = firstLineY + lineIndex * introLineHeight;
+        drawJustifiedLine(
+          wrappedIntroLines[lineIndex] ?? "",
+          margin,
+          lineY,
+          contentWidth,
+          lineIndex === wrappedIntroLines.length - 1,
+        );
+      }
+
+      y += introHeight + 1.5;
+
+      populatedSections.forEach((section, sectionIndex) => {
+        ensureSpace(16);
+        drawSectionHeader(`${section.title} (${section.rows.length} client${section.rows.length === 1 ? "" : "s"})`);
+        drawTableHeader();
+
+        section.rows.forEach((row) => {
+          const rowValues = [
+            row.clientNumber || "--",
+            row.companyNameDisplay || row.companyName || "--",
+            row.tradingAs || "--",
+            row.groupName || "None",
+            row.contactPerson || "--",
+            row.contactNumber || "--",
+            row.email || "--",
+            row.status || "Active",
+          ];
+          const lineHeight = 3.3;
+          const cellPaddingX = 2.3;
+          const cellPaddingY = 1.6;
+          const cellLines = columns.map((column, idx) =>
+            doc.splitTextToSize(String(rowValues[idx] || "--"), column.width - cellPaddingX * 2),
+          );
+          const maxLines = Math.max(...cellLines.map((lines) => Math.max(lines.length, 1)));
+          const rowHeight = maxLines * lineHeight + cellPaddingY * 2;
+
+          if (y + rowHeight > contentBottom) {
+            startNewPage(section.title);
+            drawTableHeader();
+          }
+
+          let x = margin;
+          columns.forEach((column, columnIndex) => {
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.12);
+            doc.rect(x, y, column.width, rowHeight);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7);
+            doc.setTextColor(17, 24, 39);
+            const lines = cellLines[columnIndex];
+            lines.forEach((line: string, lineIdx: number) => {
+              doc.text(line, x + cellPaddingX, y + cellPaddingY + 2.5 + lineIdx * lineHeight);
+            });
+            x += column.width;
+          });
+
+          y += rowHeight;
+        });
+
+        if (sectionIndex < populatedSections.length - 1) {
+          y += 3.5;
+        }
+      });
+
+      const footerLogoDataUrl = await loadFooterLogoDataUrl();
+
+      const totalPages = doc.getNumberOfPages();
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        const footerTop = pageHeight - footerHeight;
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, footerTop, margin + contentWidth, footerTop);
+        if (footerLogoDataUrl) {
+          try {
+            const imageType = footerLogoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
+            doc.addImage(footerLogoDataUrl, imageType, margin, footerTop + 2.6, 34, 10.3, undefined, "FAST");
+          } catch {
+            doc.text("LLASA", margin, footerTop + 6.2, { align: "left" });
+          }
+        } else {
+          doc.text("LLASA", margin, footerTop + 6.2, { align: "left" });
+        }
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(70, 74, 78);
+        doc.text(footerTopRowCenter, pageWidth / 2, footerTop + 6.2, { align: "center" });
+        doc.text(`Page ${pageNumber} of ${totalPages}`, margin + contentWidth, footerTop + 6.2, { align: "right" });
+      }
+
+      doc.setTextColor(0, 0, 0);
+      doc.save("Client_Directory.pdf");
+      toast({
+        title: "Export ready",
+        description: "Client Directory exported successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export failed",
+        description: error?.message || "Unable to export Client Directory right now.",
+        variant: "destructive",
+      });
+    }
+  }, [membershipLabelByValue, tableRows, toast]);
 
   const handleCreateClient = async () => {
     if (!user?.id) return;
@@ -1685,6 +2597,23 @@ const ClientsTwo = () => {
       });
     }
   }, [currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
+  const selectedClientIndexInTableRows = useMemo(() => {
+    if (!selectedClientRow?.id) return -1;
+    return tableRows.findIndex((row) => String(row.id) === String(selectedClientRow.id));
+  }, [selectedClientRow?.id, tableRows]);
+  const previousVisibleClient = selectedClientIndexInTableRows > 0 ? tableRows[selectedClientIndexInTableRows - 1] : null;
+  const nextVisibleClient =
+    selectedClientIndexInTableRows >= 0 && selectedClientIndexInTableRows < tableRows.length - 1
+      ? tableRows[selectedClientIndexInTableRows + 1]
+      : null;
+  const openAdjacentVisibleClient = useCallback(
+    (direction: "previous" | "next") => {
+      const target = direction === "previous" ? previousVisibleClient : nextVisibleClient;
+      if (!target) return;
+      openClientFile(target);
+    },
+    [nextVisibleClient, previousVisibleClient],
+  );
 
   return (
     <DashboardLayout>
@@ -1740,6 +2669,15 @@ const ClientsTwo = () => {
                             Delete
                           </Button>
                         ) : null}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 rounded px-3 text-[11px] inline-flex items-center gap-1 border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                          onClick={() => void handleExportClientsPdf()}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Export
+                        </Button>
                         <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -1755,14 +2693,39 @@ const ClientsTwo = () => {
                             <p className="text-[11px] text-slate-600">Filter options can be added here.</p>
                           </PopoverContent>
                         </Popover>
-                        <Button
-                          type="button"
-                          onClick={() => setIsNewClientOpen(true)}
-                          className="h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b]"
-                        >
-                          <span>New Client</span>
-                          <Plus className="h-4 w-4" aria-hidden="true" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              className="h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b]"
+                            >
+                              <span>New Client</span>
+                              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44 border-slate-200 p-1">
+                            <DropdownMenuItem
+                              className="cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
+                              onSelect={() => {
+                                resetNewClientForm();
+                                setIsNewClientOpen(true);
+                              }}
+                            >
+                              <BuildingOfficeIcon className="mr-2 h-3.5 w-3.5" />
+                              Single Client
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
+                              onSelect={() => {
+                                resetBulkClientImport();
+                                setIsBulkClientOpen(true);
+                              }}
+                            >
+                              <BuildingOffice2Icon className="mr-2 h-3.5 w-3.5" />
+                              Multiple Clients
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </CardHeader>
@@ -2108,6 +3071,123 @@ const ClientsTwo = () => {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={isBulkClientOpen}
+        onOpenChange={(open) => {
+          setIsBulkClientOpen(open);
+          if (!open) resetBulkClientImport();
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[720px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="relative">
+            <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+              <div className="flex items-center gap-2 pl-2">
+                <FileSpreadsheet className="h-4 w-4 text-white" />
+                <DialogTitle className="text-sm font-semibold text-white">Add Multiple Clients</DialogTitle>
+              </div>
+              <DialogClose asChild>
+                <button type="button" className="text-white hover:text-white/80" aria-label="Close">
+                  <X className="h-4 w-4" />
+                </button>
+              </DialogClose>
+            </div>
+
+            <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
+              <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+                <div className="rounded-sm border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Step 1</p>
+                  <h3 className="mt-2 text-sm font-semibold text-slate-900">Download the Excel template</h3>
+                  <p className="mt-2 text-[11px] leading-5 text-slate-600">
+                    Use the LLASA client workbook, complete one line per client, then import the finished file below.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-4 h-9 w-full justify-center gap-2 border-[#3eca44] text-[11px] font-semibold text-[#2f9f35] hover:bg-[#3eca44]/5 hover:text-[#2f9f35]"
+                    onClick={() => void handleDownloadBulkClientTemplate()}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Spreadsheet
+                  </Button>
+                </div>
+
+                <div className="rounded-sm border border-slate-200 bg-white p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Step 2</p>
+                  <h3 className="mt-2 text-sm font-semibold text-slate-900">Upload completed file</h3>
+                  <p className="mt-2 text-[11px] leading-5 text-slate-600">
+                    Drag the spreadsheet into the box or click inside the upload area, then press Import.
+                  </p>
+                  <input
+                    ref={bulkClientUploadInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={(e) => void handleBulkClientUploadInputChange(e)}
+                  />
+                  <button
+                    type="button"
+                    className={`mt-4 flex min-h-[180px] w-full flex-col items-center justify-center rounded-sm border border-dashed px-6 py-8 text-center transition-colors ${
+                      bulkClientDragActive
+                        ? "border-[#3eca44] bg-[#3eca44]/5"
+                        : "border-slate-300 bg-slate-50 hover:border-[#3eca44] hover:bg-[#3eca44]/5"
+                    }`}
+                    onClick={() => bulkClientUploadInputRef.current?.click()}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setBulkClientDragActive(true);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      setBulkClientDragActive(false);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const file = event.dataTransfer.files?.[0];
+                      if (!file) {
+                        setBulkClientDragActive(false);
+                        return;
+                      }
+                      void handleBulkClientFileSelection(file);
+                    }}
+                  >
+                    <Upload className="h-7 w-7 text-[#2f9f35]" />
+                    <span className="mt-3 text-sm font-semibold text-slate-900">
+                      {isParsingBulkClients ? "Reading spreadsheet..." : "Upload file"}
+                    </span>
+                    <span className="mt-2 text-[11px] text-slate-500">
+                      Drag and drop your Excel file here or click to browse.
+                    </span>
+                    {bulkClientFileName ? (
+                      <span className="mt-4 rounded-full bg-[#3eca44]/10 px-3 py-1 text-[11px] font-semibold text-[#2f9f35]">
+                        {bulkClientFileName}
+                      </span>
+                    ) : null}
+                  </button>
+                  <div className="mt-4 flex items-center justify-between rounded-sm border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div>
+                      <p className="text-[11px] font-semibold text-slate-700">Ready to import</p>
+                      <p className="text-[11px] text-slate-500">
+                        {bulkClientParsedRows.length > 0
+                          ? `${bulkClientParsedRows.length} client row${bulkClientParsedRows.length === 1 ? "" : "s"} loaded`
+                          : "No spreadsheet loaded yet"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      className="h-8 rounded bg-[#3eca44] px-4 text-[11px] font-semibold text-white hover:bg-[#34b73b] disabled:bg-slate-300"
+                      disabled={bulkClientParsedRows.length === 0 || isParsingBulkClients || isImportingBulkClients}
+                      onClick={() => void handleImportBulkClients()}
+                    >
+                      {isImportingBulkClients ? "Importing..." : "Import"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {selectedClientRow && (
         <div className="fixed inset-0 z-50">
           <input ref={slaFileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => void handleSlaFileChange(e)} />
@@ -2120,8 +3200,30 @@ const ClientsTwo = () => {
           <div className="absolute inset-0 flex items-center justify-center">
             <section className="relative z-10 w-[94vw] max-w-[980px] h-[92vh] rounded-sm bg-[#2D4256] shadow-2xl overflow-hidden border-0">
               <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-5">
                   <h2 className="text-sm font-semibold text-white">Client File</h2>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isClientEditMode || !previousVisibleClient}
+                      onClick={() => openAdjacentVisibleClient("previous")}
+                      className="h-6 w-[84px] justify-center gap-1 rounded border-white/20 bg-white/10 px-2 text-[10px] font-semibold text-white hover:bg-white/15 hover:text-white hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft className="h-3 w-3 shrink-0" />
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isClientEditMode || !nextVisibleClient}
+                      onClick={() => openAdjacentVisibleClient("next")}
+                      className="h-6 w-[84px] justify-center gap-1 rounded border-white/20 bg-white/10 px-2 text-[10px] font-semibold text-white hover:bg-white/15 hover:text-white hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                      <ChevronRight className="h-3 w-3 shrink-0" />
+                    </Button>
+                  </div>
                 </div>
                 <button type="button" className="text-white hover:text-white/80" onClick={() => setSelectedClientRow(null)}>
                   <X className="h-4 w-4" />

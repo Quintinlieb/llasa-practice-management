@@ -198,7 +198,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
       <TooltipProvider delayDuration={0}>
         <Tooltip>
           <TooltipTrigger asChild>{element}</TooltipTrigger>
-          <TooltipContent side="right" className="rounded drop-shadow-md">
+          <TooltipContent side="right" className="rounded border border-[#3eca44]/35 shadow-[0_0_0_1px_rgba(62,202,68,0.2),0_10px_28px_rgba(62,202,68,0.28)]">
             {label}
           </TooltipContent>
         </Tooltip>
@@ -222,22 +222,25 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
             isCollapsed ? "px-2 justify-center" : "px-4 justify-start",
           )}
         >
-          {!isCollapsed && (
-            <img
-              src="/llasa_logo_white_horizontal.png"
-              alt="LLASA logo"
-              className="absolute left-6 top-[53%] h-8 w-auto -translate-y-1/2 object-contain"
-              style={{ imageRendering: "crisp-edges" }}
-            />
-          )}
-          {isCollapsed && (
+          <div className="absolute left-10 top-[55%] -translate-x-1/2 -translate-y-1/2">
             <img
               src="/llasa_thumbnail.png"
               alt="LLASA thumbnail logo"
-              className="absolute left-10 top-[55%] h-8 w-auto -translate-x-1/2 -translate-y-1/2 object-contain"
-              style={{ imageRendering: "crisp-edges" }}
+              className="h-7 w-auto shrink-0 object-contain"
             />
-          )}
+          </div>
+          <span
+            aria-hidden={isCollapsed}
+            className="absolute top-[55%] overflow-hidden whitespace-nowrap text-[24px] font-bold tracking-[0.08em] text-white -translate-y-1/2"
+            style={{
+              left: "3.95rem",
+              width: isCollapsed ? "0ch" : "5.8ch",
+              fontFamily: '"Barlow", "Inter", sans-serif',
+              transition: "width 200ms steps(5, end)",
+            }}
+          >
+            LLASA
+          </span>
         </div>
         <SidebarContent className="px-0">
           <SidebarGroup className="pt-2 px-0">

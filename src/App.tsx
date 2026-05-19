@@ -13,7 +13,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
-import CaseFiles from "./pages/CaseFiles";
+import Matters from "./pages/Matters";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
@@ -49,7 +49,7 @@ const AppRoutes = () => {
         <Route path="/documents/contracts" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
-        <Route path="/case-files" element={<ProtectedRoute><CaseFiles /></ProtectedRoute>} />
+        <Route path="/case-files" element={<ProtectedRoute><Matters /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/terms" element={<TermsAndConditions />} />
         <Route path="*" element={<NotFound />} />

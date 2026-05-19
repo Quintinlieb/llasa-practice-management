@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search, Network, Info } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, Palette, SlidersHorizontal, MapPin, Settings as SettingsIcon, Search, Network, Info, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -84,6 +84,7 @@ type SubuserInviteForm = {
 };
 type SubuserListItem = {
   id: string;
+  auth_user_id?: string | null;
   name: string;
   surname: string;
   contact_number: string | null;
@@ -375,6 +376,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [showSubuserConfirmPassword, setShowSubuserConfirmPassword] = useState(false);
   const [subusersList, setSubusersList] = useState<SubuserListItem[]>([]);
   const [subusersLoading, setSubusersLoading] = useState(false);
+  const [deletingSubuserId, setDeletingSubuserId] = useState<string | null>(null);
   const [isBranchAllocationOpen, setIsBranchAllocationOpen] = useState(false);
   const [branchAllocationEmployees, setBranchAllocationEmployees] = useState<BranchAllocationEmployee[]>([]);
   const [branchAllocationLoading, setBranchAllocationLoading] = useState(false);
@@ -393,6 +395,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [allocatedBranchSearchQuery, setAllocatedBranchSearchQuery] = useState("");
   const [allocatedBranchSearchFocused, setAllocatedBranchSearchFocused] = useState(false);
   const [tabLoading, setTabLoading] = useState<Record<SettingsTab, boolean>>(emptyTabLoadingState);
+  const [isMasterUser, setIsMasterUser] = useState(true);
+  const [isPermissionsLoading, setIsPermissionsLoading] = useState(true);
   const loadedGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const loadingGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const personaliseLogoInputRef = useRef<HTMLInputElement | null>(null);
@@ -406,12 +410,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     { value: "auth", label: "Authentication", icon: Lock },
     { value: "personalize", label: "Personalise", icon: Palette },
   ];
+  const canEditSettings = isMasterUser;
+  const visibleSettingsTabs = useMemo(
+    () => settingsTabs.filter((tab) => (tab.value === "companySetup" ? isMasterUser : true)),
+    [isMasterUser, settingsTabs],
+  );
   const popupActionButtonClass =
-    "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600";
+    "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]";
   const companyProfileReadOnlyInputClass =
     "bg-slate-100 text-slate-700 pointer-events-none cursor-default hover:border-slate-400 focus-visible:border-slate-400";
   const subuserModalInputClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300";
+    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-[#3eca44] !focus-visible:border-[1px] !focus-visible:border-[#3eca44] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300";
   const floatingLabelClass =
     "pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-400";
   const settingsActionRowClass = "mt-auto flex justify-center border-t border-slate-100 bg-white pt-3 pb-1";
@@ -584,14 +593,49 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
           .maybeSingle();
 
         if (error) throw error;
-        if (!data) return;
+        let nextUserDetails: UserDetailsForm | null = null;
+        if (data) {
+          nextUserDetails = {
+            user_name: data.user_name || "",
+            user_surname: data.user_surname || "",
+            user_email: data.user_email || "",
+            user_contact: data.user_contact || "",
+          };
+        } else {
+          const { data: subuserData } = await (supabase as any)
+            .from("subusers")
+            .select("name,surname,email,contact_number,user_name,user_surname,user_email,user_contact,phone_number,contact")
+            .eq("auth_user_id", user.id)
+            .maybeSingle();
 
-        const nextUserDetails: UserDetailsForm = {
-          user_name: data.user_name || "",
-          user_surname: data.user_surname || "",
-          user_email: data.user_email || "",
-          user_contact: data.user_contact || "",
-        };
+          if (subuserData) {
+            nextUserDetails = {
+              user_name: String(subuserData.name ?? subuserData.user_name ?? "").trim(),
+              user_surname: String(subuserData.surname ?? subuserData.user_surname ?? "").trim(),
+              user_email: String(subuserData.email ?? subuserData.user_email ?? user.email ?? "").trim(),
+              user_contact: String(
+                subuserData.contact_number ?? subuserData.user_contact ?? subuserData.phone_number ?? subuserData.contact ?? "",
+              ).trim(),
+            };
+          } else {
+            const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
+            const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
+            const metaEmail = String((user as any)?.user_metadata?.user_email || user.email || "").trim();
+            const metaContact = String(
+              (user as any)?.user_metadata?.user_contact ||
+              (user as any)?.user_metadata?.contact_number ||
+              (user as any)?.user_metadata?.contact ||
+              "",
+            ).trim();
+            nextUserDetails = {
+              user_name: metaName,
+              user_surname: metaSurname,
+              user_email: metaEmail,
+              user_contact: metaContact,
+            };
+          }
+        }
+        if (!nextUserDetails) return;
 
         setUserDetails(nextUserDetails);
         setInitialUserDetails(nextUserDetails);
@@ -1211,16 +1255,30 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         userContact: userDetails.user_contact
       });
       
-      // Update with validated data
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          user_name: validated.userName,
-          user_surname: validated.userSurname,
-          user_email: validated.userEmail,
-          user_contact: validated.userContact
-        })
-        .eq("id", user.id);
+      let error: unknown = null;
+      if (isMasterUser) {
+        const result = await supabase
+          .from("profiles")
+          .update({
+            user_name: validated.userName,
+            user_surname: validated.userSurname,
+            user_email: validated.userEmail,
+            user_contact: validated.userContact,
+          })
+          .eq("id", user.id);
+        error = result.error;
+      } else {
+        const result = await (supabase as any)
+          .from("subusers")
+          .update({
+            name: validated.userName,
+            surname: validated.userSurname,
+            email: validated.userEmail,
+            contact_number: validated.userContact,
+          })
+          .eq("auth_user_id", user.id);
+        error = result.error;
+      }
 
       if (error) throw error;
 
@@ -1257,6 +1315,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const handleCompanyDetailsUpdate = async () => {
     if (!user) return;
+    if (!canEditSettings) return;
     setSaving(true);
 
     try {
@@ -1655,6 +1714,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   };
 
   const handleRemovePersonaliseLogo = () => {
+    if (!canEditSettings) return;
     setPersonaliseLogoPreview("");
     setPersonaliseLogoName("");
     setPersonaliseLogoLayout(null);
@@ -1665,6 +1725,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const handlePersonaliseUpdate = async () => {
     if (!user) return;
+    if (!canEditSettings) return;
     setSaving(true);
 
     const { error } = await (supabase as any)
@@ -1761,6 +1822,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   };
 
   const handleSettingsTabChange = (nextTab: typeof settingsTab) => {
+    if (!isMasterUser && nextTab === "companySetup") return;
     if (settingsTab === "companySetup" && branchEditMode && nextTab !== "companySetup") {
       handleCancelBranchAction();
     }
@@ -1790,6 +1852,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   };
 
   const handleSubuserInviteDialogChange = (open: boolean) => {
+    if (open && !canEditSettings) return;
     setIsInviteSubuserOpen(open);
     if (!open) {
       setSubuserInviteForm(emptySubuserInviteForm);
@@ -1823,6 +1886,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       if (error) throw error;
       const normalized = ((data ?? []) as any[]).map((row) => ({
         id: String(row.id ?? row.auth_user_id ?? `${row.email ?? "subuser"}-${row.created_at ?? ""}`),
+        auth_user_id: String(row.auth_user_id ?? "").trim() || null,
         name: String(row.name ?? row.user_name ?? "").trim(),
         surname: String(row.surname ?? row.user_surname ?? row.last_name ?? "").trim(),
         contact_number: String(row.contact_number ?? row.contact ?? row.phone_number ?? "").trim(),
@@ -1843,9 +1907,50 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setSubusersLoading(false);
     }
   }, [toast, user?.id]);
+  const handleDeleteSubuser = useCallback(
+    async (subuser: SubuserListItem) => {
+      if (!isMasterUser) return;
+      const fullName = `${subuser.name || ""} ${subuser.surname || ""}`.trim() || subuser.email || "this subuser";
+      const confirmed = window.confirm(
+        `Are you sure you want to delete ${fullName}? This will remove the account from subusers and auth users.`,
+      );
+      if (!confirmed) return;
+
+      setDeletingSubuserId(subuser.id);
+      try {
+        const { data, error } = await supabase.functions.invoke("delete-subuser-manual", {
+          body: {
+            subuser_id: subuser.id,
+            auth_user_id: subuser.auth_user_id ?? undefined,
+            email: subuser.email ?? undefined,
+          },
+        });
+        const response = (data ?? null) as { ok?: boolean; error?: string; partial?: boolean; auth_deleted?: boolean } | null;
+        if (error) throw error;
+        if (!response?.ok) {
+          throw new Error(response?.error || "Delete failed.");
+        }
+        toast({
+          title: "Subuser deleted",
+          description: response.auth_deleted === false ? "Subuser row deleted. Auth user was not linked." : "Subuser removed successfully.",
+        });
+        await fetchSubusersList();
+      } catch (error: any) {
+        toast({
+          title: "Delete failed",
+          description: getSafeErrorMessage(error),
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingSubuserId(null);
+      }
+    },
+    [fetchSubusersList, isMasterUser, toast],
+  );
 
   const handleSubuserInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canEditSettings) return;
     if (subuserInviteStep === 1) {
       if (!isSubuserStepOneComplete) return;
       setSubuserInviteStep(2);
@@ -2169,6 +2274,42 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (settingsTab !== "subusers") return;
     void fetchSubusersList();
   }, [fetchSubusersList, settingsTab, user]);
+  useEffect(() => {
+    let isCancelled = false;
+    const resolvePermissions = async () => {
+      if (!user?.id) {
+        if (!isCancelled) {
+          setIsMasterUser(false);
+          setIsPermissionsLoading(false);
+        }
+        return;
+      }
+      setIsPermissionsLoading(true);
+      try {
+        const { data: profileRow } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (!isCancelled) {
+          setIsMasterUser(Boolean(profileRow?.id));
+        }
+      } catch {
+        if (!isCancelled) setIsMasterUser(false);
+      } finally {
+        if (!isCancelled) setIsPermissionsLoading(false);
+      }
+    };
+    void resolvePermissions();
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?.id]);
+  useEffect(() => {
+    if (!isMasterUser && settingsTab === "companySetup") {
+      setSettingsTab("user");
+    }
+  }, [isMasterUser, settingsTab]);
 
   const content = (
       <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
@@ -2191,7 +2332,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             <div className="flex h-full min-h-0 items-stretch gap-4">
             <aside className="h-full w-[165px] overflow-hidden rounded-sm bg-white">
               <div className="space-y-0">
-                {settingsTabs.map((tab) => {
+                {visibleSettingsTabs.map((tab) => {
                   const isActive = settingsTab === tab.value;
                   const Icon = tab.icon;
                   return (
@@ -2226,8 +2367,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             </aside>
 
             <div className="min-w-0 flex-1 min-h-0 flex flex-col">
-            <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-blue-400 [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-blue-400 [&_[role=combobox]]:focus:border-blue-600 [&_[role=combobox]]:focus-visible:border-blue-600 [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-blue-600">
-              {isCurrentTabLoading ? (
+            <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-[#3eca44] [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-[#3eca44] [&_[role=combobox]]:focus:border-[#3eca44] [&_[role=combobox]]:focus-visible:border-[#3eca44] [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-[#3eca44]">
+              {isPermissionsLoading || isCurrentTabLoading ? (
                 <div className="flex h-full items-center justify-center">
                   <img src="/llasa_thumbnail.png" alt="Loading tab" className="h-10 w-10 animate-spin" style={{ animationDuration: "2s" }} />
                 </div>
@@ -2236,7 +2377,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "user" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">User Details</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">User Details</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your personal information</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2308,26 +2449,31 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "subusers" && (
             <div className="flex h-full flex-col space-y-4">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">Subusers</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">Subusers</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
-                  Here, the main user can create and manage active subusers.
+                  {isMasterUser
+                    ? "Here, the main user can create and manage active subusers."
+                    : "You can view active subusers. Only the main user can create subusers."}
                 </p>
               </div>
-              <div className={settingsActionRowClass.replace("justify-center", "justify-start")}>
-                <Button
-                  type="button"
-                  onClick={() => setIsInviteSubuserOpen(true)}
-                  className={popupActionButtonClass}
-                >
-                  Add Subuser
-                </Button>
-              </div>
-              <div className="overflow-hidden rounded border border-slate-200">
-                <div className="grid grid-cols-[1.4fr_1.4fr_1.2fr_1fr] items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+              {isMasterUser ? (
+                <div className={settingsActionRowClass.replace("justify-center", "justify-start")}>
+                  <Button
+                    type="button"
+                    onClick={() => setIsInviteSubuserOpen(true)}
+                    className={popupActionButtonClass}
+                  >
+                    Add Subuser
+                  </Button>
+                </div>
+              ) : null}
+                <div className="overflow-hidden rounded border border-slate-200">
+                <div className={`grid ${isMasterUser ? "grid-cols-[1.25fr_1.35fr_1.1fr_0.9fr_0.55fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white`}>
                   <div>Name</div>
                   <div>Email</div>
                   <div>Contact Number</div>
                   <div>Role</div>
+                  {isMasterUser ? <div className="text-center">Actions</div> : null}
                 </div>
                 <div className="max-h-[330px] divide-y overflow-y-auto bg-white text-[11px]">
                   {subusersLoading ? (
@@ -2336,11 +2482,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <div className="px-3 py-3 text-slate-500">No active subusers found.</div>
                   ) : (
                     subusersList.map((item) => (
-                      <div key={item.id} className="grid grid-cols-[1.4fr_1.4fr_1.2fr_1fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
+                      <div key={item.id} className={`grid ${isMasterUser ? "grid-cols-[1.25fr_1.35fr_1.1fr_0.9fr_0.55fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
                         <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
                         <div className="truncate text-slate-700">{item.email || "--"}</div>
                         <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
                         <div className="truncate text-slate-700">{item.role || "--"}</div>
+                        {isMasterUser ? (
+                          <div className="flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteSubuser(item)}
+                              disabled={deletingSubuserId === item.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded border border-[#f0b5b5] bg-white text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Delete subuser ${item.email || item.name || item.id}`}
+                            >
+                              {deletingSubuserId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ))
                   )}
@@ -2352,7 +2511,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "company" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">Company Profile</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2366,9 +2525,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="company_name"
                       value={companyDetails.company_name}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, company_name: e.target.value }))}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2376,9 +2536,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="company_type"
                       value={companyDetails.company_type}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, company_type: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -2388,9 +2549,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="registration_number"
                       value={companyDetails.registration_number}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, registration_number: e.target.value }))}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2398,9 +2560,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="vat_number"
                       value={companyDetails.vat_number}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, vat_number: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -2414,9 +2577,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="company_contact"
                       value={companyDetails.company_contact}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, company_contact: e.target.value }))}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2425,9 +2589,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       id="company_email"
                       type="email"
                       value={companyDetails.company_email}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, company_email: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -2441,9 +2606,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="representative_name"
                       value={companyDetails.representative_name}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, representative_name: e.target.value }))}
                     />
                   </div>
                   <div className="relative w-full max-w-none">
@@ -2451,13 +2617,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <Input
                       id="representative_surname"
                       value={companyDetails.representative_surname}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => setCompanyDetails((prev) => ({ ...prev, representative_surname: e.target.value }))}
                     />
                   </div>
                 </div>
-                {isCompanyProfileDirty ? (
+                {canEditSettings && isCompanyProfileDirty ? (
                   <div className={settingsActionRowClass}>
                     <Button onClick={handleCompanyDetailsUpdate} disabled={saving} className={popupActionButtonClass}>
                       {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -2472,7 +2639,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "companyAddress" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">Company Address</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2490,9 +2657,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="physical_address_line1"
                         value={companyDetails.physical_address_line1}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, physical_address_line1: e.target.value }))}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2500,9 +2668,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_address_line1"
                         value={companyDetails.postal_address_line1}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, postal_address_line1: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -2512,9 +2681,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="physical_address_line2"
                         value={companyDetails.physical_address_line2}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, physical_address_line2: e.target.value }))}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2522,9 +2692,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_address_line2"
                         value={companyDetails.postal_address_line2}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, postal_address_line2: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -2534,9 +2705,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="city"
                         value={companyDetails.city}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, city: e.target.value }))}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2544,9 +2716,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_city"
                         value={companyDetails.postal_city}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, postal_city: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -2556,9 +2729,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="province"
                         value={companyDetails.province}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, province: e.target.value }))}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2566,9 +2740,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_province"
                         value={companyDetails.postal_province}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, postal_province: e.target.value }))}
                       />
                     </div>
                   </div>
@@ -2578,9 +2753,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="area_code"
                         value={companyDetails.area_code}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, area_code: e.target.value }))}
                       />
                     </div>
                     <div className="relative w-full max-w-none">
@@ -2588,14 +2764,15 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <Input
                         id="postal_area_code"
                         value={companyDetails.postal_area_code}
-                        readOnly
-                        tabIndex={-1}
-                        className={companyProfileReadOnlyInputClass}
+                        readOnly={!canEditSettings}
+                        tabIndex={canEditSettings ? 0 : -1}
+                        className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                        onChange={(e) => setCompanyDetails((prev) => ({ ...prev, postal_area_code: e.target.value }))}
                       />
                     </div>
                   </div>
                 </div>
-              {isCompanyAddressDirty ? (
+                {canEditSettings && isCompanyAddressDirty ? (
                 <div className={settingsActionRowClass}>
                   <Button onClick={handleCompanyDetailsUpdate} disabled={saving} className={popupActionButtonClass}>
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -2610,7 +2787,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "auth" && (
             <div className="flex h-full flex-col space-y-5">
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-blue-600">Authentication</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">Authentication</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Change your password here whenever you need to keep your account secure.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2680,7 +2857,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "companySetup" && (
                 <div className="flex h-full min-h-0 flex-col space-y-5" onClickCapture={handleCompanySetupClickCapture}>
                   <div className="space-y-1">
-                    <h3 className="text-[20px] font-semibold text-blue-600">Company Setup</h3>
+                    <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Setup</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Enable branch management to organize employees by location and assign them to the correct operating unit across your business.</p>
                   </div>
                   <div className="h-[410px] rounded-sm bg-white">
@@ -2694,7 +2871,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       <div className="flex items-center gap-2">
                         <Switch
                           id="branches_enabled"
-                          className="-mt-0.5 scale-90 data-[state=checked]:!bg-blue-600 data-[state=unchecked]:!bg-slate-300"
+                          className="-mt-0.5 scale-90 data-[state=checked]:!bg-[#3eca44] data-[state=unchecked]:!bg-slate-300"
                           checked={branchSettings.branches_enabled}
                           disabled={branchEditMode || branchSaving}
                           onCheckedChange={async (checked) => {
@@ -2728,7 +2905,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 <div className="relative">
                                   <Input
                                     data-branch-edit-allowed="true"
-                                    className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400 focus:border-blue-600 focus-visible:!border-blue-600"
+                                    className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:!border-[#3eca44]"
                                     placeholder="Search branches"
                                     value={branchSearchQuery}
                                     onChange={(e) => setBranchSearchQuery(e.target.value)}
@@ -2748,8 +2925,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       setShowBranchForm(true);
                                     }}
                                     disabled={branchSaving}
-                                    className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
-                                      showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
+                                    className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white ${
+                                      showBranchForm ? "bg-[#3eca44] text-white hover:bg-[#2f9f35]" : ""
                                     }`}
                                   >
                                     New Branch
@@ -2767,8 +2944,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     setShowBranchForm(true);
                                   }}
                                   disabled={branchEditMode || branchSaving}
-                                  className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white ${
-                                    showBranchForm ? "bg-blue-600 text-white hover:bg-blue-700" : ""
+                                  className={`h-7 w-[92px] rounded px-2 text-[10px] inline-flex items-center justify-center border-[0.5px] border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white ${
+                                    showBranchForm ? "bg-[#3eca44] text-white hover:bg-[#2f9f35]" : ""
                                   }`}
                                 >
                                   New Branch
@@ -2800,8 +2977,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                           variant="outline"
                                           className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
                                             selectedBranchToEdit === branchEntry.name && showEditBranchForm
-                                              ? "cursor-pointer border-blue-600 bg-blue-600 text-white"
-                                              : "cursor-pointer border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                              ? "cursor-pointer border-[#3eca44] bg-[#3eca44] text-white"
+                                              : "cursor-pointer border-[#8fd693] bg-[#eaf8eb] text-[#2f9f35] hover:bg-[#dff3e1]"
                                           }`}
                                           onClick={() => handleSelectBranchForEdit(branchEntry.name)}
                                         >
@@ -2812,7 +2989,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                               event.stopPropagation();
                                               void handleRemoveBranch(branchEntry.name);
                                             }}
-                                            className="ml-1 inline-flex items-center text-blue-600 hover:text-red-600"
+                                            className="ml-1 inline-flex items-center text-[#2f9f35] hover:text-red-600"
                                             aria-label={`Remove ${branchEntry.name}`}
                                           >
                                             <X className="h-3.5 w-3.5" />
@@ -2838,7 +3015,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               <div className="relative flex-1">
                                 <Input
                                   data-allocated-branch-edit-allowed="true"
-                                  className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-blue-400 focus:border-blue-600 focus-visible:!border-blue-600"
+                                  className="!h-7 !border !border-slate-300 px-2 pr-7 text-[10px] placeholder:text-[10px] hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:!border-[#3eca44]"
                                   placeholder="Search by branch or employees"
                                   value={allocatedBranchSearchQuery}
                                   disabled={branchNames.length === 0}
@@ -2857,7 +3034,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       data-allocated-branch-edit-allowed="true"
                                       type="button"
                                       aria-label="Branch allocation search help"
-                                      className="inline-flex h-6 w-6 items-center justify-center rounded bg-white text-slate-500 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded bg-white text-slate-500 hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
                                       disabled={branchNames.length === 0}
                                     >
                                       <Info className="h-3.5 w-3.5" />
@@ -2874,7 +3051,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 type="button"
                                 onClick={() => handleBranchAllocationDialogChange(true)}
                                 disabled={branchNames.length === 0}
-                                className="h-7 min-w-[88px] rounded border-[0.5px] border-blue-600 bg-white px-3 text-[10px] text-blue-600 hover:bg-blue-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-blue-600"
+                                className="h-7 min-w-[88px] rounded border-[0.5px] border-[#3eca44] bg-white px-3 text-[10px] text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]"
                               >
                                 Allocate
                               </Button>
@@ -2899,8 +3076,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       variant="outline"
                                       className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-3 py-1 text-[10px] leading-none !font-normal ${
                                         selectedAllocatedBranchToEdit === allocatedBranch && isAllocatedBranchEmployeesOpen
-                                          ? "border-blue-600 bg-blue-600 text-white"
-                                          : "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                          ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                          : "border-[#8fd693] bg-[#eaf8eb] text-[#2f9f35] hover:bg-[#dff3e1]"
                                       }`}
                                       onClick={() => handleOpenAllocatedBranchEmployees(allocatedBranch)}
                                     >
@@ -3029,7 +3206,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             >
                               <SelectTrigger
                                 aria-label="Branch province"
-                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
+                                className="bg-white text-slate-900 hover:border-[#3eca44] focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                               >
                                 <SelectValue placeholder="Please select province" />
                               </SelectTrigger>
@@ -3038,7 +3215,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                   <SelectItem
                                     key={province}
                                     value={province}
-                                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                    className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                                   >
                                     {province}
                                   </SelectItem>
@@ -3064,7 +3241,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                             onClick={() => {
                               setShowBranchForm(false);
                               setBranchForm(emptyBranchForm);
@@ -3074,7 +3251,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           </Button>
                           <Button
                             type="submit"
-                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                            className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300 disabled:text-white"
                             disabled={
                               branchForm.name.trim().length === 0 ||
                               branchForm.address_line1.trim().length === 0 ||
@@ -3189,7 +3366,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             >
                               <SelectTrigger
                                 aria-label="Edit branch province"
-                                className="bg-white text-slate-900 hover:border-blue-400 focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
+                                className="bg-white text-slate-900 hover:border-[#3eca44] focus:border-slate-300 focus-visible:border-slate-300 !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0 outline-none focus:outline-none focus-visible:outline-none data-[state=open]:border-slate-300 data-[state=open]:bg-white data-[placeholder]:!text-[10px] data-[placeholder]:!font-medium data-[placeholder]:!text-slate-400 !h-[34px] !rounded !border-[0.5px] !border-slate-400 !focus-visible:border-slate-300 !text-[11px] [&>span]:!text-[11px]"
                               >
                                 <SelectValue placeholder="Please select province" />
                               </SelectTrigger>
@@ -3198,7 +3375,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                   <SelectItem
                                     key={province}
                                     value={province}
-                                    className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                    className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                                   >
                                     {province}
                                   </SelectItem>
@@ -3225,7 +3402,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                            className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                             onClick={() => {
                               const original = selectedBranchToEdit
                                 ? branchSettings.branches.find((item) => item.name === selectedBranchToEdit) ?? null
@@ -3245,7 +3422,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           </Button>
                           <Button
                             type="submit"
-                            className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                            className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300 disabled:text-white"
                             disabled={
                               !selectedBranchToEdit ||
                               branchEditDraft.name.trim().length === 0 ||
@@ -3287,7 +3464,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <div className="mb-1 grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
                             <div className="relative">
                               <Input
-                                className={`${subuserModalInputClass} ${branchAllocationSearchFocused ? "!border-blue-600" : ""} pr-7 !focus:border-blue-600 !focus-visible:border-blue-600`}
+                                className={`${subuserModalInputClass} ${branchAllocationSearchFocused ? "!border-[#3eca44]" : ""} pr-7 !focus:border-[#3eca44] !focus-visible:border-[#3eca44]`}
                                 placeholder={branchAllocationSearchFocused ? "" : "Search employees"}
                                 value={branchAllocationSearchQuery}
                                 onChange={(event) => setBranchAllocationSearchQuery(event.target.value)}
@@ -3308,7 +3485,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               >
                                 <SelectTrigger
                                   aria-label="Select branch for allocation"
-                                  className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-blue-600 bg-white text-blue-600 hover:bg-blue-600 hover:text-white data-[state=open]:rounded-b-none data-[state=open]:bg-blue-600 data-[state=open]:text-white !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                                  className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white data-[state=open]:rounded-b-none data-[state=open]:bg-[#3eca44] data-[state=open]:text-white !ring-0 !ring-offset-0 focus:!ring-0 focus:!ring-offset-0 focus-visible:!ring-0 focus-visible:!ring-offset-0"
                                 >
                                   <SelectValue placeholder="Select Branch" />
                                 </SelectTrigger>
@@ -3317,7 +3494,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     <SelectItem
                                       key={branchName}
                                       value={branchName}
-                                      className="text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
+                                      className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700"
                                     >
                                       {branchName}
                                     </SelectItem>
@@ -3343,7 +3520,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <div className="mt-2 max-h-[300px] overflow-y-auto rounded border border-slate-300 bg-white">
                             {branchAllocationLoading ? (
                               <div className="flex items-center justify-center py-10">
-                                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                                <Loader2 className="h-5 w-5 animate-spin text-[#2f9f35]" />
                               </div>
                             ) : branchAllocationFilteredEmployees.length === 0 ? (
                               <div className="px-3 py-8 text-center text-[10px] text-slate-500">
@@ -3374,7 +3551,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${
                                         !hasSelectedBranch
                                           ? "cursor-not-allowed bg-slate-50/70"
-                                          : `cursor-pointer hover:bg-slate-50 ${isSelected ? "bg-blue-50/70" : "bg-white"}`
+                                          : `cursor-pointer hover:bg-slate-50 ${isSelected ? "bg-[#3eca44]/10" : "bg-white"}`
                                       }`}
                                     >
                                       <div className="flex min-w-0 items-center gap-2">
@@ -3383,7 +3560,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                           checked={isSelected}
                                           disabled={!hasSelectedBranch}
                                           readOnly
-                                          className="pointer-events-none h-3.5 w-3.5 accent-blue-600"
+                                          className="pointer-events-none h-3.5 w-3.5 accent-[#3eca44]"
                                         />
                                         <div className="min-w-0">
                                           <p className="truncate text-[11px] font-medium text-slate-800">
@@ -3435,12 +3612,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                     <Badge
                                       key={employee.id}
                                       variant="outline"
-                                      className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-2.5 py-1 text-[10px] leading-none !font-normal text-blue-700 hover:bg-blue-100"
+                                      className="inline-flex items-center gap-1 rounded-full border border-[#8fd693] bg-[#eaf8eb] px-2.5 py-1 text-[10px] leading-none !font-normal text-[#2f9f35] hover:bg-[#dff3e1]"
                                     >
                                       <span className="max-w-[210px] truncate">{employeeName}</span>
                                       <button
                                         type="button"
-                                        className="inline-flex items-center text-blue-700 hover:text-blue-900"
+                                        className="inline-flex items-center text-[#2f9f35] hover:text-[#2a8b30]"
                                         onClick={() => toggleBranchAllocationEmployeeSelection(employee.id)}
                                         aria-label={`Remove ${employeeName}`}
                                       >
@@ -3457,7 +3634,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-blue-400 hover:bg-white hover:text-blue-600"
+                              className="h-[28px] w-[84px] rounded border-slate-300 px-3 text-xs text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                               onClick={() => setBranchAllocationSelectedEmployeeIds(new Set())}
                               disabled={branchAllocationSubmitting || branchAllocationSelectedEmployeeIds.size === 0}
                             >
@@ -3465,7 +3642,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             </Button>
                             <Button
                               type="button"
-                              className="h-[28px] min-w-[110px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white"
+                              className="h-[28px] min-w-[110px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#2f9f35] disabled:bg-slate-300 disabled:text-white"
                               onClick={handleBranchAllocationApply}
                               disabled={
                                 branchAllocationSubmitting ||
@@ -3503,7 +3680,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
                           <div className="relative">
                             <Input
-                              className={`${subuserModalInputClass} ${allocatedBranchEmployeesSearchFocused ? "!border-blue-600" : ""} pr-7 !focus:border-blue-600 !focus-visible:border-blue-600`}
+                              className={`${subuserModalInputClass} ${allocatedBranchEmployeesSearchFocused ? "!border-[#3eca44]" : ""} pr-7 !focus:border-[#3eca44] !focus-visible:border-[#3eca44]`}
                               placeholder={
                                 allocatedBranchEmployeesSearchFocused
                                   ? ""
@@ -3524,7 +3701,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <div className="mt-3 max-h-[340px] overflow-y-auto rounded border border-slate-300 bg-white">
                             {branchAllocationLoading ? (
                               <div className="flex items-center justify-center py-10">
-                                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                                <Loader2 className="h-5 w-5 animate-spin text-[#2f9f35]" />
                               </div>
                             ) : filteredAllocatedBranchEmployees.length === 0 ? (
                               <div className="px-3 py-8 text-center text-[10px] text-slate-500">
@@ -3550,7 +3727,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                       role="button"
                                       tabIndex={0}
                                       className={`flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 ${
-                                        isSelected ? "bg-blue-50/70" : "bg-white"
+                                        isSelected ? "bg-[#3eca44]/10" : "bg-white"
                                       }`}
                                     >
                                       <div className="flex min-w-0 items-center gap-2">
@@ -3558,7 +3735,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                           type="checkbox"
                                           checked={isSelected}
                                           readOnly
-                                          className="pointer-events-none h-3.5 w-3.5 accent-blue-600"
+                                          className="pointer-events-none h-3.5 w-3.5 accent-[#3eca44]"
                                         />
                                         <div className="min-w-0">
                                           <p className="truncate text-[11px] font-medium text-slate-800">
@@ -3567,7 +3744,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                           </p>
                                         </div>
                                       </div>
-                                      <span className="shrink-0 rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700">
+                                      <span className="shrink-0 rounded border border-[#8fd693] bg-[#eaf8eb] px-2 py-0.5 text-[10px] text-[#2f9f35]">
                                         Allocated
                                       </span>
                                     </div>
@@ -3603,7 +3780,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "personalize" && (
                 <div className="flex h-full flex-col space-y-5">
                   <div className="space-y-1">
-                    <h3 className="text-[20px] font-semibold text-blue-600">Personalise</h3>
+                    <h3 className="text-[20px] font-semibold text-[#2D4256]">Personalise</h3>
                     <p className="mb-2 text-[11px] text-slate-500">Fine-tune how your documents look so every output feels more aligned with your brand and communication style.</p>
                   </div>
 
@@ -3628,14 +3805,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           type="file"
                           accept="image/png,image/jpeg,image/webp,image/svg+xml"
                           className="hidden"
+                          disabled={!canEditSettings}
                           onChange={handlePersonaliseLogoSelect}
                         />
                         <div className="flex flex-wrap items-center gap-2">
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-[30px] min-w-[84px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-blue-600 hover:bg-white hover:text-blue-600"
-                            onClick={() => personaliseLogoInputRef.current?.click()}
+                            className="h-[30px] min-w-[84px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                            onClick={() => {
+                              if (!canEditSettings) return;
+                              personaliseLogoInputRef.current?.click();
+                            }}
+                            disabled={!canEditSettings}
                           >
                             {personaliseLogoPreview ? "Change" : "Upload logo"}
                           </Button>
@@ -3645,6 +3827,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               variant="ghost"
                               className="h-[30px] min-w-[84px] border-0 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-none hover:bg-white hover:text-red-600 hover:underline hover:underline-offset-2"
                               onClick={handleRemovePersonaliseLogo}
+                              disabled={!canEditSettings}
                             >
                               Remove
                             </Button>
@@ -3667,18 +3850,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="grid grid-cols-2 gap-3">
                           <button
                             type="button"
-                            onClick={() => setPersonaliseLogoLayout("vertical")}
+                            onClick={() => {
+                              if (!canEditSettings) return;
+                              setPersonaliseLogoLayout("vertical");
+                            }}
+                            disabled={!canEditSettings}
                             className="text-left"
                           >
                             <div
                               className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
                                 personaliseLogoLayout === "vertical"
-                                  ? "border-blue-600 bg-blue-50"
-                                  : "border-slate-300 bg-white hover:border-blue-500"
+                                  ? "border-[#3eca44] bg-[#eaf8eb]"
+                                  : "border-slate-300 bg-white hover:border-[#34b73b]"
                               }`}
                             >
                               <div className="flex flex-col items-center">
-                                <div className="h-5 w-5 rounded-md bg-blue-600/90" />
+                                <div className="h-5 w-5 rounded-md bg-[#3eca44]/90" />
                                 <div className="mt-1.5 h-1.5 w-12 rounded bg-slate-700/80" />
                                 <div className="mt-1 h-1 w-9 rounded bg-slate-400/90" />
                               </div>
@@ -3688,18 +3875,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
                           <button
                             type="button"
-                            onClick={() => setPersonaliseLogoLayout("horizontal")}
+                            onClick={() => {
+                              if (!canEditSettings) return;
+                              setPersonaliseLogoLayout("horizontal");
+                            }}
+                            disabled={!canEditSettings}
                             className="text-left"
                           >
                             <div
                               className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
                                 personaliseLogoLayout === "horizontal"
-                                  ? "border-blue-600 bg-blue-50"
-                                  : "border-slate-300 bg-white hover:border-blue-500"
+                                  ? "border-[#3eca44] bg-[#eaf8eb]"
+                                  : "border-slate-300 bg-white hover:border-[#34b73b]"
                               }`}
                             >
                               <div className="flex items-center gap-2">
-                                <div className="h-5 w-5 rounded-md bg-blue-600/90" />
+                                <div className="h-5 w-5 rounded-md bg-[#3eca44]/90" />
                                 <div>
                                   <div className="h-1.5 w-10 rounded bg-slate-700/80" />
                                   <div className="mt-1 h-1 w-8 rounded bg-slate-400/90" />
@@ -3713,7 +3904,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     ) : null}
                   </div>
 
-                  {isPersonaliseDirty ? (
+                  {canEditSettings && isPersonaliseDirty ? (
                     <div className={settingsActionRowClass}>
                       <Button onClick={handlePersonaliseUpdate} disabled={saving} className={popupActionButtonClass}>
                         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -3898,6 +4089,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 };
 
 export default Settings;
+
 
 
 

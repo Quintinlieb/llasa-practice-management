@@ -92,6 +92,7 @@ type MinimizedGeneratorTab = {
 };
 
 const documentsTableCacheKey = "documents:table-cache";
+const DOCUMENTS_TABLE_PAGE_SIZE = 25;
 
 const formatDocumentClientName = (value: string) => {
   const raw = String(value || "").trim();
@@ -341,6 +342,7 @@ const Documents = () => {
   const [breadcrumbStep, setBreadcrumbStep] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<MinimizedGeneratorTab | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [documentsTablePage, setDocumentsTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>(() => loadCachedDocumentRows());
@@ -945,16 +947,38 @@ const Documents = () => {
       );
     });
   }, [documentRows, searchQuery]);
+  const totalDocumentsTablePages = Math.max(1, Math.ceil(filteredDocumentRows.length / DOCUMENTS_TABLE_PAGE_SIZE));
+  const currentDocumentsTablePage = Math.min(documentsTablePage, totalDocumentsTablePages);
+  const currentDocumentsTableOffset = (currentDocumentsTablePage - 1) * DOCUMENTS_TABLE_PAGE_SIZE;
+  const paginatedDocumentRows = useMemo(
+    () => filteredDocumentRows.slice(currentDocumentsTableOffset, currentDocumentsTableOffset + DOCUMENTS_TABLE_PAGE_SIZE),
+    [currentDocumentsTableOffset, filteredDocumentRows],
+  );
+  const documentsTableRangeStart = filteredDocumentRows.length === 0 ? 0 : currentDocumentsTableOffset + 1;
+  const documentsTableRangeEnd =
+    filteredDocumentRows.length === 0 ? 0 : Math.min(currentDocumentsTableOffset + DOCUMENTS_TABLE_PAGE_SIZE, filteredDocumentRows.length);
   const allVisibleSelected =
-    filteredDocumentRows.length > 0 &&
-    filteredDocumentRows.every((row) => selectedDocumentIds.has(row.id));
+    paginatedDocumentRows.length > 0 &&
+    paginatedDocumentRows.every((row) => selectedDocumentIds.has(row.id));
+  const documentsTablePageNumbers = useMemo(() => {
+    if (totalDocumentsTablePages <= 6) {
+      return Array.from({ length: totalDocumentsTablePages }, (_, index) => index + 1);
+    }
+    if (currentDocumentsTablePage <= 3) {
+      return [1, 2, 3, 4, "ellipsis", totalDocumentsTablePages];
+    }
+    if (currentDocumentsTablePage >= totalDocumentsTablePages - 2) {
+      return [1, "ellipsis", totalDocumentsTablePages - 3, totalDocumentsTablePages - 2, totalDocumentsTablePages - 1, totalDocumentsTablePages];
+    }
+    return [1, "ellipsis", currentDocumentsTablePage - 1, currentDocumentsTablePage, currentDocumentsTablePage + 1, "ellipsis-2", totalDocumentsTablePages];
+  }, [currentDocumentsTablePage, totalDocumentsTablePages]);
   const toggleSelectAllVisibleDocuments = (checked: boolean) => {
     setSelectedDocumentIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        for (const row of filteredDocumentRows) next.add(row.id);
+        for (const row of paginatedDocumentRows) next.add(row.id);
       } else {
-        for (const row of filteredDocumentRows) next.delete(row.id);
+        for (const row of paginatedDocumentRows) next.delete(row.id);
       }
       return next;
     });
@@ -1004,6 +1028,12 @@ const Documents = () => {
     if (!confirmed) return;
     void handleDeleteSelectedDocuments(idsToDelete);
   };
+  useEffect(() => {
+    setDocumentsTablePage((prev) => Math.min(prev, totalDocumentsTablePages));
+  }, [totalDocumentsTablePages]);
+  useEffect(() => {
+    setDocumentsTablePage(1);
+  }, [searchQuery]);
 
   return (
     <DashboardLayout
@@ -1051,9 +1081,9 @@ const Documents = () => {
                         </div>
                         <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
                           <span className="text-slate-900">
-                            {filteredDocumentRows.length > 0 ? `1-${filteredDocumentRows.length}` : "0-0"}
+                            {`${documentsTableRangeStart}-${documentsTableRangeEnd}`}
                           </span>{" "}
-                          of {documentRows.length} documents
+                          of {filteredDocumentRows.length} documents
                         </p>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
@@ -1085,8 +1115,8 @@ const Documents = () => {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
-                    <div className="relative overflow-hidden rounded-sm border border-slate-200">
+                  <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
+                    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
                       <div className="grid grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                         <div className="flex items-center justify-center">
                           <Checkbox
@@ -1103,13 +1133,13 @@ const Documents = () => {
                         <div>Created On</div>
                         <div>Created By</div>
                       </div>
-                      <div className="divide-y overflow-auto min-h-0" style={{ height: "calc(100dvh - var(--app-header-height,5rem) - 300px)" }}>
+                      <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {isDocumentsLoading ? (
                           <div className="px-4 py-6 text-xs text-slate-500">Loading documents...</div>
                         ) : filteredDocumentRows.length === 0 ? (
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
-                          filteredDocumentRows.map((row) => (
+                          paginatedDocumentRows.map((row) => (
                             <div key={row.id} className="group grid w-full grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
                               <div className="flex items-center justify-center">
                                 <Checkbox
@@ -1150,6 +1180,46 @@ const Documents = () => {
                           ))
                         )}
                       </div>
+                    </div>
+                    <div className="mt-auto flex flex-wrap items-center justify-center gap-2 px-1 pt-[15px] pb-[22px]">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                        onClick={() => setDocumentsTablePage((prev) => Math.max(1, prev - 1))}
+                        disabled={currentDocumentsTablePage === 1}
+                      >
+                        Previous
+                      </Button>
+                      {documentsTablePageNumbers.map((page) =>
+                        typeof page === "number" ? (
+                          <button
+                            key={page}
+                            type="button"
+                            onClick={() => setDocumentsTablePage(page)}
+                            className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                              page === currentDocumentsTablePage
+                                ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ) : (
+                          <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                            ...
+                          </span>
+                        ),
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                        onClick={() => setDocumentsTablePage((prev) => Math.min(totalDocumentsTablePages, prev + 1))}
+                        disabled={currentDocumentsTablePage === totalDocumentsTablePages}
+                      >
+                        Next
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

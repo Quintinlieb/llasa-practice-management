@@ -23,7 +23,7 @@ const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Clients", url: "/clients-2", icon: Users },
   { title: "Documents", url: "/documents", icon: FolderOpen },
-  { title: "Case Files", url: "/case-files", icon: BriefcaseBusiness },
+  { title: "Matters", url: "/case-files", icon: BriefcaseBusiness },
 ];
 
 const documentSubmenuItems = [

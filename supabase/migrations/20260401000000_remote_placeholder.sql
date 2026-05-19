@@ -1,0 +1,2 @@
+-- Placeholder migration to align local files with an already-applied remote migration.
+-- The actual schema changes for version 20260401000000 already exist in the remote project.

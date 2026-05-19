@@ -22,6 +22,8 @@ import { supabase } from "@/integrations/supabase/client";
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
 const SLA_RECORD_TYPE = "Service Level Agreement";
+const CLIENTS_TABLE_PAGE_SIZE = 25;
+const CLIENTS_TABLE_VISIBLE_ROWS = 18;
 const FILE_NOTE_EDIT_TAG_REGEX =
   /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
 const formatDisplayDate = (value: string) => {
@@ -253,6 +255,7 @@ const ClientsTwo = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [clientTablePage, setClientTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
   const [isBulkClientOpen, setIsBulkClientOpen] = useState(false);
@@ -727,11 +730,32 @@ const ClientsTwo = () => {
         .includes(q);
     });
   }, [clientRows, searchQuery]);
+  const totalClientTablePages = Math.max(1, Math.ceil(tableRows.length / CLIENTS_TABLE_PAGE_SIZE));
+  const currentClientTablePage = Math.min(clientTablePage, totalClientTablePages);
+  const currentClientTableOffset = (currentClientTablePage - 1) * CLIENTS_TABLE_PAGE_SIZE;
+  const paginatedTableRows = useMemo(
+    () => tableRows.slice(currentClientTableOffset, currentClientTableOffset + CLIENTS_TABLE_PAGE_SIZE),
+    [currentClientTableOffset, tableRows],
+  );
+  const clientTableRangeStart = tableRows.length === 0 ? 0 : currentClientTableOffset + 1;
+  const clientTableRangeEnd = tableRows.length === 0 ? 0 : Math.min(currentClientTableOffset + CLIENTS_TABLE_PAGE_SIZE, tableRows.length);
   const allVisibleSelected = useMemo(
-    () => tableRows.length > 0 && tableRows.every((row) => selectedClientIds.has(String(row.id))),
-    [selectedClientIds, tableRows],
+    () => paginatedTableRows.length > 0 && paginatedTableRows.every((row) => selectedClientIds.has(String(row.id))),
+    [paginatedTableRows, selectedClientIds],
   );
   const selectedCount = selectedClientIds.size;
+  const clientTablePageNumbers = useMemo(() => {
+    if (totalClientTablePages <= 6) {
+      return Array.from({ length: totalClientTablePages }, (_, index) => index + 1);
+    }
+    if (currentClientTablePage <= 3) {
+      return [1, 2, 3, 4, "ellipsis", totalClientTablePages];
+    }
+    if (currentClientTablePage >= totalClientTablePages - 2) {
+      return [1, "ellipsis", totalClientTablePages - 3, totalClientTablePages - 2, totalClientTablePages - 1, totalClientTablePages];
+    }
+    return [1, "ellipsis", currentClientTablePage - 1, currentClientTablePage, currentClientTablePage + 1, "ellipsis-2", totalClientTablePages];
+  }, [currentClientTablePage, totalClientTablePages]);
   const filteredClientFileNotes = useMemo(() => {
     const q = clientFileNotesSearchQuery.trim().toLowerCase();
     if (!q) return clientFileNotes;
@@ -1004,6 +1028,12 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchClients();
   }, [fetchClients]);
+  useEffect(() => {
+    setClientTablePage((prev) => Math.min(prev, totalClientTablePages));
+  }, [totalClientTablePages]);
+  useEffect(() => {
+    setClientTablePage(1);
+  }, [searchQuery]);
   useEffect(() => {
     saveCachedClientRows(clientRows);
   }, [clientRows]);
@@ -2540,13 +2570,13 @@ const ClientsTwo = () => {
     setSelectedClientIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        for (const row of tableRows) next.add(String(row.id));
+        for (const row of paginatedTableRows) next.add(String(row.id));
       } else {
-        for (const row of tableRows) next.delete(String(row.id));
+        for (const row of paginatedTableRows) next.delete(String(row.id));
       }
       return next;
     });
-  }, [tableRows]);
+  }, [paginatedTableRows]);
   const handleDeleteSelectedClients = useCallback(async () => {
     if (currentUserIsSubuser) {
       toast({
@@ -2654,7 +2684,7 @@ const ClientsTwo = () => {
                           )}
                         </div>
                         <p className="text-[11px] font-medium text-slate-500 whitespace-nowrap sm:self-end">
-                          <span className="text-slate-900">{tableRows.length > 0 ? `1-${tableRows.length}` : "0-0"}</span> of {clientRows.length} clients
+                          <span className="text-slate-900">{`${clientTableRangeStart}-${clientTableRangeEnd}`}</span> of {tableRows.length} clients
                         </p>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
@@ -2729,8 +2759,8 @@ const ClientsTwo = () => {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="pl-4 pr-4 pb-2 flex-1 min-h-0 overflow-hidden">
-                    <div className="relative overflow-hidden rounded-sm border border-slate-200">
+                  <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
+                    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
                       <div className="grid grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                         <div className="flex items-center justify-center">
                           <Checkbox
@@ -2749,9 +2779,12 @@ const ClientsTwo = () => {
                         <div>Status</div>
                       </div>
 
-                      <div className="divide-y overflow-auto min-h-0" style={{ height: "calc(100dvh - var(--app-header-height,5rem) - 350px)" }}>
-                        {tableRows.map((row) => (
-                          <div key={row.id} className="grid w-full grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                      <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
+                        {paginatedTableRows.map((row) => (
+                          <div
+                            key={row.id}
+                            className="grid w-full grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
+                          >
                             <div className="flex items-center justify-center">
                               <Checkbox
                                 indicator="x"
@@ -2772,6 +2805,46 @@ const ClientsTwo = () => {
                           </div>
                         ))}
                       </div>
+                    </div>
+                    <div className="mt-auto flex flex-wrap items-center justify-center gap-2 px-1 pt-[15px] pb-[22px]">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                        onClick={() => setClientTablePage((prev) => Math.max(1, prev - 1))}
+                        disabled={currentClientTablePage === 1}
+                      >
+                        Previous
+                      </Button>
+                      {clientTablePageNumbers.map((page) =>
+                        typeof page === "number" ? (
+                          <button
+                            key={page}
+                            type="button"
+                            onClick={() => setClientTablePage(page)}
+                            className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                              page === currentClientTablePage
+                                ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ) : (
+                          <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                            ...
+                          </span>
+                        ),
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                        onClick={() => setClientTablePage((prev) => Math.min(totalClientTablePages, prev + 1))}
+                        disabled={currentClientTablePage === totalClientTablePages}
+                      >
+                        Next
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -3330,11 +3403,11 @@ const ClientsTwo = () => {
 
                   <Tabs defaultValue="company" className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="grid w-full grid-cols-5 bg-slate-100">
-                      <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
-                      <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
-                      <TabsTrigger value="notes" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
-                      <TabsTrigger value="matters" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
-                      <TabsTrigger value="documents" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
+                      <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
+                      <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
+                      <TabsTrigger value="notes" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
+                      <TabsTrigger value="matters" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
+                      <TabsTrigger value="documents" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="company" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">

@@ -243,7 +243,7 @@ export default function DashboardLayout({
           style={{ width: "var(--app-sidebar-width, 14rem)" }}
           aria-hidden="true"
         />
-        <div className="flex flex-1 min-h-screen flex-col bg-transparent">
+        <div className="flex flex-1 min-h-screen flex-col bg-[#2D4256]">
           <header
             ref={headerRef}
             className="fixed top-0 z-40 h-[52px] bg-transparent transition-[left] duration-200 ease-linear"
@@ -336,7 +336,7 @@ export default function DashboardLayout({
             </div>
           </header>
 
-          <div className="flex-1 min-w-0 flex flex-col bg-transparent pt-[var(--app-header-height,5rem)]">
+          <div className="flex-1 min-w-0 flex flex-col bg-[#2D4256] pt-[var(--app-header-height,5rem)]">
             <main className="flex-1 w-full p-6">{children}</main>
           </div>
         </div>

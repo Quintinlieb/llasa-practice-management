@@ -304,6 +304,77 @@ const offenceGroupLabel: Record<OffenceCategory, string> = {
   Dismissible: "Dismissible Offences",
 };
 
+const fallbackConductOffences: ConductOffence[] = [
+  { name: "Unauthorised Absenteeism", category: "Minor", firstOutcome: "" },
+  { name: "Arriving Late For Work", category: "Minor", firstOutcome: "" },
+  { name: "Leaving Work Early", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Absence", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Late Arrival", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Leaving Early", category: "Minor", firstOutcome: "" },
+  { name: "Sleeping On Duty", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Clock In/Out", category: "Minor", firstOutcome: "" },
+  { name: "Poor Housekeeping", category: "Minor", firstOutcome: "" },
+  { name: "Horseplay", category: "Minor", firstOutcome: "" },
+  { name: "Unauthorised Use Of Cell Phone", category: "Minor", firstOutcome: "" },
+  { name: "Breach Of Policy Or Procedure", category: "Minor", firstOutcome: "" },
+  { name: "Breach Of Rules Or Regulations", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Carry Out Instructions", category: "Minor", firstOutcome: "" },
+  { name: "Negligence", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Absenteeism > 5 Days", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Work Overtime", category: "Serious", firstOutcome: "" },
+  { name: "Consistent Poor Time Keeping", category: "Serious", firstOutcome: "" },
+  { name: "Causing Inharmonious Relationships", category: "Serious", firstOutcome: "" },
+  { name: "Unbecoming Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Insolence / Disrespectful Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Aggressive Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Insubordination / Refusing Instructions", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Comply With Policy/Procedure", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Comply With Rule", category: "Serious", firstOutcome: "" },
+  { name: "Damage To Company Name", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Wastage Of Materials", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Removal", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Possession", category: "Serious", firstOutcome: "" },
+  { name: "Breach Of OHS Standards / Policies", category: "Serious", firstOutcome: "" },
+  { name: "Private Work During Working Hours", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Disclosure Of Information", category: "Serious", firstOutcome: "" },
+  { name: "Misappropriation Of Property / Funds", category: "Serious", firstOutcome: "" },
+  { name: "Testing Positive For Alcohol", category: "Serious", firstOutcome: "" },
+  { name: "Testing Positive For Illegal Drugs", category: "Serious", firstOutcome: "" },
+  { name: "Under The Influence Of Alcohol/Drugs", category: "Serious", firstOutcome: "" },
+  { name: "Possession Of Alcohol/Drugs On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Possession Of Firearm On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Intimidation", category: "Serious", firstOutcome: "" },
+  { name: "Incitement", category: "Serious", firstOutcome: "" },
+  { name: "Illegal Strike / Picketing", category: "Serious", firstOutcome: "" },
+  { name: "Viewing Pornographic Material On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Access", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Use Of Company Property", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Use Of Client Property", category: "Serious", firstOutcome: "" },
+  { name: "Abusive Language", category: "Serious", firstOutcome: "" },
+  { name: "Dishonesty", category: "Serious", firstOutcome: "" },
+  { name: "Gambling On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Clocking For Another Employee", category: "Serious", firstOutcome: "" },
+  { name: "Theft", category: "Dismissible", firstOutcome: "" },
+  { name: "Accomplice To Theft", category: "Dismissible", firstOutcome: "" },
+  { name: "Fraud", category: "Dismissible", firstOutcome: "" },
+  { name: "Accomplice To Fraud", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Dishonesty", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Negligence", category: "Dismissible", firstOutcome: "" },
+  { name: "Assault", category: "Dismissible", firstOutcome: "" },
+  { name: "Sexual Harassment", category: "Dismissible", firstOutcome: "" },
+  { name: "Viewing Illegal Pornography On Duty", category: "Dismissible", firstOutcome: "" },
+  { name: "Racism", category: "Dismissible", firstOutcome: "" },
+  { name: "Refusal To Obey OHS Rules/Procedures", category: "Dismissible", firstOutcome: "" },
+  { name: "Bribery", category: "Dismissible", firstOutcome: "" },
+  { name: "Falsification Of Records", category: "Dismissible", firstOutcome: "" },
+  { name: "Intentional Damage To Property", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Insubordination", category: "Dismissible", firstOutcome: "" },
+  { name: "Unauthorised Discharge Of Firearm", category: "Dismissible", firstOutcome: "" },
+  { name: "Unsafe Use Of Firearm", category: "Dismissible", firstOutcome: "" },
+  { name: "Threatening Another Employee/Client", category: "Dismissible", firstOutcome: "" },
+  { name: "Unauthorised Possession Of A Weapon On Duty", category: "Dismissible", firstOutcome: "" },
+] as const;
+
 const warningValidityByType: Record<Exclude<WarningFormState["warningType"], "">, string> = {
   first: "6",
   second: "6",
@@ -1457,8 +1528,8 @@ const DiscWarningGenerator = ({
       if (!isMounted) return;
 
       if (error) {
-        setConductOffences([]);
-        setMisconductLoadMessage(`Unable to load misconduct types: ${error.message}`);
+        setConductOffences(fallbackConductOffences);
+        setMisconductLoadMessage("No matching misconduct types found.");
         return;
       }
 
@@ -1495,7 +1566,7 @@ const DiscWarningGenerator = ({
 
       const deduped = offenceCategoryOrder.flatMap((category) => {
         const seen = new Set<string>();
-        return mapped.filter((item) => {
+        return [...mapped, ...fallbackConductOffences].filter((item) => {
           if (item.category !== category) return false;
           const key = item.name.trim().toLowerCase();
           if (seen.has(key)) return false;

@@ -4,10 +4,17 @@ import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
   loadMinimizedDocumentTabs,
@@ -15,13 +22,14 @@ import {
   saveMinimizedDocumentTabs,
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Minus, Search, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Menu, Minus, Search, Undo2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 type DocumentKey =
   | "codeOfConduct"
   | "discWarningGenerator"
   | "disciplinaryHearingNotice"
+  | "disciplinaryHearingNoticeOld"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
@@ -75,6 +83,10 @@ type DocumentTableRow = {
   createdOn: string;
   createdBy: string;
   fileUrl: string;
+};
+
+type CurrentUserSubuserRoleRow = {
+  role: string | null;
 };
 
 type StepNotes = readonly [
@@ -191,7 +203,8 @@ const lazyDocumentComponent = (loader: () => Promise<any>) =>
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
-  disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
+  disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DiscHearingNoticeGenerator")),
+  disciplinaryHearingNoticeOld: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
@@ -214,6 +227,7 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
+  disciplinaryHearingNoticeOld: { category: "Notices", label: "Disciplinary Hearing (Old)" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
   incapacityPerformanceHearingNotice: { category: "Notices", label: "Incapacity Hearing (Performance)" },
@@ -253,11 +267,60 @@ const terminationLetterDocumentKeys = [
 
 const noticeDocumentKeys = [
   "disciplinaryHearingNotice",
+  "disciplinaryHearingNoticeOld",
   "precautionarySuspensionNotice",
   "contemplatedRetrenchmentNotice",
   "incapacityPerformanceHearingNotice",
   "incapacityIllHealthHearingNotice",
 ] as const satisfies readonly DocumentKey[];
+
+const documentCreateMenuItems = [
+  { title: "Discipline" },
+  { title: "Contracts" },
+  { title: "Terminations" },
+  { title: "Notices" },
+  { title: "Litigation" },
+  { title: "Other" },
+] as const;
+
+const documentCreateFlyoutItems: Record<
+  (typeof documentCreateMenuItems)[number]["title"],
+  Array<{ title: string; selectedDocument: DocumentKey }>
+> = {
+  Discipline: [
+    { title: "Code of Conduct", selectedDocument: "codeOfConduct" },
+    { title: "Warning", selectedDocument: "discWarningGenerator" },
+  ],
+  Contracts: [
+    { title: "Permanent", selectedDocument: "permContract" },
+    { title: "Temporary Contract", selectedDocument: "temporaryContract" },
+    { title: "Addendum", selectedDocument: "addendum" },
+  ],
+  Terminations: [
+    { title: "Misconduct", selectedDocument: "noticeTermination" },
+    { title: "Ill Health", selectedDocument: "illHealthTermination" },
+    { title: "Poor Performance", selectedDocument: "poorPerformanceTermination" },
+    { title: "Abscondment/Desertion", selectedDocument: "abscondmentTermination" },
+    { title: "Retrenchment", selectedDocument: "retrenchmentTermination" },
+    { title: "Retirement", selectedDocument: "retirementTermination" },
+    { title: "Mutual Separation", selectedDocument: "mutualTermination" },
+  ],
+  Notices: [
+    { title: "Disciplinary Hearing", selectedDocument: "disciplinaryHearingNotice" },
+    { title: "Disciplinary Hearing (Old)", selectedDocument: "disciplinaryHearingNoticeOld" },
+    { title: "Incapacity Hearing (Performance)", selectedDocument: "incapacityPerformanceHearingNotice" },
+    { title: "Incapacity Hearing (Ill Health)", selectedDocument: "incapacityIllHealthHearingNotice" },
+    { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
+    { title: "Contemplated Retrenchment (S189)", selectedDocument: "contemplatedRetrenchmentNotice" },
+  ],
+  Litigation: [],
+  Other: [
+    { title: "Certificate of Service", selectedDocument: "serviceCertificate" },
+    { title: "Acknowledgement of Debt", selectedDocument: "acknowledgementOfDebt" },
+  ],
+};
+
+type DocumentCreateCategory = (typeof documentCreateMenuItems)[number]["title"];
 
 const wizardDocumentKeys = [
   "discWarningGenerator",
@@ -270,7 +333,12 @@ const wizardDocumentKeys = [
   "temporaryContract",
 ] as const satisfies readonly DocumentKey[];
 
-const darkStepperDocumentKeys = ["discWarningGenerator", "permContract", ...terminationDocumentKeys] as const satisfies readonly DocumentKey[];
+const darkStepperDocumentKeys = [
+  "discWarningGenerator",
+  "disciplinaryHearingNotice",
+  "permContract",
+  ...terminationDocumentKeys,
+] as const satisfies readonly DocumentKey[];
 const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const darkShellDocumentKeys = ["codeOfConduct", ...darkStepperDocumentKeys] as const satisfies readonly DocumentKey[];
 const lightWizardDocumentKeys = wizardDocumentKeys.filter((key) => !darkStepperDocumentSet.has(key)) as DocumentKey[];
@@ -287,6 +355,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
   discWarningGenerator: "Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
+  disciplinaryHearingNoticeOld: "Disciplinary Hearing (Old)",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
   incapacityPerformanceHearingNotice: "Incapacity Hearing (Performance)",
@@ -308,6 +377,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
+  disciplinaryHearingNoticeOld: "Notice Details",
   precautionarySuspensionNotice: "Notice Details",
   contemplatedRetrenchmentNotice: "Notice Details",
   incapacityPerformanceHearingNotice: "Notice Details",
@@ -335,6 +405,7 @@ const getShellCategoryTitle = (documentKey: DocumentKey) => {
 const Documents = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isDocumentsRoute = location.pathname.startsWith("/documents");
   const [selectedDocument, setSelectedDocument] = useState<DocumentKey | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -344,6 +415,9 @@ const Documents = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [documentsTablePage, setDocumentsTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isNewDocumentMenuOpen, setIsNewDocumentMenuOpen] = useState(false);
+  const [openDocumentCategory, setOpenDocumentCategory] = useState<DocumentCreateCategory | null>(null);
+  const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>(() => loadCachedDocumentRows());
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(() => loadCachedDocumentRows().length === 0);
@@ -551,6 +625,40 @@ const Documents = () => {
       window.removeEventListener("documents-row-created", onDocumentsRowCreated);
     };
   }, [documentRows.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCurrentUserRole = async () => {
+      if (!user?.id) {
+        if (isMounted) setCurrentUserSubuserRole("");
+        return;
+      }
+
+      const { data: subuserData } = await (supabase as unknown as {
+        from: (table: "subusers") => {
+          select: (query: "role") => {
+            eq: (column: "auth_user_id", value: string) => {
+              maybeSingle: () => Promise<{ data: CurrentUserSubuserRoleRow | null }>;
+            };
+          };
+        };
+      })
+        .from("subusers")
+        .select("role")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+      setCurrentUserSubuserRole(String(subuserData?.role || "").trim());
+    };
+
+    void loadCurrentUserRole();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
 
   const SelectedComponent = selectedDocument ? documentComponents[selectedDocument] : null;
   const modalDocument = activeSession?.documentKey ?? null;
@@ -901,7 +1009,7 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permContract"
         ? permContractActiveNotes
-      : modalDocument === "disciplinaryHearingNotice"
+      : modalDocument === "disciplinaryHearingNotice" || modalDocument === "disciplinaryHearingNoticeOld"
         ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
         ? precautionarySuspensionActiveNotes
@@ -935,6 +1043,11 @@ const Documents = () => {
   if (breadcrumbCategoryTitle) breadcrumbParts.push(breadcrumbCategoryTitle);
   if (activeDocumentLabel) breadcrumbParts.push(activeDocumentLabel);
   if (breadcrumbStep) breadcrumbParts.push(breadcrumbStep);
+  const canCurrentUserDeleteDocuments = useMemo(() => {
+    const role = currentUserSubuserRole.trim().toLowerCase();
+    if (!role) return true;
+    return role === "consultant";
+  }, [currentUserSubuserRole]);
   const filteredDocumentRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return documentRows;
@@ -998,6 +1111,14 @@ const Documents = () => {
   };
   const handleDeleteSelectedDocuments = async (idsToDelete: string[]) => {
     if (idsToDelete.length === 0) return;
+    if (!canCurrentUserDeleteDocuments) {
+      toast({
+        title: "Permission denied",
+        description: "Only the master user and consultant subusers can delete documents.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const { error } = await (supabase as any).from("documents").delete().in("id", idsToDelete);
 
@@ -1018,6 +1139,14 @@ const Documents = () => {
     });
   };
   const promptDeleteSelectedDocuments = () => {
+    if (!canCurrentUserDeleteDocuments) {
+      toast({
+        title: "Permission denied",
+        description: "Only the master user and consultant subusers can delete documents.",
+        variant: "destructive",
+      });
+      return;
+    }
     const idsToDelete = Array.from(selectedDocumentIds);
     if (idsToDelete.length === 0) return;
     const confirmed = window.confirm(
@@ -1035,12 +1164,26 @@ const Documents = () => {
     setDocumentsTablePage(1);
   }, [searchQuery]);
 
+  const newDocumentDropdownItemStyle =
+    "cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
+  const newDocumentDropdownContentStyle = "w-56 rounded-[4px] border-slate-200 p-1";
+  const newDocumentSubItemStyle =
+    "cursor-pointer pl-3 text-[10.5px] font-medium text-slate-600 transition-transform duration-150 focus:bg-transparent focus:text-[#2f9f35] data-[highlighted]:bg-transparent data-[highlighted]:translate-x-[3px] data-[highlighted]:text-[#2f9f35]";
+  const newDocumentButtonStyle =
+    "h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
+
+  const openDocumentGenerator = (documentKey: DocumentKey) => {
+    setIsNewDocumentMenuOpen(false);
+    setOpenDocumentCategory(null);
+    navigate("/documents", { state: { selectedDocument: documentKey } });
+  };
+
   return (
     <DashboardLayout
       profileSubtitleMode="company"
     >
       <div className="space-y-0 -m-6">
-        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
+        <div className="overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
               <div className="pt-5 pb-2">
@@ -1087,7 +1230,7 @@ const Documents = () => {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
-                        {selectedDocumentIds.size > 0 ? (
+                        {selectedDocumentIds.size > 0 && canCurrentUserDeleteDocuments ? (
                           <Button
                             type="button"
                             variant="outline"
@@ -1112,6 +1255,85 @@ const Documents = () => {
                             <p className="text-[11px] text-slate-600">Filter options can be added here.</p>
                           </PopoverContent>
                         </Popover>
+                        <DropdownMenu
+                          open={isNewDocumentMenuOpen}
+                          onOpenChange={(open) => {
+                            setIsNewDocumentMenuOpen(open);
+                            if (!open) {
+                              setOpenDocumentCategory(null);
+                            }
+                          }}
+                        >
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" className={newDocumentButtonStyle}>
+                              <span className="truncate">New Document</span>
+                              <ChevronDown className="h-4 w-4 text-current" aria-hidden="true" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            sideOffset={0}
+                            className={newDocumentDropdownContentStyle}
+                          >
+                            {documentCreateMenuItems.map((category) => {
+                              const flyoutItems = documentCreateFlyoutItems[category.title];
+                              const isOpen = openDocumentCategory === category.title;
+                              if (flyoutItems.length === 0) {
+                                return (
+                                  <DropdownMenuItem
+                                    key={category.title}
+                                    disabled
+                                    className={cn(newDocumentDropdownItemStyle, "cursor-not-allowed opacity-50")}
+                                  >
+                                    {category.title}
+                                  </DropdownMenuItem>
+                                );
+                              }
+
+                              return (
+                                <div key={category.title}>
+                                  <DropdownMenuItem
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      setOpenDocumentCategory((current) => (current === category.title ? null : category.title));
+                                    }}
+                                    className={cn(newDocumentDropdownItemStyle, isOpen && "bg-[#3eca44]/10 text-[#2f9f35]")}
+                                  >
+                                    <span className="flex w-full items-center justify-between gap-2">
+                                      <span>{category.title}</span>
+                                      <ChevronDown
+                                        className={cn(
+                                          "h-3.5 w-3.5 flex-none transition-transform duration-150",
+                                          isOpen ? "rotate-180 text-[#2f9f35]" : "text-slate-500",
+                                        )}
+                                        aria-hidden="true"
+                                      />
+                                    </span>
+                                  </DropdownMenuItem>
+                                  {isOpen ? (
+                                    <div className="pb-1">
+                                      {flyoutItems.map((item) => (
+                                        <DropdownMenuItem
+                                          key={`${category.title}-${item.title}`}
+                                          onSelect={(event) => {
+                                            event.preventDefault();
+                                            openDocumentGenerator(item.selectedDocument);
+                                          }}
+                                          className={newDocumentSubItemStyle}
+                                        >
+                                          <span className="flex items-center gap-2">
+                                            <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden="true" />
+                                            <span>{item.title}</span>
+                                          </span>
+                                        </DropdownMenuItem>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   </CardHeader>
@@ -1285,9 +1507,11 @@ const Documents = () => {
                       <span className="text-white/60">
                       {modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
-                        : modalDocument === "permContract"
-                          ? "Documents / Contracts / "
-                          : "Documents / Terminations / "}
+                        : modalDocument === "disciplinaryHearingNotice"
+                          ? "Documents / Notices / "
+                          : modalDocument === "permContract"
+                            ? "Documents / Contracts / "
+                            : "Documents / Terminations / "}
                       </span>
                     <span className="text-white">{modalBreadcrumbTitle}</span>
                     </span>

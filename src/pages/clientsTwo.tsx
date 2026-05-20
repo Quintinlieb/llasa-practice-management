@@ -194,6 +194,10 @@ const clientBulkTemplateColumns = [
   "City",
   "Province",
   "Area Code",
+  "Labour Relations (LR)",
+  "Employment Equity (EE)",
+  "Payroll (PR)",
+  "Occupational Health and Safety (OHS)",
 ] as const;
 
 type BulkClientImportRow = {
@@ -214,6 +218,10 @@ type BulkClientImportRow = {
   city: string;
   province: string;
   areaCode: string;
+  labourRelations: string;
+  employmentEquity: string;
+  payroll: string;
+  occupationalHealthAndSafety: string;
 };
 
 const normalizeWorksheetHeader = (value: unknown) =>
@@ -221,6 +229,15 @@ const normalizeWorksheetHeader = (value: unknown) =>
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ");
+
+const normalizeTradingNameKey = (value: string) => normalizeWorksheetHeader(value);
+
+const normalizeYesNoValue = (value: string) => {
+  const normalized = normalizeWorksheetHeader(value);
+  if (normalized === "yes") return "Yes";
+  if (normalized === "no") return "No";
+  return "";
+};
 
 const arrayBufferToDataUrl = (buffer: ArrayBuffer, mimeType: string) => {
   let binary = "";
@@ -853,6 +870,25 @@ const ClientsTwo = () => {
     );
     return directMatch?.value || raw;
   }, [bargainingCouncilOptions]);
+  const findExistingClientByTradingName = useCallback(async (tradingNameRaw: string) => {
+    const tradingName = String(tradingNameRaw || "").trim();
+    if (!tradingName) return null;
+    const { data, error } = await (supabase as any)
+      .from("clients")
+      .select("id, trading_as, trading_name, member_types, lr_billing_cycle, ee_billing_cycle, pr_billing_cycle, hs_billing_cycle")
+      .or(`trading_as.ilike.${tradingName},trading_name.ilike.${tradingName}`)
+      .limit(50);
+    if (error) throw error;
+    const rows = Array.isArray(data) ? data : [];
+    const normalizedTarget = normalizeTradingNameKey(tradingName);
+    return (
+      rows.find((row: any) => {
+        const tradingAs = normalizeTradingNameKey(String(row?.trading_as || ""));
+        const tradingAlias = normalizeTradingNameKey(String(row?.trading_name || ""));
+        return tradingAs === normalizedTarget || tradingAlias === normalizedTarget;
+      }) ?? null
+    );
+  }, []);
   const mapClientRow = (row: any) => ({
     id: row.id,
     companyName: row.registered_name || "--",
@@ -1138,6 +1174,10 @@ const ClientsTwo = () => {
         city: valueAt(row, "City"),
         province: valueAt(row, "Province"),
         areaCode: valueAt(row, "Area Code"),
+        labourRelations: normalizeYesNoValue(valueAt(row, "Labour Relations (LR)", "Labour Relations", "LR")),
+        employmentEquity: normalizeYesNoValue(valueAt(row, "Employment Equity (EE)", "Employment Equity", "EE")),
+        payroll: normalizeYesNoValue(valueAt(row, "Payroll (PR)", "Payroll", "PR")),
+        occupationalHealthAndSafety: normalizeYesNoValue(valueAt(row, "Occupational Health and Safety (OHS)", "Occupational Health and Safety", "OHS")),
       }))
       .filter((row) =>
         [
@@ -1157,6 +1197,10 @@ const ClientsTwo = () => {
           row.city,
           row.province,
           row.areaCode,
+          row.labourRelations,
+          row.employmentEquity,
+          row.payroll,
+          row.occupationalHealthAndSafety,
         ].some((value) => String(value || "").trim().length > 0),
       );
   }, [normalizeImportedBargainingCouncil, normalizeImportedCompanyType]);
@@ -1225,9 +1269,13 @@ const ClientsTwo = () => {
         { header: "City", key: "city", width: 18 },
         { header: "Province", key: "province", width: 20 },
         { header: "Area Code", key: "areaCode", width: 14 },
+        { header: "Labour Relations (LR)", key: "labourRelations", width: 22 },
+        { header: "Employment Equity (EE)", key: "employmentEquity", width: 24 },
+        { header: "Payroll (PR)", key: "payroll", width: 16 },
+        { header: "Occupational Health and Safety (OHS)", key: "occupationalHealthAndSafety", width: 34 },
       ];
 
-      worksheet.mergeCells("A1:P1");
+      worksheet.mergeCells("A1:T1");
       worksheet.getCell("A1").value = "LLASA - Multiple Client Upload";
       worksheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF17324D" } };
       worksheet.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
@@ -1259,6 +1307,7 @@ const ClientsTwo = () => {
       listTitleRow.getCell(3).value = "Industry";
       listTitleRow.getCell(4).value = "Group";
       listTitleRow.getCell(5).value = "Bargaining Council";
+      listTitleRow.getCell(6).value = "YesNo";
       listTitleRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3ECA44" } };
@@ -1277,6 +1326,9 @@ const ClientsTwo = () => {
       });
       bargainingCouncilOptions.forEach((option, index) => {
         listSheet.getCell(index + 2, 5).value = option.label;
+      });
+      ["Yes", "No"].forEach((value, index) => {
+        listSheet.getCell(index + 2, 6).value = value;
       });
       listSheet.state = "hidden";
 
@@ -1324,6 +1376,30 @@ const ClientsTwo = () => {
           formulae: [`'${clientBulkTemplateListsSheetName}'!$B$2:$B$${provinceOptions.length + 1}`],
           showErrorMessage: true,
         };
+        row.getCell(17).dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          showErrorMessage: true,
+        };
+        row.getCell(18).dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          showErrorMessage: true,
+        };
+        row.getCell(19).dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          showErrorMessage: true,
+        };
+        row.getCell(20).dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          showErrorMessage: true,
+        };
       }
 
       const sampleRow = worksheet.getRow(clientBulkTemplateFirstDataRowIndex);
@@ -1343,6 +1419,10 @@ const ClientsTwo = () => {
       sampleRow.getCell(14).value = "Johannesburg";
       sampleRow.getCell(15).value = "Gauteng";
       sampleRow.getCell(16).value = "2001";
+      sampleRow.getCell(17).value = "Yes";
+      sampleRow.getCell(18).value = "No";
+      sampleRow.getCell(19).value = "No";
+      sampleRow.getCell(20).value = "No";
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
@@ -1393,9 +1473,28 @@ const ClientsTwo = () => {
           row.city,
           row.province,
           row.areaCode,
+          row.labourRelations,
+          row.employmentEquity,
+          row.payroll,
+          row.occupationalHealthAndSafety,
         ];
         if (requiredFields.some((value) => !String(value || "").trim())) {
           failures.push(`Row ${rowLabel}: missing one or more required fields.`);
+          continue;
+        }
+        const serviceSelections = [
+          { code: "LR", value: normalizeYesNoValue(row.labourRelations) },
+          { code: "EE", value: normalizeYesNoValue(row.employmentEquity) },
+          { code: "PR", value: normalizeYesNoValue(row.payroll) },
+          { code: "OHS", value: normalizeYesNoValue(row.occupationalHealthAndSafety) },
+        ];
+        if (serviceSelections.some((service) => !service.value)) {
+          failures.push(`Row ${rowLabel}: service columns must be either Yes or No.`);
+          continue;
+        }
+        const selectedServices = serviceSelections.filter((service) => service.value === "Yes").map((service) => service.code);
+        if (selectedServices.length === 0) {
+          failures.push(`Row ${rowLabel}: at least one service must be set to Yes.`);
           continue;
         }
 
@@ -1479,7 +1578,52 @@ const ClientsTwo = () => {
           province: row.province.trim(),
           area_code: row.areaCode.trim(),
           bargaining_council: normalizedCouncil || "None",
+          member_types: selectedServices,
+          membership_period: "Monthly",
+          retainer_cycle: "Monthly",
+          lr_billing_cycle: selectedServices.includes("LR") ? "Monthly" : null,
+          ee_billing_cycle: selectedServices.includes("EE") ? "Monthly" : null,
+          pr_billing_cycle: selectedServices.includes("PR") ? "Monthly" : null,
+          hs_billing_cycle: selectedServices.includes("OHS") ? "Monthly" : null,
         };
+        const existingByTradingName = await findExistingClientByTradingName(row.tradingAs);
+        if (existingByTradingName?.id) {
+          const existingTypes = Array.isArray((existingByTradingName as any).member_types)
+            ? ((existingByTradingName as any).member_types as string[])
+            : [];
+          const mergedMemberTypes = Array.from(new Set([...existingTypes, ...selectedServices]));
+          const updatePayload: Record<string, unknown> = {
+            ...payload,
+            member_types: mergedMemberTypes,
+            lr_billing_cycle:
+              selectedServices.includes("LR")
+                ? "Monthly"
+                : String((existingByTradingName as any)?.lr_billing_cycle || "").trim() || null,
+            ee_billing_cycle:
+              selectedServices.includes("EE")
+                ? "Monthly"
+                : String((existingByTradingName as any)?.ee_billing_cycle || "").trim() || null,
+            pr_billing_cycle:
+              selectedServices.includes("PR")
+                ? "Monthly"
+                : String((existingByTradingName as any)?.pr_billing_cycle || "").trim() || null,
+            hs_billing_cycle:
+              selectedServices.includes("OHS")
+                ? "Monthly"
+                : String((existingByTradingName as any)?.hs_billing_cycle || "").trim() || null,
+          };
+          delete (updatePayload as any).client_number;
+          const { error: updateError } = await (supabase as any)
+            .from("clients")
+            .update(updatePayload)
+            .eq("id", existingByTradingName.id);
+          if (updateError) {
+            failures.push(`Row ${rowLabel}: ${updateError?.message || "update failed for existing trading name"}`);
+            continue;
+          }
+          successCount += 1;
+          continue;
+        }
 
         const getMissingColumn = (error: any) => {
           const message = String(error?.message ?? "");
@@ -1537,6 +1681,7 @@ const ClientsTwo = () => {
     companyTypeOptions,
     fetchClientGroups,
     fetchClients,
+    findExistingClientByTradingName,
     getHighestClientNumberSequence,
     groupOptions,
     industryOptions,
@@ -1958,6 +2103,38 @@ const ClientsTwo = () => {
         bargaining_council: "None",
       };
       const payload: Record<string, unknown> = { ...basePayload, ...optionalPayload };
+      const existingByTradingName = await findExistingClientByTradingName(clientDetailsForm.tradingAs);
+      if (existingByTradingName?.id) {
+        const existingTypes = Array.isArray((existingByTradingName as any).member_types)
+          ? ((existingByTradingName as any).member_types as string[])
+          : [];
+        const mergedMemberTypes = Array.from(new Set([...existingTypes, ...membershipForm.memberTypes]));
+        const updatePayload: Record<string, unknown> = {
+          ...optionalPayload,
+          member_types: mergedMemberTypes,
+          lr_billing_cycle:
+            normalizedLrCycle || String((existingByTradingName as any)?.lr_billing_cycle || "").trim() || null,
+          ee_billing_cycle:
+            normalizedEeCycle || String((existingByTradingName as any)?.ee_billing_cycle || "").trim() || null,
+          pr_billing_cycle:
+            normalizedPrCycle || String((existingByTradingName as any)?.pr_billing_cycle || "").trim() || null,
+          hs_billing_cycle:
+            normalizedHsCycle || String((existingByTradingName as any)?.hs_billing_cycle || "").trim() || null,
+        };
+        const { error: updateError } = await (supabase as any)
+          .from("clients")
+          .update(updatePayload)
+          .eq("id", existingByTradingName.id);
+        if (updateError) throw updateError;
+        toast({
+          title: "Client updated",
+          description: "An existing client with this trading name was updated instead of creating a duplicate row.",
+        });
+        setIsNewClientOpen(false);
+        resetNewClientForm();
+        await fetchClients();
+        return;
+      }
 
       const getMissingColumn = (error: any) => {
         const message = String(error?.message ?? "");
@@ -2648,7 +2825,7 @@ const ClientsTwo = () => {
   return (
     <DashboardLayout>
       <div className="space-y-0 -m-6">
-        <div className="border border-slate-300 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
+        <div className="overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
               <div className="pt-5 pb-2">

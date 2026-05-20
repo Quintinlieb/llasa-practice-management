@@ -1,4 +1,15 @@
-import { FolderOpen, Users, Home, LogOut, BriefcaseBusiness, ChevronRight } from "lucide-react";
+import {
+  FolderOpen,
+  Users,
+  Home,
+  LogOut,
+  BriefcaseBusiness,
+  ChevronRight,
+  CalendarDays,
+  LayoutTemplate,
+  ChartColumn,
+  UserRoundCog,
+} from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
@@ -22,8 +33,12 @@ import { useAuth } from "@/hooks/useAuth";
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Clients", url: "/clients-2", icon: Users },
-  { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Matters", url: "/case-files", icon: BriefcaseBusiness },
+  { title: "Documents", url: "/documents", icon: FolderOpen },
+  { title: "Calendar", icon: CalendarDays },
+  { title: "Templates", icon: LayoutTemplate },
+  { title: "Reports", icon: ChartColumn },
+  { title: "Team", icon: UserRoundCog },
 ];
 
 const documentSubmenuItems = [
@@ -250,12 +265,13 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
             <SidebarGroupContent>
               <SidebarMenu className="gap-0">
                 {primaryNavItems.map((item) => {
-                  const isActive =
-                    item.url === "/documents"
+                  const isActive = item.url
+                    ? item.url === "/documents"
                       ? pathname.startsWith("/documents")
                       : item.url === "/case-files"
                         ? pathname.startsWith("/case-files")
-                      : location.pathname === item.url;
+                        : location.pathname === item.url
+                    : false;
                   return (
                     <SidebarMenuItem key={item.title}>
                       {withTooltip(
@@ -270,28 +286,44 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                             )}
                             data-collapsed={isCollapsed}
                           >
-                            <NavLink
-                              to={item.url}
-                              className="w-full text-xs"
-                              onClick={(event) => {
-                                if (item.url === "/documents") {
-                                  event.preventDefault();
-                                  setIsDocumentsSubmenuOpen((prev) => !prev);
+                            {item.url ? (
+                              <NavLink
+                                to={item.url}
+                                className="w-full text-xs"
+                                onClick={(event) => {
+                                  if (item.url === "/documents") {
+                                    event.preventDefault();
+                                    setIsDocumentsSubmenuOpen((prev) => !prev);
+                                    setOpenDocumentCategory(null);
+                                    setActiveFlyoutItemKey(null);
+                                    setIsFlyoutPositionReady(false);
+                                    navigate("/documents");
+                                    return;
+                                  }
+                                  setIsDocumentsSubmenuOpen(false);
                                   setOpenDocumentCategory(null);
                                   setActiveFlyoutItemKey(null);
                                   setIsFlyoutPositionReady(false);
-                                  navigate("/documents");
-                                  return;
-                                }
-                                setIsDocumentsSubmenuOpen(false);
-                                setOpenDocumentCategory(null);
-                                setActiveFlyoutItemKey(null);
-                                setIsFlyoutPositionReady(false);
-                              }}
-                            >
-                              <item.icon className="h-5 w-5" />
-                              <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
-                            </NavLink>
+                                }}
+                              >
+                                <item.icon className="h-5 w-5" />
+                                <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
+                              </NavLink>
+                            ) : (
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 text-left text-xs"
+                                onClick={() => {
+                                  setIsDocumentsSubmenuOpen(false);
+                                  setOpenDocumentCategory(null);
+                                  setActiveFlyoutItemKey(null);
+                                  setIsFlyoutPositionReady(false);
+                                }}
+                              >
+                                <item.icon className="h-5 w-5" />
+                                <span className={cn(isCollapsed && "sr-only")}>{item.title}</span>
+                              </button>
+                            )}
                           </SidebarMenuButton>
                           {item.url === "/documents" && !isCollapsed && isDocumentsSubmenuOpen ? (
                             <SidebarMenuSub className="ml-7 mr-2 mt-1 gap-0 border-l-white/20">

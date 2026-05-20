@@ -144,7 +144,16 @@ const ForgotPassword = () => {
                   </button>
                 </>
               ) : (
-                "A password reset link will be sent to you"
+                <div className="space-y-1">
+                  <p>A password reset link will be sent to you</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/auth?login=1")}
+                    className="font-semibold text-muted-foreground hover:text-[#3eca44] hover:underline"
+                  >
+                    Back to Sign in
+                  </button>
+                </div>
               )}
             </div>
           </div>

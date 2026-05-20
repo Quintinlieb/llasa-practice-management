@@ -11,6 +11,17 @@ import { z } from "zod";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import { clearAuthFormDraft, readAuthFormDraft, writeAuthFormDraft } from "@/lib/authFormDraft";
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+declare global {
+  interface Window {
+    __llasaInstallPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
   .regex(/[A-Z]/, "Must contain at least one uppercase letter")
@@ -31,6 +42,7 @@ const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -77,6 +89,41 @@ const Auth = () => {
       confirmPassword: isLogin ? "" : confirmPassword,
     });
   }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const handleInstallAvailable = () => {
+      if (window.__llasaInstallPrompt) {
+        setDeferredInstallPrompt(window.__llasaInstallPrompt);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      setDeferredInstallPrompt(null);
+      window.__llasaInstallPrompt = null;
+      toast({
+        title: "LLASA Manager installed",
+        description: "You can now launch it from your Windows desktop or Start menu.",
+      });
+    };
+
+    if (window.__llasaInstallPrompt) {
+      setDeferredInstallPrompt(window.__llasaInstallPrompt);
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("llasa-install-available", handleInstallAvailable as EventListener);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("llasa-install-available", handleInstallAvailable as EventListener);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, [toast]);
 
   useEffect(() => {
     const checkProfileAndRedirect = async () => {
@@ -256,6 +303,8 @@ const Auth = () => {
             description: getSafeErrorMessage(error),
             variant: "destructive",
           });
+        } else {
+          navigate("/clients-2", { replace: true });
         }
       } else {
         const { data, error } = await signUp(email, password, {
@@ -294,6 +343,29 @@ const Auth = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDesktopDownload = async () => {
+    const prompt = deferredInstallPrompt ?? window.__llasaInstallPrompt ?? null;
+    if (prompt) {
+      await prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === "accepted") {
+        toast({
+          title: "Installing LLASA Manager",
+          description: "Complete the prompt to add LLASA Manager to your desktop.",
+        });
+      }
+      setDeferredInstallPrompt(null);
+      window.__llasaInstallPrompt = null;
+      return;
+    }
+
+    toast({
+      title: "Desktop install unavailable",
+      description: "Reload once, then use Edge or Chrome and click Download for your Desktop again.",
+      variant: "destructive",
+    });
   };
 
   const isSignupReady =
@@ -499,28 +571,23 @@ const Auth = () => {
       </form>
 
       <div className="text-center text-xs text-muted-foreground">
-        <button
-          onClick={() => {
-            if (isLogin) {
-              setIsLogin(false);
-              setPassword("");
-              setConfirmPassword("");
-            } else {
-              navigate("/auth?login=1", { replace: true });
-            }
-          }}
-          className="text-muted-foreground hover:text-[#3eca44] hover:underline"
-        >
-          {isLogin ? (
-            <>
-              Don't have an account? <span className="font-semibold">Sign up</span>
-            </>
-          ) : (
-            <>
-              Already have an account? <span className="font-semibold">Sign in</span>
-            </>
-          )}
-        </button>
+        {isLogin ? (
+          <button
+            type="button"
+            onClick={() => void handleDesktopDownload()}
+            className="text-muted-foreground hover:text-[#3eca44] hover:underline"
+          >
+            Download for your Desktop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate("/auth?login=1", { replace: true })}
+            className="text-muted-foreground hover:text-[#3eca44] hover:underline"
+          >
+            Already have an account? <span className="font-semibold">Sign in</span>
+          </button>
+        )}
       </div>
     </div>
   );

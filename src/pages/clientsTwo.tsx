@@ -97,6 +97,84 @@ const splitFileNoteContentAndEditTag = (raw: string) => {
   const content = editTag ? value.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim() : value;
   return { content, editTag };
 };
+type MentionOption = { id: string; label: string; token: string; searchText: string };
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+const toMentionToken = (value: string) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_.-]/g, "");
+const renderTextWithMentions = (value: string) => {
+  const escaped = escapeHtml(String(value || ""));
+  return escaped
+    .replace(/\r\n|\r|\n/g, "<br />")
+    .replace(/(^|[\s(>])(@[A-Za-z0-9_.-]+)/g, '$1<span class="text-[#2f9f35]">$2</span>');
+};
+const renderInlineMentionHighlights = (value: string) => {
+  const escaped = escapeHtml(String(value || ""));
+  return escaped.replace(
+    /(^|[\s(>])(@[A-Za-z0-9_.-]+)/g,
+    '$1<span class="rounded bg-slate-200 px-1 py-[1px] text-slate-700">$2</span>',
+  );
+};
+const getActiveMentionMatch = (value: string, caretIndex: number) => {
+  const safeValue = String(value || "");
+  const beforeCaret = safeValue.slice(0, caretIndex);
+  const match = beforeCaret.match(/(?:^|\s)(@[A-Za-z0-9_.-]*)$/);
+  if (!match) return null;
+  const query = String(match[1] || "");
+  const start = beforeCaret.length - query.length;
+  return { query, start, end: caretIndex };
+};
+const getMentionTokenRangeAtCaret = (value: string, caretIndex: number) => {
+  const safeValue = String(value || "");
+  const mentionRegex = /@[A-Za-z0-9_.-]+/g;
+  let match: RegExpExecArray | null;
+  while ((match = mentionRegex.exec(safeValue)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (caretIndex === end || (caretIndex > start && caretIndex <= end)) {
+      return { start, end };
+    }
+  }
+  return null;
+};
+const getTextareaMentionPopupPosition = (textarea: HTMLTextAreaElement, caretIndex: number) => {
+  const computed = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordWrap = "break-word";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.boxSizing = "border-box";
+  mirror.style.font = computed.font;
+  mirror.style.fontFamily = computed.fontFamily;
+  mirror.style.fontSize = computed.fontSize;
+  mirror.style.fontWeight = computed.fontWeight;
+  mirror.style.lineHeight = computed.lineHeight;
+  mirror.style.letterSpacing = computed.letterSpacing;
+  mirror.style.padding = computed.padding;
+  mirror.style.border = computed.border;
+  mirror.style.width = `${textarea.clientWidth}px`;
+  mirror.textContent = textarea.value.slice(0, caretIndex);
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+  const markerRect = marker.getBoundingClientRect();
+  const mirrorRect = mirror.getBoundingClientRect();
+  const top = markerRect.top - mirrorRect.top - textarea.scrollTop;
+  const left = markerRect.left - mirrorRect.left - textarea.scrollLeft;
+  document.body.removeChild(mirror);
+  return { top, left };
+};
 const cropClientLogoPadding = (dataUrl: string): Promise<string> =>
   new Promise((resolve) => {
     const img = new Image();
@@ -341,6 +419,7 @@ const ClientsTwo = () => {
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
   const [currentUserIsSubuser, setCurrentUserIsSubuser] = useState(false);
+  const [mentionOptions, setMentionOptions] = useState<MentionOption[]>([]);
   const [clientFileNotes, setClientFileNotes] = useState<any[]>([]);
   const [clientFileNotesSearchQuery, setClientFileNotesSearchQuery] = useState("");
   const [isNotesLoading, setIsNotesLoading] = useState(false);
@@ -356,6 +435,8 @@ const ClientsTwo = () => {
     noteContent: "",
     noteUserName: "",
   });
+  const [fileNoteMentionRange, setFileNoteMentionRange] = useState<{ query: string; start: number; end: number } | null>(null);
+  const [fileNoteMentionPopupPosition, setFileNoteMentionPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const [clientEditForm, setClientEditForm] = useState({
     companyName: "",
     tradingAs: "",
@@ -404,6 +485,7 @@ const ClientsTwo = () => {
     hsRetainer: "",
     status: "",
   });
+  const fileNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isStepOneComplete = Boolean(
     clientDetailsForm.registeredName.trim() &&
@@ -1040,6 +1122,8 @@ const ClientsTwo = () => {
       noteContent: "",
       noteUserName: resolveCurrentUserName(),
     });
+    setFileNoteMentionRange(null);
+    setFileNoteMentionPopupPosition(null);
     setEditingFileNoteId(null);
   }, [resolveCurrentUserName]);
   const fetchClientFileNotes = useCallback(async (clientId: string) => {
@@ -1090,6 +1174,53 @@ const ClientsTwo = () => {
       return { ...prev, noteUserName: resolved };
     });
   }, [editingFileNoteId, isFallbackActorName, isFileNoteDialogOpen, resolveCurrentUserName]);
+  useEffect(() => {
+    const loadMentionOptions = async () => {
+      if (!user?.id) {
+        setMentionOptions([]);
+        return;
+      }
+      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+      const companyId = metadataCompanyId || user.id;
+      const options: MentionOption[] = [];
+      const seen = new Set<string>();
+      const addMentionOption = (id: string, label: string) => {
+        const safeLabel = String(label || "").trim();
+        const token = toMentionToken(safeLabel);
+        if (!safeLabel || !token) return;
+        const dedupeKey = token.toLowerCase();
+        if (seen.has(dedupeKey)) return;
+        seen.add(dedupeKey);
+        options.push({
+          id: String(id || token),
+          label: safeLabel,
+          token,
+          searchText: `${safeLabel} ${token}`.toLowerCase(),
+        });
+      };
+      const { data: masterProfiles } = await (supabase as any)
+        .from("profiles")
+        .select("id,user_name,user_surname,user_email")
+        .order("user_name", { ascending: true, nullsFirst: false })
+        .order("user_surname", { ascending: true, nullsFirst: false });
+      (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
+        const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+        addMentionOption(String(row?.id || fullName), fullName || String(row?.user_email || "").trim());
+      });
+      const { data: subusers } = await (supabase as any)
+        .from("subusers")
+        .select("id,name,surname,email,status,company_id")
+        .eq("company_id", companyId)
+        .in("status", ["accepted", "active"])
+        .order("name", { ascending: true });
+      (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+        const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+        addMentionOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
+      });
+      setMentionOptions(options);
+    };
+    void loadMentionOptions();
+  }, [user]);
   const fetchSlaContract = useCallback(async (clientId: string) => {
     if (!user?.id) return;
     const { data, error } = await agreementRecordTable()
@@ -2462,8 +2593,52 @@ const ClientsTwo = () => {
       noteContent: editableContent,
       noteUserName: String(note.note_user_name || resolveCurrentUserName()),
     });
+    setFileNoteMentionRange(null);
+    setFileNoteMentionPopupPosition(null);
     setIsFileNoteDialogOpen(true);
   };
+  const filteredMentionOptions = useMemo(() => {
+    if (!fileNoteMentionRange) return [];
+    const normalizedQuery = fileNoteMentionRange.query.replace(/^@/, "").trim().toLowerCase();
+    const currentUserToken = toMentionToken(resolveCurrentUserName()).toLowerCase();
+    return mentionOptions
+      .filter((option) => option.token.toLowerCase() !== currentUserToken)
+      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery))
+      .slice(0, 8);
+  }, [fileNoteMentionRange, mentionOptions, resolveCurrentUserName]);
+  const syncFileNoteMentionRange = useCallback((content: string, caretIndex: number) => {
+    const nextRange = getActiveMentionMatch(content, caretIndex);
+    setFileNoteMentionRange(nextRange);
+    if (!nextRange || !fileNoteTextareaRef.current) {
+      setFileNoteMentionPopupPosition(null);
+      return;
+    }
+    const coords = getTextareaMentionPopupPosition(fileNoteTextareaRef.current, caretIndex);
+    setFileNoteMentionPopupPosition({
+      top: Math.max(8, coords.top + 28),
+      left: Math.max(8, Math.min(coords.left + 12, Math.max(8, fileNoteTextareaRef.current.clientWidth - 220))),
+    });
+  }, []);
+  const handleFileNoteContentChange = useCallback((value: string, caretIndex: number) => {
+    setFileNoteForm((prev) => ({ ...prev, noteContent: value }));
+    syncFileNoteMentionRange(value, caretIndex);
+  }, [syncFileNoteMentionRange]);
+  const insertFileNoteMention = useCallback((option: MentionOption) => {
+    const textarea = fileNoteTextareaRef.current;
+    const range = fileNoteMentionRange;
+    if (!textarea || !range) return;
+    const value = fileNoteForm.noteContent;
+    const mentionText = `@${option.token}`;
+    const nextContent = `${value.slice(0, range.start)}${mentionText} ${value.slice(range.end)}`;
+    const nextCaret = range.start + mentionText.length + 1;
+    setFileNoteForm((prev) => ({ ...prev, noteContent: nextContent }));
+    setFileNoteMentionRange(null);
+    setFileNoteMentionPopupPosition(null);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, [fileNoteForm.noteContent, fileNoteMentionRange]);
   const handleSaveFileNote = async () => {
     if (!selectedClientRow?.id || !user?.id) return;
     const noteDate = fileNoteForm.noteDate.trim();
@@ -4395,9 +4570,8 @@ const ClientsTwo = () => {
                                         type="button"
                                         className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
                                         onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""))}
-                                      >
-                                        {content || "--"}
-                                      </button>
+                                        dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
+                                      />
                                     </div>
                                     <div className="min-w-0 truncate text-slate-700">{String(note.note_user_name || "--")}</div>
                                     <div className="min-w-0 flex items-center gap-2">
@@ -4465,11 +4639,77 @@ const ClientsTwo = () => {
           <div className="space-y-4 bg-white p-4 pt-6">
             <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
-              <textarea
-                className="min-h-[96px] w-full rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
-                value={fileNoteForm.noteContent}
-                onChange={(e) => setFileNoteForm((p) => ({ ...p, noteContent: e.target.value }))}
-              />
+              <div className="relative">
+                <div
+                  className="pointer-events-none min-h-[96px] whitespace-pre-wrap break-words rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium leading-5 text-slate-900"
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: fileNoteForm.noteContent ? renderTextWithMentions(fileNoteForm.noteContent) : '<span class="text-slate-400">Type your note. Use @ to tag a user.</span>' }}
+                />
+                <textarea
+                  ref={fileNoteTextareaRef}
+                  className="absolute inset-0 min-h-[96px] w-full resize-none rounded border border-slate-300 bg-transparent px-3 py-2 text-[11px] font-medium leading-5 text-transparent caret-black shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
+                  value={fileNoteForm.noteContent}
+                  onChange={(e) => handleFileNoteContentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                  onClick={(e) => syncFileNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                  onKeyUp={(e) => syncFileNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                  onSelect={(e) => syncFileNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace") {
+                      const textarea = e.currentTarget;
+                      const selectionStart = textarea.selectionStart ?? 0;
+                      const selectionEnd = textarea.selectionEnd ?? selectionStart;
+                      if (selectionStart === selectionEnd) {
+                        const mentionRange = getMentionTokenRangeAtCaret(textarea.value, selectionStart);
+                        if (mentionRange) {
+                          e.preventDefault();
+                          const trailingSpaceLength = textarea.value.slice(mentionRange.end, mentionRange.end + 1) === " " ? 1 : 0;
+                          const nextContent = `${textarea.value.slice(0, mentionRange.start)}${textarea.value.slice(mentionRange.end + trailingSpaceLength)}`;
+                          setFileNoteForm((prev) => ({ ...prev, noteContent: nextContent }));
+                          setFileNoteMentionRange(null);
+                          setFileNoteMentionPopupPosition(null);
+                          requestAnimationFrame(() => {
+                            textarea.focus();
+                            textarea.setSelectionRange(mentionRange.start, mentionRange.start);
+                          });
+                          return;
+                        }
+                      }
+                    }
+                    if (fileNoteMentionRange && filteredMentionOptions.length > 0 && (e.key === "Enter" || e.key === "Tab")) {
+                      e.preventDefault();
+                      insertFileNoteMention(filteredMentionOptions[0]);
+                    }
+                    if (e.key === "Escape") {
+                      setFileNoteMentionRange(null);
+                      setFileNoteMentionPopupPosition(null);
+                    }
+                  }}
+                />
+                {fileNoteMentionRange && fileNoteMentionPopupPosition ? (
+                  <div
+                    className="absolute z-20 w-[220px] rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
+                    style={{ top: fileNoteMentionPopupPosition.top, left: fileNoteMentionPopupPosition.left }}
+                  >
+                    {filteredMentionOptions.length === 0 ? (
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-300">No matching users.</div>
+                    ) : (
+                      filteredMentionOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[10px] font-semibold text-slate-300 hover:bg-white/10 hover:text-slate-100"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            insertFileNoteMention(option);
+                          }}
+                        >
+                          <span>@{option.token}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="flex items-center justify-center gap-2 pt-1">
               <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsFileNoteDialogOpen(false)}>
@@ -4493,9 +4733,10 @@ const ClientsTwo = () => {
             </DialogClose>
           </div>
           <div className="space-y-3 bg-white p-4">
-            <div className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-900">
-              {fileNotePreviewContent || "--"}
-            </div>
+            <div
+              className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-900"
+              dangerouslySetInnerHTML={{ __html: fileNotePreviewContent ? renderTextWithMentions(fileNotePreviewContent) : "--" }}
+            />
             {fileNotePreviewEditTag ? (
               <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
                 {sanitizeEditedTag(fileNotePreviewEditTag, fileNotePreviewUpdatedAt)}

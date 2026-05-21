@@ -130,9 +130,9 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                             asChild
                             isActive={isActive}
                             className={cn(
-                              "rounded-none px-7 !py-5 text-white text-xs active:bg-transparent active:text-inherit data-[active=true]:text-white",
+                              "rounded-none px-7 !py-5 text-xs active:bg-transparent active:text-inherit data-[active=true]:text-white",
                               !isActive && "transition-all duration-150",
-                              !isActive && "hover:bg-transparent hover:text-[#3eca44]",
+                              !isActive && "text-white/70 hover:bg-transparent hover:text-white",
                               isActive &&
                                 "bg-white text-[#2D4256] border-r-0 active:!bg-white active:!text-[#2D4256] data-[active=true]:!bg-white data-[active=true]:!text-[#2D4256]",
                             )}
@@ -152,10 +152,10 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                                   <item.icon
                                     className={cn(
                                       "h-5 w-5",
-                                      isActive ? "text-[#2D4256]" : "text-white group-hover:text-[#3eca44]",
+                                      isActive ? "text-[#3eca44]" : "text-white/70 group-hover:text-white",
                                     )}
                                   />
-                                  <span className={cn(isCollapsed && "sr-only", isActive && "text-[12.5px] font-semibold")}>{item.title}</span>
+                                  <span className={cn(isCollapsed && "sr-only", !isActive && "text-white/70 group-hover:text-white", isActive && "text-[12.5px] font-semibold")}>{item.title}</span>
                                 </span>
                               </NavLink>
                             ) : (
@@ -164,8 +164,8 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                                 className="group flex w-full items-center gap-2 text-left text-xs"
                               >
                                 <span className="flex items-center gap-2 group-hover:translate-x-[3px]">
-                                  <item.icon className={cn("h-5 w-5", isActive ? "text-[#2D4256]" : "text-white group-hover:text-[#3eca44]")} />
-                                  <span className={cn(isCollapsed && "sr-only", isActive && "text-[12.5px] font-semibold")}>{item.title}</span>
+                                  <item.icon className={cn("h-5 w-5", isActive ? "text-[#3eca44]" : "text-white/70 group-hover:text-white")} />
+                                  <span className={cn(isCollapsed && "sr-only", !isActive && "text-white/70 group-hover:text-white", isActive && "text-[12.5px] font-semibold")}>{item.title}</span>
                                 </span>
                               </button>
                             )}

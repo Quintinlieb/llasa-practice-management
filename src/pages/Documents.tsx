@@ -126,6 +126,19 @@ const getDiscWarningBreadcrumbClientName = (draftState: unknown) => {
   return String(candidate.clientRegisteredName || "").trim();
 };
 
+const getDiscHearingBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const clientForm = (draftState as { clientForm?: unknown }).clientForm;
+  if (!clientForm || typeof clientForm !== "object") return "";
+  const candidate = clientForm as {
+    clientTradingAsName?: unknown;
+    clientRegisteredName?: unknown;
+  };
+  const tradingAsName = String(candidate.clientTradingAsName || "").trim();
+  if (tradingAsName) return tradingAsName;
+  return String(candidate.clientRegisteredName || "").trim();
+};
+
 const getPermContractBreadcrumbClientName = (draftState: unknown) => {
   if (!draftState || typeof draftState !== "object") return "";
   const company = (draftState as { company?: unknown }).company;
@@ -670,6 +683,8 @@ const Documents = () => {
   const modalTitle = modalDocument ? modalTitleByDocument[modalDocument] : "";
   const discWarningBreadcrumbClientName =
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
+  const discHearingBreadcrumbClientName =
+    modalDocument === "disciplinaryHearingNotice" ? getDiscHearingBreadcrumbClientName(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
     modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
   const miscTerminationBreadcrumbClientName =
@@ -677,6 +692,8 @@ const Documents = () => {
   const modalBreadcrumbTitle =
     modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
+      : modalDocument === "disciplinaryHearingNotice" && discHearingBreadcrumbClientName
+        ? `${modalTitle} (${discHearingBreadcrumbClientName})`
       : modalDocument === "permContract" && permContractBreadcrumbClientName
         ? `${modalTitle} (${permContractBreadcrumbClientName})`
         : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName

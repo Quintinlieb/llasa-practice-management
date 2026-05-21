@@ -110,9 +110,6 @@ type EmployeeFormState = {
   employeeName: string;
   employeeSurname: string;
   employeeIdOrPassportNumber: string;
-  jobTitle: string;
-  department: string;
-  employeeNumber: string;
 };
 
 type NoticeFormState = {
@@ -155,15 +152,12 @@ const emptyEmployeeFormState: EmployeeFormState = {
   employeeName: "",
   employeeSurname: "",
   employeeIdOrPassportNumber: "",
-  jobTitle: "",
-  department: "",
-  employeeNumber: "",
 };
 
 const emptyNoticeFormState: NoticeFormState = {
   hearingDate: "",
   hearingTime: "",
-  hearingFormat: "",
+  hearingFormat: "in_person",
   hearingLocation: "",
   hearingPlatform: "",
   misconductTypes: [],
@@ -473,12 +467,41 @@ const formatHearingVenue = (hearingFormat: HearingFormat | "", hearingLocation: 
 const buildEmployeeFullName = (employeeForm: EmployeeFormState) =>
   [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
 
+const buildEmployeeDetailRows = (employeeForm: EmployeeFormState, fallback: string) => {
+  const rows: Array<[string, string]> = [
+    ["Name:", buildEmployeeFullName(employeeForm) || fallback],
+    ["ID Number:", employeeForm.employeeIdOrPassportNumber || fallback],
+  ];
+
+  return rows;
+};
+
 const buildFooterAddressLines = (clientForm: ClientFormState) => {
   const lineOne = [clientForm.clientAddressLine1, clientForm.clientAddressLine2].filter(Boolean).join(", ");
   const lineTwo = [clientForm.clientCity, clientForm.clientProvince, clientForm.clientAreaCode].filter(Boolean).join(", ");
   return [lineOne, lineTwo].filter(Boolean).length > 0
     ? [lineOne, lineTwo].filter(Boolean)
     : (clientForm.clientAddress ? [clientForm.clientAddress] : []);
+};
+
+const buildDefaultHearingLocation = (clientForm: ClientFormState) => {
+  const companyName = clientForm.clientTradingAsName.trim() || clientForm.clientName.trim();
+  return companyName ? `${companyName} (Company Premises)` : "";
+};
+
+const formatSelectedClientLabel = (clientForm: ClientFormState) => {
+  const clientName = clientForm.clientName.trim();
+  const tradingName = clientForm.clientTradingAsName.trim();
+  if (!clientName) return "Select client";
+  if (!tradingName) return clientName;
+
+  const normalizedClientName = clientName.toLowerCase();
+  const normalizedTradingName = tradingName.toLowerCase();
+  if (normalizedClientName.includes(`t/a ${normalizedTradingName}`) || normalizedClientName.includes(`(${normalizedTradingName})`)) {
+    return clientName;
+  }
+
+  return `${clientName} (${tradingName})`;
 };
 
 const sanitizeFileSegment = (value: string, fallback: string) =>
@@ -546,7 +569,7 @@ const DiscHearingNoticeGeneratorContent = ({
   const isEmployeeStep = !isFinished && activeStep === 1;
   const isNoticeStep = !isFinished && activeStep === 2;
   const isPreviewStep = isFinished;
-  const selectedClientLabel = clientForm.clientName || "Select client";
+  const selectedClientLabel = formatSelectedClientLabel(clientForm);
   const selectedMisconductLabel =
     noticeForm.misconductTypes.length === 0
       ? "Select misconduct type(s)"
@@ -555,7 +578,9 @@ const DiscHearingNoticeGeneratorContent = ({
         : `${noticeForm.misconductTypes.length} misconduct type(s) selected`;
   const employeeFullName = buildEmployeeFullName(employeeForm) || "______________________________";
   const previewLine = "______________________________";
-  const footerAddressLines = buildFooterAddressLines(clientForm);
+  const employeeDetailRows = buildEmployeeDetailRows(employeeForm, previewLine);
+  const currentYear = new Date().getFullYear();
+  const issuedAndSignedLine = `Issued and signed at __________________ on this _____ day of _____________________ ${currentYear}.`;
   const [selectedHour = "", selectedMinute = ""] = noticeForm.hearingTime.split(":");
   const hearingTimeMeridiem = selectedHour ? (Number.parseInt(selectedHour, 10) >= 12 ? "PM" : "AM") : "";
 
@@ -745,44 +770,6 @@ const DiscHearingNoticeGeneratorContent = ({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="discHearingJobTitle" className="text-[10px] font-semibold text-slate-600">
-                Job Title
-              </Label>
-              <Input
-                id="discHearingJobTitle"
-                value={employeeForm.jobTitle}
-                onChange={(event) => onEmployeeFormChange("jobTitle", event.target.value)}
-                placeholder="Enter job title"
-                className={inputClassName}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="discHearingDepartment" className="text-[10px] font-semibold text-slate-600">
-                Department
-              </Label>
-              <Input
-                id="discHearingDepartment"
-                value={employeeForm.department}
-                onChange={(event) => onEmployeeFormChange("department", event.target.value)}
-                placeholder="Enter department"
-                className={inputClassName}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="discHearingEmployeeNumber" className="text-[10px] font-semibold text-slate-600">
-                Employee Number
-              </Label>
-              <Input
-                id="discHearingEmployeeNumber"
-                value={employeeForm.employeeNumber}
-                onChange={(event) => onEmployeeFormChange("employeeNumber", event.target.value)}
-                placeholder="Enter employee number"
-                className={inputClassName}
-              />
-            </div>
           </div>
         ) : isNoticeStep ? (
           <div className="space-y-4">
@@ -1101,55 +1088,56 @@ const DiscHearingNoticeGeneratorContent = ({
           </div>
         ) : isPreviewStep ? (
           <div className="mx-auto max-w-[860px]">
-            <div className="bg-white px-8 pt-1 pb-6 text-black">
+            <div className="bg-white px-8 pt-4 pb-6 text-black">
               <h2 className="text-center text-[24px] font-bold uppercase tracking-tight text-black">
                 Notice of Disciplinary Hearing
               </h2>
 
-              <section className="mt-5 overflow-hidden rounded-[4px] border border-[#b8c2cc]">
-                <div className="bg-[#edf1f5] px-4 py-2">
+              <section className="mt-[32px] overflow-hidden rounded-[4px] border border-[#5f6872]">
+                <div className="bg-[#d7dde4] px-4 py-2.5">
                   <p className="text-[16px] font-bold uppercase tracking-wide text-black">A. Employee Details</p>
                 </div>
-                <div className="grid grid-cols-2 gap-x-10 gap-y-3 px-4 py-3 text-[15px] leading-6">
-                  <div className="grid grid-cols-[78px_minmax(0,1fr)] gap-2">
-                    <p className="font-bold">Employee:</p>
-                    <p>{employeeFullName}</p>
-                  </div>
-                  <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-2">
-                    <p className="font-bold">ID Number:</p>
-                    <p>{employeeForm.employeeIdOrPassportNumber || previewLine}</p>
-                  </div>
+                <div className="grid grid-cols-2 gap-x-10 gap-y-3 px-4 pt-4 pb-1 text-[15px] leading-6 text-black">
+                  {employeeDetailRows.map(([label, value]) => (
+                    <div key={label} className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+                      <p className="font-bold">{label}</p>
+                      <p>{value}</p>
+                    </div>
+                  ))}
                 </div>
               </section>
 
-              <section className="mt-5 overflow-hidden rounded-[4px] border border-[#b8c2cc]">
-                <div className="bg-[#edf1f5] px-4 py-2">
+              <section className="mt-[14px] overflow-hidden rounded-[4px] border border-[#5f6872]">
+                <div className="bg-[#d7dde4] px-4 py-2.5">
                   <p className="text-[16px] font-bold uppercase tracking-wide text-black">B. Hearing Details</p>
                 </div>
-                <div className="grid grid-cols-2 gap-x-10 gap-y-3 px-4 py-3 text-[15px] leading-6">
-                  <div className="grid grid-cols-[54px_minmax(0,1fr)] gap-2">
+                <div className="grid grid-cols-2 gap-x-10 gap-y-3 px-4 pt-4 pb-1 text-[15px] leading-6 text-black">
+                  <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
                     <p className="font-bold">Date:</p>
                     <p>{formatDateLabel(noticeForm.hearingDate) || previewLine}</p>
                   </div>
-                  <div className="grid grid-cols-[54px_minmax(0,1fr)] gap-2">
+                  <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
                     <p className="font-bold">Time:</p>
                     <p>{formatTimeLabel(noticeForm.hearingTime) || previewLine}</p>
                   </div>
-                  <div className="col-span-2 grid grid-cols-[54px_minmax(0,1fr)] gap-2">
+                  <div className="col-span-2 grid grid-cols-[112px_minmax(0,1fr)] gap-2">
                     <p className="font-bold">Place:</p>
                     <p>{formatHearingVenue(noticeForm.hearingFormat, noticeForm.hearingLocation, noticeForm.hearingPlatform) || previewLine}</p>
                   </div>
                 </div>
               </section>
 
-              <section className="mt-5 overflow-hidden rounded-[4px] border border-[#b8c2cc]">
-                <div className="bg-[#edf1f5] px-4 py-2">
+              <section className="mt-[14px] overflow-hidden rounded-[4px] border border-[#5f6872]">
+                <div className="bg-[#d7dde4] px-4 py-2.5">
                   <p className="text-[16px] font-bold uppercase tracking-wide text-black">C. Transgression(s) / Charge(s)</p>
                 </div>
-                <div className="space-y-4 px-4 py-4 text-[14px] leading-6">
+                <div className="space-y-4 px-4 pt-4 pb-1 text-[14px] leading-6 text-black">
                   {noticeForm.misconductTypes.length > 0 ? (
                     noticeForm.misconductTypes.map((type, index) => (
-                      <div key={type} className="space-y-1">
+                      <div
+                        key={type}
+                        className={cn("space-y-1.5", index < noticeForm.misconductTypes.length - 1 && "pb-2")}
+                      >
                         <div className="grid grid-cols-[18px_minmax(0,1fr)] gap-2">
                           <p className="font-bold">{`${index + 1}.`}</p>
                           <p className="font-bold">{type}</p>
@@ -1168,7 +1156,7 @@ const DiscHearingNoticeGeneratorContent = ({
                 </div>
               </section>
 
-              <section className="mt-6 px-2 text-[13px] leading-[1.45] text-black">
+              <section className="mt-[31px] px-2 text-[13px] leading-[1.45] text-black">
                 <p className="font-semibold">Please note that your rights at the hearing are as follows:</p>
                 <div className="mt-2 space-y-1">
                   {hearingRights.map((item) => (
@@ -1181,67 +1169,38 @@ const DiscHearingNoticeGeneratorContent = ({
               </section>
 
               <section className="mt-10 px-2">
-                <p className="text-[16px] font-bold uppercase tracking-wide text-black">Signatures</p>
-                <div className="mt-8 grid grid-cols-2 gap-x-16 gap-y-10 text-[14px]">
+                <div className="flex w-full items-end gap-1 overflow-hidden whitespace-nowrap text-[14px] font-normal text-black">
+                  <span>Issued and signed at</span>
+                  <span className="inline-block w-[154px] border-b border-black" />
+                  <span>on this</span>
+                  <span className="inline-block w-[42px] border-b border-black" />
+                  <span>day of</span>
+                  <span className="inline-block w-[122px] border-b border-black" />
+                  <span>{currentYear}.</span>
+                </div>
+                <div className="mt-12 grid grid-cols-3 gap-x-10 gap-y-14 text-[14px]">
                   {[
-                    ["Employer/Issuer", "Date"],
-                    ["Employee", "Date"],
-                    ["Representative (optional)", "Date"],
-                    ["Interpreter (optional)", "Date"],
-                    ["Witness 1 (optional)", "Date"],
-                    ["Witness 2 (optional)", "Date"],
-                  ].map(([leftLabel, rightLabel]) => (
-                    <div key={leftLabel} className="grid grid-cols-[minmax(0,1fr)_78px] gap-x-6">
-                      <div>
-                        <div className="border-b border-slate-500" />
-                        <p className="mt-2">{leftLabel}</p>
-                      </div>
-                      <div>
-                        <div className="border-b border-slate-500" />
-                        <p className="mt-2">{rightLabel}</p>
-                      </div>
+                    "Employer/Issuer",
+                    "Employee",
+                    "Representative (Optional)",
+                    "Witness 1",
+                    "Witness 2 (Optional)",
+                    "Interpreter (Optional)",
+                  ].map((label) => (
+                    <div key={label}>
+                      <div className="border-b border-black" />
+                      <p className="mt-2 text-[14px] font-semibold">{label}</p>
                     </div>
                   ))}
                 </div>
-                <div className="mt-8 rounded-[8px] border border-[#b8c2cc] bg-[#f5f7f9] px-4 py-3 text-[13px] italic leading-5 text-slate-700">
-                  If the employee refuses to sign this notice, the witness&apos;s signature will confirm that the
-                  employee did receive the notice and that the contents were explained to him/her.
+                <div className="mt-3 flex min-h-[56px] items-center rounded-[8px] border border-[#b8c2cc] bg-[#f5f7f9] px-4 py-2 text-[13px] italic leading-5 text-slate-700">
+                  <p>
+                    If the employee refuses to sign this notice, the witness&apos;s signature will confirm that the
+                    employee did receive the notice and that the contents were explained to him/her.
+                  </p>
                 </div>
               </section>
 
-              {clientForm.companyLogoDataUrl ? (
-                <footer className="mt-8 border-t border-slate-300 pt-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_136px] items-start gap-5">
-                    <div className="space-y-1 text-left text-[11px] leading-5 text-slate-700">
-                      <p className="font-semibold text-slate-900">{clientForm.clientName}</p>
-                      {clientForm.registrationNumber ? <p>{clientForm.registrationNumber}</p> : null}
-                      {clientForm.clientContactNumber ? <p>{clientForm.clientContactNumber}</p> : null}
-                      {clientForm.clientEmail ? <p>{clientForm.clientEmail}</p> : null}
-                      {footerAddressLines.map((line) => (
-                        <p key={line}>{line}</p>
-                      ))}
-                    </div>
-                    <div className="flex min-h-[72px] items-end justify-end">
-                      <img
-                        src={clientForm.companyLogoDataUrl}
-                        alt="Client logo"
-                        className="h-auto w-auto object-contain"
-                        style={{
-                          maxHeight: clientForm.companyLogoOrientation === "portrait" ? 68 : 46,
-                          maxWidth: clientForm.companyLogoOrientation === "portrait" ? 92 : 126,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <p className="mt-4 text-center text-[10px] text-slate-600">
-                    Document generated by <span className="text-[#3eca44]">www.llasa.co.za</span>
-                  </p>
-                </footer>
-              ) : (
-                <p className="mt-8 text-center text-[10px] text-slate-600">
-                  Document generated by <span className="text-[#3eca44]">www.llasa.co.za</span>
-                </p>
-              )}
             </div>
           </div>
         ) : (
@@ -1435,11 +1394,15 @@ const DiscHearingNoticeGenerator = ({
   const handleClientSelect = (clientId: string) => {
     const selectedClient = clientRows.find((client) => client.id === clientId);
     if (!selectedClient) return;
+    const nextClientForm = mapClientToFormState(selectedClient);
     setIsFinished(false);
     setActiveStep(0);
-    setClientForm(mapClientToFormState(selectedClient));
+    setClientForm(nextClientForm);
     setEmployeeForm(emptyEmployeeFormState);
-    setNoticeForm(emptyNoticeFormState);
+    setNoticeForm({
+      ...emptyNoticeFormState,
+      hearingLocation: buildDefaultHearingLocation(nextClientForm),
+    });
     setMisconductPickerOpen(false);
     void loadClientLogo(clientId);
   };
@@ -1462,7 +1425,7 @@ const DiscHearingNoticeGenerator = ({
           ...current,
           hearingFormat: nextFormat,
           hearingPlatform: nextFormat === "virtual" ? current.hearingPlatform : "",
-          hearingLocation: nextFormat === "in_person" ? current.hearingLocation || clientForm.clientAddress : "",
+          hearingLocation: nextFormat === "in_person" ? current.hearingLocation || buildDefaultHearingLocation(clientForm) : "",
         };
       }
 
@@ -1520,13 +1483,15 @@ const DiscHearingNoticeGenerator = ({
     const hasLogoLayout = Boolean(clientForm.companyLogoDataUrl);
     const footerReserve = hasLogoLayout ? 34 : 18;
     const bottomLimit = pageHeight - footerReserve;
-    const sectionBorder = [184, 194, 204] as const;
-    const sectionFill = [237, 241, 245] as const;
+    const sectionBorder = [95, 104, 114] as const;
+    const sectionFill = [215, 221, 228] as const;
     const lineFallback = "______________________________";
-    const employeeFullName = buildEmployeeFullName(employeeForm) || lineFallback;
+    const employeeDetailRows = buildEmployeeDetailRows(employeeForm, lineFallback);
     const placeValue = formatHearingVenue(noticeForm.hearingFormat, noticeForm.hearingLocation, noticeForm.hearingPlatform) || lineFallback;
     const footerAddressLines = buildFooterAddressLines(clientForm);
-    let y = 10;
+    const currentYear = new Date().getFullYear();
+    const issuedAndSignedLine = `Issued and signed at __________________ on this _____ day of _____________________ ${currentYear}.`;
+    let y = 13;
 
     const ensureSpace = (needed: number) => {
       if (y + needed <= bottomLimit) return;
@@ -1575,8 +1540,8 @@ const DiscHearingNoticeGenerator = ({
         const footerTextWidth = contentWidth - 40;
         const footerLineHeight = 3.4;
 
-        doc.setDrawColor(203, 213, 225);
-        doc.line(margin, footerTop - 3, pageWidth - margin, footerTop - 3);
+        doc.setDrawColor(148, 163, 184);
+        doc.line(margin, footerTop - 1.5, pageWidth - margin, footerTop - 1.5);
 
         if (clientForm.companyLogoDataUrl) {
           try {
@@ -1608,13 +1573,13 @@ const DiscHearingNoticeGenerator = ({
         let footerY = footerTop + 3;
         doc.setTextColor(15, 23, 42);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(7.8);
+        doc.setFontSize(7);
         const companyNameLines = doc.splitTextToSize(clientForm.clientName || "", footerTextWidth);
         doc.text(companyNameLines, footerTextX, footerY);
         footerY += companyNameLines.length * footerLineHeight;
 
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.2);
+        doc.setFontSize(7);
         if (clientForm.registrationNumber) {
           const registrationLines = doc.splitTextToSize(clientForm.registrationNumber, footerTextWidth);
           doc.text(registrationLines, footerTextX, footerY);
@@ -1662,9 +1627,9 @@ const DiscHearingNoticeGenerator = ({
       ensureSpace(estimatedHeight);
       const startY = y;
       const headerHeight = 8;
-      y += headerHeight + 4;
+      y += headerHeight + 6.5;
       drawContent();
-      const contentBottom = y + 3;
+      const contentBottom = y;
       doc.setDrawColor(...sectionBorder);
       doc.roundedRect(margin, startY, contentWidth, contentBottom - startY, 1, 1);
       doc.setFillColor(...sectionFill);
@@ -1672,10 +1637,10 @@ const DiscHearingNoticeGenerator = ({
       doc.setDrawColor(...sectionBorder);
       doc.roundedRect(margin, startY, contentWidth, contentBottom - startY, 1, 1);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
       doc.text(title, margin + 3, startY + 5.4);
-      y = contentBottom + 5;
+      y = contentBottom + 3.4;
     };
 
     const drawTwoColumnRow = (
@@ -1691,32 +1656,35 @@ const DiscHearingNoticeGenerator = ({
       doc.setFont("helvetica", "normal");
       doc.text(leftValue, margin + 28, y);
       doc.text(rightValue, margin + contentWidth / 2 + 28, y);
-      y += 6;
+      y += 5;
     };
 
-    const drawSingleRow = (label: string, value: string) => {
+    const drawWideValueRow = (label: string, value: string) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.text(label, margin + 3, y);
       doc.setFont("helvetica", "normal");
-      const valueLines = doc.splitTextToSize(value, contentWidth - 32);
-      doc.text(valueLines, margin + 22, y);
-      y += Math.max(6, valueLines.length * 4);
+      const valueLines = doc.splitTextToSize(value, contentWidth - 28);
+      doc.text(valueLines, margin + 28, y);
+      y += Math.max(5, valueLines.length * 3.6);
     };
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.text("NOTICE OF DISCIPLINARY HEARING", pageWidth / 2, y, { align: "center" });
-    y += 7;
+    y += 11;
 
     drawSectionBox("A. EMPLOYEE DETAILS", () => {
-      drawTwoColumnRow(
-        "Employee:",
-        employeeFullName,
-        "ID Number:",
-        employeeForm.employeeIdOrPassportNumber || lineFallback,
-      );
-    }, 20);
+      for (let index = 0; index < employeeDetailRows.length; index += 2) {
+        const [leftLabel, leftValue] = employeeDetailRows[index];
+        const rightRow = employeeDetailRows[index + 1];
+        if (rightRow) {
+          drawTwoColumnRow(leftLabel, leftValue, rightRow[0], rightRow[1]);
+        } else {
+          drawWideValueRow(leftLabel, leftValue);
+        }
+      }
+    }, 20 + Math.max(0, employeeDetailRows.length - 2) * 6);
 
     drawSectionBox("B. HEARING DETAILS", () => {
       drawTwoColumnRow(
@@ -1725,15 +1693,15 @@ const DiscHearingNoticeGenerator = ({
         "Time:",
         formatTimeLabel(noticeForm.hearingTime) || lineFallback,
       );
-      drawSingleRow("Place:", placeValue);
+      drawWideValueRow("Place:", placeValue);
     }, 28);
 
     const misconductHeight =
       18 +
-      noticeForm.misconductTypes.reduce((total, type) => {
+      noticeForm.misconductTypes.reduce((total, type, index) => {
         const description = noticeForm.misconductDescriptions[type] || lineFallback;
         const lines = doc.splitTextToSize(description, contentWidth - 12);
-        return total + 7 + lines.length * 4.2;
+        return total + 8 + lines.length * 4.2 + (index < noticeForm.misconductTypes.length - 1 ? 1.4 : 0);
       }, 0);
 
     drawSectionBox("C. TRANSGRESSION(S) / CHARGE(S)", () => {
@@ -1742,19 +1710,20 @@ const DiscHearingNoticeGenerator = ({
         doc.setFontSize(9);
         doc.text(`${index + 1}.`, margin + 3, y);
         doc.text(type, margin + 12, y);
-        y += 5.5;
+        y += 4.2;
 
         const description = noticeForm.misconductDescriptions[type] || lineFallback;
         const lines = doc.splitTextToSize(description, contentWidth - 18);
         doc.setFont("helvetica", "normal");
-        drawJustifiedLines(lines, margin + 12, contentWidth - 18, 4);
-        y += 2.4;
+        drawJustifiedLines(lines, margin + 12, contentWidth - 18, 3.5);
+        y += index < noticeForm.misconductTypes.length - 1 ? 2.6 : 0.8;
       });
     }, misconductHeight);
 
+    y += 2.2;
     ensureSpace(hearingRights.length * 5 + 16);
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.text("Please note that your rights at the hearing are as follows:", margin + 3, y);
     y += 5;
     hearingRights.forEach((item) => {
@@ -1771,51 +1740,89 @@ const DiscHearingNoticeGenerator = ({
       y += lines.length * 4.2 + 1.5;
     });
 
-    ensureSpace(50);
+    ensureSpace(46);
     y += 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("SIGNATURES", margin + 3, y);
-    y += 11;
+    doc.setFont("helvetica", "normal");
+    let issuedLineFontSize = 9;
+    doc.setFontSize(issuedLineFontSize);
+    const issuedLineParts = {
+      prefix: "Issued and signed at",
+      middle: "on this",
+      dayOf: "day of",
+      year: `${currentYear}.`,
+    };
+    const lineAfterAt = 48;
+    const lineAfterThis = 12;
+    const lineAfterOf = 50;
+    while (
+      issuedLineFontSize > 7.5 &&
+      doc.getTextWidth(`${issuedLineParts.prefix} ${issuedLineParts.middle} ${issuedLineParts.dayOf} ${issuedLineParts.year}`) +
+        lineAfterAt +
+        lineAfterThis +
+        lineAfterOf >
+        contentWidth - 6
+    ) {
+      issuedLineFontSize -= 0.2;
+      doc.setFontSize(issuedLineFontSize);
+    }
+    let issuedX = margin + 3;
+    doc.text(issuedLineParts.prefix, issuedX, y);
+    issuedX += doc.getTextWidth(issuedLineParts.prefix) + 1.5;
+    doc.setDrawColor(0, 0, 0);
+    doc.line(issuedX, y + 0.4, issuedX + lineAfterAt, y + 0.4);
+    issuedX += lineAfterAt + 1.8;
+    doc.text(issuedLineParts.middle, issuedX, y);
+    issuedX += doc.getTextWidth(issuedLineParts.middle) + 1.5;
+    doc.line(issuedX, y + 0.4, issuedX + lineAfterThis, y + 0.4);
+    issuedX += lineAfterThis + 1.8;
+    doc.text(issuedLineParts.dayOf, issuedX, y);
+    issuedX += doc.getTextWidth(issuedLineParts.dayOf) + 1.5;
+    doc.line(issuedX, y + 0.4, issuedX + lineAfterOf, y + 0.4);
+    issuedX += lineAfterOf + 1.8;
+    doc.text(issuedLineParts.year, issuedX, y);
+    y += 15;
 
-    const signaturePairs = [
-      ["Employer/Issuer", "Date"],
-      ["Employee", "Date"],
-      ["Representative (optional)", "Date"],
-      ["Interpreter (optional)", "Date"],
-      ["Witness 1 (optional)", "Date"],
-      ["Witness 2 (optional)", "Date"],
+    const signatureLabels = [
+      "Employer/Issuer",
+      "Employee",
+      "Representative (Optional)",
+      "Witness 1",
+      "Witness 2 (Optional)",
+      "Interpreter (Optional)",
     ] as const;
 
-    signaturePairs.forEach((pair, index) => {
-      if (index % 2 === 0) {
+    signatureLabels.forEach((label, index) => {
+      if (index % 3 === 0) {
         ensureSpace(17);
       }
-      const rowIndex = Math.floor(index / 2);
-      const columnIndex = index % 2;
-      const startX = margin + 3 + columnIndex * (contentWidth / 2);
-      const lineY = y + rowIndex * 15;
-      doc.setDrawColor(100, 116, 139);
-      doc.line(startX, lineY, startX + 40, lineY);
-      doc.line(startX + 50, lineY, startX + 76, lineY);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.text(pair[0], startX, lineY + 4.5);
-      doc.text(pair[1], startX + 50, lineY + 4.5);
+      const rowIndex = Math.floor(index / 3);
+      const columnIndex = index % 3;
+      const columnWidth = contentWidth / 3;
+      const startX = margin + 3 + columnIndex * columnWidth;
+      const lineY = y + rowIndex * 16;
+      doc.setDrawColor(0, 0, 0);
+      doc.line(startX, lineY, startX + columnWidth - 10, lineY);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(issuedLineFontSize);
+      doc.text(label, startX, lineY + 4.5);
     });
-    y += Math.ceil(signaturePairs.length / 2) * 15 + 3;
+    y += 32 - 4;
 
-    ensureSpace(18);
+    ensureSpace(14);
     doc.setDrawColor(...sectionBorder);
     doc.setFillColor(245, 247, 249);
-    doc.roundedRect(margin, y, contentWidth, 13, 1, 1, "FD");
+    doc.roundedRect(margin, y, contentWidth, 10.5, 1, 1, "FD");
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
     const note =
       "If the employee refuses to sign this notice, the witness's signature will confirm that the employee did receive the notice and that the contents were explained to him/her.";
     const noteLines = doc.splitTextToSize(note, contentWidth - 6);
-    doc.text(noteLines, margin + 3, y + 4.8);
+    const noteBlockHeight = Math.max(10.5, noteLines.length * 3.3 + 2.4);
+    const noteTextHeight = noteLines.length * 3.3;
+    const noteTextY = y + (noteBlockHeight - noteTextHeight) / 2 + 2.3;
+    doc.roundedRect(margin, y, contentWidth, noteBlockHeight, 1, 1, "FD");
+    doc.text(noteLines, margin + 3, noteTextY);
     drawFooter();
 
     const employeeInitials = employeeForm.employeeName
@@ -1826,13 +1833,13 @@ const DiscHearingNoticeGenerator = ({
       .join("");
     const employeeSurname = employeeForm.employeeSurname.trim();
     const documentNameSuffix = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
-    const documentLabel = "Disciplinary Hearing";
+    const documentLabel = "Disciplinary Hearing Notice";
     const documentName = `${documentLabel}${documentNameSuffix}`;
-    const downloadFileName = `${sanitizeFileSegment(documentLabel, "disciplinary-hearing")}${documentNameSuffix}.pdf`;
+    const downloadFileName = `${sanitizeFileSegment(documentLabel, "disciplinary-hearing-notice")}${documentNameSuffix}.pdf`;
     const uploadFilePath = [
       "disciplinary-hearing-notices",
       sanitizeFileSegment(clientForm.clientName || "client", "client"),
-      `${Date.now()}-${sanitizeFileSegment(documentName, "disciplinary-hearing")}.pdf`,
+      `${Date.now()}-${sanitizeFileSegment(documentName, "disciplinary-hearing-notice")}.pdf`,
     ].join("/");
 
     const uploadBlob = doc.output("blob");
@@ -1951,7 +1958,10 @@ const DiscHearingNoticeGenerator = ({
           return;
         }
         if (activeStep === 2) {
-          setNoticeForm(emptyNoticeFormState);
+          setNoticeForm({
+            ...emptyNoticeFormState,
+            hearingLocation: buildDefaultHearingLocation(clientForm),
+          });
           setMisconductPickerOpen(false);
         }
       },

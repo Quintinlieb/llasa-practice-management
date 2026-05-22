@@ -16,68 +16,59 @@ export type Database = {
     Tables: {
       documents: {
         Row: {
-          company_id: string
+          client_id: string | null
           created_at: string | null
-          date_issued: string
-          dates_committed: string
-          description: string
-          document_type: string | null
-          employee_id: string | null
-          employee_id_number: string
-          employee_name: string
-          employee_surname: string
+          created_by: string | null
+          created_by_name: string | null
+          document_name: string
+          document_type: string
+          client_name: string
+          file_url: string | null
+          generator_key: string | null
           id: string
-          issued_by: string
-          misconduct: string
-          trading_name: string | null
+          metadata: Json
+          status: string
+          storage_path: string | null
           updated_at: string | null
-          validity_months: number
-          warning_type: Database["public"]["Enums"]["warning_type"]
         }
         Insert: {
-          company_id: string
+          client_id?: string | null
           created_at?: string | null
-          date_issued: string
-          dates_committed: string
-          description: string
-          document_type?: string | null
-          employee_id?: string | null
-          employee_id_number: string
-          employee_name: string
-          employee_surname: string
+          created_by?: string | null
+          created_by_name?: string | null
+          document_name: string
+          document_type: string
+          client_name: string
+          file_url?: string | null
+          generator_key?: string | null
           id?: string
-          issued_by: string
-          misconduct: string
-          trading_name?: string | null
+          metadata?: Json
+          status?: string
+          storage_path?: string | null
           updated_at?: string | null
-          validity_months: number
-          warning_type: Database["public"]["Enums"]["warning_type"]
         }
         Update: {
-          company_id?: string
+          client_id?: string | null
           created_at?: string | null
-          date_issued?: string
-          dates_committed?: string
-          description?: string
-          document_type?: string | null
-          employee_id?: string | null
-          employee_id_number?: string
-          employee_name?: string
-          employee_surname?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          document_name?: string
+          document_type?: string
+          client_name?: string
+          file_url?: string | null
+          generator_key?: string | null
           id?: string
-          issued_by?: string
-          misconduct?: string
-          trading_name?: string | null
+          metadata?: Json
+          status?: string
+          storage_path?: string | null
           updated_at?: string | null
-          validity_months?: number
-          warning_type?: Database["public"]["Enums"]["warning_type"]
         }
         Relationships: [
           {
-            foreignKeyName: "documents_employee_id_fkey"
-            columns: ["employee_id"]
+            foreignKeyName: "documents_client_id_fkey"
+            columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "employees"
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]

@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,11 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { read, utils } from "xlsx";
-import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
+import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
 import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
@@ -26,16 +30,33 @@ const CLIENTS_TABLE_PAGE_SIZE = 25;
 const CLIENTS_TABLE_VISIBLE_ROWS = 18;
 const FILE_NOTE_EDIT_TAG_REGEX =
   /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
+const parseDisplayDateValue = (value: string | Date) => {
+  if (value instanceof Date) return value;
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.replace(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d{3})\d+([+-]\d{2}:\d{2}|Z)$/,
+    "$1.$2$3",
+  );
+  const date = new Date(normalized);
+  if (!Number.isNaN(date.getTime())) return date;
+
+  const fallback = new Date(trimmed);
+  if (!Number.isNaN(fallback.getTime())) return fallback;
+
+  return null;
+};
 const formatDisplayDate = (value: string) => {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "--";
-  const date = new Date(trimmed);
-  if (Number.isNaN(date.getTime())) return trimmed;
+  const date = parseDisplayDateValue(trimmed);
+  if (!date) return trimmed;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 };
 const formatDisplayTime = (value: string | Date) => {
-  const date = value instanceof Date ? value : new Date(String(value || "").trim());
-  if (Number.isNaN(date.getTime())) return "";
+  const date = parseDisplayDateValue(value);
+  if (!date) return "";
   return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 };
 const normalizeEditedTagForDisplay = (tag: string) => {
@@ -97,7 +118,26 @@ const splitFileNoteContentAndEditTag = (raw: string) => {
   const content = editTag ? value.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim() : value;
   return { content, editTag };
 };
-type MentionOption = { id: string; label: string; token: string; searchText: string };
+type MentionOption = { id: string; label: string; token: string; searchText: string; recipientUserId: string };
+type ClientGeneratedDocument = {
+  id: string;
+  documentName: string;
+  documentType: string;
+  clientName: string;
+  createdAt: string;
+  createdBy: string;
+  fileUrl: string;
+};
+type ClientMatter = {
+  id: string;
+  fileNumber: string;
+  parties: string;
+  caseType: string;
+  subtype: string;
+  status: string;
+  currentStage: string;
+  nextDate: string;
+};
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -110,6 +150,50 @@ const toMentionToken = (value: string) =>
     .trim()
     .replace(/\s+/g, "_")
     .replace(/[^A-Za-z0-9_.-]/g, "");
+const loadMentionRecipientsForTokens = async (tokens: string[], companyId: string): Promise<MentionOption[]> => {
+  const normalizedTokens = Array.from(new Set(tokens.map((token) => String(token || "").trim().toLowerCase()).filter(Boolean)));
+  if (normalizedTokens.length === 0) return [];
+
+  const recipients: MentionOption[] = [];
+  const seen = new Set<string>();
+  const addRecipient = (recipientUserId: string, label: string) => {
+    const safeRecipientUserId = String(recipientUserId || "").trim();
+    const safeLabel = String(label || "").trim();
+    const token = toMentionToken(safeLabel);
+    if (!safeRecipientUserId || !safeLabel || !token) return;
+    const normalizedToken = token.toLowerCase();
+    const dedupeKey = `${safeRecipientUserId}:${normalizedToken}`;
+    if (!normalizedTokens.includes(normalizedToken) || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    recipients.push({
+      id: safeRecipientUserId,
+      label: safeLabel,
+      token,
+      searchText: `${safeLabel} ${token}`.toLowerCase(),
+      recipientUserId: safeRecipientUserId,
+    });
+  };
+
+  const { data: masterProfiles } = await (supabase as any)
+    .from("profiles")
+    .select("id,auth_user_id,user_name,user_surname,user_email");
+  (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
+    const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+    addRecipient(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.user_email || "").trim());
+  });
+
+  const { data: subusers } = await (supabase as any)
+    .from("subusers")
+    .select("auth_user_id,name,surname,email,status");
+  (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+    const status = String(row?.status || "").trim().toLowerCase();
+    if (status && status !== "accepted" && status !== "active") return;
+    const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+    addRecipient(String(row?.auth_user_id || ""), fullName || String(row?.email || "").trim());
+  });
+
+  return recipients;
+};
 const renderTextWithMentions = (value: string) => {
   const escaped = escapeHtml(String(value || ""));
   return escaped
@@ -122,6 +206,128 @@ const renderInlineMentionHighlights = (value: string) => {
     /(^|[\s(>])(@[A-Za-z0-9_.-]+)/g,
     '$1<span class="rounded bg-slate-200 px-1 py-[1px] text-slate-700">$2</span>',
   );
+};
+const formatClientMatterType = (matter: Pick<ClientMatter, "caseType" | "subtype">) => {
+  if (matter.caseType !== "Hearing") {
+    const subtype = String(matter.subtype || "").trim();
+    const hasSubtype = subtype && subtype !== "--" && subtype !== "None";
+    if (matter.caseType === "Consultation") {
+      return hasSubtype ? `${subtype} Consultation` : "Consultation";
+    }
+    if (matter.caseType === "CCMA") {
+      return hasSubtype ? `CCMA - ${subtype}` : "CCMA";
+    }
+    if (matter.caseType === "Bargaining Council") {
+      return hasSubtype ? `Bargaining Council - ${subtype}` : "Bargaining Council";
+    }
+    return hasSubtype ? `${matter.caseType} (${subtype})` : matter.caseType;
+  }
+
+  const subtype = String(matter.subtype || "").trim().toLowerCase();
+  if (subtype === "discipline") return "Disciplinary Hearing";
+  if (subtype === "incapacity (performance)") return "Poor Performance Hearing";
+  if (subtype === "incapacity (ill health)") return "Ill Health Hearing";
+  if (subtype === "grievance") return "Grievance Hearing";
+  return "Hearing";
+};
+const resolveCurrentCompanyIdForMentions = async (user: any) => {
+  if (!user?.id) return "";
+  let { data: subuserData } = await (supabase as any)
+    .from("subusers")
+    .select("company_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+  if (!subuserData) {
+    const email = String(user?.email || "").trim().toLowerCase();
+    if (email) {
+      const fallback = await (supabase as any)
+        .from("subusers")
+        .select("company_id")
+        .eq("email", email)
+        .maybeSingle();
+      subuserData = fallback.data;
+    }
+  }
+  const subuserCompanyId = String((subuserData as any)?.company_id || "").trim();
+  if (subuserCompanyId) return subuserCompanyId;
+  const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+  if (metadataCompanyId) return metadataCompanyId;
+  return String(user.id || "").trim();
+};
+const NON_STAGE_TRIGGER_EVENT_TYPES = new Set([
+  "Deadline Date",
+  "Next Action Date",
+]);
+const parseClientMatterEventTime = (timeValue: unknown, descriptionValue?: unknown) => {
+  const eventTime = String(timeValue ?? "").trim();
+  if (eventTime) return eventTime.slice(0, 5);
+  const description = String(descriptionValue ?? "").trim();
+  const match = description.match(/^Time:\s*(\d{2}:\d{2})$/i);
+  return match ? match[1] : "";
+};
+const getClientMatterFirstScheduledEventDateTime = (
+  events: Array<{ eventDate: string; eventTime: string; eventType: string }>,
+) => {
+  const scheduledEvents = events
+    .filter((event) => {
+      const eventDate = String(event.eventDate || "").trim();
+      const eventType = String(event.eventType || "").trim();
+      return eventDate && !NON_STAGE_TRIGGER_EVENT_TYPES.has(eventType);
+    })
+    .map((event) => {
+      const eventDate = String(event.eventDate || "").trim();
+      const eventTime = String(event.eventTime || "").trim();
+      return {
+        eventDate,
+        eventTime,
+        sortKey: `${eventDate}T${eventTime || "00:00"}`,
+      };
+    })
+    .sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+
+  return scheduledEvents[0] || null;
+};
+const normalizeClientMatterStageValue = (value: unknown) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "scheduled") return "Scheduled";
+  if (normalized === "awaiting date") return "Awaiting Date";
+  if (normalized === "finalised" || normalized === "finalized") return "Finalised";
+  if (normalized === "in progress") return "In progress";
+  return "";
+};
+const resolveClientMatterStage = (
+  value: unknown,
+  status: string,
+  events: Array<{ eventDate: string; eventTime: string; eventType: string }>,
+) => {
+  if (String(status || "").trim().toLowerCase() === "inactive") return "Finalised";
+  const normalizedStage = normalizeClientMatterStageValue(value) || "Awaiting Date";
+  if (normalizedStage === "Scheduled") {
+    const firstScheduledEvent = getClientMatterFirstScheduledEventDateTime(events);
+    if (firstScheduledEvent) {
+      const scheduledAt = new Date(`${firstScheduledEvent.eventDate}T${firstScheduledEvent.eventTime || "00:00"}:00`);
+      if (!Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() <= Date.now()) {
+        return "In progress";
+      }
+    }
+  }
+  return normalizedStage;
+};
+const getClientMatterStagePillClassName = (value: unknown) => {
+  const stage = normalizeClientMatterStageValue(value);
+  if (stage === "Scheduled") {
+    return "border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50 hover:text-sky-700";
+  }
+  if (stage === "Awaiting Date") {
+    return "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+  }
+  if (stage === "In progress") {
+    return "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
+  }
+  if (stage === "Finalised") {
+    return "border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+  }
+  return "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-50 hover:text-slate-600";
 };
 const getActiveMentionMatch = (value: string, caretIndex: number) => {
   const safeValue = String(value || "");
@@ -349,6 +555,7 @@ const saveCachedClientRows = (rows: any[]) => {
 const ClientsTwo = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [clientTablePage, setClientTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -398,6 +605,12 @@ const ClientsTwo = () => {
   const [bulkClientFileName, setBulkClientFileName] = useState("");
   const [bulkClientParsedRows, setBulkClientParsedRows] = useState<BulkClientImportRow[]>([]);
   const [selectedClientRow, setSelectedClientRow] = useState<any | null>(null);
+  const [clientGeneratedDocuments, setClientGeneratedDocuments] = useState<ClientGeneratedDocument[]>([]);
+  const [isClientGeneratedDocumentsLoading, setIsClientGeneratedDocumentsLoading] = useState(false);
+  const [clientDocumentsSearchQuery, setClientDocumentsSearchQuery] = useState("");
+  const [clientMatters, setClientMatters] = useState<ClientMatter[]>([]);
+  const [isClientMattersLoading, setIsClientMattersLoading] = useState(false);
+  const [clientMattersSearchQuery, setClientMattersSearchQuery] = useState("");
   const [isClientEditMode, setIsClientEditMode] = useState(false);
   const [isSavingClientEdit, setIsSavingClientEdit] = useState(false);
   const [isSlaUploading, setIsSlaUploading] = useState(false);
@@ -591,9 +804,12 @@ const ClientsTwo = () => {
 
   const formatDisplayDate = (value?: string) => {
     if (!value) return "";
-    const [y, m, d] = value.split("-");
-    if (!y || !m || !d) return value;
-    return `${d}/${m}/${y}`;
+    const parsed = parseDisplayDateValue(value);
+    if (!parsed) return value;
+    const day = String(parsed.getDate()).padStart(2, "0");
+    const month = String(parsed.getMonth() + 1).padStart(2, "0");
+    const year = String(parsed.getFullYear());
+    return `${day}/${month}/${year}`;
   };
   const normalizeRetainerInput = (value: string) => {
     const digitsAndDots = value.replace(/[^0-9.]/g, "");
@@ -865,6 +1081,30 @@ const ClientsTwo = () => {
         .includes(q),
     );
   }, [clientFileNotes, clientFileNotesSearchQuery]);
+  const filteredClientGeneratedDocuments = useMemo(() => {
+    const query = clientDocumentsSearchQuery.trim().toLowerCase();
+    if (!query) return clientGeneratedDocuments;
+    return clientGeneratedDocuments.filter((document) =>
+      [
+        document.documentName,
+        document.documentType,
+        document.createdBy,
+      ].some((value) => String(value || "").toLowerCase().includes(query)),
+    );
+  }, [clientDocumentsSearchQuery, clientGeneratedDocuments]);
+  const filteredClientMatters = useMemo(() => {
+    const query = clientMattersSearchQuery.trim().toLowerCase();
+    if (!query) return clientMatters;
+    return clientMatters.filter((matter) =>
+      [
+        matter.fileNumber,
+        matter.parties,
+        matter.caseType,
+        matter.currentStage,
+        matter.nextDate,
+      ].some((value) => String(value || "").toLowerCase().includes(query)),
+    );
+  }, [clientMatters, clientMattersSearchQuery]);
   const normalizedGroupSearch = groupSearchQuery.trim().toLowerCase();
   const filteredGroupOptions = useMemo(
     () =>
@@ -1037,6 +1277,133 @@ const ClientsTwo = () => {
     }
     setClientRows((data ?? []).map(mapClientRow));
   }, [toast, user?.id]);
+  const fetchClientGeneratedDocuments = useCallback(async (clientRow: any) => {
+    const clientId = String(clientRow?.id ?? "").trim();
+    if (!clientId) {
+      setClientGeneratedDocuments([]);
+      return;
+    }
+
+    setIsClientGeneratedDocumentsLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("documents")
+        .select("id, document_name, document_type, client_name, client_id, created_at, created_by_name, file_url")
+        .order("created_at", { ascending: false, nullsFirst: false });
+      if (error) throw error;
+
+      const rows = (Array.isArray(data) ? data : [])
+        .filter((row: any) => {
+          const rowClientId = String(row?.client_id ?? "").trim();
+          return rowClientId === clientId;
+        })
+        .map((row: any) => ({
+          id: String(row?.id ?? crypto.randomUUID()),
+          documentName: String(row?.document_name ?? "").trim(),
+          documentType: String(row?.document_type ?? "").trim(),
+          clientName: String(row?.client_name ?? "").trim(),
+          createdAt: String(row?.created_at ?? "").trim(),
+          createdBy: String(row?.created_by_name ?? "").trim(),
+          fileUrl: String(row?.file_url ?? "").trim(),
+        }));
+
+      setClientGeneratedDocuments(rows);
+    } catch (error: any) {
+      setClientGeneratedDocuments([]);
+      toast({
+        title: "Unable to load documents",
+        description: error?.message || "Load failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClientGeneratedDocumentsLoading(false);
+    }
+  }, [toast]);
+  const fetchClientMatters = useCallback(async (clientRow: any) => {
+    const clientId = String(clientRow?.id ?? "").trim();
+    if (!clientId) {
+      setClientMatters([]);
+      return;
+    }
+
+    setIsClientMattersLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("case_files")
+        .select("id, file_number, parties, case_type, case_subtype, status, current_stage, next_date")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false, nullsFirst: false });
+      if (error) throw error;
+
+      const caseRows = Array.isArray(data) ? data : [];
+      const caseIds = caseRows.map((row: any) => String(row?.id ?? "").trim()).filter(Boolean);
+      const dateEventsByCaseId = new Map<string, Array<{ eventDate: string; eventTime: string; eventType: string }>>();
+
+      if (caseIds.length > 0) {
+        const { data: dateRows } = await (supabase as any)
+          .from("case_dates")
+          .select("case_file_id, date_type, date_value, event_time, description")
+          .in("case_file_id", caseIds);
+
+        (Array.isArray(dateRows) ? dateRows : []).forEach((row: any) => {
+          const caseFileId = String(row?.case_file_id ?? "").trim();
+          if (!caseFileId) return;
+          const existingEvents = dateEventsByCaseId.get(caseFileId) ?? [];
+          existingEvents.push({
+            eventDate: String(row?.date_value ?? "").trim(),
+            eventTime: parseClientMatterEventTime(row?.event_time, row?.description),
+            eventType: String(row?.date_type ?? "").trim(),
+          });
+          dateEventsByCaseId.set(caseFileId, existingEvents);
+        });
+      }
+
+      setClientMatters(
+        caseRows.map((row: any) => {
+          const id = String(row?.id ?? crypto.randomUUID());
+          const status = String(row?.status ?? "").trim();
+          return {
+            id,
+            fileNumber: String(row?.file_number ?? "").trim(),
+            parties: String(row?.parties ?? "").trim(),
+            caseType: String(row?.case_type ?? "").trim(),
+            subtype: String(row?.case_subtype ?? "").trim(),
+            status,
+            currentStage: resolveClientMatterStage(
+              row?.current_stage,
+              status,
+              dateEventsByCaseId.get(id) ?? [],
+            ),
+            nextDate: String(row?.next_date ?? "").trim(),
+          };
+        }),
+      );
+    } catch (error: any) {
+      setClientMatters([]);
+      toast({
+        title: "Unable to load matters",
+        description: error?.message || "Load failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClientMattersLoading(false);
+    }
+  }, [toast]);
+  const handleViewClientGeneratedDocument = useCallback((document: ClientGeneratedDocument) => {
+    const fileUrl = String(document.fileUrl || "").trim();
+    if (!fileUrl) {
+      toast({
+        title: "Unable to open document",
+        description: "This generated document does not have a file URL.",
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
+  }, [toast]);
+  const handleOpenClientMatter = useCallback((matter: ClientMatter) => {
+    navigate("/case-files", { state: { openCaseId: matter.id } });
+  }, [navigate]);
   const fetchClientGroups = useCallback(async () => {
     if (!user?.id) return;
     const { data, error } = await (supabase as any)
@@ -1180,8 +1547,11 @@ const ClientsTwo = () => {
         setMentionOptions([]);
         return;
       }
-      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-      const companyId = metadataCompanyId || user.id;
+      const companyId = await resolveCurrentCompanyIdForMentions(user);
+      if (!companyId) {
+        setMentionOptions([]);
+        return;
+      }
       const options: MentionOption[] = [];
       const seen = new Set<string>();
       const addMentionOption = (id: string, label: string) => {
@@ -1191,31 +1561,34 @@ const ClientsTwo = () => {
         const dedupeKey = token.toLowerCase();
         if (seen.has(dedupeKey)) return;
         seen.add(dedupeKey);
+        const recipientUserId = String(id || token).trim();
         options.push({
-          id: String(id || token),
+          id: recipientUserId,
           label: safeLabel,
           token,
           searchText: `${safeLabel} ${token}`.toLowerCase(),
+          recipientUserId,
         });
       };
       const { data: masterProfiles } = await (supabase as any)
         .from("profiles")
-        .select("id,user_name,user_surname,user_email")
+        .select("id,auth_user_id,user_name,user_surname,user_email")
         .order("user_name", { ascending: true, nullsFirst: false })
         .order("user_surname", { ascending: true, nullsFirst: false });
       (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
         const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
-        addMentionOption(String(row?.id || fullName), fullName || String(row?.user_email || "").trim());
+        addMentionOption(String(row?.auth_user_id || row?.id || fullName), fullName || String(row?.user_email || "").trim());
       });
       const { data: subusers } = await (supabase as any)
         .from("subusers")
-        .select("id,name,surname,email,status,company_id")
-        .eq("company_id", companyId)
-        .in("status", ["accepted", "active"])
-        .order("name", { ascending: true });
+        .select("id,auth_user_id,name,surname,email,status,company_id")
+        .order("name", { ascending: true, nullsFirst: false })
+        .order("surname", { ascending: true, nullsFirst: false });
       (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+        const status = String(row?.status || "").trim().toLowerCase();
+        if (status && status !== "accepted" && status !== "active") return;
         const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
-        addMentionOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
+        addMentionOption(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.email || "").trim());
       });
       setMentionOptions(options);
     };
@@ -1246,11 +1619,35 @@ const ClientsTwo = () => {
   useEffect(() => {
     if (!selectedClientRow?.id) {
       setClientFileNotes([]);
+      setClientGeneratedDocuments([]);
+      setClientMatters([]);
       return;
     }
     setClientFileNotesSearchQuery("");
     void fetchClientFileNotes(selectedClientRow.id);
   }, [fetchClientFileNotes, selectedClientRow?.id]);
+  useEffect(() => {
+    if (!selectedClientRow?.id) {
+      setClientGeneratedDocuments([]);
+      return;
+    }
+    setClientDocumentsSearchQuery("");
+    void fetchClientGeneratedDocuments(selectedClientRow);
+  }, [fetchClientGeneratedDocuments, selectedClientRow]);
+  useEffect(() => {
+    if (!selectedClientRow?.id) {
+      setClientMatters([]);
+      return;
+    }
+    setClientMattersSearchQuery("");
+    void fetchClientMatters(selectedClientRow);
+  }, [fetchClientMatters, selectedClientRow]);
+  useEffect(() => {
+    if (!selectedClientRow?.id) return;
+    const reloadDocuments = () => void fetchClientGeneratedDocuments(selectedClientRow);
+    window.addEventListener("documents-row-created", reloadDocuments);
+    return () => window.removeEventListener("documents-row-created", reloadDocuments);
+  }, [fetchClientGeneratedDocuments, selectedClientRow]);
 
   const parseBulkClientWorkbook = useCallback((fileData: ArrayBuffer) => {
     const workbook = read(fileData, { type: "array" });
@@ -2603,8 +3000,7 @@ const ClientsTwo = () => {
     const currentUserToken = toMentionToken(resolveCurrentUserName()).toLowerCase();
     return mentionOptions
       .filter((option) => option.token.toLowerCase() !== currentUserToken)
-      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery))
-      .slice(0, 8);
+      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery));
   }, [fileNoteMentionRange, mentionOptions, resolveCurrentUserName]);
   const syncFileNoteMentionRange = useCallback((content: string, caretIndex: number) => {
     const nextRange = getActiveMentionMatch(content, caretIndex);
@@ -2650,6 +3046,7 @@ const ClientsTwo = () => {
     }
     setIsSavingFileNote(true);
     try {
+      let savedFileNoteId = String(editingFileNoteId || "").trim();
       if (editingFileNoteId) {
         const baseContent = noteContent.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim();
         const now = new Date();
@@ -2665,14 +3062,46 @@ const ClientsTwo = () => {
           .eq("client_id", selectedClientRow.id);
         if (error) throw error;
       } else {
-        const payload = {
-          client_id: selectedClientRow.id,
-          note_date: noteDate,
-          note_content: noteContent,
-          note_user_name: noteUserName,
-        };
-        const { error } = await (supabase as any).from("client_file_notes").insert(payload);
+        const { data: insertedFileNote, error } = await (supabase as any)
+          .from("client_file_notes")
+          .insert({
+            client_id: selectedClientRow.id,
+            note_date: noteDate,
+            note_content: noteContent,
+            note_user_name: noteUserName,
+          })
+          .select("id")
+          .single();
         if (error) throw error;
+        savedFileNoteId = String(insertedFileNote?.id || "").trim();
+      }
+
+      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+      const companyId = metadataCompanyId || user.id;
+      const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
+      const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
+      if (savedFileNoteId && mentionRecipients.length > 0) {
+        const notificationRows = mentionRecipients.map((recipient) => ({
+          recipient_user_id: recipient.recipientUserId,
+          actor_user_id: user.id,
+          actor_name: noteUserName,
+          notification_type: "mention",
+          title: "New mention",
+          body: `${noteUserName} has tagged you in a matter/client file.`,
+          source_table: "client_file_notes",
+          source_record_id: savedFileNoteId,
+          source_parent_id: selectedClientRow.id,
+          metadata: {
+            client_name: selectedClientName,
+            note_preview: noteContent.slice(0, 200),
+          },
+        }));
+        const { error: notificationError } = await (supabase as any)
+          .from("notifications")
+          .insert(notificationRows);
+        if (notificationError) {
+          console.error("Unable to save mention notifications for client file note", notificationError);
+        }
       }
       setIsFileNoteDialogOpen(false);
       resetFileNoteForm();
@@ -4607,11 +5036,153 @@ const ClientsTwo = () => {
                     </TabsContent>
 
                     <TabsContent value="matters" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">No matters linked yet.</div>
+                      <div className="space-y-3 text-xs">
+                        <div className="group relative w-full max-w-[360px]">
+                          <Input
+                            placeholder="Search matters..."
+                            value={clientMattersSearchQuery}
+                            onChange={(e) => setClientMattersSearchQuery(e.target.value)}
+                            className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                              clientMattersSearchQuery.trim().length > 0 ? "pr-20" : "pr-9"
+                            }`}
+                          />
+                          {clientMattersSearchQuery.trim().length > 0 ? (
+                            <button
+                              type="button"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                              onClick={() => setClientMattersSearchQuery("")}
+                            >
+                              Clear
+                            </button>
+                          ) : (
+                            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                          )}
+                        </div>
+                        <div className="overflow-hidden rounded border border-slate-200">
+                          <div className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                            <div>File No</div>
+                            <div>Parties</div>
+                            <div>Type</div>
+                            <div>Stage</div>
+                            <div>Next Date</div>
+                          </div>
+                          <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                            {isClientMattersLoading ? (
+                              <div className="px-2 py-3 text-slate-500">Loading matters...</div>
+                            ) : filteredClientMatters.length === 0 ? (
+                              <div className="px-2 py-3 text-slate-500">No matters found for this client.</div>
+                            ) : (
+                              filteredClientMatters.map((matter) => (
+                                <div
+                                  key={matter.id}
+                                  className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenClientMatter(matter)}
+                                    className="min-w-0 truncate text-left font-medium text-slate-900 hover:text-[#2f9f35] hover:underline"
+                                  >
+                                    {matter.fileNumber || "--"}
+                                  </button>
+                                  <div className="min-w-0 truncate text-slate-700">{matter.parties || "--"}</div>
+                                  <div className="min-w-0 truncate text-slate-700">{formatClientMatterType(matter) || "--"}</div>
+                                  <div className="min-w-0 flex items-center truncate">
+                                    <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientMatterStagePillClassName(matter.currentStage)}`}>
+                                      {normalizeClientMatterStageValue(matter.currentStage) || matter.currentStage || "--"}
+                                    </Badge>
+                                  </div>
+                                  <div className="min-w-0 text-slate-700">{matter.nextDate ? formatDisplayDate(matter.nextDate) : "--"}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="documents" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">No documents uploaded yet.</div>
+                      <div className="space-y-3 text-xs">
+                        <div className="group relative w-full max-w-[360px]">
+                          <Input
+                            placeholder="Search documents..."
+                            value={clientDocumentsSearchQuery}
+                            onChange={(e) => setClientDocumentsSearchQuery(e.target.value)}
+                            className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                              clientDocumentsSearchQuery.trim().length > 0 ? "pr-20" : "pr-9"
+                            }`}
+                          />
+                          {clientDocumentsSearchQuery.trim().length > 0 ? (
+                            <button
+                              type="button"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                              onClick={() => setClientDocumentsSearchQuery("")}
+                            >
+                              Clear
+                            </button>
+                          ) : (
+                            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                          )}
+                        </div>
+                        <div className="overflow-hidden rounded border border-slate-200">
+                          <div className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                            <div>Description</div>
+                            <div>Type</div>
+                            <div>Drafted On</div>
+                            <div>Drafted By</div>
+                            <div>Actions</div>
+                          </div>
+                          <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                            {isClientGeneratedDocumentsLoading ? (
+                              <div className="px-2 py-3 text-slate-500">Loading documents...</div>
+                            ) : filteredClientGeneratedDocuments.length === 0 ? (
+                              <div className="px-2 py-3 text-slate-500">No generated documents found for this client.</div>
+                            ) : (
+                              filteredClientGeneratedDocuments.map((document) => (
+                                <div
+                                  key={document.id}
+                                  className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
+                                >
+                                  <div className="min-w-0 truncate font-medium text-slate-900">
+                                    {document.documentName || "--"}
+                                  </div>
+                                  <div className="min-w-0 text-slate-700">{document.documentType || "--"}</div>
+                                  <div className="min-w-0 text-slate-700">
+                                    {document.createdAt ? (
+                                      <Tooltip disableHoverableContent>
+                                        <TooltipTrigger asChild>
+                                          <span className="inline-block cursor-default transition-colors hover:text-[#2f9f35]">
+                                            {formatDisplayDate(document.createdAt)}
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[9.84px] shadow-none">
+                                          {`@ ${formatDisplayTime(document.createdAt)}`}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      "--"
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex items-center truncate">
+                                    <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                      {document.createdBy || "--"}
+                                    </Badge>
+                                  </div>
+                                  <div className="min-w-0 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="text-slate-500 hover:text-[#2f9f35]"
+                                      onClick={() => handleViewClientGeneratedDocument(document)}
+                                      aria-label="View document"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </TabsContent>
                   </Tabs>
                 </div>
@@ -4687,7 +5258,7 @@ const ClientsTwo = () => {
                 />
                 {fileNoteMentionRange && fileNoteMentionPopupPosition ? (
                   <div
-                    className="absolute z-20 w-[220px] rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
+                    className="absolute z-20 max-h-[220px] w-[220px] overflow-y-auto rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
                     style={{ top: fileNoteMentionPopupPosition.top, left: fileNoteMentionPopupPosition.left }}
                   >
                     {filteredMentionOptions.length === 0 ? (

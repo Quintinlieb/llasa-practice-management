@@ -14,10 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Check, ChevronDown, FolderOpen, Pencil, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Clock3, Eye, FolderOpen, Pencil, Search, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
+import { cn } from "@/lib/utils";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type CaseNote = {
   id: string;
@@ -25,6 +28,7 @@ type CaseNote = {
   note_date: string;
   note_content: string;
   note_user_name: string;
+  created_at?: string | null;
   updated_at?: string | null;
 };
 type CaseDateEvent = {
@@ -33,7 +37,18 @@ type CaseDateEvent = {
   eventType: string;
   eventLabel: string;
   eventDate: string;
+  eventTime?: string;
   createdByName: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+type CaseDocument = {
+  id: string;
+  case_file_id?: string;
+  documentName: string;
+  description: string;
+  fileUrl: string;
+  uploadedBy: string;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -60,13 +75,14 @@ type CaseFile = {
   shortDescription: string;
   dateEvents: CaseDateEvent[];
   notes: CaseNote[];
+  documents: CaseDocument[];
   tasks: CaseTask[];
   outcome: CaseOutcome;
 };
 
 type ClientOption = { id: string; label: string };
 type ConsultantOption = { id: string; label: string };
-type MentionOption = { id: string; label: string; token: string; searchText: string };
+type MentionOption = { id: string; label: string; token: string; searchText: string; recipientUserId: string };
 type NewCaseStep = 1 | 2 | 3;
 type CaseDetailsTab = "overview" | "dates" | "notes" | "documents" | "outcome";
 type NewCaseForm = {
@@ -102,8 +118,17 @@ type CaseEditForm = {
   dateEvents: CaseDateEvent[];
   outcome: CaseOutcome;
 };
+type MatterDetailsTableProps = {
+  headerColumns: React.ReactNode[];
+  gridClassName: string;
+  children: React.ReactNode;
+  emptyState?: React.ReactNode;
+  bodyMaxHeightClassName?: string;
+};
+const MATTER_DETAILS_TABLE_GRID = "grid-cols-[120px_120px_2.75fr_1fr_72px]";
 const caseFilesTableCacheKey = "case-files:table-cache";
 const CASE_FILES_TABLE_PAGE_SIZE = 25;
+const CASE_DOCUMENTS_BUCKET = "case-documents";
 const FILE_NOTE_EDIT_TAG_REGEX =
   /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
 
@@ -186,6 +211,8 @@ const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[numbe
 const STATUS_OPTIONS: CaseFile["status"][] = ["Active", "Inactive"];
 const PRIORITY_OPTIONS: CaseFile["priority"][] = ["Low", "Medium", "High", "Urgent"];
 const CURRENT_STAGE_OPTIONS = ["Scheduled", "Awaiting Date", "Finalised", "In progress"] as const;
+const HEARING_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const HEARING_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
 const OUTCOME_TYPE_OPTIONS = ["Dismissal Upheld", "Settlement", "Award Issued", "Case Withdrawn", "Matter Closed", "Consultation Completed", "Hearing Finalised"] as const;
 const CASE_DATE_EVENT_TYPE_OPTIONS = [
   "Instruction Received",
@@ -205,14 +232,9 @@ const CASE_DATE_EVENT_TYPE_OPTIONS = [
   "Award / Judgment Date",
   "Next Action Date",
 ] as const;
-const AUTO_PROGRESS_EVENT_TYPES = new Set([
-  "Consultation Date",
-  "Notice of Set Down",
-  "Hearing Date",
-  "Conciliation Date",
-  "Arbitration Date",
-  "Labour Court Date",
-  "Pre-Trial Conference",
+const NON_STAGE_TRIGGER_EVENT_TYPES = new Set([
+  "Deadline Date",
+  "Next Action Date",
 ]);
 
 const getSubtypeOptions = (caseType: string) => CASE_TYPE_SUBTYPE_OPTIONS[caseType as (typeof CASE_TYPE_OPTIONS)[number]] ?? [];
@@ -296,10 +318,30 @@ const createCaseDateEventDraft = (overrides?: Partial<CaseDateEvent>): CaseDateE
   eventType: String(overrides?.eventType || ""),
   eventLabel: String(overrides?.eventLabel || ""),
   eventDate: String(overrides?.eventDate || ""),
+  eventTime: String(overrides?.eventTime || ""),
   createdByName: String(overrides?.createdByName || ""),
   created_at: overrides?.created_at ?? null,
   updated_at: overrides?.updated_at ?? null,
 });
+const createCaseDocumentDraft = (overrides?: Partial<CaseDocument>): CaseDocument => ({
+  id: String(overrides?.id || ""),
+  case_file_id: overrides?.case_file_id,
+  documentName: String(overrides?.documentName || ""),
+  description: String(overrides?.description || ""),
+  fileUrl: String(overrides?.fileUrl || ""),
+  uploadedBy: String(overrides?.uploadedBy || ""),
+  created_at: overrides?.created_at ?? null,
+  updated_at: overrides?.updated_at ?? null,
+});
+const createBlankCaseDocumentForm = () => ({
+  description: "",
+  uploadedBy: "",
+});
+const sanitizeStorageFileName = (value: string) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9._-]/g, "");
 const createNewCasePrimaryDateEvent = (createdByName = "") =>
   createCaseDateEventDraft({
     createdByName,
@@ -327,6 +369,31 @@ const formatDisplayTime = (value: string | Date) => {
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 };
+const formatDisplayTime24WithMeridiem = (value?: string | Date | null) => {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const hours = String(value.getHours()).padStart(2, "0");
+    const minutes = String(value.getMinutes()).padStart(2, "0");
+    const meridiem = value.getHours() >= 12 ? "PM" : "AM";
+    return `${hours}:${minutes} ${meridiem}`;
+  }
+  const trimmed = String(value).trim();
+  const timeMatch = trimmed.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (timeMatch) {
+    const hours = Number(timeMatch[1]);
+    const meridiem = hours >= 12 ? "PM" : "AM";
+    return `${timeMatch[1]}:${timeMatch[2]} ${meridiem}`;
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    const hours = String(parsed.getHours()).padStart(2, "0");
+    const minutes = String(parsed.getMinutes()).padStart(2, "0");
+    const meridiem = parsed.getHours() >= 12 ? "PM" : "AM";
+    return `${hours}:${minutes} ${meridiem}`;
+  }
+  return trimmed;
+};
 const dateToday = () => new Date().toISOString().slice(0, 10);
 const resolveCaseDateEventLabel = (event: Pick<CaseDateEvent, "eventType" | "eventLabel">) =>
   String(event.eventLabel || "").trim() || String(event.eventType || "").trim() || "--";
@@ -353,11 +420,45 @@ const getCaseNextActionDate = (events: CaseDateEvent[]) => {
     .map((event) => event.eventDate)
     .sort((left, right) => right.localeCompare(left))[0] || "--";
 };
-const getFirstScheduledEventDate = (events: CaseDateEvent[]) =>
+const getUpcomingNextActionDate = (events: CaseDateEvent[]) => {
+  const today = dateToday();
+  return events
+    .filter((event) => event.eventType === "Next Action Date" && event.eventDate && event.eventDate >= today)
+    .map((event) => event.eventDate)
+    .sort((left, right) => left.localeCompare(right))[0] || "--";
+};
+const getScheduledCaseDateEvents = (events: CaseDateEvent[]) =>
   events
-    .filter((event) => AUTO_PROGRESS_EVENT_TYPES.has(String(event.eventType || "").trim()) && String(event.eventDate || "").trim())
-    .map((event) => String(event.eventDate || "").trim())
-    .sort((left, right) => left.localeCompare(right))[0] || "";
+    .filter((event) => {
+      const eventDate = String(event.eventDate || "").trim();
+      const eventType = String(event.eventType || "").trim();
+      return eventDate && !NON_STAGE_TRIGGER_EVENT_TYPES.has(eventType);
+    })
+    .map((event) => {
+      const eventDate = String(event.eventDate || "").trim();
+      const eventTime = String(event.eventTime || "").trim();
+      return {
+        eventDate,
+        eventTime,
+        sortKey: `${eventDate}T${eventTime || "00:00"}`,
+      };
+    })
+    .sort((left, right) => left.sortKey.localeCompare(right.sortKey));
+const getFirstScheduledEventDateTime = (events: CaseDateEvent[]) => getScheduledCaseDateEvents(events)[0] || null;
+const getUpcomingScheduledEventDateTime = (events: CaseDateEvent[]) => {
+  const now = Date.now();
+  return (
+    getScheduledCaseDateEvents(events).find((event) => {
+      const scheduledAt = new Date(`${event.eventDate}T${event.eventTime || "00:00"}:00`);
+      return !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() >= now;
+    }) || null
+  );
+};
+const getCasePrimaryNextDate = (events: CaseDateEvent[]) => {
+  const upcomingScheduledEvent = getUpcomingScheduledEventDateTime(events);
+  if (upcomingScheduledEvent) return upcomingScheduledEvent.eventDate;
+  return getUpcomingNextActionDate(events);
+};
 const normalizeCurrentStageValue = (value: unknown) => {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "scheduled") return "Scheduled";
@@ -366,13 +467,24 @@ const normalizeCurrentStageValue = (value: unknown) => {
   if (normalized === "in progress") return "In progress";
   return "";
 };
+const parseCaseDateEventTime = (timeValue: unknown, descriptionValue?: unknown) => {
+  const eventTime = String(timeValue ?? "").trim();
+  if (eventTime) return eventTime.slice(0, 5);
+  const description = String(descriptionValue ?? "").trim();
+  const match = description.match(/^Time:\s*(\d{2}:\d{2})$/i);
+  return match ? match[1] : "";
+};
 const resolveCurrentStage = (value: unknown, status: CaseFile["status"], events: CaseDateEvent[]) => {
   if (status === "Inactive") return "Finalised";
   const normalizedStage = normalizeCurrentStageValue(value) || "Awaiting Date";
-  if (normalizedStage === "Scheduled") {
-    const firstScheduledDate = getFirstScheduledEventDate(events);
-    if (firstScheduledDate && firstScheduledDate <= dateToday()) {
-      return "In progress";
+  const firstScheduledEvent = getFirstScheduledEventDateTime(events);
+  if (firstScheduledEvent) {
+    const scheduledAt = new Date(`${firstScheduledEvent.eventDate}T${firstScheduledEvent.eventTime || "00:00"}:00`);
+    if (!Number.isNaN(scheduledAt.getTime())) {
+      if (scheduledAt.getTime() <= Date.now()) {
+        return "In progress";
+      }
+      return "Scheduled";
     }
   }
   return normalizedStage;
@@ -405,6 +517,50 @@ const toMentionToken = (value: string) =>
     .trim()
     .replace(/\s+/g, "_")
     .replace(/[^A-Za-z0-9_.-]/g, "");
+const loadMentionRecipientsForTokens = async (tokens: string[], companyId: string): Promise<MentionOption[]> => {
+  const normalizedTokens = Array.from(new Set(tokens.map((token) => String(token || "").trim().toLowerCase()).filter(Boolean)));
+  if (normalizedTokens.length === 0) return [];
+
+  const recipients: MentionOption[] = [];
+  const seen = new Set<string>();
+  const addRecipient = (recipientUserId: string, label: string) => {
+    const safeRecipientUserId = String(recipientUserId || "").trim();
+    const safeLabel = String(label || "").trim();
+    const token = toMentionToken(safeLabel);
+    if (!safeRecipientUserId || !safeLabel || !token) return;
+    const normalizedToken = token.toLowerCase();
+    const dedupeKey = `${safeRecipientUserId}:${normalizedToken}`;
+    if (!normalizedTokens.includes(normalizedToken) || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    recipients.push({
+      id: safeRecipientUserId,
+      label: safeLabel,
+      token,
+      searchText: `${safeLabel} ${token}`.toLowerCase(),
+      recipientUserId: safeRecipientUserId,
+    });
+  };
+
+  const { data: masterProfiles } = await (supabase as any)
+    .from("profiles")
+    .select("id,auth_user_id,user_name,user_surname,user_email");
+  (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
+    const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+    addRecipient(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.user_email || "").trim());
+  });
+
+  const { data: subusers } = await (supabase as any)
+    .from("subusers")
+    .select("auth_user_id,name,surname,email,status");
+  (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+    const status = String(row?.status || "").trim().toLowerCase();
+    if (status && status !== "accepted" && status !== "active") return;
+    const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+    addRecipient(String(row?.auth_user_id || ""), fullName || String(row?.email || "").trim());
+  });
+
+  return recipients;
+};
 const renderTextWithMentions = (value: string) => {
   const escaped = escapeHtml(String(value || ""));
   return escaped
@@ -573,9 +729,30 @@ const saveCachedCaseFiles = (rows: CaseFile[]) => {
   }
 };
 
+const MatterDetailsTable = ({
+  headerColumns,
+  gridClassName,
+  children,
+  emptyState,
+  bodyMaxHeightClassName = "max-h-[300px]",
+}: MatterDetailsTableProps) => (
+  <>
+    <div className={cn("grid items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white", gridClassName)}>
+      {headerColumns.map((column, index) => (
+        <div key={index}>{column}</div>
+      ))}
+    </div>
+    <div className={cn(bodyMaxHeightClassName, "divide-y divide-slate-100 overflow-y-auto text-[11px]")}>
+      {children || emptyState}
+    </div>
+  </>
+);
+
 const Matters = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [caseFiles, setCaseFiles] = useState<CaseFile[]>(() => loadCachedCaseFiles());
   const [isCaseFilesLoading, setIsCaseFilesLoading] = useState(() => loadCachedCaseFiles().length === 0);
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
@@ -601,19 +778,27 @@ const Matters = () => {
   const [caseDateEventForm, setCaseDateEventForm] = useState({
     eventType: "",
     eventDate: "",
+    eventTime: "",
     createdByName: "",
   });
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
   const [caseNotesSearchQuery, setCaseNotesSearchQuery] = useState("");
   const [isCaseNotesLoading, setIsCaseNotesLoading] = useState(false);
+  const [isCaseDocumentsLoading, setIsCaseDocumentsLoading] = useState(false);
   const [isCaseNoteDialogOpen, setIsCaseNoteDialogOpen] = useState(false);
   const [isSavingCaseNote, setIsSavingCaseNote] = useState(false);
+  const [isCaseDocumentDialogOpen, setIsCaseDocumentDialogOpen] = useState(false);
+  const [isSavingCaseDocument, setIsSavingCaseDocument] = useState(false);
+  const [editingCaseDocument, setEditingCaseDocument] = useState<CaseDocument | null>(null);
   const [editingCaseNoteId, setEditingCaseNoteId] = useState<string | null>(null);
   const [isCaseNotePreviewOpen, setIsCaseNotePreviewOpen] = useState(false);
   const [caseNotePreviewContent, setCaseNotePreviewContent] = useState("");
   const [caseNotePreviewEditTag, setCaseNotePreviewEditTag] = useState("");
   const [caseNotePreviewUpdatedAt, setCaseNotePreviewUpdatedAt] = useState("");
+  const [caseDocumentForm, setCaseDocumentForm] = useState(createBlankCaseDocumentForm());
+  const [caseDocumentFile, setCaseDocumentFile] = useState<File | null>(null);
+  const [caseDocumentFileName, setCaseDocumentFileName] = useState("");
   const [caseNoteForm, setCaseNoteForm] = useState({
     noteDate: "",
     noteContent: "",
@@ -621,6 +806,8 @@ const Matters = () => {
   });
   const [caseNoteMentionRange, setCaseNoteMentionRange] = useState<{ query: string; start: number; end: number } | null>(null);
   const [caseNoteMentionPopupPosition, setCaseNoteMentionPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const [openingNoteMentionRange, setOpeningNoteMentionRange] = useState<{ query: string; start: number; end: number } | null>(null);
+  const [openingNoteMentionPopupPosition, setOpeningNoteMentionPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
   const [isNewCaseDialogOpen, setIsNewCaseDialogOpen] = useState(false);
   const [isClientSelectOpen, setIsClientSelectOpen] = useState(false);
@@ -628,8 +815,10 @@ const Matters = () => {
   const [newCaseForm, setNewCaseForm] = useState<NewCaseForm>(createBlankCaseForm());
   const [isSavingCase, setIsSavingCase] = useState(false);
   const caseDateEventDialogInputRef = useRef<HTMLInputElement | null>(null);
+  const caseDateEventTimeDialogInputRef = useRef<HTMLInputElement | null>(null);
   const newCaseDateEventInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const caseNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const openingNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
@@ -676,6 +865,30 @@ const Matters = () => {
     const profileFullName = `${profileName} ${profileSurname}`.trim();
     if (profileFullName) setCurrentUserDisplayName(profileFullName);
   }, [user?.id]);
+  const resolveCurrentCompanyId = useCallback(async () => {
+    if (!user?.id) return "";
+    let { data: subuserData } = await (supabase as any)
+      .from("subusers")
+      .select("company_id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    if (!subuserData) {
+      const email = String(user.email || "").trim().toLowerCase();
+      if (email) {
+        const fallback = await (supabase as any)
+          .from("subusers")
+          .select("company_id")
+          .eq("email", email)
+          .maybeSingle();
+        subuserData = fallback.data;
+      }
+    }
+    const subuserCompanyId = String((subuserData as any)?.company_id || "").trim();
+    if (subuserCompanyId) return subuserCompanyId;
+    const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+    if (metadataCompanyId) return metadataCompanyId;
+    return user.id;
+  }, [user]);
   const resolveCurrentUserName = useCallback(() => {
     if (currentUserDisplayName.trim()) return currentUserDisplayName.trim();
     const firstName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || (user as any)?.user_metadata?.given_name || "").trim();
@@ -721,11 +934,27 @@ const Matters = () => {
     setCaseNoteMentionPopupPosition(null);
     setEditingCaseNoteId(null);
   }, [resolveCurrentUserName]);
+  const syncCaseFileTimelineSummary = useCallback(
+    async (caseFileId: string, status: CaseFile["status"], currentStage: string, dateEvents: CaseDateEvent[]) => {
+      const resolvedStage = resolveCurrentStage(currentStage, status, dateEvents);
+      const nextDate = getCasePrimaryNextDate(dateEvents);
+      const { error } = await (supabase as any)
+        .from("case_files")
+        .update({
+          current_stage: resolvedStage,
+          next_date: nextDate !== "--" ? nextDate : null,
+        })
+        .eq("id", caseFileId);
+      if (error) throw error;
+      return { currentStage: resolvedStage, nextDate };
+    },
+    [],
+  );
   const fetchCaseDateEvents = useCallback(async (caseFileId: string) => {
     if (!caseFileId) return [];
     const { data, error } = await (supabase as any)
       .from("case_dates")
-      .select("id,case_file_id,date_type,date_value,event_label,created_by_name,created_at,updated_at")
+      .select("id,case_file_id,date_type,date_value,event_time,description,event_label,created_by_name,created_at,updated_at")
       .eq("case_file_id", caseFileId)
       .order("date_value", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false });
@@ -738,6 +967,7 @@ const Matters = () => {
           eventType: String(row?.date_type || ""),
           eventLabel: String(row?.event_label || ""),
           eventDate: String(row?.date_value || ""),
+          eventTime: parseCaseDateEventTime(row?.event_time, row?.description),
           createdByName: String(row?.created_by_name || ""),
           created_at: row?.created_at ? String(row.created_at) : null,
           updated_at: row?.updated_at ? String(row.updated_at) : null,
@@ -747,7 +977,7 @@ const Matters = () => {
     setSelectedCase((prev) => prev && prev.id === caseFileId ? {
       ...prev,
       dateEvents,
-      nextDate: getCaseNextActionDate(dateEvents),
+      nextDate: getCasePrimaryNextDate(dateEvents),
       currentStage: resolveCurrentStage(prev.currentStage, prev.status, dateEvents),
     } : prev);
     return dateEvents;
@@ -760,15 +990,15 @@ const Matters = () => {
         .from("case_notes")
         .select("*")
         .eq("case_file_id", caseFileId)
-        .order("note_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
       const notes = (data ?? []).map((row: any) => ({
         id: String(row.id || ""),
         case_file_id: String(row.case_file_id || caseFileId),
         note_date: String(row.note_date || row.created_at?.slice(0, 10) || ""),
-        note_content: String(row.note_content || row.note_body || ""),
+        note_content: String(row.note_content || ""),
         note_user_name: String(row.note_user_name || ""),
+        created_at: row.created_at ? String(row.created_at) : null,
         updated_at: row.updated_at ? String(row.updated_at) : null,
       }));
       setSelectedCase((prev) => (prev && prev.id === caseFileId ? { ...prev, notes } : prev));
@@ -780,6 +1010,37 @@ const Matters = () => {
       setIsCaseNotesLoading(false);
     }
   }, [toast, user?.id]);
+  const fetchCaseDocuments = useCallback(async (caseFileId: string) => {
+    if (!caseFileId) return [];
+    setIsCaseDocumentsLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("case_documents")
+        .select("id,case_file_id,document_name,description,file_url,uploaded_by,created_at,updated_at")
+        .eq("case_file_id", caseFileId)
+        .order("created_at", { ascending: false, nullsFirst: false });
+      if (error) throw error;
+      const documents = (data ?? []).map((row: any) =>
+        createCaseDocumentDraft({
+          id: String(row?.id || ""),
+          case_file_id: String(row?.case_file_id || caseFileId),
+          documentName: String(row?.document_name || ""),
+          description: String(row?.description || row?.document_name || ""),
+          fileUrl: String(row?.file_url || ""),
+          uploadedBy: String(row?.uploaded_by || ""),
+          created_at: row?.created_at ? String(row.created_at) : null,
+          updated_at: row?.updated_at ? String(row.updated_at) : null,
+        }),
+      );
+      setSelectedCase((prev) => (prev && prev.id === caseFileId ? { ...prev, documents } : prev));
+      return documents;
+    } catch (error: any) {
+      toast({ title: "Unable to load case documents", description: error?.message || "Load failed.", variant: "destructive" });
+      return [];
+    } finally {
+      setIsCaseDocumentsLoading(false);
+    }
+  }, [toast]);
 
   const fetchCaseFiles = useCallback(async () => {
     if (caseFiles.length === 0) {
@@ -804,7 +1065,7 @@ const Matters = () => {
     if (caseIds.length > 0) {
       const { data: dateRows } = await (supabase as any)
         .from("case_dates")
-        .select("id,case_file_id,date_type,date_value,event_label,created_by_name,created_at,updated_at")
+        .select("id,case_file_id,date_type,date_value,event_time,description,event_label,created_by_name,created_at,updated_at")
         .in("case_file_id", caseIds);
       (dateRows ?? []).forEach((d: any) => {
         const caseFileId = String(d?.case_file_id || "");
@@ -817,6 +1078,7 @@ const Matters = () => {
               eventType: String(d?.date_type || ""),
               eventLabel: String(d?.event_label || ""),
               eventDate: String(d?.date_value || ""),
+              eventTime: parseCaseDateEventTime(d?.event_time, d?.description),
               createdByName: String(d?.created_by_name || ""),
               created_at: d?.created_at ? String(d.created_at) : null,
               updated_at: d?.updated_at ? String(d.updated_at) : null,
@@ -835,17 +1097,19 @@ const Matters = () => {
     }
 
     const mapped: CaseFile[] = rows.map((row) => {
-      const nextDate = row.next_date ?? "--";
+      const persistedNextDate = row.next_date ?? "--";
       const deadlineDate = deadlineByCase.get(row.id) ?? "--";
+      const rawDateEvents = dateEventsByCase.get(String(row.id)) ?? [];
       const dateEvents = sortCaseDateEvents([
-        ...(dateEventsByCase.get(String(row.id)) ?? []),
-        ...(nextDate && nextDate !== "--"
-          ? [createCaseDateEventDraft({ id: `summary-next-${row.id}`, eventType: "Next Action Date", eventDate: nextDate })]
+        ...rawDateEvents,
+        ...(rawDateEvents.length === 0 && persistedNextDate && persistedNextDate !== "--"
+          ? [createCaseDateEventDraft({ id: `summary-next-${row.id}`, eventType: "Next Action Date", eventDate: persistedNextDate })]
           : []),
         ...(deadlineDate && deadlineDate !== "--"
           ? [createCaseDateEventDraft({ id: `summary-deadline-${row.id}`, eventType: "Deadline Date", eventDate: deadlineDate })]
           : []),
       ]);
+      const nextDate = getCasePrimaryNextDate(dateEvents);
       return {
         id: row.id,
         clientId: row.client_id ?? "",
@@ -854,7 +1118,7 @@ const Matters = () => {
         parties: row.parties ?? "--",
         caseType: row.case_type ?? "--",
         forumVenue: row.forum ?? "--",
-        nextDate,
+        nextDate: nextDate !== "--" ? nextDate : persistedNextDate,
         consultant: row.consultant ?? "--",
         status: normalizeStatus(row.status ?? "Active"),
         priority: normalizePriority(row.priority),
@@ -867,6 +1131,7 @@ const Matters = () => {
         shortDescription: row.short_description ?? "--",
         dateEvents,
         notes: [],
+        documents: [],
         tasks: [],
         outcome: { outcomeType: "Pending", outcomeDate: "--", result: "Awaiting outcome", amount: "R 0.00", closingNote: "--", closedBy: "--", closedDate: "--" },
       };
@@ -913,6 +1178,14 @@ const Matters = () => {
   useEffect(() => {
     void fetchCurrentUserDisplayName();
   }, [fetchCurrentUserDisplayName]);
+  useEffect(() => {
+    const openCaseId = String((location.state as { openCaseId?: unknown } | null)?.openCaseId ?? "").trim();
+    if (!openCaseId || caseFiles.length === 0) return;
+    const matchingCase = caseFiles.find((caseFile) => String(caseFile.id) === openCaseId);
+    if (!matchingCase) return;
+    setSelectedCase(matchingCase);
+    navigate("/case-files", { replace: true, state: {} });
+  }, [caseFiles, location.state, navigate]);
 
   useEffect(() => {
     const loadConsultants = async () => {
@@ -921,8 +1194,6 @@ const Matters = () => {
         return;
       }
 
-      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-      const companyId = metadataCompanyId || user.id;
       const options: ConsultantOption[] = [];
       const seen = new Set<string>();
 
@@ -950,12 +1221,14 @@ const Matters = () => {
       const { data: subusers } = await (supabase as any)
         .from("subusers")
         .select("id,name,surname,email,role,status,company_id")
-        .eq("company_id", companyId)
-        .eq("role", "Consultant")
-        .in("status", ["accepted", "active"])
-        .order("name", { ascending: true });
+        .order("name", { ascending: true, nullsFirst: false })
+        .order("surname", { ascending: true, nullsFirst: false });
 
       (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+        const role = String(row?.role || "").trim().toLowerCase();
+        const status = String(row?.status || "").trim().toLowerCase();
+        if (role !== "consultant") return;
+        if (status && status !== "accepted" && status !== "active") return;
         const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
         addOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
       });
@@ -964,15 +1237,18 @@ const Matters = () => {
     };
 
     void loadConsultants();
-  }, [user]);
+  }, [user?.id]);
   useEffect(() => {
     const loadMentionOptions = async () => {
       if (!user?.id) {
         setMentionOptions([]);
         return;
       }
-      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-      const companyId = metadataCompanyId || user.id;
+      const companyId = await resolveCurrentCompanyId();
+      if (!companyId) {
+        setMentionOptions([]);
+        return;
+      }
       const options: MentionOption[] = [];
       const seen = new Set<string>();
       const addMentionOption = (id: string, label: string) => {
@@ -982,36 +1258,39 @@ const Matters = () => {
         const dedupeKey = token.toLowerCase();
         if (seen.has(dedupeKey)) return;
         seen.add(dedupeKey);
+        const recipientUserId = String(id || token).trim();
         options.push({
-          id: String(id || token),
+          id: recipientUserId,
           label: safeLabel,
           token,
           searchText: `${safeLabel} ${token}`.toLowerCase(),
+          recipientUserId,
         });
       };
       const { data: masterProfiles } = await (supabase as any)
         .from("profiles")
-        .select("id,user_name,user_surname,user_email")
+        .select("id,auth_user_id,user_name,user_surname,user_email")
         .order("user_name", { ascending: true, nullsFirst: false })
         .order("user_surname", { ascending: true, nullsFirst: false });
       (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
         const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
-        addMentionOption(String(row?.id || fullName), fullName || String(row?.user_email || "").trim());
+        addMentionOption(String(row?.auth_user_id || row?.id || fullName), fullName || String(row?.user_email || "").trim());
       });
       const { data: subusers } = await (supabase as any)
         .from("subusers")
-        .select("id,name,surname,email,status,company_id")
-        .eq("company_id", companyId)
-        .in("status", ["accepted", "active"])
-        .order("name", { ascending: true });
+        .select("id,auth_user_id,name,surname,email,status,company_id")
+        .order("name", { ascending: true, nullsFirst: false })
+        .order("surname", { ascending: true, nullsFirst: false });
       (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+        const status = String(row?.status || "").trim().toLowerCase();
+        if (status && status !== "accepted" && status !== "active") return;
         const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
-        addMentionOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
+        addMentionOption(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.email || "").trim());
       });
       setMentionOptions(options);
     };
     void loadMentionOptions();
-  }, [user]);
+  }, [resolveCurrentCompanyId, user?.id]);
 
   useEffect(() => {
     void fetchCaseFiles();
@@ -1037,15 +1316,17 @@ const Matters = () => {
     const loadSelectedCaseDetails = async () => {
       if (!selectedCase?.id) return;
 
-      const [datesResponse, outcomeResponse] = await Promise.all([
+      const [datesResponse, outcomeResponse, documentsResponse] = await Promise.all([
         fetchCaseDateEvents(selectedCase.id),
         (supabase as any)
           .from("case_outcomes")
           .select("outcome_type,outcome_date,result,amount_awarded,amount_settled,closing_note,closed_by")
           .eq("case_file_id", selectedCase.id)
           .maybeSingle(),
+        fetchCaseDocuments(selectedCase.id),
       ]);
       const dateEvents = datesResponse;
+      const documents = documentsResponse;
 
       const outcomeRow = outcomeResponse.data;
       const resolvedAmountRaw = outcomeRow?.amount_awarded ?? outcomeRow?.amount_settled;
@@ -1058,24 +1339,25 @@ const Matters = () => {
         .from("case_notes")
         .select("*")
         .eq("case_file_id", selectedCase.id)
-        .order("note_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false, nullsFirst: false });
       if (noteError) throw noteError;
       const notes: CaseNote[] = (noteRows ?? []).map((row: any) => ({
         id: String(row.id || ""),
         case_file_id: String(row.case_file_id || selectedCase.id),
         note_date: String(row.note_date || row.created_at?.slice(0, 10) || ""),
-        note_content: String(row.note_content || row.note_body || ""),
+        note_content: String(row.note_content || ""),
         note_user_name: String(row.note_user_name || ""),
+        created_at: row.created_at ? String(row.created_at) : null,
         updated_at: row.updated_at ? String(row.updated_at) : null,
       }));
 
       const mergedCase: CaseFile = {
         ...selectedCase,
-        nextDate: getCaseNextActionDate(dateEvents),
+        nextDate: getCasePrimaryNextDate(dateEvents),
         currentStage: resolveCurrentStage(selectedCase.currentStage, selectedCase.status, dateEvents),
         dateEvents,
         notes,
+        documents,
         outcome: outcomeRow
           ? {
               outcomeType: String(outcomeRow.outcome_type || "").trim() || "Pending",
@@ -1096,7 +1378,7 @@ const Matters = () => {
     };
 
     void loadSelectedCaseDetails();
-  }, [fetchCaseDateEvents, selectedCase?.id]);
+  }, [fetchCaseDateEvents, fetchCaseDocuments, selectedCase?.id]);
 
   useEffect(() => {
     if (!isCaseNoteDialogOpen) return;
@@ -1120,6 +1402,7 @@ const Matters = () => {
     setCaseDateEventForm({
       eventType: "",
       eventDate: "",
+      eventTime: "",
       createdByName: resolveCurrentUserName(),
     });
     setEditingCaseDateEventId(null);
@@ -1129,6 +1412,7 @@ const Matters = () => {
     setCaseDateEventForm({
       eventType: "",
       eventDate: "",
+      eventTime: "",
       createdByName: resolveCurrentUserName(),
     });
     setIsCaseDateDialogOpen(true);
@@ -1138,29 +1422,33 @@ const Matters = () => {
     setCaseDateEventForm({
       eventType: event.eventType || resolveCaseDateEventLabel(event),
       eventDate: event.eventDate || "",
+      eventTime: event.eventTime || "",
       createdByName: event.createdByName || resolveCurrentUserName(),
     });
     setIsCaseDateDialogOpen(true);
   }, [resolveCurrentUserName]);
   const handleDeleteCaseDateEvent = useCallback(async (eventId: string) => {
     if (!selectedCase?.id) return;
+    if (!window.confirm("Are you sure you want to delete this event?")) return;
     try {
       const { error } = await (supabase as any).from("case_dates").delete().eq("id", eventId).eq("case_file_id", selectedCase.id);
       if (error) throw error;
-      await fetchCaseDateEvents(selectedCase.id);
+      const dateEvents = await fetchCaseDateEvents(selectedCase.id);
+      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents);
       await fetchCaseFiles();
       toast({ title: "Success", description: "Matter date deleted." });
     } catch (error: any) {
       toast({ title: "Error", description: error?.message ?? "Unable to delete matter date.", variant: "destructive" });
     }
-  }, [fetchCaseDateEvents, fetchCaseFiles, selectedCase?.id, toast]);
+  }, [fetchCaseDateEvents, fetchCaseFiles, selectedCase?.currentStage, selectedCase?.id, selectedCase?.status, syncCaseFileTimelineSummary, toast]);
   const handleSubmitCaseDateEventDialog = useCallback(async () => {
     if (!selectedCase?.id) return;
     const eventType = caseDateEventForm.eventType.trim();
     const eventDate = caseDateEventForm.eventDate.trim();
+    const eventTime = caseDateEventForm.eventTime.trim();
     const createdByName = caseDateEventForm.createdByName.trim() || resolveCurrentUserName();
-    if (!eventType || !eventDate) {
-      toast({ title: "Error", description: "Date and description are required.", variant: "destructive" });
+    if (!eventType || !eventDate || !eventTime) {
+      toast({ title: "Error", description: "Date, time and description are required.", variant: "destructive" });
       return;
     }
     try {
@@ -1171,7 +1459,9 @@ const Matters = () => {
             date_type: eventType,
             event_label: null,
             date_value: eventDate,
+            event_time: eventTime,
             created_by_name: createdByName,
+            description: null,
           })
           .eq("id", editingCaseDateEventId)
           .eq("case_file_id", selectedCase.id);
@@ -1182,12 +1472,14 @@ const Matters = () => {
           date_type: eventType,
           event_label: null,
           date_value: eventDate,
+          event_time: eventTime,
           created_by_name: createdByName,
           description: null,
         });
         if (error) throw error;
       }
-      await fetchCaseDateEvents(selectedCase.id);
+      const dateEvents = await fetchCaseDateEvents(selectedCase.id);
+      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents);
       await fetchCaseFiles();
       toast({ title: "Success", description: editingCaseDateEventId ? "Matter date updated." : "Matter date added." });
       setIsCaseDateDialogOpen(false);
@@ -1195,7 +1487,7 @@ const Matters = () => {
     } catch (error: any) {
       toast({ title: "Error", description: error?.message ?? "Unable to save matter date.", variant: "destructive" });
     }
-  }, [caseDateEventForm.createdByName, caseDateEventForm.eventDate, caseDateEventForm.eventType, editingCaseDateEventId, fetchCaseDateEvents, fetchCaseFiles, resetCaseDateEventForm, resolveCurrentUserName, selectedCase?.id, toast]);
+  }, [caseDateEventForm.createdByName, caseDateEventForm.eventDate, caseDateEventForm.eventTime, caseDateEventForm.eventType, editingCaseDateEventId, fetchCaseDateEvents, fetchCaseFiles, resetCaseDateEventForm, resolveCurrentUserName, selectedCase?.currentStage, selectedCase?.id, selectedCase?.status, syncCaseFileTimelineSummary, toast]);
 
   const handleCancelCaseEdit = () => {
     if (!selectedCase) return;
@@ -1299,6 +1591,7 @@ const Matters = () => {
         shortDescription: activeCaseTab === "overview" ? (caseEditForm.shortDescription.trim() || "--") : selectedCase.shortDescription,
         nextDate: nextActionDate,
         dateEvents: selectedCase.dateEvents,
+        documents: selectedCase.documents,
         outcome: activeCaseTab === "outcome"
           ? {
               outcomeType: caseEditForm.outcome.outcomeType.trim() || "Pending",
@@ -1360,9 +1653,12 @@ const Matters = () => {
     newCaseForm.shortDescription.trim(),
   );
   const primaryNewCaseDateEvent = newCaseForm.dateEvents[0] ?? createNewCasePrimaryDateEvent(resolveCurrentUserName());
+  const [primaryNewCaseEventHour = "", primaryNewCaseEventMinute = ""] = String(primaryNewCaseDateEvent.eventTime || "").split(":");
+  const primaryNewCaseEventMeridiem = primaryNewCaseEventHour ? (Number.parseInt(primaryNewCaseEventHour, 10) >= 12 ? "PM" : "AM") : "";
   const isStepTwoComplete = Boolean(
     newCaseForm.forumVenue.trim() &&
     primaryNewCaseDateEvent.eventDate.trim() &&
+    String(primaryNewCaseDateEvent.eventTime || "").trim() &&
     primaryNewCaseDateEvent.eventType.trim(),
   );
   const isStepThreeComplete = Boolean(
@@ -1463,6 +1759,7 @@ const Matters = () => {
 
   const handleDeleteSelectedCases = async () => {
     if (selectedCaseIds.size === 0) return;
+    if (!window.confirm("Are you sure you want to delete the selected matter(s)?")) return;
     const ids = Array.from(selectedCaseIds);
     const { error } = await (supabase as any).from("case_files").delete().in("id", ids);
     if (error) {
@@ -1502,8 +1799,15 @@ const Matters = () => {
     setIsSavingCase(true);
     try {
       const fileNumber = getNextFileNumber(newCaseForm.caseType.trim());
-      const nextActionDateForNewCase = primaryNewCaseDateEvent.eventDate.trim() || getCaseNextActionDate(newCaseForm.dateEvents);
-      const resolvedNewCaseStage = resolveCurrentStage("Scheduled", newCaseForm.status, newCaseForm.dateEvents);
+      const normalizedNewCaseDateEvents = newCaseForm.dateEvents.map((event) => ({
+        ...event,
+        eventType: String(event.eventType || "").trim(),
+        eventDate: String(event.eventDate || "").trim(),
+        eventTime: String(event.eventTime || "").trim(),
+        createdByName: String(event.createdByName || "").trim() || resolveCurrentUserName(),
+      }));
+      const nextActionDateForNewCase = getCasePrimaryNextDate(normalizedNewCaseDateEvents);
+      const resolvedNewCaseStage = resolveCurrentStage("Scheduled", newCaseForm.status, normalizedNewCaseDateEvents);
       const { data: insertedCase, error: caseError } = await (supabase as any)
         .from("case_files")
         .insert({
@@ -1530,23 +1834,18 @@ const Matters = () => {
       const caseFileId = insertedCase?.id;
       if (!caseFileId) throw new Error("Case file insert did not return an id.");
 
-      const validNewCaseDateEvents = newCaseForm.dateEvents
-        .map((event) => ({
-          ...event,
-          eventType: String(event.eventType || "").trim(),
-          eventDate: String(event.eventDate || "").trim(),
-          createdByName: String(event.createdByName || "").trim() || resolveCurrentUserName(),
-        }))
+      const validNewCaseDateEvents = normalizedNewCaseDateEvents
         .filter((event) => event.eventType || event.eventDate);
-      const hasIncompleteNewCaseDateEvent = validNewCaseDateEvents.some((event) => !event.eventType || !event.eventDate);
+      const hasIncompleteNewCaseDateEvent = validNewCaseDateEvents.some((event) => !event.eventType || !event.eventDate || !event.eventTime);
       if (hasIncompleteNewCaseDateEvent) {
-        throw new Error("Each matter date must include a date and description.");
+        throw new Error("Each matter date must include a date, time and description.");
       }
 
       const dateInserts: Array<{
         case_file_id: string;
         date_type: string;
         date_value: string;
+        event_time?: string | null;
         description: string | null;
         event_label: string | null;
         created_by_name: string;
@@ -1557,6 +1856,7 @@ const Matters = () => {
           case_file_id: caseFileId,
           date_type: event.eventType,
           date_value: event.eventDate,
+          event_time: event.eventTime || null,
           description: null,
           event_label: null,
           created_by_name: event.createdByName,
@@ -1566,10 +1866,11 @@ const Matters = () => {
           dateInserts.push({
             case_file_id: caseFileId,
             date_type: "Next Action Date",
-            date_value: newCaseForm.nextDate,
-            description: "Auto-created from New Case File form",
-            event_label: null,
-            created_by_name: actorName,
+          date_value: newCaseForm.nextDate,
+          event_time: null,
+          description: "Auto-created from New Case File form",
+          event_label: null,
+          created_by_name: actorName,
           });
         }
         if (newCaseForm.deadlineDate) {
@@ -1577,6 +1878,7 @@ const Matters = () => {
           case_file_id: caseFileId,
           date_type: "Deadline Date",
           date_value: newCaseForm.deadlineDate,
+          event_time: null,
           description: "Auto-created from New Case File form",
           event_label: null,
           created_by_name: actorName,
@@ -1594,14 +1896,14 @@ const Matters = () => {
         const creatorName = resolveCurrentUserName();
         const { data: existingCaseNotes, error: existingCaseNotesError } = await (supabase as any)
           .from("case_notes")
-          .select("id, note_content, note_body, note_user_name, added_by")
+          .select("id, note_content, note_user_name")
           .eq("case_file_id", caseFileId)
           .order("created_at", { ascending: true, nullsFirst: false });
         if (existingCaseNotesError) throw existingCaseNotesError;
 
         const autoCreatedShortDescriptionNote = (existingCaseNotes ?? []).find((row: any) => {
-          const noteContent = String(row?.note_content || row?.note_body || "").trim();
-          const noteUserName = String(row?.note_user_name || row?.added_by || "").trim();
+          const noteContent = String(row?.note_content || "").trim();
+          const noteUserName = String(row?.note_user_name || "").trim();
           return noteContent === shortDescription && !noteUserName;
         });
 
@@ -1609,14 +1911,9 @@ const Matters = () => {
           const { error: noteUpdateError } = await (supabase as any)
             .from("case_notes")
             .update({
-              note_type: "General Update",
               note_date: dateToday(),
-              note_body: openingNote,
               note_content: openingNote,
-              added_by: creatorName,
               note_user_name: creatorName,
-              follow_up_required: false,
-              follow_up_date: null,
             })
             .eq("id", autoCreatedShortDescriptionNote.id)
             .eq("case_file_id", caseFileId);
@@ -1624,14 +1921,9 @@ const Matters = () => {
         } else {
           const { error: noteError } = await (supabase as any).from("case_notes").insert({
             case_file_id: caseFileId,
-            note_type: "General Update",
             note_date: dateToday(),
-            note_body: openingNote,
             note_content: openingNote,
-            added_by: creatorName,
             note_user_name: creatorName,
-            follow_up_required: false,
-            follow_up_date: null,
           });
           if (noteError) throw noteError;
         }
@@ -1651,9 +1943,9 @@ const Matters = () => {
 
   const newCaseDropdownItemStyle =
     "cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
-  const newCaseDropdownContentStyle = "w-44 border-slate-200 p-1";
+  const newCaseDropdownContentStyle = "w-44 rounded-[4px] border-slate-200 p-1";
   const newCaseButtonStyle =
-    "h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b]";
+    "h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
   const modalInputClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
   const modalSelectClass =
@@ -1708,9 +2000,16 @@ const Matters = () => {
     const currentUserToken = toMentionToken(resolveCurrentUserName()).toLowerCase();
     return mentionOptions
       .filter((option) => option.token.toLowerCase() !== currentUserToken)
-      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery))
-      .slice(0, 8);
+      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery));
   }, [caseNoteMentionRange, mentionOptions, resolveCurrentUserName]);
+  const filteredOpeningNoteMentionOptions = useMemo(() => {
+    if (!openingNoteMentionRange) return [];
+    const normalizedQuery = openingNoteMentionRange.query.replace(/^@/, "").trim().toLowerCase();
+    const currentUserToken = toMentionToken(resolveCurrentUserName()).toLowerCase();
+    return mentionOptions
+      .filter((option) => option.token.toLowerCase() !== currentUserToken)
+      .filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery));
+  }, [mentionOptions, openingNoteMentionRange, resolveCurrentUserName]);
 
   const syncCaseNoteMentionRange = useCallback((content: string, caretIndex: number) => {
     const nextRange = getActiveMentionMatch(content, caretIndex);
@@ -1729,6 +2028,23 @@ const Matters = () => {
     setCaseNoteForm((prev) => ({ ...prev, noteContent: value }));
     syncCaseNoteMentionRange(value, caretIndex);
   }, [syncCaseNoteMentionRange]);
+  const syncOpeningNoteMentionRange = useCallback((content: string, caretIndex: number) => {
+    const nextRange = getActiveMentionMatch(content, caretIndex);
+    setOpeningNoteMentionRange(nextRange);
+    if (!nextRange || !openingNoteTextareaRef.current) {
+      setOpeningNoteMentionPopupPosition(null);
+      return;
+    }
+    const coords = getTextareaMentionPopupPosition(openingNoteTextareaRef.current, caretIndex);
+    setOpeningNoteMentionPopupPosition({
+      top: Math.max(8, coords.top + 28),
+      left: Math.max(8, Math.min(coords.left + 12, Math.max(8, openingNoteTextareaRef.current.clientWidth - 220))),
+    });
+  }, []);
+  const handleOpeningNoteContentChange = useCallback((value: string, caretIndex: number) => {
+    setNewCaseForm((prev) => ({ ...prev, openingNote: value }));
+    syncOpeningNoteMentionRange(value, caretIndex);
+  }, [syncOpeningNoteMentionRange]);
   const insertCaseNoteMention = useCallback((option: MentionOption) => {
     const textarea = caseNoteTextareaRef.current;
     const range = caseNoteMentionRange;
@@ -1745,6 +2061,22 @@ const Matters = () => {
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, [caseNoteForm.noteContent, caseNoteMentionRange]);
+  const insertOpeningNoteMention = useCallback((option: MentionOption) => {
+    const textarea = openingNoteTextareaRef.current;
+    const range = openingNoteMentionRange;
+    if (!textarea || !range) return;
+    const value = newCaseForm.openingNote;
+    const mentionText = `@${option.token}`;
+    const nextContent = `${value.slice(0, range.start)}${mentionText} ${value.slice(range.end)}`;
+    const nextCaret = range.start + mentionText.length + 1;
+    setNewCaseForm((prev) => ({ ...prev, openingNote: nextContent }));
+    setOpeningNoteMentionRange(null);
+    setOpeningNoteMentionPopupPosition(null);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, [newCaseForm.openingNote, openingNoteMentionRange]);
 
   const openAddCaseNoteDialog = () => {
     resetCaseNoteForm();
@@ -1788,6 +2120,7 @@ const Matters = () => {
     }
     setIsSavingCaseNote(true);
     try {
+      let savedCaseNoteId = String(editingCaseNoteId || "").trim();
       if (editingCaseNoteId) {
         const baseContent = noteContent.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim();
         const now = new Date();
@@ -1796,31 +2129,55 @@ const Matters = () => {
         const { error } = await (supabase as any)
           .from("case_notes")
           .update({
-            note_type: "General Update",
-            note_body: updatedContent,
             note_content: updatedContent,
-            added_by: noteUserName,
             note_user_name: noteUserName,
             note_date: noteDate,
-            follow_up_required: false,
-            follow_up_date: null,
           })
           .eq("id", editingCaseNoteId)
           .eq("case_file_id", selectedCase.id);
         if (error) throw error;
       } else {
-        const { error } = await (supabase as any).from("case_notes").insert({
-          case_file_id: selectedCase.id,
-          note_type: "General Update",
-          note_date: noteDate,
-          note_body: noteContent,
-          note_content: noteContent,
-          added_by: noteUserName,
-          note_user_name: noteUserName,
-          follow_up_required: false,
-          follow_up_date: null,
-        });
+        const { data: insertedCaseNote, error } = await (supabase as any)
+          .from("case_notes")
+          .insert({
+            case_file_id: selectedCase.id,
+            note_date: noteDate,
+            note_content: noteContent,
+            note_user_name: noteUserName,
+          })
+          .select("id")
+          .single();
         if (error) throw error;
+        savedCaseNoteId = String(insertedCaseNote?.id || "").trim();
+      }
+
+      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+      const companyId = metadataCompanyId || user.id;
+      const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
+      const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
+      if (savedCaseNoteId && mentionRecipients.length > 0) {
+        const notificationRows = mentionRecipients.map((recipient) => ({
+          recipient_user_id: recipient.recipientUserId,
+          actor_user_id: user.id,
+          actor_name: noteUserName,
+          notification_type: "mention",
+          title: "New mention",
+          body: `${noteUserName} has tagged you in a matter/client file.`,
+          source_table: "case_notes",
+          source_record_id: savedCaseNoteId,
+          source_parent_id: selectedCase.id,
+          metadata: {
+            client_name: selectedCase.client,
+            matter_type: selectedCase.caseType,
+            note_preview: noteContent.slice(0, 200),
+          },
+        }));
+        const { error: notificationError } = await (supabase as any)
+          .from("notifications")
+          .insert(notificationRows);
+        if (notificationError) {
+          console.error("Unable to save mention notifications for case note", notificationError);
+        }
       }
       setIsCaseNoteDialogOpen(false);
       resetCaseNoteForm();
@@ -1842,7 +2199,7 @@ const Matters = () => {
       });
       return;
     }
-    if (!window.confirm("Delete this note?")) return;
+    if (!window.confirm("Are you sure you want to delete this note?")) return;
     try {
       const { error } = await (supabase as any)
         .from("case_notes")
@@ -1856,6 +2213,130 @@ const Matters = () => {
       toast({ title: "Unable to delete case note", description: error?.message || "Delete failed.", variant: "destructive" });
     }
   };
+  const resetCaseDocumentForm = useCallback(() => {
+    setCaseDocumentForm({
+      ...createBlankCaseDocumentForm(),
+      uploadedBy: resolveCurrentUserName(),
+    });
+    setCaseDocumentFile(null);
+    setCaseDocumentFileName("");
+    setEditingCaseDocument(null);
+  }, [resolveCurrentUserName]);
+  const openAddCaseDocumentDialog = useCallback(() => {
+    resetCaseDocumentForm();
+    setIsCaseDocumentDialogOpen(true);
+  }, [resetCaseDocumentForm]);
+  const openEditCaseDocumentDialog = useCallback((document: CaseDocument) => {
+    setEditingCaseDocument(document);
+    setCaseDocumentForm({
+      description: document.description,
+      uploadedBy: document.uploadedBy || resolveCurrentUserName(),
+    });
+    setCaseDocumentFile(null);
+    setCaseDocumentFileName(document.documentName);
+    setIsCaseDocumentDialogOpen(true);
+  }, [resolveCurrentUserName]);
+  const handleCaseDocumentFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setCaseDocumentFile(file);
+    setCaseDocumentFileName(file?.name || "");
+  }, []);
+  const handleViewCaseDocument = useCallback(async (document: CaseDocument) => {
+    const filePath = String(document.fileUrl || "").trim();
+    if (!filePath) {
+      toast({ title: "Unable to open document", description: "This document does not have a stored file path.", variant: "destructive" });
+      return;
+    }
+    const { data, error } = await supabase.storage.from(CASE_DOCUMENTS_BUCKET).createSignedUrl(filePath, 300);
+    if (error || !data?.signedUrl) {
+      toast({ title: "Unable to open document", description: error?.message || "Signed URL failed.", variant: "destructive" });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }, [toast]);
+  const handleSaveCaseDocument = useCallback(async () => {
+    if (!selectedCase?.id || !user?.id) return;
+    const description = caseDocumentForm.description.trim();
+    const uploadedBy = caseDocumentForm.uploadedBy.trim() || resolveCurrentUserName();
+    if (!description) {
+      toast({ title: "Missing fields", description: "Description is required.", variant: "destructive" });
+      return;
+    }
+    if (!editingCaseDocument && !caseDocumentFile) {
+      toast({ title: "Missing fields", description: "Please upload a document.", variant: "destructive" });
+      return;
+    }
+    setIsSavingCaseDocument(true);
+    try {
+      let nextFilePath = editingCaseDocument?.fileUrl || "";
+      let nextDocumentName = editingCaseDocument?.documentName || "";
+      if (caseDocumentFile) {
+        const safeName = sanitizeStorageFileName(caseDocumentFile.name) || `document-${Date.now()}`;
+        nextFilePath = `${selectedCase.id}/${Date.now()}-${safeName}`;
+        nextDocumentName = caseDocumentFile.name;
+        const { error: uploadError } = await supabase.storage.from(CASE_DOCUMENTS_BUCKET).upload(nextFilePath, caseDocumentFile, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: caseDocumentFile.type || "application/octet-stream",
+        });
+        if (uploadError) throw uploadError;
+      }
+      if (editingCaseDocument?.id) {
+        const { error } = await (supabase as any)
+          .from("case_documents")
+          .update({
+            description,
+            document_name: nextDocumentName,
+            file_url: nextFilePath,
+            uploaded_by: uploadedBy,
+            document_category: null,
+          })
+          .eq("id", editingCaseDocument.id)
+          .eq("case_file_id", selectedCase.id);
+        if (error) throw error;
+        if (caseDocumentFile && editingCaseDocument.fileUrl && editingCaseDocument.fileUrl !== nextFilePath) {
+          await supabase.storage.from(CASE_DOCUMENTS_BUCKET).remove([editingCaseDocument.fileUrl]);
+        }
+      } else {
+        const { error } = await (supabase as any).from("case_documents").insert({
+          case_file_id: selectedCase.id,
+          description,
+          document_name: nextDocumentName,
+          file_url: nextFilePath,
+          uploaded_by: uploadedBy,
+          document_category: null,
+        });
+        if (error) throw error;
+      }
+      await fetchCaseDocuments(selectedCase.id);
+      setIsCaseDocumentDialogOpen(false);
+      resetCaseDocumentForm();
+      toast({ title: "Success", description: editingCaseDocument ? "Document updated." : "Document uploaded." });
+    } catch (error: any) {
+      toast({ title: "Unable to save document", description: error?.message || "Save failed.", variant: "destructive" });
+    } finally {
+      setIsSavingCaseDocument(false);
+    }
+  }, [caseDocumentFile, caseDocumentForm.description, caseDocumentForm.uploadedBy, editingCaseDocument, fetchCaseDocuments, resetCaseDocumentForm, resolveCurrentUserName, selectedCase?.id, toast, user?.id]);
+  const handleDeleteCaseDocument = useCallback(async (document: CaseDocument) => {
+    if (!selectedCase?.id) return;
+    if (!window.confirm("Are you sure you want to delete this document?")) return;
+    try {
+      const { error } = await (supabase as any)
+        .from("case_documents")
+        .delete()
+        .eq("id", document.id)
+        .eq("case_file_id", selectedCase.id);
+      if (error) throw error;
+      if (document.fileUrl) {
+        await supabase.storage.from(CASE_DOCUMENTS_BUCKET).remove([document.fileUrl]);
+      }
+      await fetchCaseDocuments(selectedCase.id);
+      toast({ title: "Document deleted" });
+    } catch (error: any) {
+      toast({ title: "Unable to delete document", description: error?.message || "Delete failed.", variant: "destructive" });
+    }
+  }, [fetchCaseDocuments, selectedCase?.id, toast]);
 
   return (
     <DashboardLayout>
@@ -1902,14 +2383,14 @@ const Matters = () => {
                             Delete ({selectedCaseIds.size})
                           </Button>
                         ) : null}
-                        <Popover open={isFiltersPanelOpen} onOpenChange={(open) => { setIsFiltersPanelOpen(open); if (!open) setExpandedFilterSection(null); }}>
-                          <PopoverTrigger asChild>
-                            <Button type="button" variant="outline" className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white data-[state=open]:rounded-b-none data-[state=open]:border-[#3eca44]">
+                        <DropdownMenu open={isFiltersPanelOpen} onOpenChange={(open) => { setIsFiltersPanelOpen(open); if (!open) setExpandedFilterSection(null); }}>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]">
                               <span>Filter</span>
                               <ChevronDown className={`h-4 w-4 transition-transform ${isFiltersPanelOpen ? "rotate-180" : ""}`} />
                             </Button>
-                          </PopoverTrigger>
-                          <PopoverContent side="bottom" align="end" sideOffset={0} className="w-[260px] rounded-t-none border border-slate-200 border-t-0 bg-white p-0 shadow-lg">
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
                             <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
                               <span className="text-[12px] font-semibold text-slate-800">Filter</span>
                               <button type="button" className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline" onClick={() => { setStatusFilter("all"); setCaseTypeFilter("all"); setConsultantFilter("all"); setNextDateFilter("all"); setIsFiltersPanelOpen(false); }}>
@@ -1958,8 +2439,8 @@ const Matters = () => {
                                 </div>
                               ))}
                             </div>
-                          </PopoverContent>
-                        </Popover>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <DropdownMenu open={isNewCaseMenuOpen} onOpenChange={setIsNewCaseMenuOpen}>
                           <DropdownMenuTrigger asChild>
                             <Button className={newCaseButtonStyle}>
@@ -2258,6 +2739,59 @@ const Matters = () => {
                         />
                       </div>
                       <div className="space-y-1">
+                        <p className="text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></p>
+                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                          <Select
+                            value={primaryNewCaseEventHour || undefined}
+                            onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${value}:${primaryNewCaseEventMinute || "00"}` })}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                modalSelectClass,
+                                addModalDropdownToneClass,
+                                "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                              )}
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                <SelectValue placeholder="Hour" />
+                              </div>
+                            </SelectTrigger>
+                            <SelectContent className="text-[10px]">
+                              {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
+                                <SelectItem key={hour} value={hour} className="text-[10px]">
+                                  {hour}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={primaryNewCaseEventMinute || undefined}
+                            onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${primaryNewCaseEventHour || "00"}:${value}` })}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                modalSelectClass,
+                                addModalDropdownToneClass,
+                                "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                              )}
+                            >
+                              <SelectValue placeholder="Min" />
+                            </SelectTrigger>
+                            <SelectContent className="text-[10px]">
+                              {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
+                                <SelectItem key={minute} value={minute} className="text-[10px]">
+                                  {minute}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                            {primaryNewCaseEventMeridiem || "AM/PM"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
                         <p className="text-[10px] font-semibold text-slate-400">Event Description <span className="text-red-600">*</span></p>
                         <Input
                           className={modalInputClass}
@@ -2282,7 +2816,77 @@ const Matters = () => {
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-semibold text-slate-400">Opening Note <span className="text-red-600">*</span></p>
-                        <Textarea className={modalTextareaClass} value={newCaseForm.openingNote} onChange={(e) => setNewCaseForm((p) => ({ ...p, openingNote: e.target.value }))} placeholder="Please type the first file note or instruction received" />
+                        <div className="relative">
+                          <div
+                            className="pointer-events-none min-h-[96px] whitespace-pre-wrap break-words rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium leading-5 text-slate-900"
+                            aria-hidden="true"
+                            dangerouslySetInnerHTML={{ __html: newCaseForm.openingNote ? renderTextWithMentions(newCaseForm.openingNote) : '<span class="text-slate-400">Please type the first file note or instruction received. Use @ to tag a user.</span>' }}
+                          />
+                          <textarea
+                            ref={openingNoteTextareaRef}
+                            className="absolute inset-0 min-h-[96px] w-full resize-none rounded border border-slate-300 bg-transparent px-3 py-2 text-[11px] font-medium leading-5 text-transparent caret-black shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
+                            value={newCaseForm.openingNote}
+                            onChange={(e) => handleOpeningNoteContentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                            onClick={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                            onKeyUp={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                            onSelect={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Backspace") {
+                                const textarea = e.currentTarget;
+                                const selectionStart = textarea.selectionStart ?? 0;
+                                const selectionEnd = textarea.selectionEnd ?? selectionStart;
+                                if (selectionStart === selectionEnd) {
+                                  const mentionRange = getMentionTokenRangeAtCaret(textarea.value, selectionStart);
+                                  if (mentionRange) {
+                                    e.preventDefault();
+                                    const trailingSpaceLength = textarea.value.slice(mentionRange.end, mentionRange.end + 1) === " " ? 1 : 0;
+                                    const nextContent = `${textarea.value.slice(0, mentionRange.start)}${textarea.value.slice(mentionRange.end + trailingSpaceLength)}`;
+                                    setNewCaseForm((prev) => ({ ...prev, openingNote: nextContent }));
+                                    setOpeningNoteMentionRange(null);
+                                    setOpeningNoteMentionPopupPosition(null);
+                                    requestAnimationFrame(() => {
+                                      textarea.focus();
+                                      textarea.setSelectionRange(mentionRange.start, mentionRange.start);
+                                    });
+                                    return;
+                                  }
+                                }
+                              }
+                              if (openingNoteMentionRange && filteredOpeningNoteMentionOptions.length > 0 && (e.key === "Enter" || e.key === "Tab")) {
+                                e.preventDefault();
+                                insertOpeningNoteMention(filteredOpeningNoteMentionOptions[0]);
+                              }
+                              if (e.key === "Escape") {
+                                setOpeningNoteMentionRange(null);
+                                setOpeningNoteMentionPopupPosition(null);
+                              }
+                            }}
+                          />
+                          {openingNoteMentionRange && openingNoteMentionPopupPosition ? (
+                            <div
+                              className="absolute z-20 max-h-[220px] w-[220px] overflow-y-auto rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
+                              style={{ top: openingNoteMentionPopupPosition.top, left: openingNoteMentionPopupPosition.left }}
+                            >
+                              {filteredOpeningNoteMentionOptions.length === 0 ? (
+                                <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-300">No matching users.</div>
+                              ) : (
+                                filteredOpeningNoteMentionOptions.map((option) => (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[10px] font-semibold text-slate-300 hover:bg-white/10 hover:text-slate-100"
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      insertOpeningNoteMention(option);
+                                    }}
+                                  >
+                                    <span>@{option.token}</span>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </>
                   )}
@@ -2428,58 +3032,57 @@ const Matters = () => {
                         </div>
                       ) : <div className="space-y-3 text-xs"><div className={caseFileCardClass}><p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Case Overview</p><div className="mt-2 space-y-2">{overviewReadOnlyRows.map((row, rowIndex) => <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">{row.map(([label, value]) => <span key={String(label)} className="contents"><p className="text-[10px] font-medium text-slate-500">{label}</p>{label === "Client" ? <Tooltip><TooltipTrigger asChild><p className="text-[11px] font-medium text-slate-900 transition-colors hover:text-[#2f9f35]">{value}</p></TooltipTrigger><TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[9.84px] shadow-none">{selectedCaseClientFullName}</TooltipContent></Tooltip> : <p className="text-[11px] font-medium text-slate-900">{value}</p>}</span>)}</div>)}{isVisibleReadOnlyValue(overviewShortDescription) ? <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-start md:gap-x-6"><p className="text-[10px] font-medium text-slate-500">Short Description</p><p className="text-[11px] font-medium text-slate-900 md:col-span-3">{overviewShortDescription}</p></div> : null}</div></div></div>}
                     </TabsContent>
-                    <TabsContent value="dates" className="mt-4">
-                      <div className="space-y-3 text-xs">
+                    <TabsContent value="dates" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-0 text-xs">
                         <div className="mb-3 flex items-center justify-end gap-2">
                           <Button
                             type="button"
-                            className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                            className="h-8 w-[110px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
                             onClick={openAddCaseDateEventDialog}
                           >
-                            New Date
+                            Add Date
                           </Button>
                         </div>
-                        <div className="grid grid-cols-[0.8fr_1.8fr_1fr_0.6fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
-                          <div>Date</div>
-                          <div>Description</div>
-                          <div>Created By</div>
-                          <div>Actions</div>
-                        </div>
-                        <div className="max-h-[320px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
-                          {sortedSelectedCaseDateEvents.length === 0 ? (
-                            <div className="px-2 py-3 text-[11px] text-slate-500">No case dates recorded yet.</div>
-                          ) : (
-                            sortedSelectedCaseDateEvents.map((event) => (
-                              <div key={event.id} className="grid grid-cols-[0.8fr_1.8fr_1fr_0.6fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
-                                <div className="min-w-0 text-slate-700">{formatDisplayDate(event.eventDate)}</div>
-                                <div className="min-w-0 font-medium text-slate-900">{resolveCaseDateEventLabel(event)}</div>
-                                <div className="min-w-0 truncate text-slate-700">{event.createdByName || "--"}</div>
-                                <div className="min-w-0 flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="text-slate-500 hover:text-[#2f9f35]"
-                                    onClick={() => openEditCaseDateEventDialog(event)}
-                                    aria-label="Edit date"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="text-slate-500 hover:text-rose-600"
-                                    onClick={() => void handleDeleteCaseDateEvent(event.id)}
-                                    aria-label="Delete date"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
+                        <MatterDetailsTable
+                          headerColumns={["Date", "Time", "Description", "Created By", "Actions"]}
+                          gridClassName={MATTER_DETAILS_TABLE_GRID}
+                          emptyState={<div className="px-2 py-3 text-[11px] text-slate-500">No case dates recorded yet.</div>}
+                        >
+                          {sortedSelectedCaseDateEvents.map((event) => (
+                            <div key={event.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(event.eventDate)}</div>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(event.eventTime)}</div>
+                              <div className="flex min-w-0 items-center font-medium text-slate-900">{resolveCaseDateEventLabel(event)}</div>
+                              <div className="flex min-w-0 items-center truncate">
+                                <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                  {event.createdByName || "--"}
+                                </Badge>
                               </div>
-                            ))
-                          )}
-                        </div>
+                              <div className="min-w-0 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="text-slate-500 hover:text-[#2f9f35]"
+                                  onClick={() => openEditCaseDateEventDialog(event)}
+                                  aria-label="Edit date"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-slate-500 hover:text-rose-600"
+                                  onClick={() => void handleDeleteCaseDateEvent(event.id)}
+                                  aria-label="Delete date"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </MatterDetailsTable>
                       </div>
                     </TabsContent>
-                    <TabsContent value="notes" className="mt-6 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-0">
+                    <TabsContent value="notes" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-0 text-xs">
                         {isCaseNotesLoading ? (
                           <div className="px-2 py-3 text-[11px] text-slate-500">Loading notes...</div>
                         ) : (selectedCase.notes ?? []).length === 0 ? (
@@ -2519,66 +3122,121 @@ const Matters = () => {
                               </div>
                               <Button
                                 type="button"
-                                className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                                className="h-8 w-[110px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
                                 onClick={openAddCaseNoteDialog}
                               >
-                                New Note
+                                Add Note
                               </Button>
                             </div>
-                            <div className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
-                              <div>Date</div>
-                              <div>Note</div>
-                              <div>Created By</div>
-                              <div>Actions</div>
-                            </div>
-                            <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
-                              {filteredCaseNotes.length === 0 ? (
-                                <div className="px-2 py-3 text-slate-500">No case notes found.</div>
-                              ) : (
-                                filteredCaseNotes.map((note) => {
-                                  const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
-                                  return (
-                                    <div key={note.id} className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
-                                      <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
-                                      <div className="min-w-0 pr-2">
-                                        <button
-                                          type="button"
-                                          className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
-                                          onClick={() => openCaseNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""))}
-                                          dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
-                                        />
-                                      </div>
-                                      <div className="min-w-0 truncate text-slate-700">{String(note.note_user_name || "--")}</div>
-                                      <div className="min-w-0 flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          className={`text-slate-500 ${isNoteEditableByCurrentUser(note) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
-                                          onClick={() => openEditCaseNoteDialog(note)}
-                                          aria-label="Edit note"
-                                          disabled={!isNoteEditableByCurrentUser(note)}
-                                        >
-                                          <Pencil className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={`text-slate-500 ${canCurrentUserDeleteNotes ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
-                                          onClick={() => void handleDeleteCaseNote(note.id)}
-                                          aria-label="Delete note"
-                                          disabled={!canCurrentUserDeleteNotes}
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                      </div>
+                            <MatterDetailsTable
+                              headerColumns={["Date", "Time", "Description", "Created By", "Actions"]}
+                              gridClassName={MATTER_DETAILS_TABLE_GRID}
+                              emptyState={<div className="px-2 py-3 text-slate-500">No case notes found.</div>}
+                            >
+                              {filteredCaseNotes.map((note) => {
+                                const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
+                                return (
+                                  <div key={note.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
+                                    <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                    <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(note.created_at)}</div>
+                                    <div className="flex min-w-0 items-center pr-2">
+                                      <button
+                                        type="button"
+                                        className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
+                                        onClick={() => openCaseNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""))}
+                                        dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
+                                      />
                                     </div>
-                                  );
-                                })
-                              )}
-                            </div>
+                                    <div className="flex min-w-0 items-center truncate">
+                                      <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                        {String(note.note_user_name || "--")}
+                                      </Badge>
+                                    </div>
+                                    <div className="min-w-0 flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        className={`text-slate-500 ${isNoteEditableByCurrentUser(note) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
+                                        onClick={() => openEditCaseNoteDialog(note)}
+                                        aria-label="Edit note"
+                                        disabled={!isNoteEditableByCurrentUser(note)}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={`text-slate-500 ${canCurrentUserDeleteNotes ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
+                                        onClick={() => void handleDeleteCaseNote(note.id)}
+                                        aria-label="Delete note"
+                                        disabled={!canCurrentUserDeleteNotes}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </MatterDetailsTable>
                           </>
                         )}
                       </div>
                     </TabsContent>
-                    <TabsContent value="documents" className="mt-4"><div className="grid gap-2 text-xs sm:grid-cols-2">{["Referral Forms", "Notices of Set Down", "Employer Documents", "Employee Documents", "Witness Statements", "Disciplinary Documents", "Bundle / Index", "Settlement Agreement", "Award / Ruling / Order", "Correspondence"].map((doc) => <div key={doc} className="rounded border border-slate-200 bg-slate-50 p-2"><p className="font-medium text-slate-900">{doc}</p><p className="text-[10px] text-slate-500">No documents uploaded</p></div>)}</div></TabsContent>
+                    <TabsContent value="documents" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-0 text-xs">
+                        <div className="mb-3 flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            className="h-8 w-[110px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                            onClick={openAddCaseDocumentDialog}
+                          >
+                            Add Document
+                          </Button>
+                        </div>
+                        <MatterDetailsTable
+                          headerColumns={["Date", "Time", "Description", "Uploaded By", "Actions"]}
+                          gridClassName={MATTER_DETAILS_TABLE_GRID}
+                          emptyState={<div className="px-2 py-3 text-[11px] text-slate-500">No case documents uploaded yet.</div>}
+                        >
+                          {(selectedCase.documents ?? []).map((document) => (
+                            <div key={document.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(String(document.created_at || ""))}</div>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(document.created_at)}</div>
+                              <div className="flex min-w-0 items-center font-medium text-slate-900">{document.description || "--"}</div>
+                              <div className="flex min-w-0 items-center truncate">
+                                <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                  {document.uploadedBy || "--"}
+                                </Badge>
+                              </div>
+                              <div className="min-w-0 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="text-slate-500 hover:text-[#2f9f35]"
+                                  onClick={() => void handleViewCaseDocument(document)}
+                                  aria-label="View document"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-slate-500 hover:text-[#2f9f35]"
+                                  onClick={() => openEditCaseDocumentDialog(document)}
+                                  aria-label="Edit document"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="text-slate-500 hover:text-rose-600"
+                                  onClick={() => void handleDeleteCaseDocument(document)}
+                                  aria-label="Delete document"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </MatterDetailsTable>
+                      </div>
+                    </TabsContent>
                     <TabsContent value="outcome" className="mt-4">
                       {isCaseEditMode && caseEditForm ? (
                         <div className="grid gap-3 text-xs sm:grid-cols-2">
@@ -2611,6 +3269,60 @@ const Matters = () => {
           </div>
         </div>
       )}
+      <Dialog
+        open={isCaseDocumentDialogOpen}
+        onOpenChange={(open) => {
+          setIsCaseDocumentDialogOpen(open);
+          if (!open) resetCaseDocumentForm();
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[420px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <DialogTitle className="text-sm font-semibold text-white">{editingCaseDocument ? "Edit Case Document" : "Add Case Document"}</DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-4 bg-white p-4 pt-6">
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Description</span>
+              <Input
+                className={modalInputClass}
+                placeholder="Type document description"
+                value={caseDocumentForm.description}
+                onChange={(e) => setCaseDocumentForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Upload Document</span>
+              <Input
+                className={`${modalInputClass} pt-2 file:mr-3 file:rounded file:border-0 file:bg-[#3eca44] file:px-3 file:py-1 file:text-[11px] file:font-medium file:text-white hover:file:bg-[#34b73b]`}
+                type="file"
+                onChange={handleCaseDocumentFileChange}
+              />
+              {caseDocumentFileName ? <p className="px-1 text-[10px] text-slate-500">{caseDocumentFileName}</p> : null}
+            </div>
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Uploaded By</span>
+              <Input
+                className={modalInputClass}
+                value={caseDocumentForm.uploadedBy}
+                readOnly
+              />
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsCaseDocumentDialogOpen(false)} disabled={isSavingCaseDocument}>
+                Cancel
+              </Button>
+              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]" onClick={() => void handleSaveCaseDocument()} disabled={isSavingCaseDocument}>
+                {isSavingCaseDocument ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={isCaseDateDialogOpen}
         onOpenChange={(open) => {
@@ -2663,6 +3375,59 @@ const Matters = () => {
                 aria-hidden="true"
                 tabIndex={-1}
               />
+            </div>
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Time</span>
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                <Select
+                  value={(caseDateEventForm.eventTime.split(":")[0] || "") || undefined}
+                  onValueChange={(value) => setCaseDateEventForm((prev) => ({ ...prev, eventTime: `${value}:${prev.eventTime.split(":")[1] || "00"}` }))}
+                >
+                  <SelectTrigger
+                    className={cn(
+                      modalSelectClass,
+                      addModalDropdownToneClass,
+                      "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <SelectValue placeholder="Hour" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="text-[10px]">
+                    {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
+                      <SelectItem key={hour} value={hour} className="text-[10px]">
+                        {hour}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={(caseDateEventForm.eventTime.split(":")[1] || "") || undefined}
+                  onValueChange={(value) => setCaseDateEventForm((prev) => ({ ...prev, eventTime: `${prev.eventTime.split(":")[0] || "00"}:${value}` }))}
+                >
+                  <SelectTrigger
+                    className={cn(
+                      modalSelectClass,
+                      addModalDropdownToneClass,
+                      "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                    )}
+                  >
+                    <SelectValue placeholder="Min" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[10px]">
+                    {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
+                      <SelectItem key={minute} value={minute} className="text-[10px]">
+                        {minute}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                  {caseDateEventForm.eventTime ? (Number.parseInt(caseDateEventForm.eventTime.split(":")[0] || "0", 10) >= 12 ? "PM" : "AM") : "AM/PM"}
+                </div>
+              </div>
             </div>
             <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Created By</span>
@@ -2750,7 +3515,7 @@ const Matters = () => {
                 />
                 {caseNoteMentionRange && caseNoteMentionPopupPosition ? (
                   <div
-                    className="absolute z-20 w-[220px] rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
+                    className="absolute z-20 max-h-[220px] w-[220px] overflow-y-auto rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
                     style={{ top: caseNoteMentionPopupPosition.top, left: caseNoteMentionPopupPosition.left }}
                   >
                     {filteredMentionOptions.length === 0 ? (

@@ -1536,6 +1536,7 @@ const MiscTermLetterGenerator = ({
         documentLabel: "Termination Letter - Misconduct",
         documentName,
         documentType: "Termination",
+        clientId: client.clientId,
         clientName: client.companyName,
         fileUrl: uploadedFileUrl,
         employeeName: employee.name,

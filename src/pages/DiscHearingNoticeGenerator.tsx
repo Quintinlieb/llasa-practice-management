@@ -1871,6 +1871,7 @@ const DiscHearingNoticeGenerator = ({
       documentLabel,
       documentName,
       documentType: "Notice",
+      clientId: clientForm.clientId,
       clientName: clientForm.clientName,
       fileUrl: uploadedFileUrl,
       createdByName: user

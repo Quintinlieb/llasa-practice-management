@@ -4,6 +4,7 @@ type LogGeneratedDocumentArgs = {
   documentLabel: string;
   documentType: string;
   documentName?: string | null;
+  clientId?: string | null;
   clientName?: string | null;
   fileUrl?: string | null;
   employeeName?: string | null;
@@ -55,6 +56,7 @@ export const logGeneratedDocument = async ({
   documentLabel,
   documentType,
   documentName,
+  clientId,
   clientName: explicitClientName,
   fileUrl,
   employeeName,
@@ -69,13 +71,15 @@ export const logGeneratedDocument = async ({
   const resolvedDocumentName = firstNonEmpty(documentName, `${safeEmployeeName} - ${safeLabel}`);
   const clientName = firstNonEmpty(explicitClientName, tradingName, registeredName, "Unknown client");
   const resolvedCurrentUserName = await getResolvedCurrentUserName();
-  const actorName = firstNonEmpty(createdByName, resolvedCurrentUserName, "User");
+  const actorName = firstNonEmpty(createdByName, resolvedCurrentUserName, "Unknown User");
   const authUserId = String((await getSessionAuthUser())?.id || "").trim();
+  const resolvedClientId = String(clientId ?? "").trim();
 
   const payload = {
     document_name: resolvedDocumentName,
     document_type: String(documentType || "Other").trim() || "Other",
     client_name: clientName,
+    ...(resolvedClientId ? { client_id: resolvedClientId } : {}),
     created_by_name: actorName,
     ...(String(fileUrl ?? "").trim() ? { file_url: String(fileUrl).trim() } : {}),
   };
@@ -89,6 +93,9 @@ export const logGeneratedDocument = async ({
       document_name: resolvedDocumentName,
       document_type: String(documentType || "Other").trim() || "Other",
       client_name: clientName,
+      created_by_name: actorName,
+      ...(resolvedClientId ? { client_id: resolvedClientId } : {}),
+      ...(String(fileUrl ?? "").trim() ? { file_url: String(fileUrl).trim() } : {}),
     },
   ];
 

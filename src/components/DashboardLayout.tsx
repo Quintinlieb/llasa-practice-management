@@ -1,7 +1,8 @@
-import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -11,7 +12,7 @@ import {
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
 import { Icon } from "@iconify/react";
-import { Bell, Headset, Settings } from "lucide-react";
+import { Bell, Headset, Settings, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface DashboardLayoutProps {
@@ -33,6 +34,35 @@ const STORAGE_KEYS = {
   HEADER_PROFILE: "header:profile",
 } as const;
 const APP_HEADER_HEIGHT = "52px";
+
+type HeaderNotificationRow = {
+  id: string;
+  recipientUserId?: string;
+  actorName: string;
+  body: string;
+  age: string;
+};
+
+const formatNotificationAge = (value: string | null | undefined) => {
+  const safeValue = String(value || "").trim();
+  if (!safeValue) return "";
+  const timestamp = new Date(safeValue).getTime();
+  if (Number.isNaN(timestamp)) return "";
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+};
 
 const getPageTitleFromPathname = (pathname: string) => {
   if (pathname.startsWith("/documents")) return "Documents";
@@ -95,6 +125,8 @@ export default function DashboardLayout({
   const [minimizedDocumentTabs, setMinimizedDocumentTabs] = useState<StoredMinimizedDocumentTab[]>(() =>
     loadMinimizedDocumentTabs(),
   );
+  const [headerNotifications, setHeaderNotifications] = useState<HeaderNotificationRow[]>([]);
+  const [isNotificationsMenuOpen, setIsNotificationsMenuOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -210,6 +242,70 @@ export default function DashboardLayout({
     return () => window.removeEventListener(minimizedDocumentTabsChangedEvent, syncTabs);
   }, []);
 
+  const loadHeaderNotifications = useCallback(async () => {
+    if (!user?.id) {
+      setHeaderNotifications([]);
+      return;
+    }
+
+    const { data, error } = await (supabase as any).rpc("get_my_notifications_for_user", {
+      target_user_id: user.id,
+      limit_count: 12,
+    });
+
+    if (error) {
+      setHeaderNotifications([]);
+      return;
+    }
+
+    const notifications = (Array.isArray(data) ? data : [])
+      .map((row: any) => ({
+        id: String(row?.id || ""),
+        recipientUserId: String(row?.recipient_user_id || "").trim(),
+        actorName: String(row?.actor_name || "").trim(),
+        body: String(row?.body || "").trim(),
+        age: formatNotificationAge(String(row?.created_at || "")),
+      }))
+      .filter((row) => row.id && row.body && row.recipientUserId === user.id);
+
+    setHeaderNotifications(notifications);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setHeaderNotifications([]);
+      return;
+    }
+
+    void loadHeaderNotifications();
+  }, [loadHeaderNotifications, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const refreshNotifications = () => {
+      void loadHeaderNotifications();
+    };
+    window.addEventListener("focus", refreshNotifications);
+    document.addEventListener("visibilitychange", refreshNotifications);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadHeaderNotifications();
+    });
+    return () => {
+      window.removeEventListener("focus", refreshNotifications);
+      document.removeEventListener("visibilitychange", refreshNotifications);
+      subscription.unsubscribe();
+    };
+  }, [loadHeaderNotifications, user?.id]);
+
+  useEffect(() => {
+    if (!isNotificationsMenuOpen || !user?.id) return;
+    void loadHeaderNotifications();
+  }, [isNotificationsMenuOpen, loadHeaderNotifications, user?.id]);
+
+  const hasNewNotifications = headerNotifications.length > 0;
+
   const restoreMinimizedDocumentTab = (tabId: string) => {
     navigate("/documents", { state: { restoreMinimizedTabId: tabId } });
   };
@@ -311,13 +407,77 @@ export default function DashboardLayout({
                   >
                     <Settings className="h-4 w-4" />
                   </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"
-                    aria-label="Notifications"
-                  >
-                    <Bell className="h-4 w-4" />
-                  </button>
+                  <DropdownMenu open={isNotificationsMenuOpen} onOpenChange={setIsNotificationsMenuOpen}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="relative inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white data-[state=open]:bg-[#010D1A] data-[state=open]:text-white"
+                        aria-label="Notifications"
+                      >
+                        <Bell className="h-4 w-4" />
+                        <span
+                          className={`absolute right-1.5 top-1.5 h-2 w-2 rounded-full ${
+                            hasNewNotifications ? "bg-[#ef4444]" : "bg-[#3eca44]"
+                          }`}
+                        />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={10}
+                      className="w-[360px] rounded-[12px] border border-slate-200 bg-white p-0 shadow-[0_20px_45px_rgba(15,23,42,0.16)]"
+                    >
+                      <div className="border-b border-slate-200 px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-[13px] font-semibold text-slate-900">Notifications</p>
+                            <p className="mt-1 text-[11px] text-slate-500">Latest updates across your practice.</p>
+                          </div>
+                          <span className="rounded-full bg-[#eef9ef] px-2.5 py-1 text-[10px] font-semibold text-[#2f9f35]">
+                            {headerNotifications.length} new
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="max-h-[420px] overflow-y-auto">
+                        {headerNotifications.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-[11px] text-slate-500">
+                            No new notifications yet.
+                          </div>
+                        ) : (
+                          headerNotifications.map((row, index) => (
+                            <div
+                              key={row.id}
+                              className={`flex gap-3 px-4 py-3 ${
+                                index !== headerNotifications.length - 1 ? "border-b border-slate-100" : ""
+                              }`}
+                            >
+                              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#eef9ef] text-[#2f9f35]">
+                                <Tag className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-[12px] text-slate-900">
+                                    {row.actorName ? <span className="font-semibold">{row.actorName}</span> : null}
+                                    {row.actorName ? " " : ""}
+                                    {row.body.replace(new RegExp(`^${row.actorName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`, "i"), "")}
+                                  </p>
+                                  <span className="shrink-0 text-[10px] text-slate-400">{row.age}</span>
+                                </div>
+                                <span className="mt-2 inline-flex text-[11px] font-semibold text-[#3267e3]">
+                                  View
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-center">
+                        <span className="text-[11px] font-semibold text-slate-500">Notification actions will be wired later.</span>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <button
                     type="button"
                     className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-white/70 transition-colors hover:bg-[#010D1A] hover:text-white"

@@ -1,4 +1,5 @@
 import {
+  Building2,
   FolderOpen,
   Users,
   Home,
@@ -7,7 +8,6 @@ import {
   CalendarDays,
   LayoutTemplate,
   ChartColumn,
-  UserRoundCog,
 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { type ReactElement } from "react";
@@ -28,13 +28,13 @@ import { useAuth } from "@/hooks/useAuth";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
-  { title: "Clients", url: "/clients-2", icon: Users },
+  { title: "Clients", url: "/clients-2", icon: Building2 },
   { title: "Matters", url: "/case-files", icon: BriefcaseBusiness },
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Calendar", icon: CalendarDays },
   { title: "Templates", icon: LayoutTemplate },
   { title: "Reports", icon: ChartColumn },
-  { title: "Team", icon: UserRoundCog },
+  { title: "Team", icon: Users },
 ];
 
 type AppSidebarProps = {

@@ -2984,6 +2984,7 @@ const PermContractGenerator = ({
       documentLabel: isClientTemplateMode ? "Permanent Contract Template" : "Permanent Contract",
       documentName,
       documentType: "Contract",
+      clientId: company.companyId,
       clientName: company.companyName,
       fileUrl: uploadedFileUrl,
       employeeName: isClientTemplateMode ? "Template" : employee.permEmployeeName,

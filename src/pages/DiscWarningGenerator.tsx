@@ -2120,6 +2120,7 @@ const DiscWarningGenerator = ({
       documentLabel: warningLabel,
       documentName,
       documentType: "Warning",
+      clientId: clientForm.clientId,
       clientName: clientForm.clientName,
       fileUrl: uploadedFileUrl,
       createdByName: user

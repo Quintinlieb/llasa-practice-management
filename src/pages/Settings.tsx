@@ -79,11 +79,10 @@ type SubuserListItem = {
   created_at: string | null;
 };
 
-type MembershipOrganisation = "AHI Employers Organisation" | "SABPP" | "SASLAW";
+type MembershipOrganisation = "AHI Employers Organisation";
 
 type MembershipListItem = {
   id: string;
-  company_id: string | null;
   organisation: MembershipOrganisation;
   description: string;
   owner: string;
@@ -158,11 +157,7 @@ const emptySubuserInviteForm: SubuserInviteForm = {
   confirmPassword: "",
 };
 
-const membershipOrganisations: MembershipOrganisation[] = [
-  "AHI Employers Organisation",
-  "SABPP",
-  "SASLAW",
-];
+const membershipOrganisations: MembershipOrganisation[] = ["AHI Employers Organisation"];
 
 const emptyMembershipForm = (organisation: MembershipOrganisation = "AHI Employers Organisation"): MembershipForm => ({
   organisation,
@@ -261,6 +256,13 @@ const getInitials = (firstName: string, surname: string) =>
 const slugifyMembershipOrganisation = (value: MembershipOrganisation) =>
   value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
+const normalizeMembershipOrganisation = (value: unknown): MembershipOrganisation | null => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "ahi employers organisation" || normalized.includes("ahi")) return "AHI Employers Organisation";
+  return null;
+};
+
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -337,7 +339,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [deletingSubuserId, setDeletingSubuserId] = useState<string | null>(null);
   const [membershipsList, setMembershipsList] = useState<MembershipListItem[]>([]);
   const [membershipsLoading, setMembershipsLoading] = useState(false);
-  const [companyAccountId, setCompanyAccountId] = useState("");
   const [isMembershipDialogOpen, setIsMembershipDialogOpen] = useState(false);
   const [membershipForm, setMembershipForm] = useState<MembershipForm>(emptyMembershipForm());
   const [membershipSubmitting, setMembershipSubmitting] = useState(false);
@@ -377,13 +378,18 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         return acc;
       }, {
         "AHI Employers Organisation": [],
-        SABPP: [],
-        SASLAW: [],
       }),
     [membershipsList],
   );
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]";
+  const settingsTabScrollPaneClass =
+    "flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+  const membershipsScrollAreaStyle = {
+    maxHeight: embedded
+      ? "calc(84vh - 220px)"
+      : "calc(100dvh - var(--app-header-height, 5rem) - 15rem)",
+  } as const;
   const companyProfileReadOnlyInputClass =
     "bg-slate-100 text-slate-700 pointer-events-none cursor-default hover:border-slate-400 focus-visible:border-slate-400";
   const subuserModalInputClass =
@@ -951,23 +957,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setShowSubuserConfirmPassword(false);
     }
   };
-  const resolveCompanyAccountId = useCallback(async () => {
-    if (!user?.id) return "";
-    if (isMasterUser) return user.id;
-
-    const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-    if (metadataCompanyId) return metadataCompanyId;
-
-    const { data, error } = await (supabase as any)
-      .from("subusers")
-      .select("company_id,status")
-      .eq("auth_user_id", user.id)
-      .in("status", ["accepted", "active"])
-      .maybeSingle();
-
-    if (error) throw error;
-    return String(data?.company_id || "").trim();
-  }, [isMasterUser, user]);
   const resetMembershipDialog = useCallback((organisation?: MembershipOrganisation) => {
     setMembershipForm(emptyMembershipForm(organisation));
     setEditingMembershipId(null);
@@ -979,10 +968,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!open) resetMembershipDialog();
   }, [resetMembershipDialog]);
   const openCreateMembershipDialog = useCallback((organisation: MembershipOrganisation) => {
+    if (!canEditSettings) return;
     resetMembershipDialog(organisation);
     setIsMembershipDialogOpen(true);
-  }, [resetMembershipDialog]);
+  }, [canEditSettings, resetMembershipDialog]);
   const openEditMembershipDialog = useCallback((membership: MembershipListItem) => {
+    if (!canEditSettings) return;
     setMembershipForm({
       organisation: membership.organisation,
       description: membership.description,
@@ -994,38 +985,35 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setMembershipSubmitting(false);
     if (membershipFileInputRef.current) membershipFileInputRef.current.value = "";
     setIsMembershipDialogOpen(true);
-  }, []);
+  }, [canEditSettings]);
   const fetchMembershipsList = useCallback(async () => {
-    const resolvedCompanyId = companyAccountId || await resolveCompanyAccountId();
-    if (!resolvedCompanyId) {
-      setMembershipsList([]);
-      return;
-    }
-
     setMembershipsLoading(true);
     try {
       const { data, error } = await (supabase as any)
         .from("llasa_memberships")
-        .select("id,company_id,organisation,description,owner,file_name,storage_path,created_at,updated_at")
-        .eq("company_id", resolvedCompanyId)
+        .select("id,organisation,description,owner,file_name,storage_path,created_at,updated_at")
         .order("created_at", { ascending: false, nullsFirst: false });
 
       if (error) throw error;
 
-      const normalized = ((data ?? []) as any[]).map((row) => ({
-        id: String(row.id ?? ""),
-        company_id: String(row.company_id ?? "").trim() || null,
-        organisation: row.organisation as MembershipOrganisation,
-        description: String(row.description ?? "").trim(),
-        owner: String(row.owner ?? "").trim(),
-        file_name: String(row.file_name ?? "").trim(),
-        storage_path: String(row.storage_path ?? "").trim(),
-        created_at: row.created_at ?? null,
-        updated_at: row.updated_at ?? null,
-      })) as MembershipListItem[];
+      const normalized = ((data ?? []) as any[])
+        .map((row) => {
+          const organisation = normalizeMembershipOrganisation(row.organisation);
+          if (!organisation) return null;
+          return {
+            id: String(row.id ?? ""),
+            organisation,
+            description: String(row.description ?? "").trim(),
+            owner: String(row.owner ?? "").trim(),
+            file_name: String(row.file_name ?? "").trim(),
+            storage_path: String(row.storage_path ?? "").trim(),
+            created_at: row.created_at ?? null,
+            updated_at: row.updated_at ?? null,
+          } satisfies MembershipListItem;
+        })
+        .filter((row): row is MembershipListItem => Boolean(row));
 
       setMembershipsList(normalized);
-      setCompanyAccountId(resolvedCompanyId);
     } catch (error: any) {
       toast({
         title: "Unable to load memberships",
@@ -1036,14 +1024,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     } finally {
       setMembershipsLoading(false);
     }
-  }, [companyAccountId, resolveCompanyAccountId, toast]);
+  }, [toast]);
   const fetchSubusersList = useCallback(async () => {
     if (!user?.id) return;
     setSubusersLoading(true);
     try {
       let { data, error } = await (supabase as any)
         .from("subusers")
-        .select("id,auth_user_id,company_id,invited_by,name,surname,contact_number,email,role,profile_picture,status,created_at")
+        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,profile_picture,status,created_at")
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) {
         const code = String((error as any)?.code || "");
@@ -1186,17 +1174,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const handleMembershipSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!user?.id) return;
+    if (!canEditSettings) return;
     if (!isMembershipFormValid) return;
-
-    const resolvedCompanyId = companyAccountId || await resolveCompanyAccountId();
-    if (!resolvedCompanyId) {
-      toast({
-        title: "Membership save failed",
-        description: "Unable to determine the company account for this membership.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     const existingMembership = editingMembershipId
       ? membershipsList.find((item) => item.id === editingMembershipId) ?? null
@@ -1211,7 +1190,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
       if (membershipForm.file) {
         const safeName = membershipForm.file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
-        uploadedStoragePath = `${resolvedCompanyId}/${slugifyMembershipOrganisation(membershipForm.organisation)}/${Date.now()}_${safeName}`;
+        uploadedStoragePath = `${user.id}/${slugifyMembershipOrganisation(membershipForm.organisation)}/${Date.now()}_${safeName}`;
         const { error: uploadError } = await supabase.storage
           .from(LLASA_MEMBERSHIPS_BUCKET)
           .upload(uploadedStoragePath, membershipForm.file, {
@@ -1224,7 +1203,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       }
 
       const payload = {
-        company_id: resolvedCompanyId,
         organisation: membershipForm.organisation,
         description: membershipForm.description.trim(),
         owner: membershipForm.owner.trim(),
@@ -1279,14 +1257,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setMembershipSubmitting(false);
     }
   }, [
-    companyAccountId,
     editingMembershipId,
     fetchMembershipsList,
     handleMembershipDialogChange,
+    canEditSettings,
     isMembershipFormValid,
     membershipForm,
     membershipsList,
-    resolveCompanyAccountId,
     toast,
     user?.id,
   ]);
@@ -1382,33 +1359,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     void fetchSubusersList();
   }, [fetchSubusersList, settingsTab, user]);
   useEffect(() => {
-    let isCancelled = false;
-
-    const loadCompanyAccountId = async () => {
-      if (!user?.id) {
-        if (!isCancelled) setCompanyAccountId("");
-        return;
-      }
-
-      try {
-        const resolvedCompanyId = await resolveCompanyAccountId();
-        if (!isCancelled) {
-          setCompanyAccountId(resolvedCompanyId);
-        }
-      } catch {
-        if (!isCancelled) {
-          setCompanyAccountId("");
-        }
-      }
-    };
-
-    void loadCompanyAccountId();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [resolveCompanyAccountId, user?.id]);
-  useEffect(() => {
     if (!user) return;
     if (settingsTab !== "memberships") return;
     void fetchMembershipsList();
@@ -1500,7 +1450,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             </aside>
 
             <div className="min-w-0 flex-1 min-h-0 flex flex-col">
-            <section className="relative min-h-0 flex-1 overflow-y-auto rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-[#3eca44] [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-[#3eca44] [&_[role=combobox]]:focus:border-[#3eca44] [&_[role=combobox]]:focus-visible:border-[#3eca44] [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-[#3eca44]">
+            <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-[#3eca44] [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-[#3eca44] [&_[role=combobox]]:focus:border-[#3eca44] [&_[role=combobox]]:focus-visible:border-[#3eca44] [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-[#3eca44]">
               {isPermissionsLoading || isCurrentTabLoading ? (
                 <div className="flex h-full items-center justify-center">
                   <img src="/llasa_thumbnail.png" alt="Loading tab" className="h-10 w-10 animate-spin" style={{ animationDuration: "2s" }} />
@@ -1508,7 +1458,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               ) : (
                 <>
               {settingsTab === "user" && (
-            <div className="flex h-full flex-col space-y-5">
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <h3 className="text-[20px] font-semibold text-[#2D4256]">User Details</h3>
@@ -1611,7 +1561,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "subusers" && (
-            <div className="flex h-full flex-col space-y-4">
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-4`}>
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-[#2D4256]">Subusers</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
@@ -1681,105 +1631,92 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "memberships" && (
-            <div className="flex h-full flex-col space-y-5">
-              <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-[#2D4256]">Memberships</h3>
-                <p className="mb-2 text-[11px] text-slate-500">
-                  Upload and manage LLASA membership certificates for AHI Employers Organisation, SABPP, and SASLAW.
-                </p>
-              </div>
-              <div className="space-y-5">
-                {membershipOrganisations.map((organisation) => {
-                  const items = membershipsByOrganisation[organisation];
-                  return (
-                    <div key={organisation} className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <h4 className="text-[14px] font-semibold text-[#2D4256]">{organisation}</h4>
-                          <div className="h-[0.5px] w-full bg-[#3eca44]" />
-                        </div>
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-4`}>
+                <div className="space-y-1">
+                  <h3 className="text-[20px] font-semibold text-[#2D4256]">Memberships</h3>
+                  <p className="mb-2 text-[11px] text-slate-500">
+                    Upload and manage LLASA and/or its employees'membership certificates.
+                  </p>
+                </div>
+              {canEditSettings ? (
+                <div className={settingsActionRowClass.replace("mt-auto ", "").replace("justify-center", "justify-start")}>
+                  <Button
+                    type="button"
+                    onClick={() => openCreateMembershipDialog("AHI Employers Organisation")}
+                    className={popupActionButtonClass}
+                  >
+                    Add Membership
+                  </Button>
+                </div>
+              ) : null}
+              <div className="overflow-hidden rounded border border-slate-200">
+                <div className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                  <div>Description</div>
+                  <div>Owner</div>
+                  <div className="text-center">Actions</div>
+                </div>
+                <div className="max-h-[330px] divide-y overflow-y-auto bg-white text-[11px]">
+                  {membershipsLoading ? (
+                    <div className="px-3 py-3 text-slate-500">Loading memberships...</div>
+                  ) : membershipsList.length === 0 ? (
+                    <div className="px-3 py-3 text-slate-500">No certificates uploaded.</div>
+                  ) : (
+                    membershipsList.map((item) => (
+                      <div key={item.id} className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
+                        <div className="truncate text-slate-900">{item.description || "--"}</div>
+                        <div className="truncate text-slate-700">{item.owner || "--"}</div>
                         {canEditSettings ? (
-                          <Button
-                            type="button"
-                            onClick={() => openCreateMembershipDialog(organisation)}
-                            className={popupActionButtonClass}
-                          >
-                            Add Certificate
-                          </Button>
-                        ) : null}
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => void handleViewMembership(item)}
+                              disabled={viewingMembershipId === item.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`View ${item.organisation} certificate`}
+                            >
+                              {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditMembershipDialog(item)}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35]"
+                              aria-label={`Edit ${item.organisation} certificate`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteMembership(item)}
+                              disabled={deletingMembershipId === item.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Delete ${item.organisation} certificate`}
+                            >
+                              {deletingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-start">
+                            <button
+                              type="button"
+                              onClick={() => void handleViewMembership(item)}
+                              disabled={viewingMembershipId === item.id}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`View ${item.organisation} certificate`}
+                            >
+                              {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div className="overflow-hidden rounded border border-slate-200">
-                        <div className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
-                          <div>Description</div>
-                          <div>Owner</div>
-                          <div className="text-center">Actions</div>
-                        </div>
-                        <div className="max-h-[250px] divide-y overflow-y-auto bg-white text-[11px]">
-                          {membershipsLoading ? (
-                            <div className="px-3 py-3 text-slate-500">Loading memberships...</div>
-                          ) : items.length === 0 ? (
-                            <div className="px-3 py-3 text-slate-500">No certificates uploaded.</div>
-                          ) : (
-                            items.map((item) => (
-                              <div key={item.id} className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
-                                <div className="truncate text-slate-900">{item.description || "--"}</div>
-                                <div className="truncate text-slate-700">{item.owner || "--"}</div>
-                                {canEditSettings ? (
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleViewMembership(item)}
-                                      disabled={viewingMembershipId === item.id}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
-                                      aria-label={`View ${item.organisation} certificate`}
-                                    >
-                                      {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditMembershipDialog(item)}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35]"
-                                      aria-label={`Edit ${item.organisation} certificate`}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleDeleteMembership(item)}
-                                      disabled={deletingMembershipId === item.id}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                      aria-label={`Delete ${item.organisation} certificate`}
-                                    >
-                                      {deletingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center justify-start">
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleViewMembership(item)}
-                                      disabled={viewingMembershipId === item.id}
-                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
-                                      aria-label={`View ${item.organisation} certificate`}
-                                    >
-                                      {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
               )}
 
               {settingsTab === "company" && (
-            <div className="flex h-full flex-col space-y-5">
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
@@ -1907,7 +1844,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "companyAddress" && (
-            <div className="flex h-full flex-col space-y-5">
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Physical and postal address details.</p>
@@ -2055,7 +1992,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               )}
 
               {settingsTab === "auth" && (
-            <div className="flex h-full flex-col space-y-5">
+            <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="space-y-1">
                 <h3 className="text-[20px] font-semibold text-[#2D4256]">Authentication</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Change your password here whenever you need to keep your account secure.</p>

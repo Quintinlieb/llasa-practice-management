@@ -13,7 +13,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -29,6 +28,7 @@ type DocumentKey =
   | "codeOfConduct"
   | "discWarningGenerator"
   | "disciplinaryHearingNotice"
+  | "disciplinaryHearingOutcome"
   | "disciplinaryHearingNoticeOld"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
@@ -81,6 +81,7 @@ type DocumentTableRow = {
   documentType: string;
   clientName: string;
   createdOn: string;
+  createdAtRaw: string;
   createdBy: string;
   fileUrl: string;
 };
@@ -127,6 +128,19 @@ const getDiscWarningBreadcrumbClientName = (draftState: unknown) => {
 };
 
 const getDiscHearingBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const clientForm = (draftState as { clientForm?: unknown }).clientForm;
+  if (!clientForm || typeof clientForm !== "object") return "";
+  const candidate = clientForm as {
+    clientTradingAsName?: unknown;
+    clientRegisteredName?: unknown;
+  };
+  const tradingAsName = String(candidate.clientTradingAsName || "").trim();
+  if (tradingAsName) return tradingAsName;
+  return String(candidate.clientRegisteredName || "").trim();
+};
+
+const getDiscHearingOutcomeBreadcrumbClientName = (draftState: unknown) => {
   if (!draftState || typeof draftState !== "object") return "";
   const clientForm = (draftState as { clientForm?: unknown }).clientForm;
   if (!clientForm || typeof clientForm !== "object") return "";
@@ -191,6 +205,7 @@ const loadCachedDocumentRows = (): DocumentTableRow[] => {
         typeof (row as DocumentTableRow).documentType === "string" &&
         typeof (row as DocumentTableRow).clientName === "string" &&
         typeof (row as DocumentTableRow).createdOn === "string" &&
+        typeof (row as DocumentTableRow).createdAtRaw === "string" &&
         typeof (row as DocumentTableRow).createdBy === "string" &&
         typeof (row as DocumentTableRow).fileUrl === "string",
     );
@@ -217,6 +232,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
   disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DiscHearingNoticeGenerator")),
+  disciplinaryHearingOutcome: lazyDocumentComponent(() => import("./DisciplinaryHearingOutcomeGenerator")),
   disciplinaryHearingNoticeOld: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
@@ -240,6 +256,7 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
+  disciplinaryHearingOutcome: { category: "Outcome", label: "Disciplinary Hearing Outcome" },
   disciplinaryHearingNoticeOld: { category: "Notices", label: "Disciplinary Hearing (Old)" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
@@ -292,13 +309,14 @@ const documentCreateMenuItems = [
   { title: "Contracts" },
   { title: "Terminations" },
   { title: "Notices" },
+  { title: "Outcome" },
   { title: "Litigation" },
   { title: "Other" },
 ] as const;
 
 const documentCreateFlyoutItems: Record<
   (typeof documentCreateMenuItems)[number]["title"],
-  Array<{ title: string; selectedDocument: DocumentKey }>
+  Array<{ title: string; selectedDocument?: DocumentKey; disabled?: boolean }>
 > = {
   Discipline: [
     { title: "Code of Conduct", selectedDocument: "codeOfConduct" },
@@ -326,6 +344,15 @@ const documentCreateFlyoutItems: Record<
     { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
     { title: "Contemplated Retrenchment (S189)", selectedDocument: "contemplatedRetrenchmentNotice" },
   ],
+  Outcome: [
+    { title: "Disciplinary Hearing Outcome", selectedDocument: "disciplinaryHearingOutcome" },
+    { title: "Performance Hearing", disabled: true },
+    { title: "Illness Hearing", disabled: true },
+    { title: "Performance Consultation", disabled: true },
+    { title: "Retrenchment Consultation", disabled: true },
+    { title: "Grievance Consultation", disabled: true },
+    { title: "Wage Negotiations", disabled: true },
+  ],
   Litigation: [],
   Other: [
     { title: "Certificate of Service", selectedDocument: "serviceCertificate" },
@@ -338,6 +365,7 @@ type DocumentCreateCategory = (typeof documentCreateMenuItems)[number]["title"];
 const wizardDocumentKeys = [
   "discWarningGenerator",
   ...noticeDocumentKeys,
+  "disciplinaryHearingOutcome",
   "serviceCertificate",
   "acknowledgementOfDebt",
   "addendum",
@@ -349,10 +377,18 @@ const wizardDocumentKeys = [
 const darkStepperDocumentKeys = [
   "discWarningGenerator",
   "disciplinaryHearingNotice",
+  "disciplinaryHearingOutcome",
   "permContract",
   ...terminationDocumentKeys,
 ] as const satisfies readonly DocumentKey[];
 const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
+const chevronTrackerDocumentSet = new Set<DocumentKey>([
+  "discWarningGenerator",
+  "disciplinaryHearingNotice",
+  "disciplinaryHearingOutcome",
+  "noticeTermination",
+  "permContract",
+]);
 const darkShellDocumentKeys = ["codeOfConduct", ...darkStepperDocumentKeys] as const satisfies readonly DocumentKey[];
 const lightWizardDocumentKeys = wizardDocumentKeys.filter((key) => !darkStepperDocumentSet.has(key)) as DocumentKey[];
 const modalOnlyDocumentKeys = [...wizardDocumentKeys, "codeOfConduct"] as const satisfies readonly DocumentKey[];
@@ -368,6 +404,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
   discWarningGenerator: "Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
+  disciplinaryHearingOutcome: "Disciplinary Hearing Outcome",
   disciplinaryHearingNoticeOld: "Disciplinary Hearing (Old)",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
@@ -390,6 +427,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
+  disciplinaryHearingOutcome: "Hearing Details",
   disciplinaryHearingNoticeOld: "Notice Details",
   precautionarySuspensionNotice: "Notice Details",
   contemplatedRetrenchmentNotice: "Notice Details",
@@ -428,6 +466,10 @@ const Documents = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [documentsTablePage, setDocumentsTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
+  const [documentCreatedByFilter, setDocumentCreatedByFilter] = useState("all");
+  const [documentCreatedOnFilter, setDocumentCreatedOnFilter] = useState<"all" | "last7" | "last14" | "last30" | "last60">("all");
+  const [expandedFilterSection, setExpandedFilterSection] = useState<string | null>(null);
   const [isNewDocumentMenuOpen, setIsNewDocumentMenuOpen] = useState(false);
   const [openDocumentCategory, setOpenDocumentCategory] = useState<DocumentCreateCategory | null>(null);
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
@@ -619,6 +661,7 @@ const Documents = () => {
         documentType: String(row.document_type ?? ""),
         clientName: String(row.client_name ?? ""),
         createdOn: formatCreatedOn(String(row.created_at ?? "")),
+        createdAtRaw: String(row.created_at ?? ""),
         createdBy: String(row.created_by_name ?? row.created_by ?? ""),
         fileUrl: String(row.file_url ?? ""),
       }));
@@ -685,6 +728,8 @@ const Documents = () => {
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
   const discHearingBreadcrumbClientName =
     modalDocument === "disciplinaryHearingNotice" ? getDiscHearingBreadcrumbClientName(activeSession?.draftState) : "";
+  const discHearingOutcomeBreadcrumbClientName =
+    modalDocument === "disciplinaryHearingOutcome" ? getDiscHearingOutcomeBreadcrumbClientName(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
     modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
   const miscTerminationBreadcrumbClientName =
@@ -694,24 +739,33 @@ const Documents = () => {
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
       : modalDocument === "disciplinaryHearingNotice" && discHearingBreadcrumbClientName
         ? `${modalTitle} (${discHearingBreadcrumbClientName})`
-      : modalDocument === "permContract" && permContractBreadcrumbClientName
-        ? `${modalTitle} (${permContractBreadcrumbClientName})`
-        : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName
-          ? `${modalTitle} (${miscTerminationBreadcrumbClientName})`
+        : modalDocument === "disciplinaryHearingOutcome" && discHearingOutcomeBreadcrumbClientName
+          ? `Disciplinary Hearing (${discHearingOutcomeBreadcrumbClientName})`
+          : modalDocument === "disciplinaryHearingOutcome"
+            ? "Disciplinary Hearing"
+          : modalDocument === "permContract" && permContractBreadcrumbClientName
+            ? `${modalTitle} (${permContractBreadcrumbClientName})`
+            : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName
+              ? `${modalTitle} (${miscTerminationBreadcrumbClientName})`
       : modalTitle;
   const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
   const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";
   const isTerminationModal = modalDocument ? terminationDocumentSet.has(modalDocument) : false;
   const isDarkStepperModal = modalDocument ? darkStepperDocumentSet.has(modalDocument) : false;
+  const usesChevronTracker = modalDocument ? chevronTrackerDocumentSet.has(modalDocument) : false;
   const isCodeOfConductModal = modalDocument === "codeOfConduct";
   const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
   const modalSteps =
     modalDocument && wizardDocumentSet.has(modalDocument)
       ? ([
-          modalDocument === "discWarningGenerator" || modalDocument === "permContract" ? "Client Details" : "Employer Details",
+          modalDocument === "discWarningGenerator" || modalDocument === "permContract" || modalDocument === "disciplinaryHearingOutcome" ? "Client Details" : "Employer Details",
           "Employee Details",
           detailStepLabelByDocument[modalDocument] ?? "Employment Details",
-          modalDocument === "discWarningGenerator" || modalDocument === "permContract" ? "Preview / Download" : "Preview / Edit",
+          modalDocument === "disciplinaryHearingOutcome"
+            ? "Preview"
+            : modalDocument === "discWarningGenerator" || modalDocument === "permContract"
+              ? "Preview / Edit"
+              : "Preview / Edit",
         ] as const)
       : ([] as const);
   const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
@@ -1065,18 +1119,44 @@ const Documents = () => {
     if (!role) return true;
     return role === "consultant";
   }, [currentUserSubuserRole]);
+  const documentTypes = useMemo(
+    () => Array.from(new Set(documentRows.map((row) => row.documentType).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
+    [documentRows],
+  );
+  const documentCreators = useMemo(
+    () => Array.from(new Set(documentRows.map((row) => row.createdBy).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
+    [documentRows],
+  );
   const filteredDocumentRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return documentRows;
     return documentRows.filter((row) => {
-      return (
+      const matchesSearch =
+        !q ||
         row.documentName.toLowerCase().includes(q) ||
         row.documentType.toLowerCase().includes(q) ||
         formatDocumentClientName(row.clientName).toLowerCase().includes(q) ||
-        row.createdBy.toLowerCase().includes(q)
-      );
+        row.createdBy.toLowerCase().includes(q);
+      const matchesType = documentTypeFilter === "all" || row.documentType === documentTypeFilter;
+      const matchesCreatedBy = documentCreatedByFilter === "all" || row.createdBy === documentCreatedByFilter;
+      let matchesCreatedOn = true;
+      if (documentCreatedOnFilter !== "all") {
+        const createdAt = new Date(row.createdAtRaw);
+        if (Number.isNaN(createdAt.getTime())) {
+          matchesCreatedOn = false;
+        } else {
+          const now = new Date();
+          const diffMs = now.getTime() - createdAt.getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          const maxDays =
+            documentCreatedOnFilter === "last7" ? 7 :
+            documentCreatedOnFilter === "last14" ? 14 :
+            documentCreatedOnFilter === "last30" ? 30 : 60;
+          matchesCreatedOn = diffDays >= 0 && diffDays <= maxDays;
+        }
+      }
+      return matchesSearch && matchesType && matchesCreatedBy && matchesCreatedOn;
     });
-  }, [documentRows, searchQuery]);
+  }, [documentCreatedByFilter, documentCreatedOnFilter, documentRows, documentTypeFilter, searchQuery]);
   const totalDocumentsTablePages = Math.max(1, Math.ceil(filteredDocumentRows.length / DOCUMENTS_TABLE_PAGE_SIZE));
   const currentDocumentsTablePage = Math.min(documentsTablePage, totalDocumentsTablePages);
   const currentDocumentsTableOffset = (currentDocumentsTablePage - 1) * DOCUMENTS_TABLE_PAGE_SIZE;
@@ -1260,21 +1340,100 @@ const Documents = () => {
                             Delete
                           </Button>
                         ) : null}
-                        <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
-                          <PopoverTrigger asChild>
+                        <DropdownMenu
+                          open={isFilterOpen}
+                          onOpenChange={(open) => {
+                            setIsFilterOpen(open);
+                            if (!open) setExpandedFilterSection(null);
+                          }}
+                        >
+                          <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] data-[state=open]:rounded-b-none data-[state=open]:border-[#3eca44]"
+                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
                             >
                               <span>Filter</span>
                               <ChevronDown className={cn("h-4 w-4 transition-transform", isFilterOpen && "rotate-180")} aria-hidden="true" />
                             </Button>
-                          </PopoverTrigger>
-                          <PopoverContent side="bottom" align="end" sideOffset={0} className="w-[220px] rounded-t-none border border-slate-200 border-t-0 bg-white p-3 shadow-lg">
-                            <p className="text-[11px] text-slate-600">Filter options can be added here.</p>
-                          </PopoverContent>
-                        </Popover>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
+                            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                              <span className="text-[12px] font-semibold text-slate-800">Filter</span>
+                              <button
+                                type="button"
+                                className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
+                                onClick={() => {
+                                  setDocumentTypeFilter("all");
+                                  setDocumentCreatedByFilter("all");
+                                  setDocumentCreatedOnFilter("all");
+                                  setIsFilterOpen(false);
+                                }}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div className="divide-y divide-slate-200">
+                              {["type", "createdBy", "createdOn"].map((section) => (
+                                <div key={section}>
+                                  <button
+                                    type="button"
+                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === section ? "bg-slate-100" : ""}`}
+                                    onClick={() => setExpandedFilterSection((prev) => (prev === section ? null : section))}
+                                  >
+                                    <span>{section === "type" ? "Type" : section === "createdBy" ? "Created By" : "Created On"}</span>
+                                    <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === section ? "rotate-180" : ""}`} />
+                                  </button>
+                                  {expandedFilterSection === section ? (
+                                    <div className="px-3 pb-2">
+                                      {(section === "type"
+                                        ? ["all", ...documentTypes]
+                                        : section === "createdBy"
+                                          ? ["all", ...documentCreators]
+                                          : ["all", "last7", "last14", "last30", "last60"]
+                                      ).map((value) => {
+                                        const selected =
+                                          section === "type"
+                                            ? documentTypeFilter === value
+                                            : section === "createdBy"
+                                              ? documentCreatedByFilter === value
+                                              : documentCreatedOnFilter === value;
+                                        const label =
+                                          value === "all"
+                                            ? "All"
+                                            : value === "last7"
+                                              ? "Last 7 days"
+                                              : value === "last14"
+                                                ? "Last 14 days"
+                                                : value === "last30"
+                                                  ? "Last 30 days"
+                                                  : value === "last60"
+                                                    ? "Last 60 days"
+                                                  : value;
+                                        return (
+                                          <button
+                                            key={value}
+                                            type="button"
+                                            className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
+                                            onClick={() => {
+                                              if (section === "type") setDocumentTypeFilter(value);
+                                              if (section === "createdBy") setDocumentCreatedByFilter(value);
+                                              if (section === "createdOn") setDocumentCreatedOnFilter(value as "all" | "last7" | "last14" | "last30" | "last60");
+                                              setIsFilterOpen(false);
+                                            }}
+                                          >
+                                            <span>{label}</span>
+                                            {selected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <DropdownMenu
                           open={isNewDocumentMenuOpen}
                           onOpenChange={(open) => {
@@ -1337,9 +1496,14 @@ const Documents = () => {
                                           key={`${category.title}-${item.title}`}
                                           onSelect={(event) => {
                                             event.preventDefault();
+                                            if (item.disabled || !item.selectedDocument) return;
                                             openDocumentGenerator(item.selectedDocument);
                                           }}
-                                          className={newDocumentSubItemStyle}
+                                          disabled={item.disabled || !item.selectedDocument}
+                                          className={cn(
+                                            newDocumentSubItemStyle,
+                                            item.disabled || !item.selectedDocument ? "cursor-not-allowed opacity-50" : "",
+                                          )}
                                         >
                                           <span className="flex items-center gap-2">
                                             <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden="true" />
@@ -1529,6 +1693,8 @@ const Documents = () => {
                         ? "Documents / Discipline / "
                         : modalDocument === "disciplinaryHearingNotice"
                           ? "Documents / Notices / "
+                          : modalDocument === "disciplinaryHearingOutcome"
+                            ? "Documents / Outcome / "
                           : modalDocument === "permContract"
                             ? "Documents / Contracts / "
                             : "Documents / Terminations / "}
@@ -1539,51 +1705,118 @@ const Documents = () => {
               </header>
               <div className="mt-[46px] h-[calc(90vh-46px)] bg-white">
                 <div className="flex h-14 items-center justify-center border-b border-slate-200 px-4">
-                  <div className="flex items-center gap-6">
-                    {modalSteps.map((step, index) => {
-                      const isActive = index === modalActiveStep;
-                      const isComplete = index < modalActiveStep;
-                      const isClickable = canSelectTrackerStep(index);
-                      const stepContent = (
-                        <>
-                          <span
-                            className={cn(
-                              "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
-                              isActive
-                                ? "border-[#2D4256] bg-[#2D4256] text-white"
-                                : isComplete
-                                  ? "border-[#3eca44] bg-[#3eca44] text-white"
-                                  : "border-slate-200 bg-white text-slate-400",
-                            )}
+                  {usesChevronTracker ? (
+                    <div className="flex w-full justify-center overflow-x-auto">
+                      <div className="mx-auto flex min-w-fit items-center gap-1">
+                        {modalSteps.map((step, index) => {
+                          const isActive = index === modalActiveStep;
+                          const isComplete = index < modalActiveStep;
+                          const isClickable = canSelectTrackerStep(index);
+                          const segmentClassName = cn(
+                            "relative flex h-9 w-[182px] shrink-0 items-center px-3 text-[10px] font-semibold text-white transition-colors",
+                            isComplete
+                              ? "bg-[#31b236]"
+                              : isActive
+                                ? "bg-[#2D4256]"
+                                : "bg-slate-200 text-slate-500",
+                            isClickable && "cursor-pointer hover:brightness-95",
+                          );
+                          const segmentContent = (
+                            <span className="relative block h-full w-full">
+                              <span
+                                className={cn(
+                                  "absolute left-5 top-1/2 inline-flex h-6 w-6 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[9px] font-bold leading-none",
+                                  isComplete
+                                    ? "text-[#31b236]"
+                                    : isActive
+                                      ? "text-[#2D4256]"
+                                      : "text-slate-400",
+                                )}
+                              >
+                                {isComplete ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
+                              </span>
+                              <span
+                                className={cn(
+                                  "absolute left-[56px] right-3 top-1/2 block -translate-y-1/2 truncate whitespace-nowrap text-[10px] font-semibold text-left",
+                                  isActive || isComplete ? "text-white" : "text-slate-500",
+                                )}
+                              >
+                                {step}
+                              </span>
+                            </span>
+                          );
+                          const segmentStyle = {
+                            clipPath:
+                              index === 0
+                                ? "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 18px 50%)"
+                                : "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 24px 50%)",
+                          } as const;
+
+                          return isClickable ? (
+                            <button
+                              key={step}
+                              type="button"
+                              onClick={() => handleTrackerStepSelect(index)}
+                              className={segmentClassName}
+                              style={segmentStyle}
+                            >
+                              {segmentContent}
+                            </button>
+                          ) : (
+                            <div key={step} className={segmentClassName} style={segmentStyle}>
+                              {segmentContent}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-6">
+                      {modalSteps.map((step, index) => {
+                        const isActive = index === modalActiveStep;
+                        const isComplete = index < modalActiveStep;
+                        const isClickable = canSelectTrackerStep(index);
+                        const stepContent = (
+                          <>
+                            <span
+                              className={cn(
+                                "inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
+                                isActive
+                                  ? "border-[#2D4256] bg-[#2D4256] text-white"
+                                  : isComplete
+                                    ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                    : "border-slate-200 bg-white text-slate-400",
+                              )}
+                            >
+                              {isComplete ? <Check className="h-3 w-3" aria-hidden="true" /> : index + 1}
+                            </span>
+                            <span
+                              className={cn(
+                                "text-[11px] font-semibold",
+                                isActive ? "text-[#2D4256]" : isComplete ? "text-[#3eca44]" : "text-slate-400",
+                              )}
+                            >
+                              {step}
+                            </span>
+                          </>
+                        );
+                        return isClickable ? (
+                          <button
+                            key={step}
+                            type="button"
+                            onClick={() => handleTrackerStepSelect(index)}
+                            className="flex items-center gap-2 rounded-sm px-1 hover:bg-slate-100"
                           >
-                            {isComplete ? <Check className="h-3 w-3" aria-hidden="true" /> : index + 1}
-                          </span>
-                          <span
-                            className={cn(
-                              "text-[11px] font-semibold",
-                              isActive ? "text-[#2D4256]" : isComplete ? "text-[#3eca44]" : "text-slate-400",
-                            )}
-                          >
-                            {step}
-                          </span>
-                        </>
-                      );
-                      return isClickable ? (
-                        <button
-                          key={step}
-                          type="button"
-                          onClick={() => handleTrackerStepSelect(index)}
-                          className="flex items-center gap-2 rounded-sm px-1 hover:bg-slate-100"
-                        >
-                          {stepContent}
-                        </button>
-                      ) : (
-                        <div key={step} className="flex items-center gap-2 px-1">
-                          {stepContent}
-                        </div>
-                      );
-                    })}
-                  </div>
+                            {stepContent}
+                          </button>
+                        ) : (
+                          <div key={step} className="flex items-center gap-2 px-1">
+                            {stepContent}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div className="h-[calc(100%-56px)] p-4">
                   <div className="mx-auto flex h-full max-w-[900px] min-h-0 flex-col">
@@ -1655,7 +1888,11 @@ const Documents = () => {
                           disabled={!stepMeta?.canGoNext}
                           className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
-                          {stepMeta?.isFinished ? "Download" : "Next"}
+                          {stepMeta?.isFinished
+                            ? modalDocument === "disciplinaryHearingOutcome"
+                              ? "Preview"
+                              : "Download"
+                            : "Next"}
                         </button>
                       </div>
                     </div>
@@ -1862,7 +2099,11 @@ const Documents = () => {
                           disabled={!stepMeta?.canGoNext}
                           className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
-                          {stepMeta?.isFinished ? "Download" : "Next"}
+                          {stepMeta?.isFinished
+                            ? modalDocument === "disciplinaryHearingOutcome"
+                              ? "Preview"
+                              : "Download"
+                            : "Next"}
                         </button>
                       </div>
                     </div>

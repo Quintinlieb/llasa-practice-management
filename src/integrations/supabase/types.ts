@@ -120,7 +120,6 @@ export type Database = {
       }
       llasa_memberships: {
         Row: {
-          company_id: string
           created_at: string
           description: string
           file_name: string
@@ -132,7 +131,6 @@ export type Database = {
           uploaded_by: string | null
         }
         Insert: {
-          company_id: string
           created_at?: string
           description: string
           file_name: string
@@ -144,7 +142,6 @@ export type Database = {
           uploaded_by?: string | null
         }
         Update: {
-          company_id?: string
           created_at?: string
           description?: string
           file_name?: string

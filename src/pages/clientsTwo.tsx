@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { BuildingOffice2Icon, BuildingOfficeIcon } from "@heroicons/react/24/outline";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
@@ -26,6 +26,30 @@ import { useLocation, useNavigate } from "react-router-dom";
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
 const SLA_RECORD_TYPE = "Service Level Agreement";
+const AHI_CERTIFICATE_RECORD_TYPE = "AHI Certificate";
+const CLIENT_FILE_NOTE_TYPES = [
+  "Incoming Call",
+  "Outgoing Call",
+  "Email Received",
+  "Email Sent",
+  "Consultation",
+] as const;
+const getClientFileNoteTypePillClassName = (value: string) => {
+  switch (String(value || "").trim()) {
+    case "Incoming Call":
+      return "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50 hover:text-sky-700";
+    case "Outgoing Call":
+      return "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700";
+    case "Email Received":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
+    case "Email Sent":
+      return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+    case "Consultation":
+      return "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50 hover:text-rose-700";
+    default:
+      return "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+  }
+};
 const CLIENTS_TABLE_PAGE_SIZE = 25;
 const CLIENTS_TABLE_VISIBLE_ROWS = 18;
 const FILE_NOTE_EDIT_TAG_REGEX =
@@ -137,6 +161,11 @@ type ClientMatter = {
   status: string;
   currentStage: string;
   nextDate: string;
+};
+type MembershipDocumentRecord = {
+  id: string;
+  fileName: string;
+  fileUrl: string;
 };
 type ClientDetailsTab = "company" | "membership" | "notes" | "matters" | "documents";
 type ClientExportOption =
@@ -588,6 +617,7 @@ const ClientsTwo = () => {
   const editStartDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const slaFileInputRef = useRef<HTMLInputElement | null>(null);
+  const ahiCertificateFileInputRef = useRef<HTMLInputElement | null>(null);
   const bulkClientUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const [clientDetailsForm, setClientDetailsForm] = useState({
@@ -637,9 +667,13 @@ const ClientsTwo = () => {
   const [isClientEditMode, setIsClientEditMode] = useState(false);
   const [isSavingClientEdit, setIsSavingClientEdit] = useState(false);
   const [isSlaUploading, setIsSlaUploading] = useState(false);
-  const [slaRecordByClient, setslaRecordByClient] = useState<Record<string, { id: string; fileName: string; fileUrl: string } | null>>({});
+  const [slaRecordByClient, setslaRecordByClient] = useState<Record<string, MembershipDocumentRecord | null>>({});
   const [pendingSlaFile, setPendingSlaFile] = useState<File | null>(null);
   const [pendingSlaFileName, setPendingSlaFileName] = useState("");
+  const [isAhiCertificateUploading, setIsAhiCertificateUploading] = useState(false);
+  const [ahiCertificateRecordByClient, setAhiCertificateRecordByClient] = useState<Record<string, MembershipDocumentRecord | null>>({});
+  const [pendingAhiCertificateFile, setPendingAhiCertificateFile] = useState<File | null>(null);
+  const [pendingAhiCertificateFileName, setPendingAhiCertificateFileName] = useState("");
   const [isClientLogoUploading, setIsClientLogoUploading] = useState(false);
   const [clientLogoPreviewByClient, setClientLogoPreviewByClient] = useState<Record<string, string>>({});
   const [clientLogoPathByClient, setClientLogoPathByClient] = useState<Record<string, string>>({});
@@ -666,8 +700,10 @@ const ClientsTwo = () => {
   const [fileNotePreviewContent, setFileNotePreviewContent] = useState("");
   const [fileNotePreviewEditTag, setFileNotePreviewEditTag] = useState("");
   const [fileNotePreviewUpdatedAt, setFileNotePreviewUpdatedAt] = useState("");
+  const [fileNotePreviewType, setFileNotePreviewType] = useState("");
   const [fileNoteForm, setFileNoteForm] = useState({
     noteDate: "",
+    noteType: "",
     noteContent: "",
     noteUserName: "",
   });
@@ -850,9 +886,9 @@ const ClientsTwo = () => {
     return `R ${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   const dateToday = () => new Date().toISOString().slice(0, 10);
-  const formatSlaDisplayName = (rawValue?: string | null) => {
+  const formatContractDisplayName = (rawValue?: string | null, fallbackName = "document.pdf") => {
     const raw = String(rawValue || "").trim();
-    if (!raw) return "SLA.pdf";
+    if (!raw) return fallbackName;
     const base = decodeURIComponent(raw.split("/").pop() || raw);
     const withoutGeneratedPrefix = base
       .replace(
@@ -861,7 +897,7 @@ const ClientsTwo = () => {
       )
       .replace(/^\d{10,}-/, "");
     const cleaned = withoutGeneratedPrefix.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-    return cleaned || "SLA.pdf";
+    return cleaned || fallbackName;
   };
   const getNextRenewalDateFromStart = (startDate?: string) => {
     const raw = String(startDate || "").trim();
@@ -1094,7 +1130,7 @@ const ClientsTwo = () => {
     const q = clientFileNotesSearchQuery.trim().toLowerCase();
     if (!q) return clientFileNotes;
     return clientFileNotes.filter((note) =>
-      [note.note_user_name, note.note_content]
+      [note.note_user_name, note.note_content, note.note_type]
         .join(" ")
         .toLowerCase()
         .includes(q),
@@ -1505,6 +1541,7 @@ const ClientsTwo = () => {
   const resetFileNoteForm = useCallback(() => {
     setFileNoteForm({
       noteDate: dateToday(),
+      noteType: "",
       noteContent: "",
       noteUserName: resolveCurrentUserName(),
     });
@@ -1570,7 +1607,11 @@ const ClientsTwo = () => {
     if (String(selectedClientRow.id) !== openClientId) return;
     const matchingNote = clientFileNotes.find((note) => String(note?.id || "").trim() === openClientNoteId);
     if (matchingNote) {
-      openFileNotePreviewDialog(String(matchingNote.note_content || ""), String(matchingNote.updated_at || ""));
+      openFileNotePreviewDialog(
+        String(matchingNote.note_content || ""),
+        String(matchingNote.updated_at || ""),
+        String(matchingNote.note_type || ""),
+      );
     }
     navigate("/clients-2", { replace: true, state: {} });
   }, [clientFileNotes, isNotesLoading, location.state, navigate, selectedClientRow?.id]);
@@ -1638,28 +1679,40 @@ const ClientsTwo = () => {
     };
     void loadMentionOptions();
   }, [user]);
-  const fetchSlaContract = useCallback(async (clientId: string) => {
+  const fetchMembershipDocumentRecord = useCallback(async (
+    clientId: string,
+    contractType: string,
+    setRecord: Dispatch<SetStateAction<Record<string, MembershipDocumentRecord | null>>>,
+    fallbackName: string,
+  ) => {
     if (!user?.id) return;
     const { data, error } = await agreementRecordTable()
       .select("id, file_url")
       .eq("client_id", clientId)
-      .eq("contract_type", SLA_RECORD_TYPE)
+      .eq("contract_type", contractType)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) return;
     if (!data) {
-      setslaRecordByClient((prev) => ({ ...prev, [clientId]: null }));
+      setRecord((prev) => ({ ...prev, [clientId]: null }));
       return;
     }
     const filePath = String((data as any).file_url || "").trim();
-    const fileName = formatSlaDisplayName(filePath);
-    setslaRecordByClient((prev) => ({ ...prev, [clientId]: { id: data.id, fileName, fileUrl: filePath } }));
+    const fileName = formatContractDisplayName(filePath, fallbackName);
+    setRecord((prev) => ({ ...prev, [clientId]: { id: data.id, fileName, fileUrl: filePath } }));
   }, [user?.id]);
+  const fetchSlaContract = useCallback(async (clientId: string) => {
+    await fetchMembershipDocumentRecord(clientId, SLA_RECORD_TYPE, setslaRecordByClient, "SLA.pdf");
+  }, [fetchMembershipDocumentRecord]);
+  const fetchAhiCertificate = useCallback(async (clientId: string) => {
+    await fetchMembershipDocumentRecord(clientId, AHI_CERTIFICATE_RECORD_TYPE, setAhiCertificateRecordByClient, "AHI Certificate.pdf");
+  }, [fetchMembershipDocumentRecord]);
   useEffect(() => {
     if (!selectedClientRow?.id) return;
     void fetchSlaContract(selectedClientRow.id);
-  }, [fetchSlaContract, selectedClientRow?.id]);
+    void fetchAhiCertificate(selectedClientRow.id);
+  }, [fetchAhiCertificate, fetchSlaContract, selectedClientRow?.id]);
   useEffect(() => {
     if (!selectedClientRow?.id) {
       setClientFileNotes([]);
@@ -2955,7 +3008,11 @@ const ClientsTwo = () => {
       setIsClientLogoUploading(false);
     }
   }, [clientLogoPathByClient, isClientEditMode, selectedClientRow?.id, toast]);
-  const handleSlaFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMembershipDocumentFileChange = useCallback(async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    setFile: Dispatch<SetStateAction<File | null>>,
+    setFileName: Dispatch<SetStateAction<string>>,
+  ) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || !selectedClientRow?.id || !user?.id) return;
@@ -2963,41 +3020,87 @@ const ClientsTwo = () => {
       toast({ title: "Invalid file type", description: "Please upload a PDF file.", variant: "destructive" });
       return;
     }
-    setPendingSlaFile(file);
-    setPendingSlaFileName(file.name);
+    setFile(file);
+    setFileName(file.name);
   }, [selectedClientRow?.id, toast, user?.id]);
-  const handleOpenSla = useCallback(async () => {
-    if (!selectedClientRow?.id) return;
-    const sla = slaRecordByClient[selectedClientRow.id];
-    if (!sla?.fileUrl) return;
-    const { data, error } = await supabase.storage.from("contracts").createSignedUrl(sla.fileUrl, 300);
+  const handleSlaFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await handleMembershipDocumentFileChange(event, setPendingSlaFile, setPendingSlaFileName);
+  }, [handleMembershipDocumentFileChange]);
+  const handleAhiCertificateFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await handleMembershipDocumentFileChange(event, setPendingAhiCertificateFile, setPendingAhiCertificateFileName);
+  }, [handleMembershipDocumentFileChange]);
+  const handleOpenMembershipDocument = useCallback(async (record: MembershipDocumentRecord | null | undefined, label: string) => {
+    if (!record?.fileUrl) return;
+    const { data, error } = await supabase.storage.from("contracts").createSignedUrl(record.fileUrl, 300);
     if (error || !data?.signedUrl) {
-      toast({ title: "Unable to open SLA", description: error?.message || "Signed URL failed.", variant: "destructive" });
+      toast({ title: `Unable to open ${label}`, description: error?.message || "Signed URL failed.", variant: "destructive" });
       return;
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  }, [selectedClientRow?.id, slaRecordByClient, toast]);
-  const handleRemoveSla = useCallback(async () => {
+  }, [toast]);
+  const handleOpenSla = useCallback(async () => {
+    if (!selectedClientRow?.id) return;
+    await handleOpenMembershipDocument(slaRecordByClient[selectedClientRow.id], "SLA");
+  }, [handleOpenMembershipDocument, selectedClientRow?.id, slaRecordByClient]);
+  const handleOpenAhiCertificate = useCallback(async () => {
+    if (!selectedClientRow?.id) return;
+    await handleOpenMembershipDocument(ahiCertificateRecordByClient[selectedClientRow.id], "AHI certificate");
+  }, [ahiCertificateRecordByClient, handleOpenMembershipDocument, selectedClientRow?.id]);
+  const handleRemoveMembershipDocument = useCallback(async (
+    pendingFile: File | null,
+    pendingFileName: string,
+    clearPendingFile: () => void,
+    existingRecord: MembershipDocumentRecord | null | undefined,
+    setRecord: Dispatch<SetStateAction<Record<string, MembershipDocumentRecord | null>>>,
+    removedTitle: string,
+    removedDescription: string,
+  ) => {
     if (!selectedClientRow?.id || !user?.id) return;
-    if (pendingSlaFile || pendingSlaFileName) {
-      setPendingSlaFile(null);
-      setPendingSlaFileName("");
+    if (pendingFile || pendingFileName) {
+      clearPendingFile();
       return;
     }
-    const existing = slaRecordByClient[selectedClientRow.id];
-    if (!existing?.id) return;
+    if (!existingRecord?.id) return;
     try {
-      const { error: deleteError } = await agreementRecordTable().delete().eq("id", existing.id);
+      const { error: deleteError } = await agreementRecordTable().delete().eq("id", existingRecord.id);
       if (deleteError) throw deleteError;
-      if (existing.fileUrl) {
-        await supabase.storage.from("contracts").remove([existing.fileUrl]);
+      if (existingRecord.fileUrl) {
+        await supabase.storage.from("contracts").remove([existingRecord.fileUrl]);
       }
-      setslaRecordByClient((prev) => ({ ...prev, [selectedClientRow.id]: null }));
-      toast({ title: "SLA removed", description: "Agreement file removed." });
+      setRecord((prev) => ({ ...prev, [selectedClientRow.id]: null }));
+      toast({ title: removedTitle, description: removedDescription });
     } catch (error: any) {
       toast({ title: "Unable to remove file", description: error?.message || "Remove failed.", variant: "destructive" });
     }
-  }, [pendingSlaFile, pendingSlaFileName, selectedClientRow?.id, slaRecordByClient, toast, user?.id]);
+  }, [selectedClientRow?.id, toast, user?.id]);
+  const handleRemoveSla = useCallback(async () => {
+    await handleRemoveMembershipDocument(
+      pendingSlaFile,
+      pendingSlaFileName,
+      () => {
+        setPendingSlaFile(null);
+        setPendingSlaFileName("");
+      },
+      selectedClientRow?.id ? slaRecordByClient[selectedClientRow.id] : null,
+      setslaRecordByClient,
+      "SLA removed",
+      "Agreement file removed.",
+    );
+  }, [handleRemoveMembershipDocument, pendingSlaFile, pendingSlaFileName, selectedClientRow?.id, slaRecordByClient]);
+  const handleRemoveAhiCertificate = useCallback(async () => {
+    await handleRemoveMembershipDocument(
+      pendingAhiCertificateFile,
+      pendingAhiCertificateFileName,
+      () => {
+        setPendingAhiCertificateFile(null);
+        setPendingAhiCertificateFileName("");
+      },
+      selectedClientRow?.id ? ahiCertificateRecordByClient[selectedClientRow.id] : null,
+      setAhiCertificateRecordByClient,
+      "AHI certificate removed",
+      "AHI certificate file removed.",
+    );
+  }, [ahiCertificateRecordByClient, handleRemoveMembershipDocument, pendingAhiCertificateFile, pendingAhiCertificateFileName, selectedClientRow?.id]);
 
   const openClientFile = (row: any) => {
     setSelectedClientRow(row);
@@ -3053,6 +3156,8 @@ const ClientsTwo = () => {
     });
     setPendingSlaFile(null);
     setPendingSlaFileName("");
+    setPendingAhiCertificateFile(null);
+    setPendingAhiCertificateFileName("");
   };
   const cancelClientEdits = () => {
     if (!selectedClientRow) return;
@@ -3063,11 +3168,12 @@ const ClientsTwo = () => {
     resetFileNoteForm();
     setIsFileNoteDialogOpen(true);
   };
-  const openFileNotePreviewDialog = (rawContent: string, updatedAt?: string) => {
+  const openFileNotePreviewDialog = (rawContent: string, updatedAt?: string, noteType?: string) => {
     const { content, editTag } = splitFileNoteContentAndEditTag(rawContent);
     setFileNotePreviewContent(content);
     setFileNotePreviewEditTag(editTag);
     setFileNotePreviewUpdatedAt(String(updatedAt || "").trim());
+    setFileNotePreviewType(String(noteType || "").trim());
     setIsFileNotePreviewOpen(true);
   };
   const openEditFileNoteDialog = (note: any) => {
@@ -3084,6 +3190,7 @@ const ClientsTwo = () => {
     setEditingFileNoteId(note.id);
     setFileNoteForm({
       noteDate: String(note.note_date || dateToday()),
+      noteType: String(note.note_type || ""),
       noteContent: editableContent,
       noteUserName: String(note.note_user_name || resolveCurrentUserName()),
     });
@@ -3191,10 +3298,11 @@ const ClientsTwo = () => {
   const handleSaveFileNote = async () => {
     if (!selectedClientRow?.id || !user?.id) return;
     const noteDate = fileNoteForm.noteDate.trim();
+    const noteType = fileNoteForm.noteType.trim();
     const noteContent = fileNoteForm.noteContent.trim();
     const noteUserName = fileNoteForm.noteUserName.trim() || resolveCurrentUserName();
-    if (!noteDate || !noteContent) {
-      toast({ title: "Missing fields", description: "Date and note content are required.", variant: "destructive" });
+    if (!noteDate || !noteType || !noteContent) {
+      toast({ title: "Missing fields", description: "Date, type, and note content are required.", variant: "destructive" });
       return;
     }
     setIsSavingFileNote(true);
@@ -3208,6 +3316,7 @@ const ClientsTwo = () => {
         const { error } = await (supabase as any)
           .from("client_file_notes")
           .update({
+            note_type: noteType,
             note_content: updatedContent,
             note_user_name: noteUserName,
           })
@@ -3220,6 +3329,7 @@ const ClientsTwo = () => {
           .insert({
             client_id: selectedClientRow.id,
             note_date: noteDate,
+            note_type: noteType,
             note_content: noteContent,
             note_user_name: noteUserName,
           })
@@ -3278,6 +3388,45 @@ const ClientsTwo = () => {
   const clientFileCardClass = `rounded border border-slate-200 bg-white p-3 transition-colors ${
     isClientEditMode ? "hover:border-slate-500" : "hover:border-[#3eca44] hover:bg-[#3eca44]/5"
   }`;
+  const saveMembershipDocument = useCallback(async (
+    file: File,
+    clientId: string,
+    contractType: string,
+    existingRecord: MembershipDocumentRecord | null | undefined,
+    refreshRecord: (targetClientId: string) => Promise<void>,
+    clearPendingFile: () => void,
+  ) => {
+    if (!user?.id) return;
+    if (existingRecord?.id) {
+      const { error: deleteError } = await agreementRecordTable().delete().eq("id", existingRecord.id);
+      if (deleteError) throw deleteError;
+      if (existingRecord.fileUrl) {
+        await supabase.storage.from("contracts").remove([existingRecord.fileUrl]);
+      }
+    }
+
+    const safeName = file.name.replace(/\s+/g, "_");
+    const folderName = contractType === SLA_RECORD_TYPE ? "sla" : "ahi-certificate";
+    const filePath = `${user.id}/${folderName}/${clientId}-${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "application/pdf",
+    });
+    if (uploadError) throw uploadError;
+
+    const { error: insertError } = await agreementRecordTable().insert({
+      client_id: clientId,
+      contract_type: contractType,
+      issue_date: dateToday(),
+      file_url: filePath,
+      is_active: false,
+    });
+    if (insertError) throw insertError;
+
+    await refreshRecord(clientId);
+    clearPendingFile();
+  }, [user?.id]);
 
   const handleSaveClientEdits = async () => {
     if (!selectedClientRow?.id) return;
@@ -3287,34 +3436,37 @@ const ClientsTwo = () => {
       if (pendingSlaFile && selectedClientRow?.id && user?.id) {
         setIsSlaUploading(true);
         try {
-          const existing = slaRecordByClient[selectedClientRow.id];
-          if (existing?.id) {
-            await agreementRecordTable().delete().eq("id", existing.id);
-          }
-
-          const safeName = pendingSlaFile.name.replace(/\s+/g, "_");
-          const filePath = `${user.id}/sla/${selectedClientRow.id}-${Date.now()}-${safeName}`;
-          const { error: uploadError } = await supabase.storage.from("contracts").upload(filePath, pendingSlaFile, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: pendingSlaFile.type || "application/pdf",
-          });
-          if (uploadError) throw uploadError;
-
-          const { error: insertError } = await agreementRecordTable().insert({
-            client_id: selectedClientRow.id,
-            contract_type: SLA_RECORD_TYPE,
-            issue_date: dateToday(),
-            file_url: filePath,
-            is_active: false,
-          });
-          if (insertError) throw insertError;
-
-          await fetchSlaContract(selectedClientRow.id);
-          setPendingSlaFile(null);
-          setPendingSlaFileName("");
+          await saveMembershipDocument(
+            pendingSlaFile,
+            selectedClientRow.id,
+            SLA_RECORD_TYPE,
+            slaRecordByClient[selectedClientRow.id],
+            fetchSlaContract,
+            () => {
+              setPendingSlaFile(null);
+              setPendingSlaFileName("");
+            },
+          );
         } finally {
           setIsSlaUploading(false);
+        }
+      }
+      if (pendingAhiCertificateFile && selectedClientRow?.id && user?.id) {
+        setIsAhiCertificateUploading(true);
+        try {
+          await saveMembershipDocument(
+            pendingAhiCertificateFile,
+            selectedClientRow.id,
+            AHI_CERTIFICATE_RECORD_TYPE,
+            ahiCertificateRecordByClient[selectedClientRow.id],
+            fetchAhiCertificate,
+            () => {
+              setPendingAhiCertificateFile(null);
+              setPendingAhiCertificateFileName("");
+            },
+          );
+        } finally {
+          setIsAhiCertificateUploading(false);
         }
       }
 
@@ -4203,6 +4355,7 @@ const ClientsTwo = () => {
       {selectedClientRow && (
         <div className="fixed inset-0 z-50">
           <input ref={slaFileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => void handleSlaFileChange(e)} />
+          <input ref={ahiCertificateFileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => void handleAhiCertificateFileChange(e)} />
           <button
             type="button"
             className="absolute inset-0 bg-slate-900/65"
@@ -4801,7 +4954,7 @@ const ClientsTwo = () => {
                               ],
                               [
                                 ["Agreement (SLA)", "agreement", selectedClientRow.agreement],
-                                ["", "", ""],
+                                ["AHI Certificate", "ahiCertificate", selectedClientRow.ahiCertificate],
                               ],
                             ].map((row, rowIndex) => (
                               <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
@@ -4879,27 +5032,31 @@ const ClientsTwo = () => {
                                             className="h-8 rounded !text-[11px] md:!text-[11px] font-medium"
                                             value={clientEditForm.renewalDate ? formatDisplayDate(clientEditForm.renewalDate) : ""}
                                           />
-                                        ) : field === "agreement" ? (
-                                          pendingSlaFileName || (selectedClientRow?.id && slaRecordByClient[selectedClientRow.id]) ? (
+                                        ) : field === "agreement" || field === "ahiCertificate" ? (
+                                          (field === "agreement"
+                                            ? pendingSlaFileName || (selectedClientRow?.id && slaRecordByClient[selectedClientRow.id])
+                                            : pendingAhiCertificateFileName || (selectedClientRow?.id && ahiCertificateRecordByClient[selectedClientRow.id])) ? (
                                             <div className="h-8 flex items-center justify-between gap-2">
                                               <p className="text-[11px] font-medium text-slate-900 truncate">
-                                                {pendingSlaFileName || slaRecordByClient[selectedClientRow.id!]?.fileName || "SLA.pdf"}
+                                                {field === "agreement"
+                                                  ? pendingSlaFileName || slaRecordByClient[selectedClientRow.id!]?.fileName || "SLA.pdf"
+                                                  : pendingAhiCertificateFileName || ahiCertificateRecordByClient[selectedClientRow.id!]?.fileName || "AHI Certificate.pdf"}
                                               </p>
                                               <div className="flex items-center gap-2 shrink-0">
                                                 <button
                                                   type="button"
                                                   className="text-[10px] font-medium text-slate-700 hover:text-[#2f9f35] hover:underline"
-                                                  onClick={() => slaFileInputRef.current?.click()}
-                                                  disabled={isSlaUploading}
+                                                  onClick={() => field === "agreement" ? slaFileInputRef.current?.click() : ahiCertificateFileInputRef.current?.click()}
+                                                  disabled={field === "agreement" ? isSlaUploading : isAhiCertificateUploading}
                                                 >
                                                   Change
                                                 </button>
                                                 <button
                                                   type="button"
                                                   className="inline-flex items-center justify-center text-slate-500 hover:text-rose-600"
-                                                  onClick={() => void handleRemoveSla()}
-                                                  disabled={isSlaUploading}
-                                                  aria-label="Remove SLA file"
+                                                  onClick={() => void (field === "agreement" ? handleRemoveSla() : handleRemoveAhiCertificate())}
+                                                  disabled={field === "agreement" ? isSlaUploading : isAhiCertificateUploading}
+                                                  aria-label={field === "agreement" ? "Remove SLA file" : "Remove AHI certificate file"}
                                                 >
                                                   <Trash2 className="h-3.5 w-3.5" />
                                                 </button>
@@ -4910,8 +5067,8 @@ const ClientsTwo = () => {
                                               type="button"
                                               variant="outline"
                                               className="h-7 rounded border-slate-300 bg-white px-2 text-[10px] text-slate-700 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]"
-                                              onClick={() => slaFileInputRef.current?.click()}
-                                              disabled={isSlaUploading}
+                                              onClick={() => field === "agreement" ? slaFileInputRef.current?.click() : ahiCertificateFileInputRef.current?.click()}
+                                              disabled={field === "agreement" ? isSlaUploading : isAhiCertificateUploading}
                                             >
                                               Upload
                                             </Button>
@@ -4920,13 +5077,24 @@ const ClientsTwo = () => {
                                           <Input type={field === "startDate" || field === "renewalDate" ? "date" : "text"} className="h-8 rounded !text-[11px] md:!text-[11px] font-medium" value={(clientEditForm as any)[field]} onChange={(e) => setClientEditForm((p) => ({ ...p, [field]: e.target.value }))} />
                                         )
                                       ) : (
-                                        field === "agreement" ? (
-                                          pendingSlaFileName ? (
-                                            <p className="text-[11px] font-medium text-slate-900">{pendingSlaFileName}</p>
-                                          ) : selectedClientRow?.id && slaRecordByClient[selectedClientRow.id] ? (
-                                            <button type="button" onClick={handleOpenSla} className="group inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-900 hover:text-[#2f9f35] hover:underline text-left">
+                                        field === "agreement" || field === "ahiCertificate" ? (
+                                          field === "agreement" ? (
+                                            pendingSlaFileName ? (
+                                              <p className="text-[11px] font-medium text-slate-900">{pendingSlaFileName}</p>
+                                            ) : selectedClientRow?.id && slaRecordByClient[selectedClientRow.id] ? (
+                                              <button type="button" onClick={handleOpenSla} className="group inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-900 hover:text-[#2f9f35] hover:underline text-left">
+                                                <Paperclip className="h-3 w-3 shrink-0" />
+                                                <span>{slaRecordByClient[selectedClientRow.id]?.fileName || "View SLA"}</span>
+                                              </button>
+                                            ) : (
+                                              <p className="text-[11px] font-medium text-slate-900">None</p>
+                                            )
+                                          ) : pendingAhiCertificateFileName ? (
+                                            <p className="text-[11px] font-medium text-slate-900">{pendingAhiCertificateFileName}</p>
+                                          ) : selectedClientRow?.id && ahiCertificateRecordByClient[selectedClientRow.id] ? (
+                                            <button type="button" onClick={handleOpenAhiCertificate} className="group inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-900 hover:text-[#2f9f35] hover:underline text-left">
                                               <Paperclip className="h-3 w-3 shrink-0" />
-                                              <span>{slaRecordByClient[selectedClientRow.id]?.fileName || "View SLA"}</span>
+                                              <span>{ahiCertificateRecordByClient[selectedClientRow.id]?.fileName || "View AHI certificate"}</span>
                                             </button>
                                           ) : (
                                             <p className="text-[11px] font-medium text-slate-900">None</p>
@@ -5108,7 +5276,7 @@ const ClientsTwo = () => {
                             <div className="mb-3 flex items-center justify-between gap-2">
                               <div className="group relative w-full max-w-[360px]">
                                 <Input
-                                  placeholder="Search by user or note content..."
+                                  placeholder="Search by type, user, or note content..."
                                   value={clientFileNotesSearchQuery}
                                   onChange={(e) => setClientFileNotesSearchQuery(e.target.value)}
                                   className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
@@ -5135,8 +5303,9 @@ const ClientsTwo = () => {
                                 New Note
                               </Button>
                             </div>
-                            <div className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                            <div className="grid grid-cols-[0.7fr_0.8fr_2.9fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
                               <div>Date</div>
+                              <div>Type</div>
                               <div>Note</div>
                               <div>Created By</div>
                               <div>Actions</div>
@@ -5146,21 +5315,30 @@ const ClientsTwo = () => {
                                 <div className="px-2 py-3 text-slate-500">No file notes found.</div>
                               ) : (
                                 filteredClientFileNotes.map((note) => (
-                                  <div key={note.id} className="grid grid-cols-[0.6fr_3.2fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
+                                  <div key={note.id} className="grid grid-cols-[0.7fr_0.8fr_2.9fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
                                     {(() => {
                                       const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
                                       return (
                                         <>
                                     <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                    <div className="flex min-w-0 items-center truncate">
+                                      <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientFileNoteTypePillClassName(String(note.note_type || ""))}`}>
+                                        {String(note.note_type || "--")}
+                                      </Badge>
+                                    </div>
                                     <div className="min-w-0 pr-2">
                                       <button
                                         type="button"
                                         className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
-                                        onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""))}
+                                        onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""), String(note.note_type || ""))}
                                         dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
                                       />
                                     </div>
-                                    <div className="min-w-0 truncate text-slate-700">{String(note.note_user_name || "--")}</div>
+                                    <div className="flex min-w-0 items-center truncate">
+                                      <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                        {String(note.note_user_name || "--")}
+                                      </Badge>
+                                    </div>
                                     <div className="min-w-0 flex items-center gap-2">
                                       <button
                                         type="button"
@@ -5366,6 +5544,21 @@ const ClientsTwo = () => {
             </DialogClose>
           </div>
           <div className="space-y-4 bg-white p-4 pt-6">
+            <div className="relative space-y-1.5">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Type</span>
+              <Select value={fileNoteForm.noteType || undefined} onValueChange={(value) => setFileNoteForm((prev) => ({ ...prev, noteType: value }))}>
+                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                  <SelectValue placeholder="Please select a type..." />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {CLIENT_FILE_NOTE_TYPES.map((option) => (
+                    <SelectItem key={option} value={option} className={addModalSelectItemClass}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
               <div className="relative">
@@ -5444,7 +5637,12 @@ const ClientsTwo = () => {
               <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsFileNoteDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]" onClick={() => void handleSaveFileNote()} disabled={isSavingFileNote}>
+              <Button
+                type="button"
+                className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                onClick={() => void handleSaveFileNote()}
+                disabled={isSavingFileNote || !fileNoteForm.noteDate.trim() || !fileNoteForm.noteType.trim() || !fileNoteForm.noteContent.trim()}
+              >
                 {isSavingFileNote ? "Saving..." : "Submit"}
               </Button>
             </div>
@@ -5462,6 +5660,11 @@ const ClientsTwo = () => {
             </DialogClose>
           </div>
           <div className="space-y-3 bg-white p-4">
+            {fileNotePreviewType ? (
+              <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
+                {fileNotePreviewType}
+              </div>
+            ) : null}
             <div
               className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-900"
               dangerouslySetInnerHTML={{ __html: fileNotePreviewContent ? renderTextWithMentions(fileNotePreviewContent) : "--" }}

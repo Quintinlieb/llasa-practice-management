@@ -1,4 +1,7 @@
-project_id = "afgtrqtudzbaacdksiry"
+project_id = "ythamaizmmludkwgcgrp"
 
 [functions.validate-reset-email]
+verify_jwt = false
+
+[functions.delete-subuser-manual]
 verify_jwt = false

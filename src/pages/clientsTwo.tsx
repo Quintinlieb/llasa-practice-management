@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BuildingOffice2Icon, BuildingOfficeIcon } from "@heroicons/react/24/outline";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
-import DashboardLayout from "@/components/DashboardLayout";
+import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const clientLogoTable = () => (supabase as any).from("client_logos");
 const agreementRecordTable = () => (supabase as any).from("membership_contracts");
@@ -138,6 +138,27 @@ type ClientMatter = {
   currentStage: string;
   nextDate: string;
 };
+type ClientDetailsTab = "company" | "membership" | "notes" | "matters" | "documents";
+type ClientExportOption =
+  | {
+      kind: "inactive";
+      key: string;
+      label: string;
+      fileName: string;
+    }
+  | {
+      kind: "service";
+      key: string;
+      label: string;
+      fileName: string;
+      serviceCode: "LR" | "EE" | "PR" | "OHS";
+    }
+  | {
+      kind: "all-active";
+      key: string;
+      label: string;
+      fileName: string;
+    };
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, "&amp;")
@@ -555,6 +576,7 @@ const saveCachedClientRows = (rows: any[]) => {
 const ClientsTwo = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [clientTablePage, setClientTablePage] = useState(1);
@@ -605,6 +627,7 @@ const ClientsTwo = () => {
   const [bulkClientFileName, setBulkClientFileName] = useState("");
   const [bulkClientParsedRows, setBulkClientParsedRows] = useState<BulkClientImportRow[]>([]);
   const [selectedClientRow, setSelectedClientRow] = useState<any | null>(null);
+  const [activeClientTab, setActiveClientTab] = useState<ClientDetailsTab>("company");
   const [clientGeneratedDocuments, setClientGeneratedDocuments] = useState<ClientGeneratedDocument[]>([]);
   const [isClientGeneratedDocumentsLoading, setIsClientGeneratedDocumentsLoading] = useState(false);
   const [clientDocumentsSearchQuery, setClientDocumentsSearchQuery] = useState("");
@@ -1033,12 +1056,8 @@ const ClientsTwo = () => {
       if (!q) return true;
       return [
         row.companyName,
+        row.companyNameDisplay,
         row.tradingAs,
-        row.registrationNumber,
-        row.contactPerson,
-        row.contactNumber,
-        row.email,
-        row.status,
       ]
         .join(" ")
         .toLowerCase()
@@ -1530,6 +1549,31 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchCurrentUserDisplayName();
   }, [fetchCurrentUserDisplayName]);
+  useEffect(() => {
+    const openClientId = String((location.state as { openClientId?: unknown } | null)?.openClientId ?? "").trim();
+    if (!openClientId || clientRows.length === 0) return;
+    const matchingClient = clientRows.find((row) => String(row.id) === openClientId);
+    if (!matchingClient) return;
+    openClientFile(matchingClient);
+    const openClientNoteId = String((location.state as { openClientNoteId?: unknown } | null)?.openClientNoteId ?? "").trim();
+    if (openClientNoteId) {
+      setActiveClientTab("notes");
+      return;
+    }
+    navigate("/clients-2", { replace: true, state: {} });
+  }, [clientRows, location.state, navigate]);
+  useEffect(() => {
+    const state = (location.state as { openClientId?: unknown; openClientNoteId?: unknown } | null) ?? null;
+    const openClientId = String(state?.openClientId ?? "").trim();
+    const openClientNoteId = String(state?.openClientNoteId ?? "").trim();
+    if (!openClientId || !openClientNoteId || !selectedClientRow?.id || isNotesLoading) return;
+    if (String(selectedClientRow.id) !== openClientId) return;
+    const matchingNote = clientFileNotes.find((note) => String(note?.id || "").trim() === openClientNoteId);
+    if (matchingNote) {
+      openFileNotePreviewDialog(String(matchingNote.note_content || ""), String(matchingNote.updated_at || ""));
+    }
+    navigate("/clients-2", { replace: true, state: {} });
+  }, [clientFileNotes, isNotesLoading, location.state, navigate, selectedClientRow?.id]);
   useEffect(() => {
     if (!isFileNoteDialogOpen) return;
     if (editingFileNoteId) return;
@@ -2220,11 +2264,53 @@ const ClientsTwo = () => {
     toast,
   ]);
 
-  const handleExportClientsPdf = useCallback(async () => {
-    if (tableRows.length === 0) {
+  const isClientActiveForExport = useCallback((row: any) => {
+    const normalized = String(row?.status || "").trim().toLowerCase();
+    return !normalized || normalized === "active";
+  }, []);
+
+  const compareClientNumberAscending = useCallback((left: any, right: any) => {
+    const leftRaw = String(left?.clientNumber || "").trim().toUpperCase();
+    const rightRaw = String(right?.clientNumber || "").trim().toUpperCase();
+    const leftMatch = leftRaw.match(/^LL(\d+)$/);
+    const rightMatch = rightRaw.match(/^LL(\d+)$/);
+    if (leftMatch && rightMatch) {
+      return Number(leftMatch[1]) - Number(rightMatch[1]);
+    }
+    return leftRaw.localeCompare(rightRaw);
+  }, []);
+
+  const clientExportOptions = useMemo<ClientExportOption[]>(
+    () => [
+      { kind: "all-active", key: "all-active", label: "All", fileName: "All_Clients.pdf" },
+      ...membershipTypeOptions.map((option) => ({
+        kind: "service" as const,
+        key: `service-${option.value}`,
+        label: option.label,
+        serviceCode: option.value as "LR" | "EE" | "PR" | "OHS",
+        fileName: `${option.label.replace(/[^A-Za-z0-9]+/g, "_")}_Clients.pdf`,
+      })),
+      { kind: "inactive", key: "all-inactive", label: "Inactive Clients", fileName: "Inactive_Clients.pdf" },
+    ],
+    [membershipTypeOptions],
+  );
+
+  const handleExportClientsPdf = useCallback(async (scope: ClientExportOption) => {
+    const exportRows = scope.kind === "inactive"
+      ? clientRows.filter((row) => !isClientActiveForExport(row))
+      : scope.kind === "service"
+        ? clientRows.filter(
+            (row) =>
+              isClientActiveForExport(row) &&
+              Array.isArray(row.memberTypes) &&
+              row.memberTypes.includes(scope.serviceCode),
+          )
+        : clientRows.filter((row) => isClientActiveForExport(row));
+
+    if (exportRows.length === 0) {
       toast({
         title: "Nothing to export",
-        description: "There are no client rows to export.",
+        description: `There are no clients available for "${scope.label}".`,
         variant: "destructive",
       });
       return;
@@ -2239,8 +2325,12 @@ const ClientsTwo = () => {
       const footerHeight = 20;
       const contentBottom = pageHeight - footerHeight - 3;
       const introPrefix = "Overview:";
-      const introText =
-        "This Client Directory lists the currently visible client records grouped by subscribed service. Clients assigned to more than one service appear in each relevant section, giving you a practical service-by-service view of your active client portfolio.";
+      const exportTitle = scope.kind === "inactive" ? "Inactive Client Directory" : "Client Directory";
+      const introText = scope.kind === "inactive"
+        ? "This client directory lists all inactive client records. It includes every client whose status is no longer active so you can review suspended, terminated, or otherwise non-active accounts in one place."
+        : scope.kind === "service"
+          ? `This client directory lists all active clients subscribed to ${membershipLabelByValue[scope.serviceCode] ?? scope.serviceCode}.`
+          : "This client directory lists all active client records grouped by subscribed service. Clients assigned to more than one service appear in each relevant section, giving you a practical service-by-service view of your active client portfolio.";
       const footerTopRowCenter = "This document is confidential and for internal use only.";
       const firstPageTopContentY = 22;
       const continuationTopContentY = 12;
@@ -2256,53 +2346,59 @@ const ClientsTwo = () => {
       ] as const;
       let y = firstPageTopContentY;
 
-      const serviceSections = [
-        { title: membershipLabelByValue.LR, rows: [] as any[] },
-        { title: membershipLabelByValue.EE, rows: [] as any[] },
-        { title: membershipLabelByValue.PR, rows: [] as any[] },
-        { title: membershipLabelByValue.OHS, rows: [] as any[] },
-        { title: "Unspecified", rows: [] as any[] },
-      ];
-      const serviceSectionByCode: Record<string, any[]> = {
-        LR: serviceSections[0].rows,
-        EE: serviceSections[1].rows,
-        PR: serviceSections[2].rows,
-        OHS: serviceSections[3].rows,
-      };
+      const populatedSections = scope.kind === "inactive"
+        ? [
+            {
+              title: "Inactive Clients",
+              rows: [...exportRows].sort(compareClientNumberAscending),
+            },
+          ]
+        : scope.kind === "service"
+          ? [
+              {
+                title: membershipLabelByValue[scope.serviceCode] ?? scope.serviceCode,
+                rows: [...exportRows].sort(compareClientNumberAscending),
+              },
+            ]
+          : (() => {
+              const serviceSections = [
+                { title: membershipLabelByValue.LR, rows: [] as any[] },
+                { title: membershipLabelByValue.EE, rows: [] as any[] },
+                { title: membershipLabelByValue.PR, rows: [] as any[] },
+                { title: membershipLabelByValue.OHS, rows: [] as any[] },
+                { title: "Unspecified", rows: [] as any[] },
+              ];
+              const serviceSectionByCode: Record<string, any[]> = {
+                LR: serviceSections[0].rows,
+                EE: serviceSections[1].rows,
+                PR: serviceSections[2].rows,
+                OHS: serviceSections[3].rows,
+              };
 
-      tableRows.forEach((row) => {
-        const memberTypes = Array.isArray(row.memberTypes) ? row.memberTypes.filter(Boolean) : [];
-        if (memberTypes.length === 0) {
-          serviceSections[4].rows.push(row);
-          return;
-        }
-        memberTypes.forEach((serviceCode: string) => {
-          const targetSection = serviceSectionByCode[serviceCode];
-          if (targetSection) targetSection.push(row);
-        });
-      });
+              exportRows.forEach((row) => {
+                const memberTypes = Array.isArray(row.memberTypes) ? row.memberTypes.filter(Boolean) : [];
+                if (memberTypes.length === 0) {
+                  serviceSections[4].rows.push(row);
+                  return;
+                }
+                memberTypes.forEach((serviceCode: string) => {
+                  const targetSection = serviceSectionByCode[serviceCode];
+                  if (targetSection) targetSection.push(row);
+                });
+              });
 
-      const compareClientNumberAscending = (left: any, right: any) => {
-        const leftRaw = String(left?.clientNumber || "").trim().toUpperCase();
-        const rightRaw = String(right?.clientNumber || "").trim().toUpperCase();
-        const leftMatch = leftRaw.match(/^LL(\d+)$/);
-        const rightMatch = rightRaw.match(/^LL(\d+)$/);
-        if (leftMatch && rightMatch) {
-          return Number(leftMatch[1]) - Number(rightMatch[1]);
-        }
-        return leftRaw.localeCompare(rightRaw);
-      };
-      serviceSections.forEach((section) => {
-        section.rows.sort(compareClientNumberAscending);
-      });
+              serviceSections.forEach((section) => {
+                section.rows.sort(compareClientNumberAscending);
+              });
 
-      const populatedSections = serviceSections.filter((section) => section.rows.length > 0);
+              return serviceSections.filter((section) => section.rows.length > 0);
+            })();
 
       const drawPageHeader = () => {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(14);
         doc.setTextColor(15, 23, 42);
-        doc.text("Client Directory", pageWidth / 2, 11, { align: "center" });
+        doc.text(exportTitle, pageWidth / 2, 11, { align: "center" });
         doc.setDrawColor(203, 213, 225);
         doc.setLineWidth(0.2);
         doc.line(margin, 14.5, margin + contentWidth, 14.5);
@@ -2534,10 +2630,10 @@ const ClientsTwo = () => {
       }
 
       doc.setTextColor(0, 0, 0);
-      doc.save("Client_Directory.pdf");
+      doc.save(scope.fileName);
       toast({
         title: "Export ready",
-        description: "Client Directory exported successfully.",
+        description: `${scope.label} exported successfully.`,
       });
     } catch (error: any) {
       toast({
@@ -2546,7 +2642,7 @@ const ClientsTwo = () => {
         variant: "destructive",
       });
     }
-  }, [membershipLabelByValue, tableRows, toast]);
+  }, [clientExportOptions, clientRows, compareClientNumberAscending, isClientActiveForExport, membershipLabelByValue, toast]);
 
   const handleCreateClient = async () => {
     if (!user?.id) return;
@@ -2905,6 +3001,7 @@ const ClientsTwo = () => {
 
   const openClientFile = (row: any) => {
     setSelectedClientRow(row);
+    setActiveClientTab("company");
     setIsClientEditMode(false);
     setClientEditForm({
       companyName: row.companyName || "",
@@ -3035,6 +3132,62 @@ const ClientsTwo = () => {
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, [fileNoteForm.noteContent, fileNoteMentionRange]);
+  const syncFileNoteMentionNotifications = useCallback(async (noteId: string, noteContent: string, noteUserName: string) => {
+    if (!selectedClientRow?.id || !user?.id || !noteId) return;
+    const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+    const companyId = metadataCompanyId || user.id;
+    const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
+    const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
+    const recipientIds = mentionRecipients.map((recipient) => String(recipient.recipientUserId || "").trim()).filter(Boolean);
+    const selectedClientName =
+      String(selectedClientRow?.companyNameDisplay || "").trim() ||
+      String(selectedClientRow?.companyName || "").trim() ||
+      String(selectedClientRow?.tradingAs || "").trim() ||
+      "Client";
+
+    let cleanupQuery = (supabase as any)
+      .from("notifications")
+      .delete()
+      .eq("source_table", "client_file_notes")
+      .eq("source_record_id", noteId)
+      .eq("actor_user_id", user.id);
+
+    if (recipientIds.length > 0) {
+      const recipientFilter = `(${recipientIds.map((id) => `"${id}"`).join(",")})`;
+      cleanupQuery = cleanupQuery.not("recipient_user_id", "in", recipientFilter);
+    }
+
+    const { error: cleanupError } = await cleanupQuery;
+    if (cleanupError) {
+      console.error("Unable to clean up mention notifications for client file note", cleanupError);
+    }
+
+    if (mentionRecipients.length === 0) return;
+
+    const notificationRows = mentionRecipients.map((recipient) => ({
+      recipient_user_id: recipient.recipientUserId,
+      actor_user_id: user.id,
+      actor_name: noteUserName,
+      notification_type: "mention",
+      title: "New mention",
+      body: `${noteUserName} has tagged you in a client file.`,
+      source_table: "client_file_notes",
+      source_record_id: noteId,
+      source_parent_id: selectedClientRow.id,
+      metadata: {
+        client_name: selectedClientName,
+        note_preview: noteContent.slice(0, 200),
+      },
+    }));
+    const { error: upsertError } = await (supabase as any)
+      .from("notifications")
+      .upsert(notificationRows, {
+        onConflict: "recipient_user_id,notification_type,source_table,source_record_id",
+      });
+    if (upsertError) {
+      console.error("Unable to sync mention notifications for client file note", upsertError);
+    }
+  }, [selectedClientRow?.companyName, selectedClientRow?.companyNameDisplay, selectedClientRow?.id, selectedClientRow?.tradingAs, user]);
   const handleSaveFileNote = async () => {
     if (!selectedClientRow?.id || !user?.id) return;
     const noteDate = fileNoteForm.noteDate.trim();
@@ -3076,32 +3229,8 @@ const ClientsTwo = () => {
         savedFileNoteId = String(insertedFileNote?.id || "").trim();
       }
 
-      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-      const companyId = metadataCompanyId || user.id;
-      const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
-      const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
-      if (savedFileNoteId && mentionRecipients.length > 0) {
-        const notificationRows = mentionRecipients.map((recipient) => ({
-          recipient_user_id: recipient.recipientUserId,
-          actor_user_id: user.id,
-          actor_name: noteUserName,
-          notification_type: "mention",
-          title: "New mention",
-          body: `${noteUserName} has tagged you in a matter/client file.`,
-          source_table: "client_file_notes",
-          source_record_id: savedFileNoteId,
-          source_parent_id: selectedClientRow.id,
-          metadata: {
-            client_name: selectedClientName,
-            note_preview: noteContent.slice(0, 200),
-          },
-        }));
-        const { error: notificationError } = await (supabase as any)
-          .from("notifications")
-          .insert(notificationRows);
-        if (notificationError) {
-          console.error("Unable to save mention notifications for client file note", notificationError);
-        }
+      if (savedFileNoteId) {
+        await syncFileNoteMentionNotifications(savedFileNoteId, noteContent, noteUserName);
       }
       setIsFileNoteDialogOpen(false);
       resetFileNoteForm();
@@ -3131,6 +3260,15 @@ const ClientsTwo = () => {
         .eq("id", noteId)
         .eq("client_id", selectedClientRow.id);
       if (error) throw error;
+      const { error: notificationError } = await (supabase as any)
+        .from("notifications")
+        .delete()
+        .eq("source_table", "client_file_notes")
+        .eq("source_record_id", noteId)
+        .eq("actor_user_id", user.id);
+      if (notificationError) {
+        console.error("Unable to delete mention notifications for client file note", notificationError);
+      }
       await fetchClientFileNotes(selectedClientRow.id);
       toast({ title: "File note deleted" });
     } catch (error: any) {
@@ -3427,14 +3565,19 @@ const ClientsTwo = () => {
   );
 
   return (
-    <DashboardLayout>
+    <>
       <div className="space-y-0 -m-6">
         <div className="overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-[#3eca44] -ml-1">Clients</h1>
-                <p className="text-xs text-slate-600 mt-2">Browse, search, and manage your clients and attach their documents.</p>
+              <div className="flex flex-col gap-4 pt-[10px] pb-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h1 className="text-4xl font-normal text-[#3eca44] -ml-1">Clients</h1>
+                  <p className="text-xs text-slate-600 mt-2">Browse, search, and manage your clients and attach their documents.</p>
+                </div>
+                <div className="lg:pt-1">
+                  <PageDateStamp className="text-slate-500 [&_svg]:text-slate-500" />
+                </div>
               </div>
             </div>
             <section className="relative flex-1 min-h-0 overflow-hidden overflow-x-hidden pr-2">
@@ -3480,15 +3623,30 @@ const ClientsTwo = () => {
                             Delete
                           </Button>
                         ) : null}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 rounded px-3 text-[11px] inline-flex items-center gap-1 border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-                          onClick={() => void handleExportClientsPdf()}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Export
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded px-3 text-[11px] inline-flex items-center gap-1 border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Export
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            {clientExportOptions.map((option) => (
+                              <DropdownMenuItem
+                                key={option.key}
+                                onClick={() => void handleExportClientsPdf(option)}
+                                className="text-[11px]"
+                              >
+                                {option.label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -4182,7 +4340,7 @@ const ClientsTwo = () => {
                     </div>
                   </div>
 
-                  <Tabs defaultValue="company" className="flex min-h-0 flex-1 flex-col">
+                  <Tabs value={activeClientTab} onValueChange={(value) => setActiveClientTab(value as ClientDetailsTab)} className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="grid w-full grid-cols-5 bg-slate-100">
                       <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
                       <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
@@ -5374,7 +5532,7 @@ const ClientsTwo = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
 };
 

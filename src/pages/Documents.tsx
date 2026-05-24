@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
+import { PageDateStamp } from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -1196,18 +1196,21 @@ const Documents = () => {
   };
 
   return (
-    <DashboardLayout
-      profileSubtitleMode="company"
-    >
+    <>
       <div className="space-y-0 -m-6">
         <div className="overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-blue-600 -ml-1">Documents</h1>
-                <p className="text-xs text-slate-600 mt-2">
-                  Generate labour documents quickly with guided step-by-step forms.
-                </p>
+              <div className="flex flex-col gap-4 pt-[10px] pb-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h1 className="text-4xl font-normal text-blue-600 -ml-1">Documents</h1>
+                  <p className="text-xs text-slate-600 mt-2">
+                    Generate labour documents quickly with guided step-by-step forms.
+                  </p>
+                </div>
+                <div className="lg:pt-1">
+                  <PageDateStamp className="text-slate-500 [&_svg]:text-slate-500" />
+                </div>
               </div>
             </div>
 
@@ -1959,7 +1962,7 @@ const Documents = () => {
           )}
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
 };
 

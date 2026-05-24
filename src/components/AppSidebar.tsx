@@ -181,7 +181,7 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="px-0 py-4 mt-auto border-t border-white/10">
+        <SidebarFooter className="px-0 py-4 border-t border-white/10">
           <SidebarMenu className="gap-0">
             <SidebarMenuItem>
               {withTooltip(

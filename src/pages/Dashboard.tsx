@@ -1,24 +1,23 @@
 import { useEffect, useState } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
+import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { southAfricanProvinces } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Bell,
-  BriefcaseBusiness,
+  Building2,
   Calendar,
   CalendarCheck2,
   ChevronDown,
   CircleAlert,
-  FileText,
+  Files,
   FolderOpen,
   Search,
   TriangleAlert,
   Users,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
-const currentDateLabel = "Tuesday, 20 May 2026";
 
 type DashboardEventRow = {
   id: string;
@@ -28,6 +27,12 @@ type DashboardEventRow = {
   matterType: string;
   client: string;
   consultant: string;
+};
+
+type CachedDashboardUpcomingEvents = {
+  rangeStart: string;
+  rangeEnd: string;
+  rows: DashboardEventRow[];
 };
 
 type DashboardCaseDateRow = {
@@ -62,6 +67,8 @@ const consultantPillClassNames = [
   "border-[#eadcfb] bg-[#f5edff] text-[#7c3aed]",
   "border-[#fde2c8] bg-[#fff4e8] text-[#ea580c]",
 ] as const;
+
+const dashboardUpcomingEventsCacheKey = "dashboard:upcoming-events";
 
 type DashboardCaseDatesQuery = {
   from: (table: "case_dates") => {
@@ -121,27 +128,27 @@ const statCards = [
     value: "86",
     subtitle: "Active clients",
     delta: "+ 4 this month",
-    icon: Users,
+    icon: Building2,
     iconShellClassName: "bg-[#eaf9ee] text-[#3eca44]",
   },
   {
-    title: "DOCUMENTS THIS MONTH",
+    title: "DOCUMENTS GENERATED",
     value: "142",
     subtitle: "Documents generated",
     delta: "+ 18% vs last month",
-    icon: FolderOpen,
+    icon: Files,
     iconShellClassName: "bg-[#edf5ff] text-[#3b82f6]",
   },
   {
-    title: "MATTERS THIS MONTH",
+    title: "NEW MATTERS",
     value: "34",
     subtitle: "New matters opened",
     delta: "+ 21% vs last month",
-    icon: BriefcaseBusiness,
+    icon: FolderOpen,
     iconShellClassName: "bg-[#f3ebff] text-[#8b5cf6]",
   },
   {
-    title: "EVENTS THIS MONTH",
+    title: "ACTIVE EVENTS",
     value: "48",
     subtitle: "Scheduled events",
     delta: "+ 16% vs last month",
@@ -150,37 +157,28 @@ const statCards = [
   },
 ] as const;
 
-const matterCategories = [
-  { label: "Disciplinary Hearings", value: 28, color: "#4f7cff" },
-  { label: "CCMA / Bargaining Council", value: 22, color: "#ff9b52" },
-  { label: "Incapacity / Performance", value: 16, color: "#ff6b57" },
-  { label: "Retrenchments", value: 14, color: "#ffc44f" },
-  { label: "Employment Equity", value: 8, color: "#51b4c9" },
-  { label: "OHS", value: 6, color: "#7c8bd8" },
-  { label: "Payroll Support", value: 4, color: "#8f5be8" },
-] as const;
+type MatterCategory = {
+  label: string;
+  value: number;
+  color: string;
+};
 
-const recentActivity = [
-  {
-    title: "New matter opened: MAT000037 - Retail Group (Pty) Ltd",
-    meta: "Quintin Liebenberg - 2h ago",
-  },
-  {
-    title: "Document generated: Warning Letter - MAT000001",
-    meta: "Mildrid Ellis - 3h ago",
-  },
-  {
-    title: "Attendance note added: MAT000015 - CCMA Arbitration",
-    meta: "Mildrid Ellis - 5h ago",
-  },
-  {
-    title: "Matter status updated: MAT000022 - Consultation",
-    meta: "Quintin Liebenberg - 1d ago",
-  },
-  {
-    title: "Document uploaded: Bundle of Documents - MAT000031",
-    meta: "Quintin Liebenberg - 1d ago",
-  },
+type ClientProvinceCount = {
+  label: (typeof southAfricanProvinces)[number];
+  value: number;
+};
+
+const matterCategoryColors = [
+  "#4f7cff",
+  "#ff9b52",
+  "#ff6b57",
+  "#ffc44f",
+  "#51b4c9",
+  "#7c8bd8",
+  "#8f5be8",
+  "#34d399",
+  "#f472b6",
+  "#94a3b8",
 ] as const;
 
 const clientRenewals = [
@@ -189,19 +187,6 @@ const clientRenewals = [
   { label: "Expired memberships", value: 1, colorClassName: "bg-[#8f5be8]" },
   { label: "Clients with no recent activity (90+ days)", value: 7, colorClassName: "bg-[#94a3b8]" },
 ] as const;
-
-const donutGradient = (() => {
-  const total = matterCategories.reduce((sum, item) => sum + item.value, 0);
-  let start = 0;
-  return matterCategories
-    .map((item) => {
-      const sweep = (item.value / total) * 360;
-      const segment = `${item.color} ${start}deg ${start + sweep}deg`;
-      start += sweep;
-      return segment;
-    })
-    .join(", ");
-})();
 
 function CardLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -302,9 +287,114 @@ function getConsultantPillClassName(value: string) {
   return consultantPillClassNames[hash % consultantPillClassNames.length];
 }
 
+function loadCachedDashboardUpcomingEvents() {
+  try {
+    const raw = sessionStorage.getItem(dashboardUpcomingEventsCacheKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Partial<CachedDashboardUpcomingEvents> | null;
+    if (!parsed || !Array.isArray(parsed.rows)) return [];
+
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 30);
+    const expectedRangeStart = startDate.toISOString().slice(0, 10);
+    const expectedRangeEnd = endDate.toISOString().slice(0, 10);
+
+    if (parsed.rangeStart !== expectedRangeStart || parsed.rangeEnd !== expectedRangeEnd) return [];
+
+    return parsed.rows.filter(
+      (row): row is DashboardEventRow =>
+        Boolean(row) &&
+        typeof row === "object" &&
+        typeof row.id === "string" &&
+        typeof row.caseId === "string" &&
+        typeof row.dateLabel === "string" &&
+        typeof row.matterEvent === "string" &&
+        typeof row.matterType === "string" &&
+        typeof row.client === "string" &&
+        typeof row.consultant === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedDashboardUpcomingEvents(rangeStart: string, rangeEnd: string, rows: DashboardEventRow[]) {
+  try {
+    const payload: CachedDashboardUpcomingEvents = {
+      rangeStart,
+      rangeEnd,
+      rows,
+    };
+    sessionStorage.setItem(dashboardUpcomingEventsCacheKey, JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function getMonthToDateComparisonEnd(referenceDate: Date) {
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  const previousMonthLastDay = new Date(year, month, 0).getDate();
+  const comparisonDay = Math.min(referenceDate.getDate(), previousMonthLastDay);
+
+  return new Date(
+    year,
+    month - 1,
+    comparisonDay,
+    referenceDate.getHours(),
+    referenceDate.getMinutes(),
+    referenceDate.getSeconds(),
+    referenceDate.getMilliseconds(),
+  );
+}
+
+function formatMonthToDatePercentChange(currentCount: number, previousCount: number) {
+  if (previousCount === 0) {
+    if (currentCount === 0) return "0% this month";
+    return "+ 100% this month";
+  }
+
+  const percentChange = Math.round(((currentCount - previousCount) / previousCount) * 100);
+  return `${percentChange >= 0 ? "+" : "-"} ${Math.abs(percentChange)}% this month`;
+}
+
+function normalizeProvinceLabel(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return southAfricanProvinces.find((province) => province.toLowerCase() === normalized) ?? null;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [eventRows, setEventRows] = useState<DashboardEventRow[]>([]);
+  const [eventRows, setEventRows] = useState<DashboardEventRow[]>(() => loadCachedDashboardUpcomingEvents());
+  const [activeClientCount, setActiveClientCount] = useState<number>(0);
+  const [activeClientsThisMonthCount, setActiveClientsThisMonthCount] = useState<number>(0);
+  const [documentsThisMonthCount, setDocumentsThisMonthCount] = useState<number>(0);
+  const [documentsVsLastMonthLabel, setDocumentsVsLastMonthLabel] = useState<string>("0% this month");
+  const [mattersThisMonthCount, setMattersThisMonthCount] = useState<number>(0);
+  const [mattersVsLastMonthLabel, setMattersVsLastMonthLabel] = useState<string>("0% this month");
+  const [eventsThisMonthCount, setEventsThisMonthCount] = useState<number>(0);
+  const [eventsVsLastMonthLabel, setEventsVsLastMonthLabel] = useState<string>("0% this month");
+  const [matterCategories, setMatterCategories] = useState<MatterCategory[]>([]);
+  const [clientProvinceCounts, setClientProvinceCounts] = useState<ClientProvinceCount[]>([]);
+
+  const donutGradient = (() => {
+    const total = matterCategories.reduce((sum, item) => sum + item.value, 0);
+    if (!total) return "conic-gradient(#e2e8f0 0deg 360deg)";
+
+    let start = 0;
+    const segments = matterCategories
+      .map((item) => {
+        const sweep = (item.value / total) * 360;
+        const segment = `${item.color} ${start}deg ${start + sweep}deg`;
+        start += sweep;
+        return segment;
+      })
+      .join(", ");
+
+    return `conic-gradient(${segments})`;
+  })();
 
   useEffect(() => {
     let isMounted = true;
@@ -346,6 +436,7 @@ export default function Dashboard() {
         .slice(0, 5);
 
       setEventRows(mapped);
+      saveCachedDashboardUpcomingEvents(startLabel, endLabel, mapped);
     };
 
     void loadUpcomingEvents();
@@ -355,25 +446,266 @@ export default function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadClientProvinceCounts = async () => {
+      const { data, error } = await (supabase as any)
+        .from("clients")
+        .select("status,province");
+
+      if (!isMounted || error) return;
+
+      const provinceCounts = new Map<string, number>(
+        southAfricanProvinces.map((province) => [province, 0]),
+      );
+
+      const clientRows = Array.isArray(data) ? data : [];
+      clientRows.forEach((row: any) => {
+        const status = String(row?.status ?? "").trim().toLowerCase();
+        if (status === "inactive") return;
+
+        const province = normalizeProvinceLabel(row?.province);
+        if (!province) return;
+
+        provinceCounts.set(province, (provinceCounts.get(province) ?? 0) + 1);
+      });
+
+      setClientProvinceCounts(
+        southAfricanProvinces.map((province) => ({
+          label: province,
+          value: provinceCounts.get(province) ?? 0,
+        })),
+      );
+    };
+
+    void loadClientProvinceCounts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadDocumentsThisMonthCount = async () => {
+      const today = new Date();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+      const nowIso = today.toISOString();
+      const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString();
+      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString();
+      const previousMonthComparisonEndIso = getMonthToDateComparisonEnd(today).toISOString();
+
+      const { data, error } = await (supabase as any)
+        .from("documents")
+        .select("created_at")
+        .gte("created_at", lastMonthStart)
+        .lt("created_at", nextMonthStart);
+
+      if (!isMounted || error) return;
+
+      const documentRows = Array.isArray(data) ? data : [];
+      const thisMonthCount = documentRows.filter((row: any) => {
+        const createdAt = String(row?.created_at ?? "").trim();
+        return createdAt >= monthStart && createdAt <= nowIso;
+      }).length;
+      const lastMonthCountAtSamePoint = documentRows.filter((row: any) => {
+        const createdAt = String(row?.created_at ?? "").trim();
+        return createdAt >= lastMonthStart && createdAt <= previousMonthComparisonEndIso;
+      }).length;
+
+      setDocumentsThisMonthCount(thisMonthCount);
+      setDocumentsVsLastMonthLabel(
+        formatMonthToDatePercentChange(thisMonthCount, lastMonthCountAtSamePoint),
+      );
+    };
+
+    void loadDocumentsThisMonthCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadActiveClientCount = async () => {
+      const today = new Date();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+      const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString();
+
+      const { data, error } = await (supabase as any)
+        .from("clients")
+        .select("status,created_at");
+
+      if (!isMounted || error) return;
+
+      const clientRows = Array.isArray(data) ? data : [];
+      const activeRows = clientRows.filter((row: any) => {
+        const status = String(row?.status ?? "").trim().toLowerCase();
+        return status !== "inactive";
+      });
+      const activeThisMonth = activeRows.filter((row: any) => {
+        const createdAt = String(row?.created_at ?? "").trim();
+        return createdAt >= monthStart && createdAt < nextMonthStart;
+      }).length;
+
+      setActiveClientCount(activeRows.length);
+      setActiveClientsThisMonthCount(activeThisMonth);
+    };
+
+    void loadActiveClientCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMatterCategories = async () => {
+      const { data, error } = await (supabase as any)
+        .from("case_files")
+        .select("case_type,case_subtype,status");
+
+      if (!isMounted || error) return;
+
+      const matterRows = Array.isArray(data) ? data : [];
+      const counts = new Map<string, number>();
+
+      matterRows.forEach((row: any) => {
+        const status = String(row?.status ?? "").trim().toLowerCase();
+        if (status !== "active") return;
+
+        const label = getMatterHeaderTitle(row?.case_type, row?.case_subtype);
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      });
+
+      const categories = Array.from(counts.entries())
+        .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0]))
+        .map(([label, value], index) => ({
+          label,
+          value,
+          color: matterCategoryColors[index % matterCategoryColors.length],
+        }));
+
+      setMatterCategories(categories);
+    };
+
+    void loadMatterCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMattersThisMonthCount = async () => {
+      const today = new Date();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+      const nowIso = today.toISOString();
+      const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString();
+      const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString();
+      const previousMonthComparisonEndIso = getMonthToDateComparisonEnd(today).toISOString();
+
+      const { data, error } = await (supabase as any)
+        .from("case_files")
+        .select("created_at")
+        .gte("created_at", lastMonthStart)
+        .lt("created_at", nextMonthStart);
+
+      if (!isMounted || error) return;
+
+      const matterRows = Array.isArray(data) ? data : [];
+      const thisMonthCount = matterRows.filter((row: any) => {
+        const createdAt = String(row?.created_at ?? "").trim();
+        return createdAt >= monthStart && createdAt <= nowIso;
+      }).length;
+      const lastMonthCountAtSamePoint = matterRows.filter((row: any) => {
+        const createdAt = String(row?.created_at ?? "").trim();
+        return createdAt >= lastMonthStart && createdAt <= previousMonthComparisonEndIso;
+      }).length;
+
+      setMattersThisMonthCount(thisMonthCount);
+      setMattersVsLastMonthLabel(
+        formatMonthToDatePercentChange(thisMonthCount, lastMonthCountAtSamePoint),
+      );
+    };
+
+    void loadMattersThisMonthCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadEventsThisMonthCount = async () => {
+      const today = new Date();
+      const monthStartLabel = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+      const todayLabel = today.toISOString().slice(0, 10);
+      const nextMonthStartLabel = new Date(today.getFullYear(), today.getMonth() + 1, 1).toISOString().slice(0, 10);
+      const lastMonthStartLabel = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 10);
+      const previousMonthComparisonEndLabel = getMonthToDateComparisonEnd(today).toISOString().slice(0, 10);
+
+      const { data, error } = await (supabase as any)
+        .from("case_dates")
+        .select("date_value,case_files!inner(status)")
+        .gte("date_value", lastMonthStartLabel)
+        .lt("date_value", nextMonthStartLabel);
+
+      if (!isMounted || error) return;
+
+      const eventDateRows = Array.isArray(data) ? data : [];
+      const activeEventRows = eventDateRows.filter((row: any) => {
+        const caseFile = Array.isArray(row?.case_files) ? row.case_files[0] : row?.case_files;
+        const status = String(caseFile?.status ?? "").trim().toLowerCase();
+        return status === "active";
+      });
+
+      const thisMonthCount = activeEventRows.filter((row: any) => {
+        const dateValue = String(row?.date_value ?? "").trim();
+        return dateValue >= monthStartLabel && dateValue <= todayLabel;
+      }).length;
+      const lastMonthCountAtSamePoint = activeEventRows.filter((row: any) => {
+        const dateValue = String(row?.date_value ?? "").trim();
+        return dateValue >= lastMonthStartLabel && dateValue <= previousMonthComparisonEndLabel;
+      }).length;
+
+      setEventsThisMonthCount(thisMonthCount);
+      setEventsVsLastMonthLabel(
+        formatMonthToDatePercentChange(thisMonthCount, lastMonthCountAtSamePoint),
+      );
+    };
+
+    void loadEventsThisMonthCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
-    <DashboardLayout>
       <div className="space-y-0 -m-6">
         <div className="h-[calc(100dvh-var(--app-header-height,5rem))] overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="flex flex-col gap-4 pt-5 pb-2 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-4 pt-[10px] pb-2 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h1 className="-ml-1 text-4xl font-normal text-[#3eca44]">Dashboard</h1>
                   <p className="mt-2 text-xs text-slate-600">
                     Welcome back, Quintin. Here&apos;s what&apos;s happening with your practice today.
                   </p>
                 </div>
-
-                <div className="inline-flex items-center gap-3 self-start rounded-[10px] bg-white px-4 py-2 text-[11px] font-semibold text-slate-600">
-                  <span>{currentDateLabel}</span>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-slate-200 bg-slate-50 text-slate-500">
-                    <Calendar className="h-4 w-4" />
-                  </div>
+                <div className="lg:pt-1">
+                  <PageDateStamp className="text-slate-500 [&_svg]:text-slate-500" />
                 </div>
               </div>
             </div>
@@ -578,8 +910,28 @@ export default function Dashboard() {
                   </div>
 
                   <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
-                    {statCards.map((card) => {
+                    {statCards.map((card, index) => {
                       const Icon = card.icon;
+                      const displayValue =
+                        index === 0
+                          ? String(activeClientCount)
+                          : index === 1
+                            ? String(documentsThisMonthCount)
+                            : index === 2
+                              ? String(mattersThisMonthCount)
+                              : index === 3
+                                ? String(eventsThisMonthCount)
+                                : card.value;
+                      const displayDelta =
+                        index === 0
+                          ? `+ ${activeClientsThisMonthCount} this month`
+                          : index === 1
+                            ? documentsVsLastMonthLabel
+                            : index === 2
+                              ? mattersVsLastMonthLabel
+                              : index === 3
+                                ? eventsVsLastMonthLabel
+                                : card.delta;
 
                       return (
                         <Card key={card.title} className="rounded-[10px] border border-slate-200 bg-white shadow-none">
@@ -595,13 +947,14 @@ export default function Dashboard() {
                               </div>
 
                               <div className="min-w-0">
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.02em] text-slate-500">
+                                <p className="text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500">
                                   {card.title}
                                 </p>
-                                <p className="mt-2 text-[44px] font-semibold leading-none text-slate-900">{card.value}</p>
-                                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                  <span className="text-[12px] text-slate-500">{card.subtitle}</span>
-                                  <span className="text-[12px] font-semibold text-[#3eca44]">{card.delta}</span>
+                                <div className="mt-2 flex items-end justify-between gap-3">
+                                  <p className="text-[36px] font-semibold leading-none text-slate-900">{displayValue}</p>
+                                  <span className="shrink-0 text-right text-[11px] font-semibold leading-none text-[#3eca44]">
+                                    {displayDelta}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -615,7 +968,7 @@ export default function Dashboard() {
                     <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none">
                       <CardHeader className="px-5 py-4">
                         <CardTitle className="text-[26px] font-semibold leading-none text-slate-900">
-                          Matters by Category <span className="text-[13px] font-medium text-slate-500">(Active Matters)</span>
+                          Matters by Category
                         </CardTitle>
                       </CardHeader>
 
@@ -624,22 +977,26 @@ export default function Dashboard() {
                           <div className="flex justify-center sm:w-[170px]">
                             <div
                               className="relative h-[136px] w-[136px] rounded-full"
-                              style={{ background: `conic-gradient(${donutGradient})` }}
+                              style={{ background: donutGradient }}
                             >
                               <div className="absolute inset-[32px] rounded-full bg-white" />
                             </div>
                           </div>
 
                           <div className="min-w-0 flex-1 space-y-2">
-                            {matterCategories.map((item) => (
-                              <div key={item.label} className="flex items-center justify-between gap-3 text-[12px]">
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                                  <span className="truncate text-slate-700">{item.label}</span>
+                            {matterCategories.length ? (
+                              matterCategories.map((item) => (
+                                <div key={item.label} className="flex items-center justify-between gap-3 text-[12px]">
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                    <span className="truncate text-slate-700">{item.label}</span>
+                                  </div>
+                                  <span className="font-semibold text-slate-700">{item.value}</span>
                                 </div>
-                                <span className="font-semibold text-slate-700">{item.value}</span>
-                              </div>
-                            ))}
+                              ))
+                            ) : (
+                              <p className="text-[12px] text-slate-500">No active matters found.</p>
+                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -652,28 +1009,41 @@ export default function Dashboard() {
                     <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none">
                       <CardHeader className="px-5 py-4">
                         <CardTitle className="text-[26px] font-semibold leading-none text-slate-900">
-                          Recent Activity
+                          Clients by Province
                         </CardTitle>
                       </CardHeader>
 
                       <CardContent className="px-5 pb-0">
-                        <div className="space-y-4 pb-5">
-                          {recentActivity.map((item) => (
-                            <div key={item.title} className="flex gap-3">
-                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-100 text-slate-500">
-                                <FileText className="h-4 w-4" />
+                        <div className="space-y-3 pb-5">
+                          {clientProvinceCounts.map((item) => {
+                            const maxValue = Math.max(...clientProvinceCounts.map((entry) => entry.value), 1);
+                            const widthPercent = (item.value / maxValue) * 100;
+
+                            return (
+                              <div key={item.label} className="space-y-1.5">
+                                <div className="flex items-center justify-between gap-3 text-[12px]">
+                                  <span className="truncate text-slate-700">{item.label}</span>
+                                  <span className="font-semibold text-slate-900">{item.value}</span>
+                                </div>
+                                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                                  <div
+                                    className="h-full rounded-full bg-[#3eca44] transition-all"
+                                    style={{ width: `${widthPercent}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-[13px] font-semibold text-slate-900">{item.title}</p>
-                                <p className="mt-1 text-[12px] text-slate-500">{item.meta}</p>
-                              </div>
+                            );
+                          })}
+                          {!clientProvinceCounts.length && (
+                            <div className="text-[12px] text-slate-500">
+                              No client province data found.
                             </div>
-                          ))}
+                          )}
                         </div>
                       </CardContent>
 
                       <div className="border-t border-slate-200 px-5 py-4 text-center">
-                        <CardLink label="View all activity" onClick={() => navigate("/documents")} />
+                        <CardLink label="View all clients" onClick={() => navigate("/employees")} />
                       </div>
                     </Card>
 
@@ -710,6 +1080,5 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderPlusIcon } from "@heroicons/react/24/outline";
-import DashboardLayout from "@/components/DashboardLayout";
+import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,20 @@ type CaseDocument = {
   updated_at?: string | null;
 };
 type CaseTask = { title: string; assignedTo: string; dueDate: string; priority: "Low" | "Medium" | "High"; status: string };
-type CaseOutcome = { outcomeType: string; outcomeDate: string; result: string; amount: string; closingNote: string; closedBy: string; closedDate: string };
+type OffenceCategory = "Minor" | "Serious" | "Dismissible";
+type ConductOffence = {
+  name: string;
+  category: OffenceCategory;
+  firstOutcome: string;
+};
+type CaseOutcome = {
+  outcomeType: string;
+  outcomeDate: string;
+  misconductTypes: string[];
+  amountAwarded: string;
+  amountSettled: string;
+  closingNote: string;
+};
 type CaseFile = {
   id: string;
   clientId: string;
@@ -190,7 +203,6 @@ const CASE_TYPE_OPTIONS = [
   "Consultation",
   "CCMA",
   "Bargaining Council",
-  "Wage Negotiations",
   "Labour Court",
 ] as const;
 const NEW_MATTER_OPTIONS: Array<{ label: string; caseType: (typeof CASE_TYPE_OPTIONS)[number] }> = [
@@ -198,13 +210,12 @@ const NEW_MATTER_OPTIONS: Array<{ label: string; caseType: (typeof CASE_TYPE_OPT
   { label: "Consultation", caseType: "Consultation" },
   { label: "CCMA", caseType: "CCMA" },
   { label: "Bargaining Council", caseType: "Bargaining Council" },
-  { label: "Wage Negotiations", caseType: "Wage Negotiations" },
   { label: "Labour Court", caseType: "Labour Court" },
 ];
 const SUBTYPE_NONE = "None";
 const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[number], readonly string[]>> = {
   Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance"],
-  Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Case Preparation", "Trade Union"],
+  Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
   CCMA: ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
   "Bargaining Council": ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
 };
@@ -214,6 +225,185 @@ const CURRENT_STAGE_OPTIONS = ["Scheduled", "Awaiting Date", "Finalised", "In pr
 const HEARING_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const HEARING_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
 const OUTCOME_TYPE_OPTIONS = ["Dismissal Upheld", "Settlement", "Award Issued", "Case Withdrawn", "Matter Closed", "Consultation Completed", "Hearing Finalised"] as const;
+const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
+const offenceGroupLabel: Record<OffenceCategory, string> = {
+  Minor: "Minor Offences",
+  Serious: "Serious Offences",
+  Dismissible: "Dismissible Offences",
+};
+const fallbackConductOffences: ConductOffence[] = [
+  { name: "Unauthorised Absenteeism", category: "Minor", firstOutcome: "" },
+  { name: "Arriving Late For Work", category: "Minor", firstOutcome: "" },
+  { name: "Leaving Work Early", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Absence", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Late Arrival", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Report Leaving Early", category: "Minor", firstOutcome: "" },
+  { name: "Sleeping On Duty", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Clock In/Out", category: "Minor", firstOutcome: "" },
+  { name: "Poor Housekeeping", category: "Minor", firstOutcome: "" },
+  { name: "Horseplay", category: "Minor", firstOutcome: "" },
+  { name: "Unauthorised Use Of Cell Phone", category: "Minor", firstOutcome: "" },
+  { name: "Breach Of Policy Or Procedure", category: "Minor", firstOutcome: "" },
+  { name: "Breach Of Rules Or Regulations", category: "Minor", firstOutcome: "" },
+  { name: "Failure To Carry Out Instructions", category: "Minor", firstOutcome: "" },
+  { name: "Negligence", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Absenteeism > 5 Days", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Work Overtime", category: "Serious", firstOutcome: "" },
+  { name: "Consistent Poor Time Keeping", category: "Serious", firstOutcome: "" },
+  { name: "Causing Inharmonious Relationships", category: "Serious", firstOutcome: "" },
+  { name: "Unbecoming Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Insolence / Disrespectful Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Aggressive Behaviour", category: "Serious", firstOutcome: "" },
+  { name: "Insubordination / Refusing Instructions", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Comply With Policy/Procedure", category: "Serious", firstOutcome: "" },
+  { name: "Refusal To Comply With Rule", category: "Serious", firstOutcome: "" },
+  { name: "Damage To Company Name", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Wastage Of Materials", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Removal", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Possession", category: "Serious", firstOutcome: "" },
+  { name: "Breach Of OHS Standards / Policies", category: "Serious", firstOutcome: "" },
+  { name: "Private Work During Working Hours", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Disclosure Of Information", category: "Serious", firstOutcome: "" },
+  { name: "Misappropriation Of Property / Funds", category: "Serious", firstOutcome: "" },
+  { name: "Testing Positive For Alcohol", category: "Serious", firstOutcome: "" },
+  { name: "Testing Positive For Illegal Drugs", category: "Serious", firstOutcome: "" },
+  { name: "Under The Influence Of Alcohol/Drugs", category: "Serious", firstOutcome: "" },
+  { name: "Possession Of Alcohol/Drugs On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Possession Of Firearm On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Intimidation", category: "Serious", firstOutcome: "" },
+  { name: "Incitement", category: "Serious", firstOutcome: "" },
+  { name: "Illegal Strike / Picketing", category: "Serious", firstOutcome: "" },
+  { name: "Viewing Pornographic Material On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Access", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Use Of Company Property", category: "Serious", firstOutcome: "" },
+  { name: "Unauthorised Use Of Client Property", category: "Serious", firstOutcome: "" },
+  { name: "Abusive Language", category: "Serious", firstOutcome: "" },
+  { name: "Dishonesty", category: "Serious", firstOutcome: "" },
+  { name: "Gambling On Duty", category: "Serious", firstOutcome: "" },
+  { name: "Clocking For Another Employee", category: "Serious", firstOutcome: "" },
+  { name: "Theft", category: "Dismissible", firstOutcome: "" },
+  { name: "Accomplice To Theft", category: "Dismissible", firstOutcome: "" },
+  { name: "Fraud", category: "Dismissible", firstOutcome: "" },
+  { name: "Accomplice To Fraud", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Dishonesty", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Negligence", category: "Dismissible", firstOutcome: "" },
+  { name: "Assault", category: "Dismissible", firstOutcome: "" },
+  { name: "Sexual Harassment", category: "Dismissible", firstOutcome: "" },
+  { name: "Viewing Illegal Pornography On Duty", category: "Dismissible", firstOutcome: "" },
+  { name: "Racism", category: "Dismissible", firstOutcome: "" },
+  { name: "Refusal To Obey OHS Rules/Procedures", category: "Dismissible", firstOutcome: "" },
+  { name: "Bribery", category: "Dismissible", firstOutcome: "" },
+  { name: "Falsification Of Records", category: "Dismissible", firstOutcome: "" },
+  { name: "Intentional Damage To Property", category: "Dismissible", firstOutcome: "" },
+  { name: "Gross Insubordination", category: "Dismissible", firstOutcome: "" },
+  { name: "Unauthorised Discharge Of Firearm", category: "Dismissible", firstOutcome: "" },
+  { name: "Unsafe Use Of Firearm", category: "Dismissible", firstOutcome: "" },
+  { name: "Threatening Another Employee/Client", category: "Dismissible", firstOutcome: "" },
+  { name: "Unauthorised Possession Of A Weapon On Duty", category: "Dismissible", firstOutcome: "" },
+] as const;
+type OutcomeFlowConfig = {
+  outcomeTypeOptions: readonly string[];
+};
+const DEFAULT_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: OUTCOME_TYPE_OPTIONS,
+};
+const CCMA_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Settled",
+    "Withdrawn",
+    "Dismissed",
+    "Unresolved (Strike)",
+    "Unresolved (Refer Arbitration)",
+    "Unresolved (Refer Labour Court)",
+    "Award (reinstatement)",
+    "Award (reinstatement with backpay)",
+    "Award (Compensation)",
+    "Dismissal Upheld",
+  ],
+};
+const HEARING_DISCIPLINE_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Not Guilty",
+    "Withdrawn",
+    "Guilty - Verbal Warning",
+    "Guilty - Written Warning",
+    "Guilty - Final Written Warning",
+    "Guilty - Suspension Without Pay",
+    "Guilty - Demotion",
+    "Guilty - Dismissal",
+    "Guilty - Alternative Sanction",
+  ],
+};
+const HEARING_INCAPACITY_PERFORMANCE_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: ["Hearing Finalised", "Settlement", "Matter Closed"],
+};
+const HEARING_INCAPACITY_ILL_HEALTH_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: ["Hearing Finalised", "Settlement", "Matter Closed"],
+};
+const HEARING_GRIEVANCE_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: ["Hearing Finalised", "Settlement", "Matter Closed", "Case Withdrawn"],
+};
+const CONSULTATION_GENERAL_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Advice Provided",
+    "Further Information Required",
+    "Action Plan Agreed",
+    "Follow-Up Required",
+    "Matter Closed",
+  ],
+};
+const CONSULTATION_GRIEVANCE_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Grievance Resolved",
+    "Grievance Partially Resolved",
+    "Grievance Dismissed",
+    "Further Investigation Required",
+    "Referred to Formal Process",
+  ],
+};
+const CONSULTATION_PERFORMANCE_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Performance Improvement Plan Issued",
+    "Counselling Provided",
+    "Training / Support Agreed",
+    "Performance Improved",
+    "Further Review Required",
+    "Matter Escalated to Incapacity Hearing",
+  ],
+};
+const CONSULTATION_RETRENCHMENT_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Retrenchment Avoided",
+    "Retrenchment Confirmed",
+    "Alternative Position Accepted",
+    "Voluntary Retrenchment Accepted",
+    "Further Consultation Required",
+    "Dispute Referred",
+  ],
+};
+const CONSULTATION_TRADE_UNION_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Agreement Reached",
+    "Partial Agreement Reached",
+    "No Agreement Reached",
+    "Deadlock Declared",
+    "Referred to CCMA / Bargaining Council",
+    "Industrial Action Initiated",
+  ],
+};
+const WAGE_NEGOTIATION_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: [
+    "Agreement Reached",
+    "Partial Agreement Reached",
+    "No Agreement Reached",
+    "Deadlock Declared",
+    "Referred to CCMA / Bargaining Council",
+    "Postponed",
+  ],
+};
+const LABOUR_COURT_OUTCOME_FLOW: OutcomeFlowConfig = {
+  outcomeTypeOptions: ["Judgment", "Settlement", "Case Withdrawn", "Matter Closed"],
+};
 const CASE_DATE_EVENT_TYPE_OPTIONS = [
   "Instruction Received",
   "Consultation Date",
@@ -238,11 +428,48 @@ const NON_STAGE_TRIGGER_EVENT_TYPES = new Set([
 ]);
 
 const getSubtypeOptions = (caseType: string) => CASE_TYPE_SUBTYPE_OPTIONS[caseType as (typeof CASE_TYPE_OPTIONS)[number]] ?? [];
-const shouldHideSubtype = (caseType: string) => caseType === "Wage Negotiations" || caseType === "Labour Court";
+const shouldHideSubtype = (caseType: string) => caseType === "Labour Court";
 const getSubtypeValueForCaseType = (caseType: string, currentSubtype = "") => {
   if (shouldHideSubtype(caseType)) return SUBTYPE_NONE;
   const options = getSubtypeOptions(caseType);
   return options.includes(currentSubtype) ? currentSubtype : "";
+};
+const getOutcomeFlowConfig = (caseType: string, subtype: string): OutcomeFlowConfig => {
+  if (caseType === "CCMA" || caseType === "Bargaining Council") return CCMA_OUTCOME_FLOW;
+  if (caseType === "Hearing" && subtype === "Discipline") return HEARING_DISCIPLINE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && subtype === "Incapacity (performance)") return HEARING_INCAPACITY_PERFORMANCE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && subtype === "Incapacity (ill health)") return HEARING_INCAPACITY_ILL_HEALTH_OUTCOME_FLOW;
+  if (caseType === "Hearing" && subtype === "Grievance") return HEARING_GRIEVANCE_OUTCOME_FLOW;
+  if (caseType === "Consultation" && subtype === "Grievance") return CONSULTATION_GRIEVANCE_OUTCOME_FLOW;
+  if (caseType === "Consultation" && subtype === "Performance") return CONSULTATION_PERFORMANCE_OUTCOME_FLOW;
+  if (caseType === "Consultation" && subtype === "Retrenchment") return CONSULTATION_RETRENCHMENT_OUTCOME_FLOW;
+  if (caseType === "Consultation" && subtype === "Wage Negotiations") return WAGE_NEGOTIATION_OUTCOME_FLOW;
+  if (caseType === "Consultation" && subtype === "Mutual Interest Matters") return CONSULTATION_TRADE_UNION_OUTCOME_FLOW;
+  if (caseType === "Consultation") return CONSULTATION_GENERAL_OUTCOME_FLOW;
+  if (caseType === "Labour Court") return LABOUR_COURT_OUTCOME_FLOW;
+  return DEFAULT_OUTCOME_FLOW;
+};
+const shouldShowAmountSettled = (outcomeType: string) => {
+  const normalizedType = outcomeType.trim();
+  return normalizedType === "Settlement" || normalizedType === "Settled";
+};
+const shouldShowDismissalMisconductTypes = (caseType: string, subtype: string, outcomeType: string) =>
+  caseType === "Hearing" && subtype === "Discipline" && outcomeType.trim() === "Guilty - Dismissal";
+const shouldShowAmountAwarded = (outcomeType: string) => {
+  const normalizedType = outcomeType.trim();
+  if (normalizedType === "Award (reinstatement with backpay)" || normalizedType === "Award (Compensation)") {
+    return true;
+  }
+  return false;
+};
+const getAmountAwardedLabel = (outcomeType: string) => {
+  if (
+    outcomeType.trim() === "Award (reinstatement with backpay)" ||
+    outcomeType.trim() === "Award (Compensation)"
+  ) {
+    return "Amount Awarded";
+  }
+  return "Amount Awarded";
 };
 const isVisibleReadOnlyValue = (value: unknown) => {
   const normalized = String(value ?? "").trim();
@@ -303,11 +530,10 @@ const createCaseEditForm = (caseFile: CaseFile): CaseEditForm => ({
   outcome: {
     outcomeType: caseFile.outcome.outcomeType === "Pending" ? "" : caseFile.outcome.outcomeType,
     outcomeDate: caseFile.outcome.outcomeDate === "--" ? "" : caseFile.outcome.outcomeDate,
-    result: caseFile.outcome.result === "Awaiting outcome" ? "" : caseFile.outcome.result,
-    amount: caseFile.outcome.amount === "R 0.00" ? "" : caseFile.outcome.amount,
+    misconductTypes: Array.isArray(caseFile.outcome.misconductTypes) ? caseFile.outcome.misconductTypes : [],
+    amountAwarded: caseFile.outcome.amountAwarded === "R 0.00" ? "" : caseFile.outcome.amountAwarded,
+    amountSettled: caseFile.outcome.amountSettled === "R 0.00" ? "" : caseFile.outcome.amountSettled,
     closingNote: caseFile.outcome.closingNote === "--" ? "" : caseFile.outcome.closingNote,
-    closedBy: caseFile.outcome.closedBy === "--" ? "" : caseFile.outcome.closedBy,
-    closedDate: caseFile.outcome.closedDate === "--" ? "" : caseFile.outcome.closedDate,
   },
 });
 
@@ -759,6 +985,9 @@ const Matters = () => {
   const [clientLoadMessage, setClientLoadMessage] = useState("No clients found.");
   const [consultantOptions, setConsultantOptions] = useState<ConsultantOption[]>([]);
   const [mentionOptions, setMentionOptions] = useState<MentionOption[]>([]);
+  const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
+  const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
+  const [caseOutcomeMisconductOpen, setCaseOutcomeMisconductOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [caseFilesTablePage, setCaseFilesTablePage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<"all" | CaseFile["status"]>("all");
@@ -770,6 +999,7 @@ const Matters = () => {
   const [isNewCaseMenuOpen, setIsNewCaseMenuOpen] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseFile | null>(null);
   const [activeCaseTab, setActiveCaseTab] = useState<CaseDetailsTab>("overview");
+  const [pendingOpenCaseNoteId, setPendingOpenCaseNoteId] = useState("");
   const [isCaseEditMode, setIsCaseEditMode] = useState(false);
   const [isSavingCaseEdit, setIsSavingCaseEdit] = useState(false);
   const [caseEditForm, setCaseEditForm] = useState<CaseEditForm | null>(null);
@@ -816,12 +1046,35 @@ const Matters = () => {
   const [isSavingCase, setIsSavingCase] = useState(false);
   const caseDateEventDialogInputRef = useRef<HTMLInputElement | null>(null);
   const caseDateEventTimeDialogInputRef = useRef<HTMLInputElement | null>(null);
+  const caseOutcomeDateInputRef = useRef<HTMLInputElement | null>(null);
   const newCaseDateEventInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const caseNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const openingNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
+  const activeOutcomeCaseType = caseEditForm?.caseType || selectedCase?.caseType || "";
+  const activeOutcomeSubtype = caseEditForm?.subtype || selectedCase?.subtype || "";
+  const activeOutcomeFlow = useMemo(
+    () => getOutcomeFlowConfig(activeOutcomeCaseType, activeOutcomeSubtype),
+    [activeOutcomeCaseType, activeOutcomeSubtype],
+  );
+  const activeOutcomeType = caseEditForm?.outcome.outcomeType || selectedCase?.outcome.outcomeType || "";
+  const showOutcomeAmountSettled = shouldShowAmountSettled(caseEditForm?.outcome.outcomeType || selectedCase?.outcome.outcomeType || "");
+  const showOutcomeAmountAwarded = shouldShowAmountAwarded(activeOutcomeType);
+  const outcomeAmountAwardedLabel = getAmountAwardedLabel(activeOutcomeType);
+  const showOutcomeMisconductTypes = shouldShowDismissalMisconductTypes(
+    activeOutcomeCaseType,
+    activeOutcomeSubtype,
+    activeOutcomeType,
+  );
+  const activeOutcomeMisconductTypes = caseEditForm?.outcome.misconductTypes || selectedCase?.outcome.misconductTypes || [];
+  const outcomeMisconductSelectionLabel =
+    activeOutcomeMisconductTypes.length === 0
+      ? "Select misconduct type(s)"
+      : activeOutcomeMisconductTypes.length === 1
+        ? activeOutcomeMisconductTypes[0]
+        : `${activeOutcomeMisconductTypes.length} misconduct type(s) selected`;
 
   const normalizeStatus = (value: string): CaseFile["status"] => {
     const normalized = String(value || "").trim().toLowerCase();
@@ -1133,7 +1386,14 @@ const Matters = () => {
         notes: [],
         documents: [],
         tasks: [],
-        outcome: { outcomeType: "Pending", outcomeDate: "--", result: "Awaiting outcome", amount: "R 0.00", closingNote: "--", closedBy: "--", closedDate: "--" },
+        outcome: {
+          outcomeType: "Pending",
+          outcomeDate: "--",
+          misconductTypes: [],
+          amountAwarded: "R 0.00",
+          amountSettled: "R 0.00",
+          closingNote: "--",
+        },
       };
     });
 
@@ -1179,13 +1439,99 @@ const Matters = () => {
     void fetchCurrentUserDisplayName();
   }, [fetchCurrentUserDisplayName]);
   useEffect(() => {
-    const openCaseId = String((location.state as { openCaseId?: unknown } | null)?.openCaseId ?? "").trim();
+    if (!user?.id) return;
+    let isMounted = true;
+
+    const loadConductOffences = async () => {
+      const { data, error } = await (supabase as any)
+        .from("company_code_of_conduct")
+        .select("data")
+        .eq("company_id", user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+
+      if (error) {
+        setConductOffences(fallbackConductOffences);
+        setMisconductLoadMessage("No matching misconduct types found.");
+        return;
+      }
+
+      const conductRecord = data as
+        | {
+            data?: {
+              sections?: Array<{
+                title?: string;
+                offences?: Array<{ name?: string; category?: string; first?: string }>;
+              }>;
+            };
+          }
+        | null;
+      const sections = conductRecord?.data?.sections ?? [];
+
+      const mapped = sections
+        .flatMap((section) => {
+          const sectionCategory = section.title?.toLowerCase().includes("dismiss")
+            ? "Dismissible"
+            : section.title?.toLowerCase().includes("minor")
+              ? "Minor"
+              : section.title?.toLowerCase().includes("serious")
+                ? "Serious"
+                : undefined;
+          return (section.offences ?? []).map((offence) => {
+            const name = offence.name?.trim();
+            if (!name) return null;
+            const category = (offence.category as OffenceCategory | undefined) ?? sectionCategory ?? "Serious";
+            return { name, category, firstOutcome: offence.first ?? "" };
+          });
+        })
+        .filter((item): item is ConductOffence => Boolean(item?.name));
+
+      const deduped = offenceCategoryOrder.flatMap((category) => {
+        const seen = new Set<string>();
+        return [...mapped, ...fallbackConductOffences].filter((item) => {
+          if (item.category !== category) return false;
+          const key = item.name.trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      });
+
+      setConductOffences(deduped);
+      setMisconductLoadMessage(deduped.length > 0 ? "No matching misconduct types found." : "No misconduct types found.");
+    };
+
+    void loadConductOffences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+  useEffect(() => {
+    const state = (location.state as { openCaseId?: unknown; openCaseNoteId?: unknown } | null) ?? null;
+    const openCaseId = String(state?.openCaseId ?? "").trim();
     if (!openCaseId || caseFiles.length === 0) return;
     const matchingCase = caseFiles.find((caseFile) => String(caseFile.id) === openCaseId);
     if (!matchingCase) return;
     setSelectedCase(matchingCase);
+    const openCaseNoteId = String(state?.openCaseNoteId ?? "").trim();
+    if (openCaseNoteId) {
+      setPendingOpenCaseNoteId(openCaseNoteId);
+      setActiveCaseTab("notes");
+      return;
+    }
     navigate("/case-files", { replace: true, state: {} });
   }, [caseFiles, location.state, navigate]);
+  useEffect(() => {
+    if (!pendingOpenCaseNoteId || !selectedCase?.id || isCaseNotesLoading) return;
+    const matchingNote = (selectedCase.notes ?? []).find((note) => String(note?.id || "").trim() === pendingOpenCaseNoteId);
+    if (!matchingNote) return;
+    setActiveCaseTab("notes");
+    openCaseNotePreviewDialog(String(matchingNote.note_content || ""), String(matchingNote.updated_at || ""));
+    setPendingOpenCaseNoteId("");
+    navigate("/case-files", { replace: true, state: {} });
+  }, [isCaseNotesLoading, navigate, pendingOpenCaseNoteId, selectedCase?.id, selectedCase?.notes]);
 
   useEffect(() => {
     const loadConsultants = async () => {
@@ -1303,14 +1649,15 @@ const Matters = () => {
   useEffect(() => {
     if (!selectedCase) {
       setActiveCaseTab("overview");
+      setPendingOpenCaseNoteId("");
       setIsCaseEditMode(false);
       setCaseEditForm(null);
       return;
     }
-    setActiveCaseTab("overview");
+    setActiveCaseTab(pendingOpenCaseNoteId ? "notes" : "overview");
     setIsCaseEditMode(false);
     setCaseEditForm(createCaseEditForm(selectedCase));
-  }, [selectedCase?.id]);
+  }, [pendingOpenCaseNoteId, selectedCase?.id]);
 
   useEffect(() => {
     const loadSelectedCaseDetails = async () => {
@@ -1320,7 +1667,7 @@ const Matters = () => {
         fetchCaseDateEvents(selectedCase.id),
         (supabase as any)
           .from("case_outcomes")
-          .select("outcome_type,outcome_date,result,amount_awarded,amount_settled,closing_note,closed_by")
+          .select("outcome_type,outcome_date,misconduct_types,amount_awarded,amount_settled,closing_note,closed_by")
           .eq("case_file_id", selectedCase.id)
           .maybeSingle(),
         fetchCaseDocuments(selectedCase.id),
@@ -1329,11 +1676,10 @@ const Matters = () => {
       const documents = documentsResponse;
 
       const outcomeRow = outcomeResponse.data;
-      const resolvedAmountRaw = outcomeRow?.amount_awarded ?? outcomeRow?.amount_settled;
-      const resolvedAmount =
-        resolvedAmountRaw === null || resolvedAmountRaw === undefined || resolvedAmountRaw === ""
+      const formatOutcomeCurrency = (value: unknown) =>
+        value === null || value === undefined || value === ""
           ? "R 0.00"
-          : `R ${Number(resolvedAmountRaw).toFixed(2)}`;
+          : `R ${Number(value).toFixed(2)}`;
 
       const { data: noteRows, error: noteError } = await (supabase as any)
         .from("case_notes")
@@ -1362,11 +1708,12 @@ const Matters = () => {
           ? {
               outcomeType: String(outcomeRow.outcome_type || "").trim() || "Pending",
               outcomeDate: String(outcomeRow.outcome_date || "").trim() || "--",
-              result: String(outcomeRow.result || "").trim() || "Awaiting outcome",
-              amount: resolvedAmount,
+              misconductTypes: Array.isArray(outcomeRow.misconduct_types)
+                ? outcomeRow.misconduct_types.map((value: unknown) => String(value || "").trim()).filter(Boolean)
+                : [],
+              amountAwarded: formatOutcomeCurrency(outcomeRow.amount_awarded),
+              amountSettled: formatOutcomeCurrency(outcomeRow.amount_settled),
               closingNote: String(outcomeRow.closing_note || "").trim() || "--",
-              closedBy: String(outcomeRow.closed_by || "").trim() || "--",
-              closedDate: String(outcomeRow.outcome_date || "").trim() || "--",
             }
           : selectedCase.outcome,
       };
@@ -1500,11 +1847,17 @@ const Matters = () => {
     const confirmed = window.confirm("Are you sure you want to close this case?");
     if (!confirmed) return;
     try {
+      const closedByName = resolveCurrentUserName();
       const { error } = await (supabase as any)
         .from("case_files")
         .update({ status: "Inactive", current_stage: "Finalised" })
         .eq("id", selectedCase.id);
       if (error) throw error;
+      const { error: outcomeCloseError } = await (supabase as any)
+        .from("case_outcomes")
+        .update({ closed_by: closedByName || null })
+        .eq("case_file_id", selectedCase.id);
+      if (outcomeCloseError) throw outcomeCloseError;
       const nextSelectedCase = { ...selectedCase, status: "Inactive" as const, currentStage: "Finalised" };
       setSelectedCase(nextSelectedCase);
       setCaseEditForm((prev) => prev ? { ...prev, status: "Inactive", currentStage: "Finalised" } : createCaseEditForm(nextSelectedCase));
@@ -1541,11 +1894,10 @@ const Matters = () => {
         const hasOutcomeValues = Boolean(
           caseEditForm.outcome.outcomeType.trim() ||
           caseEditForm.outcome.outcomeDate.trim() ||
-          caseEditForm.outcome.result.trim() ||
-          caseEditForm.outcome.amount.trim() ||
-          caseEditForm.outcome.closingNote.trim() ||
-          caseEditForm.outcome.closedBy.trim() ||
-          caseEditForm.outcome.closedDate.trim(),
+          caseEditForm.outcome.misconductTypes.length > 0 ||
+          caseEditForm.outcome.amountAwarded.trim() ||
+          caseEditForm.outcome.amountSettled.trim() ||
+          caseEditForm.outcome.closingNote.trim(),
         );
 
         if (!hasOutcomeValues) {
@@ -1555,15 +1907,30 @@ const Matters = () => {
           if (!caseEditForm.outcome.outcomeType.trim()) {
             throw new Error("Outcome Type is required when saving the Outcome tab.");
           }
+          if (
+            shouldShowDismissalMisconductTypes(caseEditForm.caseType.trim() || selectedCase.caseType, caseEditForm.subtype.trim() || selectedCase.subtype, caseEditForm.outcome.outcomeType) &&
+            caseEditForm.outcome.misconductTypes.length === 0
+          ) {
+            throw new Error("At least one misconduct type is required when the disciplinary hearing outcome is Guilty - Dismissal.");
+          }
           const payload = {
             case_file_id: selectedCase.id,
             outcome_type: caseEditForm.outcome.outcomeType.trim(),
-            outcome_date: caseEditForm.outcome.outcomeDate.trim() || caseEditForm.outcome.closedDate.trim() || null,
-            result: caseEditForm.outcome.result.trim() || null,
-            amount_awarded: parseCurrencyValue(caseEditForm.outcome.amount),
-            amount_settled: null,
+            outcome_date: caseEditForm.outcome.outcomeDate.trim() || null,
+            misconduct_types: shouldShowDismissalMisconductTypes(
+              caseEditForm.caseType.trim() || selectedCase.caseType,
+              caseEditForm.subtype.trim() || selectedCase.subtype,
+              caseEditForm.outcome.outcomeType,
+            )
+              ? caseEditForm.outcome.misconductTypes
+              : [],
+            amount_awarded: shouldShowAmountAwarded(caseEditForm.outcome.outcomeType)
+              ? parseCurrencyValue(caseEditForm.outcome.amountAwarded)
+              : null,
+            amount_settled: shouldShowAmountSettled(caseEditForm.outcome.outcomeType)
+              ? parseCurrencyValue(caseEditForm.outcome.amountSettled)
+              : null,
             closing_note: caseEditForm.outcome.closingNote.trim() || null,
-            closed_by: caseEditForm.outcome.closedBy.trim() || null,
           };
           const { error } = await (supabase as any)
             .from("case_outcomes")
@@ -1596,11 +1963,16 @@ const Matters = () => {
           ? {
               outcomeType: caseEditForm.outcome.outcomeType.trim() || "Pending",
               outcomeDate: caseEditForm.outcome.outcomeDate.trim() || "--",
-              result: caseEditForm.outcome.result.trim() || "Awaiting outcome",
-              amount: caseEditForm.outcome.amount.trim() || "R 0.00",
+              misconductTypes: shouldShowDismissalMisconductTypes(
+                caseEditForm.caseType.trim() || selectedCase.caseType,
+                caseEditForm.subtype.trim() || selectedCase.subtype,
+                caseEditForm.outcome.outcomeType,
+              )
+                ? caseEditForm.outcome.misconductTypes
+                : [],
+              amountAwarded: caseEditForm.outcome.amountAwarded.trim() || "R 0.00",
+              amountSettled: caseEditForm.outcome.amountSettled.trim() || "R 0.00",
               closingNote: caseEditForm.outcome.closingNote.trim() || "--",
-              closedBy: caseEditForm.outcome.closedBy.trim() || "--",
-              closedDate: caseEditForm.outcome.closedDate.trim() || "--",
             }
           : selectedCase.outcome,
       };
@@ -1697,9 +2069,7 @@ const Matters = () => {
       const q = searchQuery.trim().toLowerCase();
       const matchesSearch =
         q.length === 0 ||
-        item.fileNo.toLowerCase().includes(q) ||
-        item.client.toLowerCase().includes(q) ||
-        item.parties.toLowerCase().includes(q);
+        item.client.toLowerCase().includes(q);
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesType = caseTypeFilter === "all" || item.caseType === caseTypeFilter;
       const matchesConsultant = consultantFilter === "all" || item.consultant === consultantFilter;
@@ -2077,6 +2447,58 @@ const Matters = () => {
       textarea.setSelectionRange(nextCaret, nextCaret);
     });
   }, [newCaseForm.openingNote, openingNoteMentionRange]);
+  const syncCaseNoteMentionNotifications = useCallback(async (noteId: string, noteContent: string, noteUserName: string) => {
+    if (!selectedCase?.id || !user?.id || !noteId) return;
+    const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+    const companyId = metadataCompanyId || user.id;
+    const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
+    const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
+    const recipientIds = mentionRecipients.map((recipient) => String(recipient.recipientUserId || "").trim()).filter(Boolean);
+
+    let cleanupQuery = (supabase as any)
+      .from("notifications")
+      .delete()
+      .eq("source_table", "case_notes")
+      .eq("source_record_id", noteId)
+      .eq("actor_user_id", user.id);
+
+    if (recipientIds.length > 0) {
+      const recipientFilter = `(${recipientIds.map((id) => `"${id}"`).join(",")})`;
+      cleanupQuery = cleanupQuery.not("recipient_user_id", "in", recipientFilter);
+    }
+
+    const { error: cleanupError } = await cleanupQuery;
+    if (cleanupError) {
+      console.error("Unable to clean up mention notifications for case note", cleanupError);
+    }
+
+    if (mentionRecipients.length === 0) return;
+
+    const notificationRows = mentionRecipients.map((recipient) => ({
+      recipient_user_id: recipient.recipientUserId,
+      actor_user_id: user.id,
+      actor_name: noteUserName,
+      notification_type: "mention",
+      title: "New mention",
+      body: `${noteUserName} has tagged you in a matter.`,
+      source_table: "case_notes",
+      source_record_id: noteId,
+      source_parent_id: selectedCase.id,
+      metadata: {
+        client_name: selectedCase.client,
+        matter_type: selectedCase.caseType,
+        note_preview: noteContent.slice(0, 200),
+      },
+    }));
+    const { error: upsertError } = await (supabase as any)
+      .from("notifications")
+      .upsert(notificationRows, {
+        onConflict: "recipient_user_id,notification_type,source_table,source_record_id",
+      });
+    if (upsertError) {
+      console.error("Unable to sync mention notifications for case note", upsertError);
+    }
+  }, [selectedCase?.caseType, selectedCase?.client, selectedCase?.id, user]);
 
   const openAddCaseNoteDialog = () => {
     resetCaseNoteForm();
@@ -2151,33 +2573,8 @@ const Matters = () => {
         savedCaseNoteId = String(insertedCaseNote?.id || "").trim();
       }
 
-      const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
-      const companyId = metadataCompanyId || user.id;
-      const mentionRecipientOptions = await loadMentionRecipientsForTokens(extractMentionTokens(noteContent), companyId);
-      const mentionRecipients = resolveMentionRecipients(noteContent, mentionRecipientOptions, user.id);
-      if (savedCaseNoteId && mentionRecipients.length > 0) {
-        const notificationRows = mentionRecipients.map((recipient) => ({
-          recipient_user_id: recipient.recipientUserId,
-          actor_user_id: user.id,
-          actor_name: noteUserName,
-          notification_type: "mention",
-          title: "New mention",
-          body: `${noteUserName} has tagged you in a matter/client file.`,
-          source_table: "case_notes",
-          source_record_id: savedCaseNoteId,
-          source_parent_id: selectedCase.id,
-          metadata: {
-            client_name: selectedCase.client,
-            matter_type: selectedCase.caseType,
-            note_preview: noteContent.slice(0, 200),
-          },
-        }));
-        const { error: notificationError } = await (supabase as any)
-          .from("notifications")
-          .insert(notificationRows);
-        if (notificationError) {
-          console.error("Unable to save mention notifications for case note", notificationError);
-        }
+      if (savedCaseNoteId) {
+        await syncCaseNoteMentionNotifications(savedCaseNoteId, noteContent, noteUserName);
       }
       setIsCaseNoteDialogOpen(false);
       resetCaseNoteForm();
@@ -2207,6 +2604,15 @@ const Matters = () => {
         .eq("id", noteId)
         .eq("case_file_id", selectedCase.id);
       if (error) throw error;
+      const { error: notificationError } = await (supabase as any)
+        .from("notifications")
+        .delete()
+        .eq("source_table", "case_notes")
+        .eq("source_record_id", noteId)
+        .eq("actor_user_id", user.id);
+      if (notificationError) {
+        console.error("Unable to delete mention notifications for case note", notificationError);
+      }
       await fetchCaseNotes(selectedCase.id);
       toast({ title: "Case note deleted" });
     } catch (error: any) {
@@ -2339,14 +2745,19 @@ const Matters = () => {
   }, [fetchCaseDocuments, selectedCase?.id, toast]);
 
   return (
-    <DashboardLayout>
+    <>
       <div className="space-y-0 -m-6">
         <div className="overflow-hidden rounded-tl-sm border border-slate-300 border-l-0 border-r-0 bg-white shadow-sm h-[calc(100dvh-var(--app-header-height,5rem))] pb-0">
           <div className="flex h-full flex-col">
             <div className="pl-4 pr-4 pt-1">
-              <div className="pt-5 pb-2">
-                <h1 className="text-4xl font-normal text-slate-900 -ml-1">Matters</h1>
-                <p className="text-xs text-slate-600 mt-2">Manage active legal matters, hearings, consultations and representation files.</p>
+              <div className="flex flex-col gap-4 pt-[10px] pb-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h1 className="text-4xl font-normal text-[#3eca44] -ml-1">Matters</h1>
+                  <p className="text-xs text-slate-600 mt-2">Manage active legal matters, hearings, consultations and representation files.</p>
+                </div>
+                <div className="lg:pt-1">
+                  <PageDateStamp className="text-slate-500 [&_svg]:text-slate-500" />
+                </div>
               </div>
             </div>
             <section className="relative flex-1 min-h-0 overflow-hidden overflow-x-hidden pr-2">
@@ -2357,10 +2768,10 @@ const Matters = () => {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <div className="group relative w-full sm:w-[400px]">
                           <Input
-                            placeholder="Please type in case, client or party name"
+                            placeholder="Search matters..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-semibold shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${searchQuery.trim().length > 0 ? "pr-20" : "pr-9"}`}
+                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${searchQuery.trim().length > 0 ? "pr-20" : "pr-9"}`}
                           />
                           {searchQuery.trim().length > 0 ? (
                             <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline" onClick={() => setSearchQuery("")}>Clear</button>
@@ -3239,16 +3650,219 @@ const Matters = () => {
                     </TabsContent>
                     <TabsContent value="outcome" className="mt-4">
                       {isCaseEditMode && caseEditForm ? (
-                        <div className="grid gap-3 text-xs sm:grid-cols-2">
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Outcome Type</p><Select value={caseEditForm.outcome.outcomeType || undefined} onValueChange={(value) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeType: value } } : prev)}><SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Select outcome type" /></SelectTrigger><SelectContent className="text-[11px]">{OUTCOME_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt} className={addModalSelectItemClass}>{opt}</SelectItem>)}</SelectContent></Select></div>
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Outcome Date</p><Input type="date" className={modalInputClass} value={caseEditForm.outcome.outcomeDate} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeDate: e.target.value } } : prev)} /></div>
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Result</p><Input className={modalInputClass} value={caseEditForm.outcome.result} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, result: e.target.value } } : prev)} /></div>
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Amount Awarded/Settled</p><Input className={modalInputClass} value={caseEditForm.outcome.amount} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, amount: e.target.value } } : prev)} placeholder="R 0.00" /></div>
-                          <div className="space-y-1 sm:col-span-2"><p className="text-[10px] text-slate-500">Closing Note</p><Textarea className={modalTextareaClass} value={caseEditForm.outcome.closingNote} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, closingNote: e.target.value } } : prev)} /></div>
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Closed By</p><Input className={modalInputClass} value={caseEditForm.outcome.closedBy} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, closedBy: e.target.value } } : prev)} /></div>
-                          <div className="space-y-1"><p className="text-[10px] text-slate-500">Closed Date</p><Input type="date" className={modalInputClass} value={caseEditForm.outcome.closedDate} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, closedDate: e.target.value } } : prev)} /></div>
+                        <div className="space-y-3 text-xs">
+                          <div className={caseFileCardClass}>
+                            <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Case Outcome</p>
+                            <div className="mt-2 space-y-2">
+                              {[
+                                { fields: [["Outcome Type", "outcomeType"], ["Outcome Date", "outcomeDate"]] },
+                                showOutcomeMisconductTypes
+                                  ? { fields: [["Misconduct Type(s)", "misconductTypes"]], fullWidth: true }
+                                  : null,
+                                showOutcomeAmountAwarded || showOutcomeAmountSettled
+                                  ? { fields: [[showOutcomeAmountAwarded ? outcomeAmountAwardedLabel : "Amount Awarded", "amountAwarded"], ...(showOutcomeAmountSettled ? [["Amount Settled", "amountSettled"]] : [])] }
+                                  : null,
+                                { fields: [["Closing Note", "closingNote"]], fullWidth: true },
+                              ].filter(Boolean).map((row, rowIndex) => (
+                                <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
+                                  {(row as { fields: string[][]; fullWidth?: boolean }).fields.map(([label, field]) => (
+                                    <span key={String(field)} className={(row as { fullWidth?: boolean }).fullWidth ? "contents md:[&>*:nth-child(2)]:col-span-3" : "contents"}>
+                                      <p className="text-[10px] font-medium text-slate-500">{label}</p>
+                                      <div className={(row as { fullWidth?: boolean }).fullWidth ? "md:col-span-3" : ""}>
+                                        {field === "outcomeType" ? (
+                                          <Select value={caseEditForm.outcome.outcomeType || undefined} onValueChange={(value) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeType: value, misconductTypes: shouldShowDismissalMisconductTypes(prev.caseType, prev.subtype, value) ? prev.outcome.misconductTypes : [] } } : prev)}><SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Select outcome type" /></SelectTrigger><SelectContent className="text-[11px]">{activeOutcomeFlow.outcomeTypeOptions.map((opt) => <SelectItem key={opt} value={opt} className={addModalSelectItemClass}>{opt}</SelectItem>)}</SelectContent></Select>
+                                        ) : field === "outcomeDate" ? (
+                                          <div>
+                                            <Input
+                                              className={modalInputClass}
+                                              type="text"
+                                              readOnly
+                                              placeholder="Please select a date"
+                                              value={caseEditForm.outcome.outcomeDate ? formatDisplayDate(caseEditForm.outcome.outcomeDate) : ""}
+                                              onClick={() => openDatePicker(caseOutcomeDateInputRef.current)}
+                                              onFocus={() => openDatePicker(caseOutcomeDateInputRef.current)}
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter" || e.key === " ") {
+                                                  e.preventDefault();
+                                                  openDatePicker(caseOutcomeDateInputRef.current);
+                                                }
+                                              }}
+                                            />
+                                            <input
+                                              ref={caseOutcomeDateInputRef}
+                                              type="date"
+                                              value={caseEditForm.outcome.outcomeDate}
+                                              onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeDate: e.target.value } } : prev)}
+                                              className="sr-only"
+                                              aria-hidden="true"
+                                              tabIndex={-1}
+                                            />
+                                          </div>
+                                        ) : field === "misconductTypes" ? (
+                                          <div className="space-y-2">
+                                            <Popover open={caseOutcomeMisconductOpen} onOpenChange={setCaseOutcomeMisconductOpen}>
+                                              <PopoverTrigger asChild>
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  role="combobox"
+                                                  aria-expanded={caseOutcomeMisconductOpen}
+                                                  className={cn(
+                                                    modalInputClass,
+                                                    "h-8 w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                                                    caseEditForm.outcome.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                                                  )}
+                                                >
+                                                  <span className="truncate text-left">{outcomeMisconductSelectionLabel}</span>
+                                                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                                                </Button>
+                                              </PopoverTrigger>
+                                              <PopoverContent
+                                                align="start"
+                                                className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                                                onWheel={(event) => event.stopPropagation()}
+                                              >
+                                                <Command shouldFilter>
+                                                  <CommandInput placeholder="Search misconduct types..." className="h-8 text-[11px] placeholder:text-[10px]" />
+                                                  <CommandList className="max-h-[248px] overscroll-contain">
+                                                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
+                                                    {offenceCategoryOrder.map((category) => {
+                                                      const offences = conductOffences.filter((offence) => offence.category === category);
+                                                      if (offences.length === 0) return null;
+                                                      return (
+                                                        <CommandGroup
+                                                          key={category}
+                                                          heading={offenceGroupLabel[category]}
+                                                          className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
+                                                        >
+                                                          {offences.map((offence) => {
+                                                            const isSelected = caseEditForm.outcome.misconductTypes.includes(offence.name);
+                                                            return (
+                                                              <CommandItem
+                                                                key={`${category}-${offence.name}`}
+                                                                value={`${offenceGroupLabel[category]} ${offence.name}`}
+                                                                onSelect={() =>
+                                                                  setCaseEditForm((prev) =>
+                                                                    prev
+                                                                      ? {
+                                                                          ...prev,
+                                                                          outcome: {
+                                                                            ...prev.outcome,
+                                                                            misconductTypes: prev.outcome.misconductTypes.includes(offence.name)
+                                                                              ? prev.outcome.misconductTypes.filter((item) => item !== offence.name)
+                                                                              : [...prev.outcome.misconductTypes, offence.name],
+                                                                          },
+                                                                        }
+                                                                      : prev,
+                                                                  )
+                                                                }
+                                                                className={cn(
+                                                                  "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                                                  isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                                                )}
+                                                              >
+                                                                <p className={cn("min-w-0 truncate text-[10px] font-medium", isSelected ? "text-[#2f9f35]" : "text-slate-600")}>
+                                                                  {offence.name}
+                                                                </p>
+                                                                {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                                              </CommandItem>
+                                                            );
+                                                          })}
+                                                        </CommandGroup>
+                                                      );
+                                                    })}
+                                                  </CommandList>
+                                                </Command>
+                                                <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                                                  {caseEditForm.outcome.misconductTypes.length > 0 ? (
+                                                    <div className="flex flex-wrap gap-2">
+                                                      {caseEditForm.outcome.misconductTypes.map((type) => (
+                                                        <div
+                                                          key={type}
+                                                          className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                                                        >
+                                                          <span className="truncate">{type}</span>
+                                                          <button
+                                                            type="button"
+                                                            aria-label={`Remove ${type}`}
+                                                            onClick={() =>
+                                                              setCaseEditForm((prev) =>
+                                                                prev
+                                                                  ? {
+                                                                      ...prev,
+                                                                      outcome: {
+                                                                        ...prev.outcome,
+                                                                        misconductTypes: prev.outcome.misconductTypes.filter((item) => item !== type),
+                                                                      },
+                                                                    }
+                                                                  : prev,
+                                                              )
+                                                            }
+                                                            className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                                                          >
+                                                            <X className="h-3 w-3" />
+                                                          </button>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  ) : (
+                                                    <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
+                                                  )}
+                                                </div>
+                                              </PopoverContent>
+                                            </Popover>
+                                          </div>
+                                        ) : field === "closingNote" ? (
+                                          <Textarea className={modalTextareaClass} value={caseEditForm.outcome.closingNote} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, closingNote: e.target.value } } : prev)} />
+                                        ) : (
+                                          <Input className={modalInputClass} value={String((caseEditForm.outcome as any)[field] ?? "")} onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, [field]: e.target.value } } : prev)} placeholder={field === "amountAwarded" || field === "amountSettled" ? "R 0.00" : undefined} />
+                                        )}
+                                      </div>
+                                    </span>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
-                      ) : <div className="grid gap-2 text-xs sm:grid-cols-2">{[["Outcome Type", selectedCase.outcome.outcomeType], ["Outcome Date", selectedCase.outcome.outcomeDate], ["Result", selectedCase.outcome.result], ["Amount Awarded/Settled", selectedCase.outcome.amount], ["Closing Note", selectedCase.outcome.closingNote], ["Closed By", selectedCase.outcome.closedBy], ["Closed Date", selectedCase.outcome.closedDate]].filter(([, value]) => isVisibleReadOnlyValue(value)).map(([label, value]) => <div key={label} className="rounded border border-slate-200 bg-slate-50 p-2"><p className="text-[10px] text-slate-500">{label}</p><p className="font-medium text-slate-900">{label.toLowerCase().includes("date") ? formatDisplayDate(String(value)) : value}</p></div>)}</div>}
+                      ) : (
+                        <div className="space-y-3 text-xs">
+                          <div className={caseFileCardClass}>
+                            <p className="mb-3 text-[13px] font-semibold text-slate-700 underline">Case Outcome</p>
+                            <div className="mt-2 space-y-2">
+                              {[
+                                [["Outcome Type", selectedCase.outcome.outcomeType], ["Outcome Date", selectedCase.outcome.outcomeDate]],
+                                showOutcomeMisconductTypes
+                                  ? [["Misconduct Type(s)", selectedCase.outcome.misconductTypes.join(", ")]]
+                                  : null,
+                                showOutcomeAmountAwarded || showOutcomeAmountSettled
+                                  ? [[showOutcomeAmountAwarded ? outcomeAmountAwardedLabel : "Amount Awarded", selectedCase.outcome.amountAwarded], ...(showOutcomeAmountSettled ? [["Amount Settled", selectedCase.outcome.amountSettled]] : [])]
+                                  : null,
+                              ].map((row, rowIndex) => {
+                                if (!row) return null;
+                                const visibleFields = row.filter(([, value]) => isVisibleReadOnlyValue(value));
+                                if (visibleFields.length === 0) return null;
+                                return (
+                                  <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
+                                    {visibleFields.map(([label, value]) => (
+                                      <span key={String(label)} className="contents">
+                                        <p className="text-[10px] font-medium text-slate-500">{label}</p>
+                                        <p className="text-[11px] font-medium text-slate-900">{label.toLowerCase().includes("date") ? formatDisplayDate(String(value)) : value}</p>
+                                      </span>
+                                    ))}
+                                  </div>
+                                );
+                              })}
+                              {isVisibleReadOnlyValue(selectedCase.outcome.closingNote) ? (
+                                <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-start md:gap-x-6">
+                                  <p className="text-[10px] font-medium text-slate-500">Closing Note</p>
+                                  <p className="text-[11px] font-medium text-slate-900 md:col-span-3">{selectedCase.outcome.closingNote}</p>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </TabsContent>
                   </Tabs>
                 </div>
@@ -3260,7 +3874,7 @@ const Matters = () => {
                           <Button type="button" className="h-8 min-w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]" onClick={() => void handleSaveCaseEdit()} disabled={isSavingCaseEdit}>{isSavingCaseEdit ? "Saving..." : "Save"}</Button>
                         </>
                       ) : isEditableCaseTab ? (
-                        <Button type="button" variant="outline" className="h-8 min-w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]" onClick={() => setIsCaseEditMode(true)}>Edit Case</Button>
+                        <Button type="button" variant="outline" className="h-8 min-w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-[#3eca44] hover:text-[#2f9f35]" onClick={() => setIsCaseEditMode(true)}>Edit</Button>
                       ) : null}
                     </div>
                 </div>
@@ -3573,7 +4187,7 @@ const Matters = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
 };
 

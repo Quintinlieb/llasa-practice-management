@@ -18,6 +18,7 @@ type CreateSubuserPayload = {
   contact_number?: string
   email?: string
   role?: "Main" | "Consultant" | "Administrator"
+  profile_picture?: string
   username?: string
   password?: string
 }
@@ -104,6 +105,7 @@ Deno.serve(async (req: Request) => {
   const contactNumber = (payload.contact_number ?? "").trim()
   const email = (payload.email ?? "").trim().toLowerCase()
   const role = (payload.role ?? "").trim()
+  const profilePicture = (payload.profile_picture ?? "").trim()
   const username = (payload.username ?? "").trim()
   const password = (payload.password ?? "").trim()
 
@@ -157,6 +159,7 @@ Deno.serve(async (req: Request) => {
     surname,
     contact_number: contactNumber,
     email,
+    profile_picture: profilePicture || null,
     status: "accepted",
     invited_at: new Date().toISOString(),
     accepted_at: new Date().toISOString(),
@@ -209,6 +212,20 @@ Deno.serve(async (req: Request) => {
     // Avoid orphaned auth users if subuser row write fails
     await adminClient.auth.admin.deleteUser(createdUser.user.id)
     return badRequest(writeError.message ?? "Unable to write subuser row", 400)
+  }
+
+  if (profilePicture) {
+    const { error: profilePictureUpdateError } = await adminClient
+      .from("subusers")
+      .update({ profile_picture: profilePicture })
+      .eq("auth_user_id", createdUser.user.id)
+
+    if (profilePictureUpdateError) {
+      const message = String(profilePictureUpdateError.message ?? "")
+      if (!(message.includes("profile_picture") && message.includes("column"))) {
+        return badRequest(message || "Unable to save subuser profile picture", 400)
+      }
+    }
   }
 
   const appUrl = (Deno.env.get("APP_URL") ?? req.headers.get("origin") ?? "").replace(/\/$/, "")

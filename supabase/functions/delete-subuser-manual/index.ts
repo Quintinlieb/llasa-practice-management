@@ -18,11 +18,26 @@ type DeleteSubuserPayload = {
   email?: string
 }
 
+type SubuserLookupRow = {
+  id: string
+  auth_user_id: string | null
+  email: string | null
+}
+
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders },
   })
+
+const isAuthUserMissingError = (error: { message?: string } | null | undefined) => {
+  const message = String(error?.message ?? "").trim().toLowerCase()
+  return (
+    message.includes("user not found") ||
+    message.includes("not found") ||
+    message.includes("does not exist")
+  )
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
@@ -66,7 +81,7 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  // Only master users (profiles table) can delete subusers.
+  // Only master users (profiles row exists) can delete subusers.
   const { data: masterProfile, error: profileError } = await adminClient
     .from("profiles")
     .select("id")
@@ -74,19 +89,49 @@ Deno.serve(async (req: Request) => {
     .maybeSingle()
   if (profileError || !masterProfile?.id) return json({ error: "Forbidden" }, 403)
 
-  let query = adminClient
-    .from("subusers")
-    .select("id,auth_user_id,email,company_id")
-    .eq("company_id", user.id)
-    .limit(1)
+  const tryLookup = async (column: "id" | "auth_user_id" | "email", value: string) => {
+    const { data, error } = await adminClient
+      .from("subusers")
+      .select("id,auth_user_id,email")
+      .eq(column, value)
+      .limit(1)
+      .maybeSingle()
+    return { row: (data as SubuserLookupRow | null) ?? null, error }
+  }
 
-  if (subuserId) query = query.eq("id", subuserId)
-  else if (authUserId) query = query.eq("auth_user_id", authUserId)
-  else query = query.eq("email", email)
+  let row: SubuserLookupRow | null = null
+  let rowError: { message?: string } | null = null
 
-  const { data: row, error: rowError } = await query.maybeSingle()
+  if (subuserId) {
+    const result = await tryLookup("id", subuserId)
+    row = result.row
+    rowError = result.error
+  }
+  if (!row && !rowError && authUserId) {
+    const result = await tryLookup("auth_user_id", authUserId)
+    row = result.row
+    rowError = result.error
+  }
+  if (!row && !rowError && email) {
+    const result = await tryLookup("email", email)
+    row = result.row
+    rowError = result.error
+  }
+
   if (rowError) return json({ error: rowError.message || "Unable to load subuser" }, 400)
-  if (!row) return json({ error: "Subuser not found" }, 404)
+  if (!row) {
+    return json(
+      {
+        error: "Subuser not found",
+        lookup: {
+          subuser_id: subuserId || null,
+          auth_user_id: authUserId || null,
+          email: email || null,
+        },
+      },
+      404,
+    )
+  }
 
   const resolvedAuthUserId = String(row.auth_user_id ?? "").trim()
 
@@ -94,14 +139,13 @@ Deno.serve(async (req: Request) => {
     .from("subusers")
     .delete()
     .eq("id", row.id)
-    .eq("company_id", user.id)
   if (deleteSubuserError) {
     return json({ error: deleteSubuserError.message || "Unable to delete subuser row" }, 400)
   }
 
   if (resolvedAuthUserId) {
     const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(resolvedAuthUserId)
-    if (deleteAuthError) {
+    if (deleteAuthError && !isAuthUserMissingError(deleteAuthError)) {
       return json(
         {
           error: deleteAuthError.message || "Subuser row deleted, but auth user delete failed",
@@ -122,4 +166,3 @@ Deno.serve(async (req: Request) => {
     deleted_auth_user_id: resolvedAuthUserId || null,
   })
 })
-

@@ -2,10 +2,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, type Location } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, type Location } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import DashboardLayout from "./components/DashboardLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -40,6 +41,14 @@ const RootRedirect = () => {
   return <Navigate to={user ? "/clients-2" : "/auth?login=1"} replace />;
 };
 
+const ProtectedAppShell = () => (
+  <ProtectedRoute>
+    <DashboardLayout>
+      <Outlet />
+    </DashboardLayout>
+  </ProtectedRoute>
+);
+
 const AppRoutes = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,11 +63,15 @@ const AppRoutes = () => {
         <Route path="/auth" element={<Auth />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/clients-2" element={<ProtectedRoute><ClientsTwo /></ProtectedRoute>} />
-        <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients-2" replace /></ProtectedRoute>} />
+        <Route element={<ProtectedAppShell />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/clients-2" element={<ClientsTwo />} />
+          <Route path="/clients" element={<Navigate to="/clients-2" replace />} />
+          <Route path="/documents" element={<Documents />} />
+          <Route path="/case-files" element={<Matters />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
         <Route path="/employees" element={<Navigate to="/clients-2" replace />} />
-        <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
         <Route path="/documents/discipline/code-of-conduct/preview" element={<ProtectedRoute><CodeOfConductPreviewPage /></ProtectedRoute>} />
         <Route path="/documents/discipline" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/performance" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
@@ -66,8 +79,6 @@ const AppRoutes = () => {
         <Route path="/documents/contracts" element={<ProtectedRoute><Navigate to="/documents" replace /></ProtectedRoute>} />
         <Route path="/documents/contracts/addendum" element={<ProtectedRoute><AddendumGenerator /></ProtectedRoute>} />
         <Route path="/documents/contracts/temporary" element={<ProtectedRoute><TemporaryContractGenerator /></ProtectedRoute>} />
-        <Route path="/case-files" element={<ProtectedRoute><Matters /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/terms" element={<TermsAndConditions />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, Palette, MapPin, Settings as SettingsIcon, Trash2, Camera, Pencil } from "lucide-react";
+import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, MapPin, Settings as SettingsIcon, Trash2, Camera, Pencil, FileBadge2, FileText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageDateStamp } from "@/components/DashboardLayout";
 import { z } from "zod";
@@ -79,8 +79,30 @@ type SubuserListItem = {
   created_at: string | null;
 };
 
-type SettingsTab = "user" | "subusers" | "company" | "companyAddress" | "auth" | "personalize";
-type ProfileDataGroup = "user" | "company" | "personalize";
+type MembershipOrganisation = "AHI Employers Organisation" | "SABPP" | "SASLAW";
+
+type MembershipListItem = {
+  id: string;
+  company_id: string | null;
+  organisation: MembershipOrganisation;
+  description: string;
+  owner: string;
+  file_name: string;
+  storage_path: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type MembershipForm = {
+  organisation: MembershipOrganisation;
+  description: string;
+  owner: string;
+  file: File | null;
+  fileName: string;
+};
+
+type SettingsTab = "user" | "subusers" | "memberships" | "company" | "companyAddress" | "auth";
+type ProfileDataGroup = "user" | "company";
 
 const DEFAULT_COMPANY_NAME = "The Labour Law Association South Africa CC";
 const DEFAULT_TRADING_AS = "LLASA";
@@ -136,19 +158,30 @@ const emptySubuserInviteForm: SubuserInviteForm = {
   confirmPassword: "",
 };
 
+const membershipOrganisations: MembershipOrganisation[] = [
+  "AHI Employers Organisation",
+  "SABPP",
+  "SASLAW",
+];
+
+const emptyMembershipForm = (organisation: MembershipOrganisation = "AHI Employers Organisation"): MembershipForm => ({
+  organisation,
+  description: "",
+  owner: "",
+  file: null,
+  fileName: "",
+});
+
+const LLASA_MEMBERSHIPS_BUCKET = "llasa-memberships";
+
 type SettingsProfileCache = {
   userDetails?: UserDetailsForm;
   userProfilePicture?: string;
   companyDetails?: CompanyDetailsForm;
-  personalise?: {
-    preview: string;
-    layout: "vertical" | "horizontal" | null;
-  };
   loadedGroups: Set<ProfileDataGroup>;
 };
 
 const settingsProfileCacheByUser = new Map<string, SettingsProfileCache>();
-let personalizeColumnsSupported: boolean | null = null;
 const HEADER_PROFILE_STORAGE_KEY = "header:profile";
 
 const readCachedHeaderProfilePicture = (authUserId?: string | null) => {
@@ -167,28 +200,27 @@ const readCachedHeaderProfilePicture = (authUserId?: string | null) => {
 const tabToProfileGroup: Record<SettingsTab, ProfileDataGroup | null> = {
   user: "user",
   subusers: null,
+  memberships: null,
   company: "company",
   companyAddress: "company",
   auth: null,
-  personalize: "personalize",
 };
 
 const profileGroupToTabs: Record<ProfileDataGroup, SettingsTab[]> = {
   user: ["user"],
   company: ["company", "companyAddress"],
-  personalize: ["personalize"],
 };
 
 const emptyTabLoadingState: Record<SettingsTab, boolean> = {
   user: false,
   subusers: false,
+  memberships: false,
   company: false,
   companyAddress: false,
   auth: false,
-  personalize: false,
 };
 
-const allSettingsTabs: SettingsTab[] = ["user", "subusers", "company", "companyAddress", "auth", "personalize"];
+const allSettingsTabs: SettingsTab[] = ["user", "subusers", "memberships", "company", "companyAddress", "auth"];
 
 const parseAddressParts = (address: string) => {
   const addressParts = (address || "")
@@ -226,6 +258,9 @@ const parsePostalAddressParts = (postalAddress: string) => {
 const getInitials = (firstName: string, surname: string) =>
   `${String(firstName || "").trim().charAt(0)}${String(surname || "").trim().charAt(0)}`.trim().toUpperCase() || "U";
 
+const slugifyMembershipOrganisation = (value: MembershipOrganisation) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -233,20 +268,6 @@ const fileToDataUrl = (file: File) =>
     reader.onerror = () => reject(new Error("Unable to read image file."));
     reader.readAsDataURL(file);
   });
-
-const isPersonalizeColumnError = (error: unknown) => {
-  const err = error as { code?: string; message?: string; details?: string; hint?: string } | null;
-  const message = String(err?.message || "").toLowerCase();
-  const details = String(err?.details || "").toLowerCase();
-  const hint = String(err?.hint || "").toLowerCase();
-  const combined = `${message} ${details} ${hint}`;
-  return (
-    err?.code === "42703" ||
-    err?.code === "PGRST204" ||
-    (combined.includes("column") && combined.includes("company_logo")) ||
-    (combined.includes("could not find") && combined.includes("company_logo"))
-  );
-};
 
 const isCompanyProfileColumnError = (error: unknown) => {
   const err = error as { code?: string; message?: string; details?: string; hint?: string } | null;
@@ -304,11 +325,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const [passwordError, setPasswordError] = useState("");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("user");
-  const [personaliseLogoLayout, setPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
-  const [personaliseLogoPreview, setPersonaliseLogoPreview] = useState("");
-  const [initialPersonaliseLogoLayout, setInitialPersonaliseLogoLayout] = useState<"vertical" | "horizontal" | null>(null);
-  const [initialPersonaliseLogoPreview, setInitialPersonaliseLogoPreview] = useState("");
-  const [personaliseLogoName, setPersonaliseLogoName] = useState("");
   const [isInviteSubuserOpen, setIsInviteSubuserOpen] = useState(false);
   const [subuserInviteForm, setSubuserInviteForm] = useState<SubuserInviteForm>(emptySubuserInviteForm);
   const [subuserInviteSubmitting, setSubuserInviteSubmitting] = useState(false);
@@ -319,22 +335,31 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [subusersList, setSubusersList] = useState<SubuserListItem[]>([]);
   const [subusersLoading, setSubusersLoading] = useState(false);
   const [deletingSubuserId, setDeletingSubuserId] = useState<string | null>(null);
+  const [membershipsList, setMembershipsList] = useState<MembershipListItem[]>([]);
+  const [membershipsLoading, setMembershipsLoading] = useState(false);
+  const [companyAccountId, setCompanyAccountId] = useState("");
+  const [isMembershipDialogOpen, setIsMembershipDialogOpen] = useState(false);
+  const [membershipForm, setMembershipForm] = useState<MembershipForm>(emptyMembershipForm());
+  const [membershipSubmitting, setMembershipSubmitting] = useState(false);
+  const [editingMembershipId, setEditingMembershipId] = useState<string | null>(null);
+  const [deletingMembershipId, setDeletingMembershipId] = useState<string | null>(null);
+  const [viewingMembershipId, setViewingMembershipId] = useState<string | null>(null);
   const [tabLoading, setTabLoading] = useState<Record<SettingsTab, boolean>>(emptyTabLoadingState);
   const [isMasterUser, setIsMasterUser] = useState(true);
   const [isPermissionsLoading, setIsPermissionsLoading] = useState(true);
   const loadedGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const loadingGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
-  const personaliseLogoInputRef = useRef<HTMLInputElement | null>(null);
   const userProfilePictureInputRef = useRef<HTMLInputElement | null>(null);
   const subuserProfilePictureInputRef = useRef<HTMLInputElement | null>(null);
+  const membershipFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const settingsTabs: Array<{ value: SettingsTab; label: string; icon: LucideIcon }> = [
     { value: "user", label: "User Details", icon: User },
     { value: "subusers", label: "Subusers", icon: Users },
+    { value: "memberships", label: "Memberships", icon: FileBadge2 },
     { value: "company", label: "Company Profile", icon: Building2 },
     { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "auth", label: "Authentication", icon: Lock },
-    { value: "personalize", label: "Personalise", icon: Palette },
   ];
   const canEditSettings = isMasterUser;
   const visibleSettingsTabs = settingsTabs;
@@ -344,6 +369,18 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       String((user as any)?.user_metadata?.username || "").trim() ||
       "--",
     [user],
+  );
+  const membershipsByOrganisation = useMemo(
+    () =>
+      membershipOrganisations.reduce<Record<MembershipOrganisation, MembershipListItem[]>>((acc, organisation) => {
+        acc[organisation] = membershipsList.filter((item) => item.organisation === organisation);
+        return acc;
+      }, {
+        "AHI Employers Organisation": [],
+        SABPP: [],
+        SASLAW: [],
+      }),
+    [membershipsList],
   );
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]";
@@ -367,6 +404,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     subuserInviteForm.password.trim().length > 0 &&
     subuserInviteForm.confirmPassword.trim().length > 0 &&
     subuserInviteForm.password === subuserInviteForm.confirmPassword;
+  const isMembershipFormValid =
+    membershipForm.description.trim().length > 0 &&
+    membershipForm.owner.trim().length > 0 &&
+    (Boolean(membershipForm.file) || Boolean(editingMembershipId));
 
   const setGroupLoading = useCallback((group: ProfileDataGroup, value: boolean) => {
     setTabLoading((prev) => {
@@ -391,12 +432,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (cached.companyDetails) {
       setCompanyDetails(cached.companyDetails);
       setInitialCompanyDetails(cached.companyDetails);
-    }
-    if (cached.personalise) {
-      setPersonaliseLogoPreview(cached.personalise.preview);
-      setInitialPersonaliseLogoPreview(cached.personalise.preview);
-      setPersonaliseLogoLayout(cached.personalise.layout);
-      setInitialPersonaliseLogoLayout(cached.personalise.layout);
     }
   }, []);
 
@@ -548,48 +583,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         return;
       }
 
-      if (group === "personalize") {
-        if (personalizeColumnsSupported === false) {
-          loadedGroupsRef.current.add(group);
-          const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
-          nextCache.loadedGroups.add(group);
-          settingsProfileCacheByUser.set(user.id, nextCache);
-          return;
-        }
-
-        const { data, error } = await (supabase as any)
-          .from("profiles")
-          .select("company_logo_data_url, company_logo_layout")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) {
-          if (isPersonalizeColumnError(error)) {
-            personalizeColumnsSupported = false;
-            loadedGroupsRef.current.add(group);
-            const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
-            nextCache.loadedGroups.add(group);
-            settingsProfileCacheByUser.set(user.id, nextCache);
-            return;
-          }
-          throw error;
-        }
-
-        personalizeColumnsSupported = true;
-        const preview = (((data as any)?.company_logo_data_url ?? "") as string).trim();
-        const rawLayout = (((data as any)?.company_logo_layout ?? "") as string).trim().toLowerCase();
-        const layout = rawLayout === "vertical" || rawLayout === "horizontal" ? rawLayout : null;
-
-        setPersonaliseLogoPreview(preview);
-        setInitialPersonaliseLogoPreview(preview);
-        setPersonaliseLogoLayout(layout);
-        setInitialPersonaliseLogoLayout(layout);
-        const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
-        nextCache.personalise = { preview, layout };
-        nextCache.loadedGroups.add(group);
-        settingsProfileCacheByUser.set(user.id, nextCache);
-        loadedGroupsRef.current.add(group);
-      }
     } catch (error) {
       console.error("Failed to load settings profile group", group, error);
       if (!embedded) {
@@ -863,327 +856,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setSaving(false);
   };
 
-  const cropPersonaliseLogoPadding = (dataUrl: string): Promise<string> =>
-    new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const sourceWidth = img.naturalWidth || img.width;
-        const sourceHeight = img.naturalHeight || img.height;
-        if (!sourceWidth || !sourceHeight) {
-          resolve(dataUrl);
-          return;
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = sourceWidth;
-        canvas.height = sourceHeight;
-        const context = canvas.getContext("2d");
-        if (!context) {
-          resolve(dataUrl);
-          return;
-        }
-
-        context.drawImage(img, 0, 0, sourceWidth, sourceHeight);
-        const pixels = context.getImageData(0, 0, sourceWidth, sourceHeight).data;
-
-        let left = sourceWidth;
-        let top = sourceHeight;
-        let right = -1;
-        let bottom = -1;
-
-        for (let y = 0; y < sourceHeight; y++) {
-          for (let x = 0; x < sourceWidth; x++) {
-            const index = (y * sourceWidth + x) * 4;
-            const r = pixels[index];
-            const g = pixels[index + 1];
-            const b = pixels[index + 2];
-            const a = pixels[index + 3];
-
-            const isTransparent = a < 18;
-            const isNearWhite = r > 246 && g > 246 && b > 246;
-            if (isTransparent || isNearWhite) continue;
-
-            if (x < left) left = x;
-            if (y < top) top = y;
-            if (x > right) right = x;
-            if (y > bottom) bottom = y;
-          }
-        }
-
-        if (right < left || bottom < top) {
-          resolve(dataUrl);
-          return;
-        }
-
-        const padding = Math.max(1, Math.round(Math.min(sourceWidth, sourceHeight) * 0.025));
-        const cropX = Math.max(0, left - padding);
-        const cropY = Math.max(0, top - padding);
-        const cropWidth = Math.min(sourceWidth - cropX, right - left + 1 + padding * 2);
-        const cropHeight = Math.min(sourceHeight - cropY, bottom - top + 1 + padding * 2);
-
-        const croppedCanvas = document.createElement("canvas");
-        croppedCanvas.width = cropWidth;
-        croppedCanvas.height = cropHeight;
-        const croppedContext = croppedCanvas.getContext("2d");
-        if (!croppedContext) {
-          resolve(dataUrl);
-          return;
-        }
-
-        croppedContext.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-        resolve(croppedCanvas.toDataURL("image/png"));
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    });
-
-  const detectPersonaliseLogoLayout = (
-    dataUrl: string,
-  ): Promise<"vertical" | "horizontal" | null> =>
-    new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        if (!width || !height) {
-          resolve(null);
-          return;
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d");
-        if (!context) {
-          resolve(null);
-          return;
-        }
-
-        context.drawImage(img, 0, 0, width, height);
-        const pixels = context.getImageData(0, 0, width, height).data;
-        const rowInk = new Array<number>(height).fill(0);
-        const colInk = new Array<number>(width).fill(0);
-
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const idx = (y * width + x) * 4;
-            const r = pixels[idx];
-            const g = pixels[idx + 1];
-            const b = pixels[idx + 2];
-            const a = pixels[idx + 3];
-            const isTransparent = a < 18;
-            const isNearWhite = r > 246 && g > 246 && b > 246;
-            if (isTransparent || isNearWhite) continue;
-            rowInk[y] += 1;
-            colInk[x] += 1;
-          }
-        }
-
-        const scoreSplitStructure = (series: number[]) => {
-          const n = series.length;
-          if (n < 10) return 0;
-          const maxInk = Math.max(...series);
-          if (maxInk <= 0) return 0;
-
-          const minSplit = Math.floor(n * 0.28);
-          const maxSplit = Math.ceil(n * 0.72);
-          const valleyWindow = Math.max(1, Math.floor(n * 0.02));
-          let best = 0;
-
-          for (let split = minSplit; split <= maxSplit; split++) {
-            const leftPeak = Math.max(...series.slice(0, split));
-            const rightPeak = Math.max(...series.slice(split));
-            if (leftPeak <= 0 || rightPeak <= 0) continue;
-            const valleyStart = Math.max(0, split - valleyWindow);
-            const valleyEnd = Math.min(n, split + valleyWindow + 1);
-            const valley = Math.min(...series.slice(valleyStart, valleyEnd));
-            const raw = Math.min(leftPeak, rightPeak) - valley;
-            if (raw > best) best = raw;
-          }
-
-          return best / maxInk;
-        };
-
-        const verticalStackScore = scoreSplitStructure(rowInk); // icon above text
-        const horizontalSideScore = scoreSplitStructure(colInk); // icon beside text
-
-        const rowStartTop = 0;
-        const rowEndTop = Math.max(1, Math.floor(height * 0.45));
-        const rowStartBottom = Math.min(height - 1, Math.floor(height * 0.55));
-        const rowEndBottom = height;
-        const spanRatioForRows = (startRow: number, endRow: number) => {
-          let minX = width;
-          let maxX = -1;
-          for (let y = startRow; y < endRow; y++) {
-            for (let x = 0; x < width; x++) {
-              const idx = (y * width + x) * 4;
-              const r = pixels[idx];
-              const g = pixels[idx + 1];
-              const b = pixels[idx + 2];
-              const a = pixels[idx + 3];
-              const isTransparent = a < 18;
-              const isNearWhite = r > 246 && g > 246 && b > 246;
-              if (isTransparent || isNearWhite) continue;
-              if (x < minX) minX = x;
-              if (x > maxX) maxX = x;
-            }
-          }
-          if (maxX < minX) return 0;
-          return (maxX - minX + 1) / width;
-        };
-        const topSpanRatio = spanRatioForRows(rowStartTop, rowEndTop);
-        const bottomSpanRatio = spanRatioForRows(rowStartBottom, rowEndBottom);
-        const bottomMuchWiderThanTop = bottomSpanRatio > topSpanRatio + 0.18;
-        const aspectRatio = width / height;
-
-        if (
-          horizontalSideScore >= 0.28 &&
-          horizontalSideScore > verticalStackScore * 1.45 &&
-          !bottomMuchWiderThanTop
-        ) {
-          resolve("horizontal");
-          return;
-        }
-
-        if (
-          (verticalStackScore >= 0.2 &&
-            verticalStackScore > horizontalSideScore * 1.15) ||
-          (bottomMuchWiderThanTop && verticalStackScore >= 0.12)
-        ) {
-          resolve("vertical");
-          return;
-        }
-
-        // Fallback: if structural confidence is borderline, use cleaned aspect ratio.
-        // This catches wide/tall logos that don't present a strong split signal.
-        if (
-          aspectRatio >= 1.2 &&
-          horizontalSideScore >= verticalStackScore * 0.72
-        ) {
-          resolve("horizontal");
-          return;
-        }
-
-        if (
-          aspectRatio <= 0.84 &&
-          verticalStackScore >= horizontalSideScore * 0.72
-        ) {
-          resolve("vertical");
-          return;
-        }
-
-        // Very strong ratio bias should still decide, unless strongly contradicted.
-        if (aspectRatio >= 1.38 && verticalStackScore < horizontalSideScore * 1.35) {
-          resolve("horizontal");
-          return;
-        }
-
-        if (aspectRatio <= 0.72 && horizontalSideScore < verticalStackScore * 1.35) {
-          resolve("vertical");
-          return;
-        }
-
-        resolve(null);
-      };
-      img.onerror = () => resolve(null);
-      img.src = dataUrl;
-    });
-
-  const handlePersonaliseLogoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
-    if (!selectedFile) return;
-
-    if (!selectedFile.type.startsWith("image/")) {
-      toast({
-        title: "Invalid file",
-        description: "Please upload an image file for your logo.",
-        variant: "destructive",
-      });
-      event.target.value = "";
-      return;
-    }
-
-    const maxBytes = 4 * 1024 * 1024;
-    if (selectedFile.size > maxBytes) {
-      toast({
-        title: "File too large",
-        description: "Please upload an image smaller than 4MB.",
-        variant: "destructive",
-      });
-      event.target.value = "";
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      if (!result) {
-        toast({
-          title: "Upload failed",
-          description: "We couldn't read this file. Please try another image.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const cleanedLogo = await cropPersonaliseLogoPadding(result);
-      const detectedLayout = await detectPersonaliseLogoLayout(cleanedLogo);
-      setPersonaliseLogoPreview(cleanedLogo);
-      setPersonaliseLogoName(selectedFile.name);
-      if (detectedLayout) {
-        setPersonaliseLogoLayout(detectedLayout);
-      }
-    };
-    reader.readAsDataURL(selectedFile);
-  };
-
-  const handleRemovePersonaliseLogo = () => {
-    if (!canEditSettings) return;
-    setPersonaliseLogoPreview("");
-    setPersonaliseLogoName("");
-    setPersonaliseLogoLayout(null);
-    if (personaliseLogoInputRef.current) {
-      personaliseLogoInputRef.current.value = "";
-    }
-  };
-
-  const handlePersonaliseUpdate = async () => {
-    if (!user) return;
-    if (!canEditSettings) return;
-    setSaving(true);
-
-    const { error } = await (supabase as any)
-      .from("profiles")
-      .update({
-        company_logo_data_url: personaliseLogoPreview || null,
-        company_logo_layout: personaliseLogoLayout || null,
-      })
-      .eq("id", user.id);
-
-    if (error) {
-      toast({
-        title: "Unable to save personalisation",
-        description: getSafeErrorMessage(error),
-        variant: "destructive",
-      });
-    } else {
-      setInitialPersonaliseLogoPreview(personaliseLogoPreview);
-      setInitialPersonaliseLogoLayout(personaliseLogoLayout);
-      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
-      cached.personalise = {
-        preview: personaliseLogoPreview,
-        layout: personaliseLogoLayout,
-      };
-      cached.loadedGroups.add("personalize");
-      settingsProfileCacheByUser.set(user.id, cached);
-      toast({
-        title: "Success",
-        description: "Personalisation settings updated successfully",
-      });
-    }
-
-    setSaving(false);
-  };
-
   const companyProfileKeys: Array<keyof CompanyDetailsForm> = [
     "company_name",
     "company_type",
@@ -1219,9 +891,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   );
   const shouldShowAuthAction =
     passwordData.newPassword.trim().length > 0 || passwordData.confirmPassword.trim().length > 0;
-  const isPersonaliseDirty =
-    personaliseLogoPreview !== initialPersonaliseLogoPreview ||
-    personaliseLogoLayout !== initialPersonaliseLogoLayout;
   const isCurrentTabLoading = tabLoading[settingsTab];
 
   const handleClose = () => {
@@ -1282,6 +951,92 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setShowSubuserConfirmPassword(false);
     }
   };
+  const resolveCompanyAccountId = useCallback(async () => {
+    if (!user?.id) return "";
+    if (isMasterUser) return user.id;
+
+    const metadataCompanyId = String((user as any)?.user_metadata?.company_id || "").trim();
+    if (metadataCompanyId) return metadataCompanyId;
+
+    const { data, error } = await (supabase as any)
+      .from("subusers")
+      .select("company_id,status")
+      .eq("auth_user_id", user.id)
+      .in("status", ["accepted", "active"])
+      .maybeSingle();
+
+    if (error) throw error;
+    return String(data?.company_id || "").trim();
+  }, [isMasterUser, user]);
+  const resetMembershipDialog = useCallback((organisation?: MembershipOrganisation) => {
+    setMembershipForm(emptyMembershipForm(organisation));
+    setEditingMembershipId(null);
+    setMembershipSubmitting(false);
+    if (membershipFileInputRef.current) membershipFileInputRef.current.value = "";
+  }, []);
+  const handleMembershipDialogChange = useCallback((open: boolean) => {
+    setIsMembershipDialogOpen(open);
+    if (!open) resetMembershipDialog();
+  }, [resetMembershipDialog]);
+  const openCreateMembershipDialog = useCallback((organisation: MembershipOrganisation) => {
+    resetMembershipDialog(organisation);
+    setIsMembershipDialogOpen(true);
+  }, [resetMembershipDialog]);
+  const openEditMembershipDialog = useCallback((membership: MembershipListItem) => {
+    setMembershipForm({
+      organisation: membership.organisation,
+      description: membership.description,
+      owner: membership.owner,
+      file: null,
+      fileName: membership.file_name,
+    });
+    setEditingMembershipId(membership.id);
+    setMembershipSubmitting(false);
+    if (membershipFileInputRef.current) membershipFileInputRef.current.value = "";
+    setIsMembershipDialogOpen(true);
+  }, []);
+  const fetchMembershipsList = useCallback(async () => {
+    const resolvedCompanyId = companyAccountId || await resolveCompanyAccountId();
+    if (!resolvedCompanyId) {
+      setMembershipsList([]);
+      return;
+    }
+
+    setMembershipsLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("llasa_memberships")
+        .select("id,company_id,organisation,description,owner,file_name,storage_path,created_at,updated_at")
+        .eq("company_id", resolvedCompanyId)
+        .order("created_at", { ascending: false, nullsFirst: false });
+
+      if (error) throw error;
+
+      const normalized = ((data ?? []) as any[]).map((row) => ({
+        id: String(row.id ?? ""),
+        company_id: String(row.company_id ?? "").trim() || null,
+        organisation: row.organisation as MembershipOrganisation,
+        description: String(row.description ?? "").trim(),
+        owner: String(row.owner ?? "").trim(),
+        file_name: String(row.file_name ?? "").trim(),
+        storage_path: String(row.storage_path ?? "").trim(),
+        created_at: row.created_at ?? null,
+        updated_at: row.updated_at ?? null,
+      })) as MembershipListItem[];
+
+      setMembershipsList(normalized);
+      setCompanyAccountId(resolvedCompanyId);
+    } catch (error: any) {
+      toast({
+        title: "Unable to load memberships",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+      setMembershipsList([]);
+    } finally {
+      setMembershipsLoading(false);
+    }
+  }, [companyAccountId, resolveCompanyAccountId, toast]);
   const fetchSubusersList = useCallback(async () => {
     if (!user?.id) return;
     setSubusersLoading(true);
@@ -1369,6 +1124,172 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     },
     [fetchSubusersList, isMasterUser, toast],
   );
+  const handleMembershipFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setMembershipForm((prev) => ({
+      ...prev,
+      file,
+      fileName: file.name,
+    }));
+  }, []);
+  const handleViewMembership = useCallback(async (membership: MembershipListItem) => {
+    setViewingMembershipId(membership.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from(LLASA_MEMBERSHIPS_BUCKET)
+        .createSignedUrl(membership.storage_path, 300);
+      if (error || !data?.signedUrl) throw error || new Error("Signed URL failed.");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error: any) {
+      toast({
+        title: "Unable to open certificate",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setViewingMembershipId(null);
+    }
+  }, [toast]);
+  const handleDeleteMembership = useCallback(async (membership: MembershipListItem) => {
+    if (!canEditSettings) return;
+    const confirmed = window.confirm(`Delete the ${membership.organisation} membership certificate "${membership.description}"?`);
+    if (!confirmed) return;
+
+    setDeletingMembershipId(membership.id);
+    try {
+      const { error: deleteRowError } = await (supabase as any)
+        .from("llasa_memberships")
+        .delete()
+        .eq("id", membership.id);
+      if (deleteRowError) throw deleteRowError;
+
+      if (membership.storage_path) {
+        await supabase.storage.from(LLASA_MEMBERSHIPS_BUCKET).remove([membership.storage_path]);
+      }
+
+      setMembershipsList((prev) => prev.filter((item) => item.id !== membership.id));
+      toast({
+        title: "Membership deleted",
+        description: "Certificate removed successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Delete failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingMembershipId(null);
+    }
+  }, [canEditSettings, toast]);
+  const handleMembershipSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!user?.id) return;
+    if (!isMembershipFormValid) return;
+
+    const resolvedCompanyId = companyAccountId || await resolveCompanyAccountId();
+    if (!resolvedCompanyId) {
+      toast({
+        title: "Membership save failed",
+        description: "Unable to determine the company account for this membership.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const existingMembership = editingMembershipId
+      ? membershipsList.find((item) => item.id === editingMembershipId) ?? null
+      : null;
+
+    setMembershipSubmitting(true);
+    let uploadedStoragePath = "";
+
+    try {
+      let storagePath = existingMembership?.storage_path || "";
+      let fileName = existingMembership?.file_name || membershipForm.fileName.trim();
+
+      if (membershipForm.file) {
+        const safeName = membershipForm.file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
+        uploadedStoragePath = `${resolvedCompanyId}/${slugifyMembershipOrganisation(membershipForm.organisation)}/${Date.now()}_${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from(LLASA_MEMBERSHIPS_BUCKET)
+          .upload(uploadedStoragePath, membershipForm.file, {
+            upsert: false,
+            contentType: membershipForm.file.type || "application/octet-stream",
+          });
+        if (uploadError) throw uploadError;
+        storagePath = uploadedStoragePath;
+        fileName = membershipForm.file.name;
+      }
+
+      const payload = {
+        company_id: resolvedCompanyId,
+        organisation: membershipForm.organisation,
+        description: membershipForm.description.trim(),
+        owner: membershipForm.owner.trim(),
+        file_name: fileName,
+        storage_path: storagePath,
+        uploaded_by: user.id,
+      };
+
+      if (!payload.storage_path || !payload.file_name) {
+        throw new Error("A certificate file is required.");
+      }
+
+      if (editingMembershipId) {
+        const { error } = await (supabase as any)
+          .from("llasa_memberships")
+          .update(payload)
+          .eq("id", editingMembershipId);
+        if (error) throw error;
+      } else {
+        const { error } = await (supabase as any)
+          .from("llasa_memberships")
+          .insert(payload);
+        if (error) throw error;
+      }
+
+      if (
+        uploadedStoragePath &&
+        existingMembership?.storage_path &&
+        existingMembership.storage_path !== uploadedStoragePath
+      ) {
+        await supabase.storage.from(LLASA_MEMBERSHIPS_BUCKET).remove([existingMembership.storage_path]);
+      }
+
+      toast({
+        title: editingMembershipId ? "Membership updated" : "Membership added",
+        description: editingMembershipId
+          ? "Certificate details updated successfully."
+          : "Certificate uploaded successfully.",
+      });
+      await fetchMembershipsList();
+      handleMembershipDialogChange(false);
+    } catch (error: any) {
+      if (uploadedStoragePath) {
+        await supabase.storage.from(LLASA_MEMBERSHIPS_BUCKET).remove([uploadedStoragePath]);
+      }
+      toast({
+        title: "Membership save failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setMembershipSubmitting(false);
+    }
+  }, [
+    companyAccountId,
+    editingMembershipId,
+    fetchMembershipsList,
+    handleMembershipDialogChange,
+    isMembershipFormValid,
+    membershipForm,
+    membershipsList,
+    resolveCompanyAccountId,
+    toast,
+    user?.id,
+  ]);
 
   const handleSubuserInviteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1460,6 +1381,38 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (settingsTab !== "subusers") return;
     void fetchSubusersList();
   }, [fetchSubusersList, settingsTab, user]);
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadCompanyAccountId = async () => {
+      if (!user?.id) {
+        if (!isCancelled) setCompanyAccountId("");
+        return;
+      }
+
+      try {
+        const resolvedCompanyId = await resolveCompanyAccountId();
+        if (!isCancelled) {
+          setCompanyAccountId(resolvedCompanyId);
+        }
+      } catch {
+        if (!isCancelled) {
+          setCompanyAccountId("");
+        }
+      }
+    };
+
+    void loadCompanyAccountId();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [resolveCompanyAccountId, user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    if (settingsTab !== "memberships") return;
+    void fetchMembershipsList();
+  }, [fetchMembershipsList, settingsTab, user]);
   useEffect(() => {
     let isCancelled = false;
     const resolvePermissions = async () => {
@@ -1723,6 +1676,104 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     ))
                   )}
                 </div>
+              </div>
+            </div>
+              )}
+
+              {settingsTab === "memberships" && (
+            <div className="flex h-full flex-col space-y-5">
+              <div className="space-y-1">
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">Memberships</h3>
+                <p className="mb-2 text-[11px] text-slate-500">
+                  Upload and manage LLASA membership certificates for AHI Employers Organisation, SABPP, and SASLAW.
+                </p>
+              </div>
+              <div className="space-y-5">
+                {membershipOrganisations.map((organisation) => {
+                  const items = membershipsByOrganisation[organisation];
+                  return (
+                    <div key={organisation} className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <h4 className="text-[14px] font-semibold text-[#2D4256]">{organisation}</h4>
+                          <div className="h-[0.5px] w-full bg-[#3eca44]" />
+                        </div>
+                        {canEditSettings ? (
+                          <Button
+                            type="button"
+                            onClick={() => openCreateMembershipDialog(organisation)}
+                            className={popupActionButtonClass}
+                          >
+                            Add Certificate
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="overflow-hidden rounded border border-slate-200">
+                        <div className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                          <div>Description</div>
+                          <div>Owner</div>
+                          <div className="text-center">Actions</div>
+                        </div>
+                        <div className="max-h-[250px] divide-y overflow-y-auto bg-white text-[11px]">
+                          {membershipsLoading ? (
+                            <div className="px-3 py-3 text-slate-500">Loading memberships...</div>
+                          ) : items.length === 0 ? (
+                            <div className="px-3 py-3 text-slate-500">No certificates uploaded.</div>
+                          ) : (
+                            items.map((item) => (
+                              <div key={item.id} className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
+                                <div className="truncate text-slate-900">{item.description || "--"}</div>
+                                <div className="truncate text-slate-700">{item.owner || "--"}</div>
+                                {canEditSettings ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleViewMembership(item)}
+                                      disabled={viewingMembershipId === item.id}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                                      aria-label={`View ${item.organisation} certificate`}
+                                    >
+                                      {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditMembershipDialog(item)}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35]"
+                                      aria-label={`Edit ${item.organisation} certificate`}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleDeleteMembership(item)}
+                                      disabled={deletingMembershipId === item.id}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                      aria-label={`Delete ${item.organisation} certificate`}
+                                    >
+                                      {deletingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-start">
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleViewMembership(item)}
+                                      disabled={viewingMembershipId === item.id}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                                      aria-label={`View ${item.organisation} certificate`}
+                                    >
+                                      {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
               )}
@@ -2089,147 +2140,126 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             </div>
               )}
 
-              {settingsTab === "personalize" && (
-                <div className="flex h-full flex-col space-y-5">
-                  <div className="space-y-1">
-                    <h3 className="text-[20px] font-semibold text-[#2D4256]">Personalise</h3>
-                    <p className="mb-2 text-[11px] text-slate-500">Fine-tune how your documents look so every output feels more aligned with your brand and communication style.</p>
-                  </div>
-
-                  <div className="space-y-1 pt-3">
-                    <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Company Logo</h4>
-                    <div className="h-[0.5px] w-full bg-[#3eca44]" />
-                  </div>
-
-                  <div
-                    className={`grid items-start gap-6 ${
-                      personaliseLogoPreview ? "grid-cols-[320px_1fr]" : "max-w-[320px] grid-cols-1"
-                    }`}
-                  >
-                    <div className="space-y-1.5">
-                      <Label htmlFor="personaliseLogoUpload" className="text-[11px] font-semibold text-slate-700">
-                        Company logo (optional)
-                      </Label>
-                      <div className="space-y-2">
-                        <input
-                          id="personaliseLogoUpload"
-                          ref={personaliseLogoInputRef}
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                          className="hidden"
-                          disabled={!canEditSettings}
-                          onChange={handlePersonaliseLogoSelect}
-                        />
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-[30px] min-w-[84px] rounded border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-                            onClick={() => {
-                              if (!canEditSettings) return;
-                              personaliseLogoInputRef.current?.click();
-                            }}
-                            disabled={!canEditSettings}
-                          >
-                            {personaliseLogoPreview ? "Change" : "Upload logo"}
-                          </Button>
-                          {personaliseLogoPreview ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="h-[30px] min-w-[84px] border-0 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-none hover:bg-white hover:text-red-600 hover:underline hover:underline-offset-2"
-                              onClick={handleRemovePersonaliseLogo}
-                              disabled={!canEditSettings}
-                            >
-                              Remove
-                            </Button>
-                          ) : null}
-                        </div>
-                        {personaliseLogoPreview ? (
-                          <div className="inline-block w-fit rounded border border-slate-300 bg-white p-2">
-                            <img
-                              src={personaliseLogoPreview}
-                              alt="Company logo preview"
-                              className="h-20 w-auto object-contain"
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    {personaliseLogoPreview ? (
-                      <div className="space-y-1.5">
-                        <Label className="text-[11px] font-semibold text-slate-700">Logo layout</Label>
-                        <div className="grid grid-cols-2 gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!canEditSettings) return;
-                              setPersonaliseLogoLayout("vertical");
-                            }}
-                            disabled={!canEditSettings}
-                            className="text-left"
-                          >
-                            <div
-                              className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
-                                personaliseLogoLayout === "vertical"
-                                  ? "border-[#3eca44] bg-[#eaf8eb]"
-                                  : "border-slate-300 bg-white hover:border-[#34b73b]"
-                              }`}
-                            >
-                              <div className="flex flex-col items-center">
-                                <div className="h-5 w-5 rounded-md bg-[#3eca44]/90" />
-                                <div className="mt-1.5 h-1.5 w-12 rounded bg-slate-700/80" />
-                                <div className="mt-1 h-1 w-9 rounded bg-slate-400/90" />
-                              </div>
-                            </div>
-                            <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-700">Vertical</p>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!canEditSettings) return;
-                              setPersonaliseLogoLayout("horizontal");
-                            }}
-                            disabled={!canEditSettings}
-                            className="text-left"
-                          >
-                            <div
-                              className={`flex h-[86px] items-center justify-center rounded border p-2 transition ${
-                                personaliseLogoLayout === "horizontal"
-                                  ? "border-[#3eca44] bg-[#eaf8eb]"
-                                  : "border-slate-300 bg-white hover:border-[#34b73b]"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <div className="h-5 w-5 rounded-md bg-[#3eca44]/90" />
-                                <div>
-                                  <div className="h-1.5 w-10 rounded bg-slate-700/80" />
-                                  <div className="mt-1 h-1 w-8 rounded bg-slate-400/90" />
-                                </div>
-                              </div>
-                            </div>
-                            <p className="mt-1.5 text-center text-[11px] font-semibold text-slate-700">Horizontal</p>
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {canEditSettings && isPersonaliseDirty ? (
-                    <div className={settingsActionRowClass}>
-                      <Button onClick={handlePersonaliseUpdate} disabled={saving} className={popupActionButtonClass}>
-                        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Save Changes
-                      </Button>
-                    </div>
-                  ) : null}
-
-                </div>
-              )}
                 </>
               )}
             </section>
+
+            <Dialog open={isMembershipDialogOpen} onOpenChange={handleMembershipDialogChange}>
+              <DialogContent
+                className="w-[94vw] max-w-[420px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 sm:rounded-sm [&>button]:hidden"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="relative">
+                  <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                    <div className="flex items-center gap-2 pl-2">
+                      <FileText className="h-4 w-4 text-white" />
+                      <DialogTitle className="text-sm font-semibold text-white">
+                        {editingMembershipId ? "Edit Membership" : "Add Membership"}
+                      </DialogTitle>
+                    </div>
+                    <DialogClose asChild>
+                      <button type="button" className="text-white hover:text-white/80" aria-label="Close membership popup">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </DialogClose>
+                  </div>
+                  <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
+                    <form onSubmit={handleMembershipSubmit} className="space-y-4">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Organisation</span>
+                        <Select
+                          value={membershipForm.organisation}
+                          onValueChange={(value) =>
+                            setMembershipForm((prev) => ({ ...prev, organisation: value as MembershipOrganisation }))
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0">
+                            <SelectValue placeholder="Select organisation" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded text-[11px]">
+                            {membershipOrganisations.map((organisation) => (
+                              <SelectItem
+                                key={organisation}
+                                value={organisation}
+                                className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]"
+                              >
+                                {organisation}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Description <span className="text-red-600">*</span></span>
+                        <Input
+                          value={membershipForm.description}
+                          onChange={(event) => setMembershipForm((prev) => ({ ...prev, description: event.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert description"
+                          required
+                        />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Owner <span className="text-red-600">*</span></span>
+                        <Input
+                          value={membershipForm.owner}
+                          onChange={(event) => setMembershipForm((prev) => ({ ...prev, owner: event.target.value }))}
+                          className={subuserModalInputClass}
+                          placeholder="Please insert owner"
+                          required
+                        />
+                      </div>
+                      <input
+                        ref={membershipFileInputRef}
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg,.webp"
+                        className="hidden"
+                        onChange={handleMembershipFileSelect}
+                      />
+                      <div className="rounded border border-slate-200 bg-slate-50 px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-[11px] font-medium text-slate-900">
+                              {membershipForm.fileName || "No certificate selected"}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {editingMembershipId ? "Upload a new file only if you want to replace the existing certificate." : "PDF and image files are supported."}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-[28px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                            onClick={() => membershipFileInputRef.current?.click()}
+                          >
+                            {editingMembershipId ? "Replace File" : "Upload File"}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 pt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-[28px] w-[90px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                          onClick={() => handleMembershipDialogChange(false)}
+                          disabled={membershipSubmitting}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="h-[28px] min-w-[110px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300 disabled:text-white"
+                          disabled={membershipSubmitting || !isMembershipFormValid}
+                        >
+                          {membershipSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          {editingMembershipId ? "Save" : "Upload"}
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             <Dialog open={isInviteSubuserOpen} onOpenChange={handleSubuserInviteDialogChange}>
               <DialogContent

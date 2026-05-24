@@ -10,9 +10,48 @@ const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+const getSupabaseAuthStorage = () => (isLocalhost ? sessionStorage : localStorage);
+
+const getSupabaseProjectRef = () => {
+  try {
+    return new URL(SUPABASE_URL).hostname.split(".")[0] || "";
+  } catch {
+    return "";
+  }
+};
+
+export const readPersistedSupabaseSession = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const storage = getSupabaseAuthStorage();
+    const projectRef = getSupabaseProjectRef();
+    const explicitKey = projectRef ? `sb-${projectRef}-auth-token` : "";
+    const candidateKeys = explicitKey
+      ? [explicitKey]
+      : Object.keys(storage).filter((key) => key.startsWith("sb-") && key.endsWith("-auth-token"));
+
+    for (const key of candidateKeys) {
+      const raw = storage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (parsed?.user && parsed?.access_token) return parsed;
+      if (parsed?.currentSession?.user && parsed?.currentSession?.access_token) return parsed.currentSession;
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item?.user && item?.access_token) return item;
+          if (item?.currentSession?.user && item?.currentSession?.access_token) return item.currentSession;
+        }
+      }
+    }
+  } catch {
+    // ignore storage parsing issues
+  }
+  return null;
+};
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: isLocalhost ? sessionStorage : localStorage,
+    storage: getSupabaseAuthStorage(),
     persistSession: true,
     autoRefreshToken: true,
   }

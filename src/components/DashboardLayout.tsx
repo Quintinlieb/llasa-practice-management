@@ -301,11 +301,6 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!user?.id) {
       setProfile(null);
-      try {
-        sessionStorage.removeItem(STORAGE_KEYS.HEADER_PROFILE);
-      } catch {
-        // ignore storage errors
-      }
       return;
     }
 

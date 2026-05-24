@@ -118,6 +118,45 @@ export type Database = {
         }
         Relationships: []
       }
+      llasa_memberships: {
+        Row: {
+          company_id: string
+          created_at: string
+          description: string
+          file_name: string
+          id: string
+          organisation: string
+          owner: string
+          storage_path: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          description: string
+          file_name: string
+          id?: string
+          organisation: string
+          owner: string
+          storage_path: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          description?: string
+          file_name?: string
+          id?: string
+          organisation?: string
+          owner?: string
+          storage_path?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           cell_number: string | null

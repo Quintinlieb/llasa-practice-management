@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { readPersistedSupabaseSession, supabase } from "@/integrations/supabase/client";
+import { cacheHeaderProfile, readCachedHeaderProfilePicture } from "@/lib/headerProfileCache";
 
 type AuthContextValue = {
   user: User | null;
@@ -27,12 +28,72 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(persistedSession?.user ?? null);
   const [session, setSession] = useState<Session | null>(persistedSession);
   const [loading, setLoading] = useState(!persistedSession);
+  const explicitSignInInProgressRef = useRef(false);
+
+  const preloadHeaderProfile = async (authUser: User) => {
+    const { data: profileData } = await (supabase as any)
+      .from("profiles")
+      .select("user_name, user_surname, user_email, profile_picture")
+      .eq("id", authUser.id)
+      .maybeSingle();
+
+    if (profileData) {
+      cacheHeaderProfile(authUser.id, {
+        user_name: String(profileData.user_name || "").trim(),
+        user_surname: String(profileData.user_surname || "").trim(),
+        user_email: String(profileData.user_email || authUser.email || "").trim(),
+        profile_picture: String((profileData as any).profile_picture || "").trim(),
+      });
+      return;
+    }
+
+    const { data: subuserData } = await (supabase as any)
+      .from("subusers")
+      .select("name,surname,email,profile_picture")
+      .eq("auth_user_id", authUser.id)
+      .maybeSingle();
+
+    if (subuserData) {
+      cacheHeaderProfile(authUser.id, {
+        user_name: String((subuserData as any).name || "").trim(),
+        user_surname: String((subuserData as any).surname || "").trim(),
+        user_email: String((subuserData as any).email || authUser.email || "").trim(),
+        profile_picture: String((subuserData as any).profile_picture || "").trim(),
+      });
+      return;
+    }
+
+    cacheHeaderProfile(authUser.id, {
+      user_name: String((authUser as any)?.user_metadata?.user_name || (authUser as any)?.user_metadata?.name || "User").trim(),
+      user_surname: String((authUser as any)?.user_metadata?.user_surname || (authUser as any)?.user_metadata?.surname || "").trim(),
+      user_email: String(authUser.email || "").trim(),
+      profile_picture: "",
+    });
+  };
+
+  const decodeHeaderProfilePicture = async (authUserId: string) => {
+    if (typeof window === "undefined") return;
+    const picture = readCachedHeaderProfilePicture(authUserId);
+    if (!picture) return;
+
+    await new Promise<void>((resolve) => {
+      const image = new Image();
+      image.decoding = "sync";
+      image.onload = () => resolve();
+      image.onerror = () => resolve();
+      image.src = picture;
+      if (image.complete) resolve();
+    });
+  };
 
   useEffect(() => {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
+        if (explicitSignInInProgressRef.current && event === "SIGNED_IN") {
+          return;
+        }
         setUser(session?.user ?? null);
         setLoading(false);
       }
@@ -83,10 +144,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    explicitSignInInProgressRef.current = true;
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
+    if (error) {
+      explicitSignInInProgressRef.current = false;
+      setLoading(false);
+      return { error };
+    }
+
+    if (data.user?.id) {
+      try {
+        await preloadHeaderProfile(data.user);
+        await decodeHeaderProfilePicture(data.user.id);
+      } catch {
+        // Do not block sign-in if profile preloading fails.
+      }
+    }
+
+    setSession(data.session);
+    setUser(data.user ?? null);
+    setLoading(false);
+    explicitSignInInProgressRef.current = false;
     return { error };
   };
 

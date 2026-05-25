@@ -1889,9 +1889,7 @@ const Documents = () => {
                           className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {stepMeta?.isFinished
-                            ? modalDocument === "disciplinaryHearingOutcome"
-                              ? "Preview"
-                              : "Download"
+                            ? "Download"
                             : "Next"}
                         </button>
                       </div>
@@ -2100,9 +2098,7 @@ const Documents = () => {
                           className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {stepMeta?.isFinished
-                            ? modalDocument === "disciplinaryHearingOutcome"
-                              ? "Preview"
-                              : "Download"
+                            ? "Download"
                             : "Next"}
                         </button>
                       </div>

@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -12,6 +12,11 @@ import {
   saveMinimizedDocumentTabs,
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
+import {
+  cacheHeaderProfile,
+  readCachedHeaderProfile,
+  type HeaderProfileCacheValue,
+} from "@/lib/headerProfileCache";
 import { Icon } from "@iconify/react";
 import { Bell, Calendar, Headset, Settings, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -25,22 +30,12 @@ interface DashboardLayoutProps {
   headerInlineContent?: ReactNode;
 }
 
-interface UserHeaderProfile {
-  user_name: string;
-  user_surname: string;
-  user_email: string;
-  profile_picture?: string;
-}
-
-type CachedHeaderProfile = UserHeaderProfile & {
-  auth_user_id: string;
-};
+type UserHeaderProfile = HeaderProfileCacheValue;
 
 type HeaderProfileUpdatedDetail = UserHeaderProfile;
 
 const STORAGE_KEYS = {
   SIDEBAR_COLLAPSED: "sidebar:collapsed",
-  HEADER_PROFILE: "header:profile",
   HEADER_PROFILE_COLLAPSED: "header:profile-collapsed",
 } as const;
 const APP_HEADER_HEIGHT = "52px";
@@ -180,35 +175,6 @@ export default function DashboardLayout({
     }
   });
   const resolvedHeaderTitle = headerTitle ?? getPageTitleFromPathname(location.pathname);
-  const readCachedHeaderProfile = (authUserId?: string | null) => {
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEYS.HEADER_PROFILE);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as Partial<CachedHeaderProfile> | null;
-      if (!parsed) return null;
-      const cachedAuthUserId = String(parsed.auth_user_id || "").trim();
-      if (!authUserId || cachedAuthUserId !== authUserId) return null;
-      return {
-        user_name: String(parsed.user_name || "").trim(),
-        user_surname: String(parsed.user_surname || "").trim(),
-        user_email: String(parsed.user_email || "").trim(),
-        profile_picture: String(parsed.profile_picture || "").trim(),
-      } satisfies UserHeaderProfile;
-    } catch {
-      return null;
-    }
-  };
-  const cacheHeaderProfile = useCallback((authUserId: string, nextProfile: UserHeaderProfile) => {
-    try {
-      const payload: CachedHeaderProfile = {
-        auth_user_id: authUserId,
-        ...nextProfile,
-      };
-      sessionStorage.setItem(STORAGE_KEYS.HEADER_PROFILE, JSON.stringify(payload));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
   const getMetadataHeaderProfile = () => {
     const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
     const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
@@ -221,7 +187,7 @@ export default function DashboardLayout({
       profile_picture: "",
     } satisfies UserHeaderProfile;
   };
-  const [profile, setProfile] = useState<UserHeaderProfile | null>(null);
+  const [profile, setProfile] = useState<UserHeaderProfile | null>(() => readCachedHeaderProfile(user?.id));
   const [minimizedDocumentTabs, setMinimizedDocumentTabs] = useState<StoredMinimizedDocumentTab[]>(() =>
     loadMinimizedDocumentTabs(),
   );
@@ -305,10 +271,11 @@ export default function DashboardLayout({
     }
 
     let isMounted = true;
-    setProfile(null);
     const cachedProfile = readCachedHeaderProfile(user.id);
     if (cachedProfile) {
       setProfile(cachedProfile);
+    } else {
+      setProfile(null);
     }
     const metadataProfile = getMetadataHeaderProfile();
     if (metadataProfile) {
@@ -378,7 +345,7 @@ export default function DashboardLayout({
       isMounted = false;
       window.removeEventListener("header-profile-updated", handleHeaderProfileUpdated);
     };
-  }, [cacheHeaderProfile, user]);
+  }, [user]);
 
   useEffect(() => {
     const syncTabs = () => setMinimizedDocumentTabs(loadMinimizedDocumentTabs());
@@ -755,12 +722,21 @@ export default function DashboardLayout({
                       onClick={() => setIsHeaderProfileCollapsed((prev) => !prev)}
                       aria-label={isHeaderProfileCollapsed ? "Expand profile card" : "Collapse profile card"}
                     >
-                      <Avatar className="h-10 w-10 rounded-full border-0">
-                        <AvatarImage src={profile?.profile_picture || undefined} alt={greetingLabel} className="object-cover" />
-                        <AvatarFallback className="bg-[#eef9ef] text-[11px] font-semibold text-[#2f9f35]">
-                          {headerProfileInitials}
-                        </AvatarFallback>
-                      </Avatar>
+                      {profile?.profile_picture ? (
+                        <img
+                          src={profile.profile_picture}
+                          alt={greetingLabel}
+                          className="h-10 w-10 rounded-full object-cover"
+                          decoding="sync"
+                          loading="eager"
+                        />
+                      ) : (
+                        <Avatar className="h-10 w-10 rounded-full border-0">
+                          <AvatarFallback className="bg-[#eef9ef] text-[11px] font-semibold text-[#2f9f35]">
+                            {headerProfileInitials}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
                     </button>
                     <div
                       ref={headerProfileContentRef}

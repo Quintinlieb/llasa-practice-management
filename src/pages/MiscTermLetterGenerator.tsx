@@ -915,6 +915,7 @@ const MiscTermLetterGenerator = ({
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [clientMenuOpen, setClientMenuOpen] = useState(false);
+  const [clientSearchValue, setClientSearchValue] = useState("");
   const [clientLoadMessage, setClientLoadMessage] = useState("No clients found.");
   const [client, setClient] = useState<ClientStepState>(() => normalizeClientDraft(restored?.client));
   const [employee, setEmployee] = useState<EmployeeStepState>(() => normalizeEmployeeDraft(restored?.employee));
@@ -1067,6 +1068,7 @@ const MiscTermLetterGenerator = ({
 
   const resetClientStep = useCallback(() => {
     setClientMenuOpen(false);
+    setClientSearchValue("");
     setClient(emptyClientState);
     setEmployee(emptyEmployeeState);
     setTermination(emptyTerminationState);
@@ -1113,6 +1115,7 @@ const MiscTermLetterGenerator = ({
     if (!nextRecord) return;
 
     setClient(mapClientRecordToState(nextRecord));
+    setClientSearchValue("");
     void loadLogoForClient(clientId);
   };
 
@@ -1136,6 +1139,15 @@ const MiscTermLetterGenerator = ({
     termination.disputeForum.trim().length > 0 &&
     (termination.disputeForum !== "bargaining_council" || termination.bargainingCouncil.trim().length > 0);
   const selectedClientLabel = client.companyName || "Select client";
+  const filteredClients = useMemo(() => {
+    const searchValue = clientSearchValue.trim().toLowerCase();
+    if (!searchValue) return clients;
+    return clients.filter((entry) => {
+      const registeredName = String(entry.registered_name || "").trim().toLowerCase();
+      const tradingAsName = String(entry.trading_as || "").trim().toLowerCase();
+      return registeredName.startsWith(searchValue) || tradingAsName.startsWith(searchValue);
+    });
+  }, [clients, clientSearchValue]);
   const misconductSelectionLabel =
     termination.misconductTypes.length === 0
       ? "Select misconduct type(s)"
@@ -1285,7 +1297,6 @@ const MiscTermLetterGenerator = ({
 
       const rawLogoDataUrl = client.logoUrl ? await loadImageUrlAsDataUrl(client.logoUrl) : null;
       const logoDataUrl = rawLogoDataUrl ? await trimLogoWhitespace(rawLogoDataUrl) : null;
-      const clientLocationLine = [client.city.trim(), client.province.trim()].filter(Boolean).join(", ");
       const registeredNameDisplay = client.registeredName.trim()
         ? mergeCompanyType(client.registeredName.trim(), client.companyType.trim())
         : "";
@@ -1294,7 +1305,8 @@ const MiscTermLetterGenerator = ({
         { text: client.tradingName.trim() ? `t/a ${client.tradingName.trim()}` : "", icon: null },
         { text: client.addressLine1.trim(), icon: null },
         { text: client.addressLine2.trim(), icon: null },
-        { text: clientLocationLine, icon: null },
+        { text: client.city.trim(), icon: null },
+        { text: client.province.trim(), icon: null },
         { text: client.areaCode.trim(), icon: null },
         { text: client.phone.trim(), icon: "phone" as const },
         { text: client.email.trim(), icon: "email" as const },
@@ -1371,8 +1383,13 @@ const MiscTermLetterGenerator = ({
       y += 10;
 
       const employeeFullName = [employee.name, employee.surname].map((value) => value.trim()).filter(Boolean).join(" ");
-      const employeeLocationLine = [employee.city.trim(), employee.province.trim()].filter(Boolean).join(", ");
-      const employeeLines = [employeeFullName || "[employee name]", employee.addressLine1.trim(), employeeLocationLine, employee.areaCode.trim()].filter(Boolean);
+      const employeeLines = [
+        employeeFullName || "[employee name]",
+        employee.addressLine1.trim(),
+        employee.city.trim(),
+        employee.province.trim(),
+        employee.areaCode.trim(),
+      ].filter(Boolean);
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       pdf.text("TO:", margin, y);
@@ -1644,7 +1661,13 @@ const MiscTermLetterGenerator = ({
             <Label htmlFor="miscTermClient" className="text-[10px] font-semibold text-slate-600">
               Client Name <span className="text-red-500">*</span>
             </Label>
-            <Popover open={clientMenuOpen} onOpenChange={setClientMenuOpen}>
+            <Popover
+              open={clientMenuOpen}
+              onOpenChange={(open) => {
+                if (!open) setClientSearchValue("");
+                setClientMenuOpen(open);
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   id="miscTermClient"
@@ -1667,17 +1690,25 @@ const MiscTermLetterGenerator = ({
                 className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
                 onWheel={(event) => event.stopPropagation()}
               >
-                <Command shouldFilter>
-                  <CommandInput placeholder="Search registered or trading name..." className="h-8 text-[11px] placeholder:text-[10px]" />
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    value={clientSearchValue}
+                    onValueChange={setClientSearchValue}
+                    placeholder="Search registered or trading name..."
+                    className="h-8 text-[11px] placeholder:text-[10px]"
+                  />
                   <CommandList className="max-h-[320px] overscroll-contain">
-                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                    {filteredClients.length === 0 ? (
+                      <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                    ) : null}
                     <CommandGroup>
-                      {clients.map((entry) => {
+                      {filteredClients.map((entry) => {
                         const label = buildClientName(entry);
+                        const searchable = `${String(entry.registered_name || "").trim()} ${String(entry.trading_as || "").trim()}`.trim();
                         return (
                           <CommandItem
                             key={entry.id}
-                            value={`${label} ${String(entry.registered_name || "").trim()} ${String(entry.trading_as || "").trim()}`}
+                            value={searchable}
                             onSelect={() => {
                               handleClientSelect(entry.id);
                               setClientMenuOpen(false);

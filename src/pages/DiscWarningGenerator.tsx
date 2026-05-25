@@ -732,6 +732,20 @@ const DiscWarningGeneratorContent = ({
   const currentIndex = isFinished ? 3 : activeStep;
   const currentStep = stepShellCopy[currentIndex];
   const selectedClientLabel = clientForm.clientName || "Select client";
+  const [clientSearchValue, setClientSearchValue] = useState("");
+  const filteredClientRows = useMemo(() => {
+    const searchValue = clientSearchValue.trim().toLowerCase();
+    if (!searchValue) return clientRows;
+    return clientRows.filter((client) => {
+      const registeredName = String(client.registered_name || "").trim().toLowerCase();
+      const tradingAsName = String(client.trading_as || "").trim().toLowerCase();
+      return registeredName.startsWith(searchValue) || tradingAsName.startsWith(searchValue);
+    });
+  }, [clientRows, clientSearchValue]);
+  const handleClientSearchOpenChange = (open: boolean) => {
+    if (!open) setClientSearchValue("");
+    setClientSearchOpen(open);
+  };
   const isClientStep = activeStep === 0 && !isFinished;
   const isEmployeeStep = activeStep === 1 && !isFinished;
   const isWarningStep = activeStep === 2 && !isFinished;
@@ -817,7 +831,7 @@ const DiscWarningGeneratorContent = ({
                   <Label htmlFor="discWarningClientName" className="text-[10px] font-semibold text-slate-600">
                     Client Name <span className="text-red-500">*</span>
                   </Label>
-                  <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                  <Popover open={clientSearchOpen} onOpenChange={handleClientSearchOpenChange}>
                     <PopoverTrigger asChild>
                       <Button
                         id="discWarningClientName"
@@ -841,23 +855,28 @@ const DiscWarningGeneratorContent = ({
                       className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
                       onWheel={(event) => event.stopPropagation()}
                     >
-                      <Command shouldFilter>
+                      <Command shouldFilter={false}>
                         <CommandInput
+                          value={clientSearchValue}
+                          onValueChange={setClientSearchValue}
                           placeholder="Search registered or trading name..."
                           className="h-8 text-[11px] placeholder:text-[10px]"
                         />
                         <CommandList className="max-h-[320px] overscroll-contain">
-                          <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                          {filteredClientRows.length === 0 ? (
+                            <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                          ) : null}
                           <CommandGroup>
-                            {clientRows.map((client) => {
+                            {filteredClientRows.map((client) => {
                               const label = formatClientDisplayName(client);
                               const searchable = `${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`;
                               return (
                                 <CommandItem
                                   key={client.id}
-                                  value={`${label} ${searchable}`}
+                                  value={searchable.trim()}
                                   onSelect={() => {
                                     onClientSelect(client.id);
+                                    setClientSearchValue("");
                                     setClientSearchOpen(false);
                                   }}
                                   className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"

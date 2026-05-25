@@ -1625,6 +1625,7 @@ const PermContractGenerator = ({
   const [isPreviewEditable, setIsPreviewEditable] = useState(Boolean(restored?.preview?.isPreviewEditable));
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
+  const [companySearchValue, setCompanySearchValue] = useState("");
   const [companyLoadMessage, setCompanyLoadMessage] = useState("No clients found.");
   const [nationalityMenuOpen, setNationalityMenuOpen] = useState(false);
   const [bargainingCouncilMenuOpen, setBargainingCouncilMenuOpen] = useState(false);
@@ -1734,6 +1735,7 @@ const PermContractGenerator = ({
     };
     resetDownstreamState(nextCompany.address);
     setCompany(nextCompany);
+    setCompanySearchValue("");
     void loadLogoForCompany(companyId);
   };
 
@@ -1959,6 +1961,15 @@ const PermContractGenerator = ({
   }, [activeStep, clauseBodyEdits, clauseTitleEdits, company, contract, customClauses, employee, isFinished, isPreviewEditable, onDraftStateChange]);
 
   const selectedCompanyLabel = company.companyName || "Select client";
+  const filteredCompanies = useMemo(() => {
+    const searchValue = companySearchValue.trim().toLowerCase();
+    if (!searchValue) return companies;
+    return companies.filter((entry) => {
+      const registeredName = String(entry.registered_name || "").trim().toLowerCase();
+      const tradingAsName = String(entry.trading_as || "").trim().toLowerCase();
+      return registeredName.startsWith(searchValue) || tradingAsName.startsWith(searchValue);
+    });
+  }, [companies, companySearchValue]);
   const selectedNationalityLabel = employee.permEmployeeNationality || "Select nationality";
   const workingHoursScheduleRows = useMemo(() => buildWorkingHoursScheduleRows(contract), [contract]);
   const workingHoursScheduleParagraphs = useMemo(
@@ -3164,7 +3175,13 @@ const PermContractGenerator = ({
             <Label htmlFor="permContractCompany" className="text-[10px] font-semibold text-slate-600">
               Client Name <span className="text-red-500">*</span>
             </Label>
-            <Popover open={companyMenuOpen} onOpenChange={setCompanyMenuOpen}>
+            <Popover
+              open={companyMenuOpen}
+              onOpenChange={(open) => {
+                if (!open) setCompanySearchValue("");
+                setCompanyMenuOpen(open);
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   id="permContractCompany"
@@ -3187,17 +3204,25 @@ const PermContractGenerator = ({
                 className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
                 onWheel={(event) => event.stopPropagation()}
               >
-                <Command shouldFilter>
-                  <CommandInput placeholder="Search registered or trading name..." className="h-8 text-[11px] placeholder:text-[10px]" />
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    value={companySearchValue}
+                    onValueChange={setCompanySearchValue}
+                    placeholder="Search registered or trading name..."
+                    className="h-8 text-[11px] placeholder:text-[10px]"
+                  />
                   <CommandList className="max-h-[320px] overscroll-contain">
-                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{companyLoadMessage}</CommandEmpty>
+                    {filteredCompanies.length === 0 ? (
+                      <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{companyLoadMessage}</CommandEmpty>
+                    ) : null}
                     <CommandGroup>
-                      {companies.map((entry) => {
+                      {filteredCompanies.map((entry) => {
                         const label = buildCompanyName(entry);
+                        const searchable = `${String(entry.registered_name || "").trim()} ${String(entry.trading_as || "").trim()}`.trim();
                         return (
                           <CommandItem
                             key={entry.id}
-                            value={`${label} ${String(entry.registered_name || "").trim()} ${String(entry.trading_as || "").trim()}`}
+                            value={searchable}
                             onSelect={() => {
                               handleCompanySelect(entry.id);
                               setCompanyMenuOpen(false);

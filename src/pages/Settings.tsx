@@ -15,6 +15,10 @@ import { PageDateStamp } from "@/components/DashboardLayout";
 import { z } from "zod";
 import { companySetupBaseSchema } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
+import {
+  cacheHeaderProfile,
+  readCachedHeaderProfilePicture,
+} from "@/lib/headerProfileCache";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -177,20 +181,6 @@ type SettingsProfileCache = {
 };
 
 const settingsProfileCacheByUser = new Map<string, SettingsProfileCache>();
-const HEADER_PROFILE_STORAGE_KEY = "header:profile";
-
-const readCachedHeaderProfilePicture = (authUserId?: string | null) => {
-  try {
-    const raw = sessionStorage.getItem(HEADER_PROFILE_STORAGE_KEY);
-    if (!raw) return "";
-    const parsed = JSON.parse(raw) as { auth_user_id?: string; profile_picture?: string } | null;
-    if (!parsed) return "";
-    if (String(parsed.auth_user_id || "").trim() !== String(authUserId || "").trim()) return "";
-    return String(parsed.profile_picture || "").trim();
-  } catch {
-    return "";
-  }
-};
 
 const tabToProfileGroup: Record<SettingsTab, ProfileDataGroup | null> = {
   user: "user",
@@ -709,6 +699,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       cached.userProfilePicture = userProfilePicture;
       cached.loadedGroups.add("user");
       settingsProfileCacheByUser.set(user.id, cached);
+      cacheHeaderProfile(user.id, {
+        user_name: validated.userName,
+        user_surname: validated.userSurname,
+        user_email: validated.userEmail,
+        profile_picture: userProfilePicture,
+      });
       window.dispatchEvent(
         new CustomEvent("header-profile-updated", {
           detail: {

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
-import { createPortal } from "react-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -8,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { logGeneratedDocument } from "@/lib/documentsLog";
 import { nationalityOptions } from "@/lib/validation";
@@ -136,6 +136,7 @@ type PermContractDraftState = {
   contract: ContractStepState;
   preview?: {
     isPreviewEditable?: boolean;
+    annexureDescription?: string;
     clauseBodyEdits?: Record<string, string>;
     clauseTitleEdits?: Record<string, string>;
     customClauses?: Array<{
@@ -158,7 +159,7 @@ const db = supabase as unknown as {
   from: (table: string) => LooseQuery;
 };
 
-const steps = ["Client Details", "Employee Details", "Contract Details", "Preview / Download"] as const;
+const steps = ["Client Details", "Employee Details", "Contract Details", "Preview / Edit"] as const;
 const stepIcons = [Building2, User2, FileText, Check] as const;
 
 const emptyCompanyState: CompanyStepState = {
@@ -384,6 +385,8 @@ const normalizeContractDraft = (value: unknown): ContractStepState => ({
   ...emptyContractState,
   ...((value && typeof value === "object" ? value : {}) as Partial<ContractStepState>),
 });
+
+const normalizePreviewTextDraft = (value: unknown) => (typeof value === "string" ? value : "");
 
 const normalizePreviewEditRecord = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== "object") return {};
@@ -611,12 +614,16 @@ const workingHoursTimeDropdownOptions = workingHoursTimeOptions.map((option) =>
 
 const previewTemplatePlaceholder = "____________________";
 const previewTemplatePlaceholderShort = "____________";
+const annexureDescriptionPlaceholder = "Insert a list of duties and responsibilities, and number each...";
 
 type FillablePdfFieldConfig = {
   fieldName: string;
+  value?: string;
+  clearOnFocusPlaceholder?: string;
   multiline?: boolean;
   height?: number;
   maxLength?: number;
+  doNotScroll?: boolean;
   textAlign?: "left" | "center" | "right";
   fontStyle?: "normal" | "bold" | "italic" | "bolditalic";
   fontSize?: number;
@@ -1260,7 +1267,7 @@ const buildPreviewClauses = ({
 
 const PreviewClauseBlock = ({
   clause,
-  paragraphNumberStart,
+  clauseNumber,
   isPreviewEditable = false,
   isAdded = false,
   isEdited = false,
@@ -1270,7 +1277,7 @@ const PreviewClauseBlock = ({
   onWorkingHoursTimeChange,
 }: {
   clause: PreviewClause;
-  paragraphNumberStart: number;
+  clauseNumber: number;
   isPreviewEditable?: boolean;
   isAdded?: boolean;
   isEdited?: boolean;
@@ -1295,18 +1302,21 @@ const PreviewClauseBlock = ({
   return (
     <section className="space-y-1.5">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{clause.title.toUpperCase()}</h3>
-          {isAdded ? (
-            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-              Added
-            </span>
-          ) : null}
-          {isEdited ? (
-            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-              Edited
-            </span>
-          ) : null}
+        <div className="grid grid-cols-[20px_minmax(0,1fr)] items-start gap-2">
+          <span className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{`${clauseNumber}.`}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-black">{clause.title.toUpperCase()}</h3>
+            {isAdded ? (
+              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                Added
+              </span>
+            ) : null}
+            {isEdited ? (
+              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                Edited
+              </span>
+            ) : null}
+          </div>
         </div>
         {isPreviewEditable && onEdit ? (
           <Button
@@ -1325,7 +1335,7 @@ const PreviewClauseBlock = ({
         {shouldRenderWorkingHoursGroupedPreview ? (
           <>
             <div className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
-              <span className="font-normal text-black">{paragraphNumberStart}.</span>
+              <span className="font-normal text-black">{`${clauseNumber}.1`}</span>
               <div className="space-y-2">
                 <p className="text-justify font-normal text-black">{clause.paragraphs[0]}</p>
                 <div className="space-y-1.5 pl-4">
@@ -1393,7 +1403,7 @@ const PreviewClauseBlock = ({
             </div>
             {clause.paragraphs.slice(1 + workingHoursDayDefinitions.length).map((paragraph, index) => (
               <div key={`${clause.title}-tail-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
-                <span className="font-normal text-black">{paragraphNumberStart + 1 + index}.</span>
+                <span className="font-normal text-black">{`${clauseNumber}.${index + 2}`}</span>
                 <p className="text-justify font-normal text-black">{paragraph}</p>
               </div>
             ))}
@@ -1401,7 +1411,7 @@ const PreviewClauseBlock = ({
         ) : (
           clause.paragraphs.map((paragraph, index) => (
             <div key={`${clause.title}-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2 text-[12px] leading-6 text-slate-900">
-              <span className="font-normal text-black">{paragraphNumberStart + index}.</span>
+              <span className="font-normal text-black">{`${clauseNumber}.${index + 1}`}</span>
               <p className="text-justify font-normal text-black">{paragraph}</p>
             </div>
           ))
@@ -1483,6 +1493,25 @@ const PreviewSignatureBlock = () => (
         </div>
       ))}
     </div>
+  </section>
+);
+
+const PreviewAnnexureDescriptionBlock = ({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) => (
+  <section className="mt-8 space-y-2">
+    <Label className="text-[11px] font-semibold tracking-[0.08em] text-slate-600">Description:</Label>
+    <Textarea
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      rows={14}
+      placeholder={annexureDescriptionPlaceholder}
+      className="min-h-[340px] rounded-sm border-slate-300 bg-white px-3 py-3 text-[12px] leading-6 text-black placeholder:text-[12px] placeholder:text-slate-400 hover:border-slate-500 focus-visible:border-slate-400 focus-visible:ring-0"
+    />
   </section>
 );
 
@@ -1624,6 +1653,9 @@ const PermContractGenerator = ({
   const [activeStep, setActiveStep] = useState(restored?.activeStep ?? 0);
   const [isFinished, setIsFinished] = useState(restored?.isFinished ?? false);
   const [isPreviewEditable, setIsPreviewEditable] = useState(Boolean(restored?.preview?.isPreviewEditable));
+  const [annexureDescription, setAnnexureDescription] = useState(() =>
+    normalizePreviewTextDraft(restored?.preview?.annexureDescription),
+  );
   const [companies, setCompanies] = useState<CompanyRecord[]>([]);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [companySearchValue, setCompanySearchValue] = useState("");
@@ -1954,12 +1986,13 @@ const PermContractGenerator = ({
       contract,
       preview: {
         isPreviewEditable,
+        annexureDescription,
         clauseBodyEdits,
         clauseTitleEdits,
         customClauses,
       },
     } satisfies PermContractDraftState);
-  }, [activeStep, clauseBodyEdits, clauseTitleEdits, company, contract, customClauses, employee, isFinished, isPreviewEditable, onDraftStateChange]);
+  }, [activeStep, annexureDescription, clauseBodyEdits, clauseTitleEdits, company, contract, customClauses, employee, isFinished, isPreviewEditable, onDraftStateChange]);
 
   const selectedCompanyLabel = company.companyName || "Select client";
   const filteredCompanies = useMemo(() => {
@@ -2042,6 +2075,7 @@ const PermContractGenerator = ({
     : idNumberDisplay !== "--"
       ? `ID number: ${idNumberDisplay}`
       : `Passport no.: ${passportDisplay}`;
+  const annexureDescriptionValue = annexureDescription.trim();
   const employerNameDisplay = (company.companyName || "--").toUpperCase();
   const employeeNameDisplay = (isClientTemplateMode ? previewTemplatePlaceholder : employeeFullNameDisplay || "--").toUpperCase();
   const infoSheetEmployeePreview = {
@@ -2097,23 +2131,34 @@ const PermContractGenerator = ({
     const footerReserve = 28;
     const topStart = 20;
     const bodyBottomLimit = pageHeight - footerReserve;
+    const annexureBodyBottomLimit = pageHeight - 22;
     const sectionFill = [241, 245, 249] as const;
     const sectionBorder = [203, 213, 225] as const;
     const titleLineFallback = previewTemplatePlaceholder;
     const pdfRowSpacingIncrease = 2.11;
     const pdfSectionHeaderBottomSpacingIncrease = 4.77;
+
+    const escapePdfLiteralString = (value: string) =>
+      String(value)
+        .replace(/\\/g, "\\\\")
+        .replace(/\(/g, "\\(")
+        .replace(/\)/g, "\\)")
+        .replace(/\r/g, "\\r")
+        .replace(/\n/g, "\\n");
     const logoDataUrl = await loadImageUrlAsDataUrl(company.logoUrl);
     const footerLogoDimensions = getFooterLogoDimensions(company.logoOrientation);
 
     let y = topStart;
+    let currentBodyBottomLimit = bodyBottomLimit;
 
-    const pushPage = () => {
+    const pushPage = (options?: { annexure?: boolean }) => {
       pdf.addPage();
       y = topStart;
+      currentBodyBottomLimit = options?.annexure ? annexureBodyBottomLimit : bodyBottomLimit;
     };
 
     const ensureSpace = (heightNeeded: number) => {
-      if (y + heightNeeded <= bodyBottomLimit) return;
+      if (y + heightNeeded <= currentBodyBottomLimit) return;
       pushPage();
     };
 
@@ -2131,12 +2176,15 @@ const PermContractGenerator = ({
 
     const addPdfTextField = ({
       fieldName,
+      value = "",
+      clearOnFocusPlaceholder,
       x,
       y: top,
       width,
       height,
       multiline = false,
       maxLength,
+      doNotScroll = false,
       textAlign = "left",
       fontStyle = "normal",
       fontSize = 9,
@@ -2159,12 +2207,12 @@ const PermContractGenerator = ({
       field.fontSize = fontSize;
       field.maxFontSize = fontSize;
       field.color = "black";
-      field.value = "";
-      field.defaultValue = "";
+      field.value = value;
+      field.defaultValue = value;
       field.textAlign = textAlign;
       field.showWhenPrinted = true;
       field.multiline = multiline;
-      field.doNotScroll = false;
+      field.doNotScroll = doNotScroll;
       field.doNotSpellCheck = false;
       if (typeof maxLength === "number") {
         field.maxLength = maxLength;
@@ -2179,6 +2227,20 @@ const PermContractGenerator = ({
           key: "DA",
           value: defaultAppearance,
         });
+        if (clearOnFocusPlaceholder) {
+          const escapedPlaceholder = escapePdfLiteralString(clearOnFocusPlaceholder);
+          const escapedScript = escapePdfLiteralString(
+            `if (event.target.value == "${clearOnFocusPlaceholder.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}") { event.target.value = ""; }`,
+          );
+          keyValueList.push({
+            key: "AA",
+            value: `<< /Fo << /S /JavaScript /JS (${escapedScript}) >> >>`,
+          });
+          keyValueList.push({
+            key: "DV",
+            value: `(${escapedPlaceholder})`,
+          });
+        }
         return keyValueList;
       };
       pdf.addField(field);
@@ -2384,15 +2446,17 @@ const PermContractGenerator = ({
       y += rowHeight + 1 + pdfRowSpacingIncrease;
     };
 
-    const drawClauseBlock = (clause: PreviewClause, startNumber: number) => {
+    const drawClauseBlock = (clause: PreviewClause, clauseNumber: number) => {
       const hoursOfWorkClauseId = makePreviewClauseId("Hours of Work");
       const shouldRenderGroupedWorkingHours =
         contract.permContractWorkingHoursMode === "defined" &&
         clause.id === hoursOfWorkClauseId &&
         !clauseBodyEdits[clause.id];
-      const headingLines = pdf.splitTextToSize(clause.title, contentWidth) as string[];
       const paragraphLineHeight = 4.9;
-      const paragraphTextOffset = 7;
+      const paragraphTextOffset = 10;
+      const headingNumberLabel = `${clauseNumber}.`;
+      const headingWidth = contentWidth - paragraphTextOffset;
+      const headingLines = pdf.splitTextToSize(clause.title, headingWidth) as string[];
       const paragraphWidth = contentWidth - paragraphTextOffset;
       const paragraphGap = 2.4;
       const headingHeight = headingLines.length * 4.2 + 2.2;
@@ -2405,7 +2469,8 @@ const PermContractGenerator = ({
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9.4);
       pdf.setTextColor(0, 0, 0);
-      pdf.text(headingLines.map((line) => String(line).toUpperCase()), margin, y);
+      pdf.text(headingNumberLabel, margin, y);
+      pdf.text(headingLines.map((line) => String(line).toUpperCase()), margin + paragraphTextOffset, y);
       y += headingLines.length * 4.2 + 2.2;
 
       pdf.setFont("helvetica", "normal");
@@ -2413,7 +2478,7 @@ const PermContractGenerator = ({
       pdf.setTextColor(0, 0, 0);
 
       const drawParagraph = (paragraph: string, paragraphIndex: number) => {
-        const numberLabel = `${startNumber + paragraphIndex}.`;
+        const numberLabel = `${clauseNumber}.${paragraphIndex + 1}`;
         const lines = pdf.splitTextToSize(paragraph, paragraphWidth) as string[];
         const blockHeight = lines.length * paragraphLineHeight;
 
@@ -2601,12 +2666,34 @@ const PermContractGenerator = ({
       y += 19.2;
     };
 
-    const drawSignatureSection = () => {
+    const getSignatureSectionEstimatedHeight = (compact = false) => {
+      const introGap = compact ? 10 : 12;
+      const headingGap = compact ? 6 : 7;
+      const rowOneTopGap = compact ? 7 : 8;
+      const rowTwoTopGap = compact ? 4 : 4;
+      const rowHeight = 14;
+      return introGap + headingGap + rowOneTopGap + rowHeight + rowTwoTopGap + rowHeight;
+    };
+
+    const drawSignatureSection = (options?: { compact?: boolean; anchorToBottom?: boolean }) => {
+      const isCompact = Boolean(options?.compact);
+      const shouldAnchorToBottom = Boolean(options?.anchorToBottom);
       const signatureRows: [string, string][] = [
         ["For the Employer", "For the Employee"],
         ["Employer Witness", "Employee Witness"],
       ];
-      ensureSpace(52);
+      const introGap = isCompact ? 10 : 12;
+      const headingGap = isCompact ? 6 : 7;
+      const rowOneTopGap = isCompact ? 7 : 8;
+      const rowTwoTopGap = isCompact ? 4 : 4;
+      const rowHeight = isCompact ? 14 : 14;
+      const estimatedHeight = getSignatureSectionEstimatedHeight(isCompact);
+
+      ensureSpace(isCompact ? 42 : 52);
+      if (shouldAnchorToBottom) {
+        const anchorHeight = isCompact ? estimatedHeight - 6 : estimatedHeight;
+        y = Math.max(y, currentBodyBottomLimit - anchorHeight);
+      }
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(9);
@@ -2632,16 +2719,18 @@ const PermContractGenerator = ({
       pdf.line(sentenceX, y + 0.2, sentenceX + thirdLineWidth, y + 0.2);
       sentenceX += thirdLineWidth + 2;
       pdf.text(yearText, sentenceX, y);
-      y += 16;
+      y += introGap;
 
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(10);
       pdf.text("SIGNATURES", margin, y);
-      y += 10;
+      y += headingGap;
 
       signatureRows.forEach(([leftLabel, rightLabel], rowIndex) => {
-        const topGap = rowIndex === 0 ? 8 : 4;
-        ensureSpace(17 + topGap);
+        const topGap = rowIndex === 0 ? rowOneTopGap : rowTwoTopGap;
+        const labelOffsetY = isCompact ? 4 : 4.4;
+        const rowFootprint = labelOffsetY + 2;
+        ensureSpace(topGap + rowFootprint);
         y += topGap;
         const lineY = y;
         const columnGap = 20;
@@ -2654,21 +2743,62 @@ const PermContractGenerator = ({
         pdf.line(rightColumnX, lineY, rightColumnX + columnWidth, lineY);
 
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(8.8);
-        pdf.text(leftLabel, leftColumnX, lineY + 4.4);
-        pdf.text(rightLabel, rightColumnX, lineY + 4.4);
-        y += 17;
+        pdf.setFontSize(isCompact ? 8.5 : 8.8);
+        pdf.text(leftLabel, leftColumnX, lineY + labelOffsetY);
+        pdf.text(rightLabel, rightColumnX, lineY + labelOffsetY);
+        y += rowHeight;
       });
     };
 
-    const drawFooterAndPageNumber = (pageIndex: number, pageCount: number) => {
+    const drawAnnexureDescriptionSection = () => {
+      const defaultBoxHeight = 118;
+      const minimumBoxHeight = 72;
+      const labelGap = 5;
+      const gapBelowBox = 8;
+      const reservedSignatureHeight = getSignatureSectionEstimatedHeight(true);
+      const availableBoxHeight = currentBodyBottomLimit - y - labelGap - gapBelowBox - reservedSignatureHeight;
+      const boxHeight = Math.max(minimumBoxHeight, Math.min(defaultBoxHeight, availableBoxHeight));
+
+      ensureSpace(labelGap + boxHeight + 6);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9.2);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text("Description:", margin, y);
+      y += labelGap;
+
+      pdf.setDrawColor(148, 163, 184);
+      pdf.setLineWidth(0.2);
+      pdf.rect(margin, y, contentWidth, boxHeight);
+
+      addPdfTextField({
+        fieldName: "annexure_a_responsibilities_and_duties",
+        value: annexureDescriptionValue || annexureDescriptionPlaceholder,
+        clearOnFocusPlaceholder: annexureDescriptionValue ? undefined : annexureDescriptionPlaceholder,
+        x: margin + 0.8,
+        y: y + 0.8,
+        width: contentWidth - 1.6,
+        height: boxHeight - 1.6,
+        multiline: true,
+        doNotScroll: true,
+        fontSize: 10,
+      });
+      y += boxHeight + gapBelowBox;
+    };
+
+    const drawFooterAndPageNumber = (
+      pageIndex: number,
+      pageCount: number,
+      showPageNumber = true,
+    ) => {
       pdf.setPage(pageIndex);
       pdf.setDrawColor(203, 213, 225);
       pdf.line(margin, footerTop - 4, pageWidth - margin, footerTop - 4);
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(7);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(`Page ${pageIndex} of ${pageCount}`, pageWidth - margin, 12, { align: "right" });
+      if (showPageNumber) {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text(`Page ${pageIndex} of ${pageCount}`, pageWidth - margin, 12, { align: "right" });
+      }
 
       if (logoDataUrl) {
         try {
@@ -2920,7 +3050,7 @@ const PermContractGenerator = ({
       isClientTemplateMode ? { fieldName: "template_contract_workplace" } : undefined,
     );
 
-    pushPage();
+    pushPage({ annexure: true });
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(16);
     pdf.setTextColor(0, 0, 0);
@@ -2932,13 +3062,28 @@ const PermContractGenerator = ({
     let clauseNumber = 1;
     previewClauses.forEach((clause) => {
       drawClauseBlock(clause, clauseNumber);
-      clauseNumber += clause.paragraphs.length;
+      clauseNumber += 1;
     });
     drawSignatureSection();
+    const contractPageCount = pdf.getNumberOfPages();
 
-    const pageCount = pdf.getNumberOfPages();
-    for (let pageIndex = 1; pageIndex <= pageCount; pageIndex += 1) {
-      drawFooterAndPageNumber(pageIndex, pageCount);
+    pushPage();
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(16);
+    pdf.setTextColor(0, 0, 0);
+    pdf.text("ANNEXURE A", pageWidth / 2, y, { align: "center" });
+    y += 10;
+    drawPartiesBlock();
+    drawClauseSectionDivider("Duties and Responsibilities");
+    drawAnnexureDescriptionSection();
+    drawSignatureSection({ compact: true, anchorToBottom: true });
+
+    const totalPageCount = pdf.getNumberOfPages();
+    for (let pageIndex = 1; pageIndex <= contractPageCount; pageIndex += 1) {
+      drawFooterAndPageNumber(pageIndex, contractPageCount, true);
+    }
+    for (let pageIndex = contractPageCount + 1; pageIndex <= totalPageCount; pageIndex += 1) {
+      drawFooterAndPageNumber(pageIndex, contractPageCount, false);
     }
 
     const employeeFirstInitial = employee.permEmployeeName
@@ -3016,7 +3161,6 @@ const PermContractGenerator = ({
     }
 
     pdf.save(downloadFileName);
-    onRequestClose?.();
   }
 
   const openClauseEditor = (clause: PreviewClause) => {
@@ -4027,12 +4171,12 @@ const PermContractGenerator = ({
           <PreviewClauseDividerTitle title="Terms and Conditions of Employment" />
 
           {(() => {
-            let paragraphNumber = 1;
+            let clauseNumber = 1;
             return (
               <div className="space-y-6">
                 {previewClauses.flatMap((clause, index) => {
-                  const currentNumber = paragraphNumber;
-                  paragraphNumber += clause.paragraphs.length;
+                  const currentNumber = clauseNumber;
+                  clauseNumber += 1;
                   const isLastClause = index === previewClauses.length - 1;
                   const isAdded = customClauses.some((item) => item.id === clause.id);
                   const isEdited = Boolean(clauseTitleEdits[clause.id] || clauseBodyEdits[clause.id]);
@@ -4040,7 +4184,7 @@ const PermContractGenerator = ({
                     <PreviewClauseBlock
                       key={clause.id}
                       clause={clause}
-                      paragraphNumberStart={currentNumber}
+                      clauseNumber={currentNumber}
                       isPreviewEditable={isPreviewEditable}
                       isAdded={isAdded}
                       isEdited={isEdited}
@@ -4060,179 +4204,160 @@ const PermContractGenerator = ({
           })()}
         </div>
 
+        <div className="rounded-sm bg-white px-8 pt-6 pb-10 text-black shadow-[0_0_0_1px_rgba(148,163,184,0.16)]">
+          <div className="mt-1 text-center">
+            <h2 className="text-center text-[20px] font-bold uppercase tracking-tight text-black">
+              Annexure A
+            </h2>
+          </div>
+          <PreviewPartiesBlock
+            employerName={employerNameDisplay}
+            employerRegistration={company.registrationNumber || "--"}
+            employeeName={employeeNameDisplay}
+            employeeReference={employeeReferenceDisplay}
+          />
+          <PreviewClauseDividerTitle title="Duties and Responsibilities" />
+          <PreviewAnnexureDescriptionBlock value={annexureDescription} onChange={setAnnexureDescription} />
+          <PreviewSignatureBlock />
+        </div>
+
       </div>
     </div>
   );
 
   const clauseEditorOverlay =
     typeof document !== "undefined" && isPreviewEditable && activeEditingClause
-      ? createPortal(
-          <div className="fixed inset-0 z-[70]">
-            <div className="absolute inset-0 bg-slate-900/35" />
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label={`Edit clause ${activeEditingClause.title}`}
-                className="pointer-events-auto w-[94vw] max-w-[680px] overflow-hidden rounded-sm border-0 bg-[#2D4256] shadow-xl"
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div>
-                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Pencil className="h-4 w-4 text-white" />
-                      <h3 className="text-sm font-semibold text-white">Edit Clause</h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeClauseEditor}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white"
-                      aria-label="Close"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
+      ? (
+          <Dialog open onOpenChange={(open) => { if (!open) closeClauseEditor(); }}>
+            <DialogContent className="max-w-[680px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4 text-white" />
+                  <DialogTitle className="text-sm font-semibold text-white">Edit Clause</DialogTitle>
+                </div>
+              </div>
 
-                  <div className="space-y-4 bg-white px-4 pb-4 pt-5">
-                    <div className="space-y-4">
-                      <Input
-                        value={clauseTitleDraft}
-                        onChange={(event) => setClauseTitleDraft(event.target.value)}
-                        placeholder="Clause title"
-                        className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
-                        autoFocus
-                      />
-                      <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <Info className="h-3.5 w-3.5" />
-                        Separate paragraphs with a blank line. Numbering is updated automatically.
-                      </p>
-                      <div className="space-y-2">
-                        {clauseTitleEdits[activeEditingClause.id] || clauseBodyEdits[activeEditingClause.id] ? (
-                          <div className="flex justify-end">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => resetClauseEdit(activeEditingClause)}
-                              className="h-7 rounded px-2 text-[11px] text-slate-500 hover:bg-white hover:text-[#2f9f35]"
-                            >
-                              Reset
-                            </Button>
-                          </div>
-                        ) : null}
-                        <Textarea
-                          value={clauseBodyDraft}
-                          onChange={(event) => setClauseBodyDraft(event.target.value)}
-                          rows={10}
-                          className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
-                        />
-                      </div>
-                      <div className="flex items-center justify-center gap-3 pt-1">
+              <div className="space-y-4 bg-white px-4 pb-4 pt-5">
+                <div className="space-y-4">
+                  <Input
+                    value={clauseTitleDraft}
+                    onChange={(event) => setClauseTitleDraft(event.target.value)}
+                    placeholder="Clause title"
+                    className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
+                    autoFocus
+                  />
+                  <p className="flex items-center gap-1 text-[11px] text-slate-500">
+                    <Info className="h-3.5 w-3.5" />
+                    Separate paragraphs with a blank line. Numbering is updated automatically.
+                  </p>
+                  <div className="space-y-2">
+                    {clauseTitleEdits[activeEditingClause.id] || clauseBodyEdits[activeEditingClause.id] ? (
+                      <div className="flex justify-end">
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          onClick={closeClauseEditor}
-                          className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                          onClick={() => resetClauseEdit(activeEditingClause)}
+                          className="h-7 rounded px-2 text-[11px] text-slate-500 hover:bg-white hover:text-[#2f9f35]"
                         >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => saveClauseEdit(activeEditingClause)}
-                          className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                        >
-                          Save
+                          Reset
                         </Button>
                       </div>
-                    </div>
+                    ) : null}
+                    <Textarea
+                      value={clauseBodyDraft}
+                      onChange={(event) => setClauseBodyDraft(event.target.value)}
+                      rows={10}
+                      spellCheck={true}
+                      lang="en"
+                      autoCorrect="on"
+                      className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={closeClauseEditor}
+                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => saveClauseEdit(activeEditingClause)}
+                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                    >
+                      Save
+                    </Button>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body,
+            </DialogContent>
+          </Dialog>
         )
       : null;
 
   const addClauseOverlay =
     typeof document !== "undefined" && isPreviewEditable && addingAfterId !== undefined
-      ? createPortal(
-          <div className="fixed inset-0 z-[70]">
-            <div className="absolute inset-0 bg-slate-900/35" />
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Add clause"
-                className="pointer-events-auto w-[94vw] max-w-[680px] overflow-hidden rounded-sm border-0 bg-[#2D4256] shadow-xl"
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div>
-                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Plus className="h-4 w-4 text-white" />
-                      <h3 className="text-sm font-semibold text-white">Add Clause</h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeAddClauseForm}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white"
-                      aria-label="Close"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
+      ? (
+          <Dialog open onOpenChange={(open) => { if (!open) closeAddClauseForm(); }}>
+            <DialogContent className="max-w-[680px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-white" />
+                  <DialogTitle className="text-sm font-semibold text-white">Add Clause</DialogTitle>
+                </div>
+              </div>
 
-                  <div className="space-y-4 bg-white px-4 pb-4 pt-5">
-                    <div className="space-y-4">
-                      <Input
-                        value={newClauseTitle}
-                        onChange={(event) => setNewClauseTitle(event.target.value)}
-                        placeholder="Clause title"
-                        className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
-                        autoFocus
-                      />
-                      <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <Info className="h-3.5 w-3.5" />
-                        Separate paragraphs with a blank line. Numbering is updated automatically.
-                      </p>
-                      <Textarea
-                        value={newClauseBody}
-                        onChange={(event) => setNewClauseBody(event.target.value)}
-                        rows={8}
-                        className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
-                        placeholder="Clause body"
-                      />
-                      <div className="flex items-center justify-center gap-3 pt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={closeAddClauseForm}
-                          className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={saveNewClause}
-                          className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                        >
-                          Add Clause
-                        </Button>
-                      </div>
-                    </div>
+              <div className="space-y-4 bg-white px-4 pb-4 pt-5">
+                <div className="space-y-4">
+                  <Input
+                    value={newClauseTitle}
+                    onChange={(event) => setNewClauseTitle(event.target.value)}
+                    placeholder="Clause title"
+                    className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
+                    autoFocus
+                  />
+                  <p className="flex items-center gap-1 text-[11px] text-slate-500">
+                    <Info className="h-3.5 w-3.5" />
+                    Separate paragraphs with a blank line. Numbering is updated automatically.
+                  </p>
+                  <Textarea
+                    value={newClauseBody}
+                    onChange={(event) => setNewClauseBody(event.target.value)}
+                    rows={8}
+                    spellCheck={true}
+                    lang="en"
+                    autoCorrect="on"
+                    className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
+                    placeholder="Clause body"
+                  />
+                  <div className="flex items-center justify-center gap-3 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={closeAddClauseForm}
+                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={saveNewClause}
+                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                    >
+                      Add Clause
+                    </Button>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body,
+            </DialogContent>
+          </Dialog>
         )
       : null;
 

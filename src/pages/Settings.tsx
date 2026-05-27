@@ -83,11 +83,10 @@ type SubuserListItem = {
   created_at: string | null;
 };
 
-type MembershipOrganisation = "AHI Employers Organisation";
+type SubuserEditForm = Pick<SubuserInviteForm, "name" | "surname" | "contact_number" | "email" | "role">;
 
 type MembershipListItem = {
   id: string;
-  organisation: MembershipOrganisation;
   description: string;
   owner: string;
   file_name: string;
@@ -97,7 +96,6 @@ type MembershipListItem = {
 };
 
 type MembershipForm = {
-  organisation: MembershipOrganisation;
   description: string;
   owner: string;
   file: File | null;
@@ -161,10 +159,15 @@ const emptySubuserInviteForm: SubuserInviteForm = {
   confirmPassword: "",
 };
 
-const membershipOrganisations: MembershipOrganisation[] = ["AHI Employers Organisation"];
+const emptySubuserEditForm: SubuserEditForm = {
+  name: "",
+  surname: "",
+  contact_number: "",
+  email: "",
+  role: "",
+};
 
-const emptyMembershipForm = (organisation: MembershipOrganisation = "AHI Employers Organisation"): MembershipForm => ({
-  organisation,
+const emptyMembershipForm = (): MembershipForm => ({
   description: "",
   owner: "",
   file: null,
@@ -181,6 +184,7 @@ type SettingsProfileCache = {
 };
 
 const settingsProfileCacheByUser = new Map<string, SettingsProfileCache>();
+const settingsSubusersCacheByUser = new Map<string, SubuserListItem[]>();
 
 const tabToProfileGroup: Record<SettingsTab, ProfileDataGroup | null> = {
   user: "user",
@@ -243,14 +247,10 @@ const parsePostalAddressParts = (postalAddress: string) => {
 const getInitials = (firstName: string, surname: string) =>
   `${String(firstName || "").trim().charAt(0)}${String(surname || "").trim().charAt(0)}`.trim().toUpperCase() || "U";
 
-const slugifyMembershipOrganisation = (value: MembershipOrganisation) =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
-const normalizeMembershipOrganisation = (value: unknown): MembershipOrganisation | null => {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === "ahi employers organisation" || normalized.includes("ahi")) return "AHI Employers Organisation";
-  return null;
+const normalizeMembershipStoragePath = (value: string) => {
+  const path = value.trim().replace(/^\/+/, "");
+  const bucketPrefix = `${LLASA_MEMBERSHIPS_BUCKET}/`;
+  return path.startsWith(bucketPrefix) ? path.slice(bucketPrefix.length) : path;
 };
 
 const fileToDataUrl = (file: File) =>
@@ -327,6 +327,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [subusersList, setSubusersList] = useState<SubuserListItem[]>([]);
   const [subusersLoading, setSubusersLoading] = useState(false);
   const [deletingSubuserId, setDeletingSubuserId] = useState<string | null>(null);
+  const [editingSubuser, setEditingSubuser] = useState<SubuserListItem | null>(null);
+  const [subuserEditForm, setSubuserEditForm] = useState<SubuserEditForm>(emptySubuserEditForm);
+  const [subuserEditSubmitting, setSubuserEditSubmitting] = useState(false);
   const [membershipsList, setMembershipsList] = useState<MembershipListItem[]>([]);
   const [membershipsLoading, setMembershipsLoading] = useState(false);
   const [isMembershipDialogOpen, setIsMembershipDialogOpen] = useState(false);
@@ -352,7 +355,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "auth", label: "Authentication", icon: Lock },
   ];
-  const canEditSettings = isMasterUser;
+  const canEditSettings = !isPermissionsLoading && isMasterUser;
   const visibleSettingsTabs = settingsTabs;
   const authUsernameDisplay = useMemo(
     () =>
@@ -360,16 +363,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       String((user as any)?.user_metadata?.username || "").trim() ||
       "--",
     [user],
-  );
-  const membershipsByOrganisation = useMemo(
-    () =>
-      membershipOrganisations.reduce<Record<MembershipOrganisation, MembershipListItem[]>>((acc, organisation) => {
-        acc[organisation] = membershipsList.filter((item) => item.organisation === organisation);
-        return acc;
-      }, {
-        "AHI Employers Organisation": [],
-      }),
-    [membershipsList],
   );
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]";
@@ -400,6 +393,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     subuserInviteForm.password.trim().length > 0 &&
     subuserInviteForm.confirmPassword.trim().length > 0 &&
     subuserInviteForm.password === subuserInviteForm.confirmPassword;
+  const isSubuserEditFormValid =
+    subuserEditForm.name.trim().length > 0 &&
+    subuserEditForm.surname.trim().length > 0 &&
+    subuserEditForm.contact_number.trim().length > 0 &&
+    subuserEditForm.email.trim().length > 0 &&
+    subuserEditForm.role.trim().length > 0;
   const isMembershipFormValid =
     membershipForm.description.trim().length > 0 &&
     membershipForm.owner.trim().length > 0 &&
@@ -532,7 +531,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       if (group === "company") {
         const { data, error } = await supabase
           .from("profiles")
-          .select("company_type, company_name, registration_number, vat_number, physical_address, postal_address, representative_name, representative_surname, company_contact, company_email")
+          .select("company_name, registration_number, physical_address, postal_address")
           .eq("id", user.id)
           .maybeSingle();
 
@@ -592,7 +591,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       loadingGroupsRef.current.delete(group);
       setGroupLoading(group, false);
     }
-  }, [embedded, setGroupLoading, toast, user]);
+  }, [embedded, setGroupLoading, toast, user?.email, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -607,22 +606,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
     void ensureTabDataLoaded("user");
 
-    const backgroundTabs = allSettingsTabs.filter((tab) => tab !== "user");
-    const timer = window.setTimeout(() => {
-      for (const tab of backgroundTabs) {
-        void ensureTabDataLoaded(tab);
-      }
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [applyCachedData, ensureTabDataLoaded, user]);
+  }, [applyCachedData, ensureTabDataLoaded, user?.id]);
 
   useEffect(() => {
     if (!user) return;
     void ensureTabDataLoaded(settingsTab);
-  }, [ensureTabDataLoaded, settingsTab, user]);
+  }, [ensureTabDataLoaded, settingsTab, user?.id]);
 
   const handleUserDetailsUpdate = async () => {
     if (!user) return;
@@ -894,6 +883,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const shouldShowAuthAction =
     passwordData.newPassword.trim().length > 0 || passwordData.confirmPassword.trim().length > 0;
   const isCurrentTabLoading = tabLoading[settingsTab];
+  const shouldShowTabLoader = isCurrentTabLoading || (isPermissionsLoading && settingsTab !== "subusers");
 
   const handleClose = () => {
     if (onClose) {
@@ -953,8 +943,28 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setShowSubuserConfirmPassword(false);
     }
   };
-  const resetMembershipDialog = useCallback((organisation?: MembershipOrganisation) => {
-    setMembershipForm(emptyMembershipForm(organisation));
+  const handleSubuserEditDialogChange = useCallback((open: boolean) => {
+    if (open && !canEditSettings) return;
+    if (!open) {
+      setEditingSubuser(null);
+      setSubuserEditForm(emptySubuserEditForm);
+      setSubuserEditSubmitting(false);
+    }
+  }, [canEditSettings]);
+  const openSubuserEditDialog = useCallback((subuser: SubuserListItem) => {
+    if (!canEditSettings) return;
+    setEditingSubuser(subuser);
+    setSubuserEditForm({
+      name: subuser.name || "",
+      surname: subuser.surname || "",
+      contact_number: subuser.contact_number || "",
+      email: subuser.email || "",
+      role: (subuser.role || "") as SubuserEditForm["role"],
+    });
+    setSubuserEditSubmitting(false);
+  }, [canEditSettings]);
+  const resetMembershipDialog = useCallback(() => {
+    setMembershipForm(emptyMembershipForm());
     setEditingMembershipId(null);
     setMembershipSubmitting(false);
     if (membershipFileInputRef.current) membershipFileInputRef.current.value = "";
@@ -963,15 +973,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setIsMembershipDialogOpen(open);
     if (!open) resetMembershipDialog();
   }, [resetMembershipDialog]);
-  const openCreateMembershipDialog = useCallback((organisation: MembershipOrganisation) => {
+  const openCreateMembershipDialog = useCallback(() => {
     if (!canEditSettings) return;
-    resetMembershipDialog(organisation);
+    resetMembershipDialog();
     setIsMembershipDialogOpen(true);
   }, [canEditSettings, resetMembershipDialog]);
   const openEditMembershipDialog = useCallback((membership: MembershipListItem) => {
     if (!canEditSettings) return;
     setMembershipForm({
-      organisation: membership.organisation,
       description: membership.description,
       owner: membership.owner,
       file: null,
@@ -987,27 +996,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     try {
       const { data, error } = await (supabase as any)
         .from("llasa_memberships")
-        .select("id,organisation,description,owner,file_name,storage_path,created_at,updated_at")
+        .select("id,description,owner,file_name,storage_path,created_at,updated_at")
         .order("created_at", { ascending: false, nullsFirst: false });
 
       if (error) throw error;
 
       const normalized = ((data ?? []) as any[])
-        .map((row) => {
-          const organisation = normalizeMembershipOrganisation(row.organisation);
-          if (!organisation) return null;
-          return {
+        .map((row) => ({
             id: String(row.id ?? ""),
-            organisation,
             description: String(row.description ?? "").trim(),
             owner: String(row.owner ?? "").trim(),
             file_name: String(row.file_name ?? "").trim(),
             storage_path: String(row.storage_path ?? "").trim(),
             created_at: row.created_at ?? null,
             updated_at: row.updated_at ?? null,
-          } satisfies MembershipListItem;
-        })
-        .filter((row): row is MembershipListItem => Boolean(row));
+          }) satisfies MembershipListItem)
+        .filter((row) => Boolean(row.id));
 
       setMembershipsList(normalized);
     } catch (error: any) {
@@ -1021,13 +1025,20 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setMembershipsLoading(false);
     }
   }, [toast]);
-  const fetchSubusersList = useCallback(async () => {
+  const fetchSubusersList = useCallback(async (options?: { force?: boolean }) => {
     if (!user?.id) return;
+    if (!options?.force) {
+      const cachedSubusers = settingsSubusersCacheByUser.get(user.id);
+      if (cachedSubusers) {
+        setSubusersList(cachedSubusers);
+        return;
+      }
+    }
     setSubusersLoading(true);
     try {
       let { data, error } = await (supabase as any)
         .from("subusers")
-        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,profile_picture,status,created_at")
+        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,status,created_at")
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) {
         const code = String((error as any)?.code || "");
@@ -1056,6 +1067,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         status: String(row.status ?? "active").trim(),
         created_at: row.created_at ?? row.invited_at ?? null,
       })) as SubuserListItem[];
+      settingsSubusersCacheByUser.set(user.id, normalized);
       setSubusersList(normalized);
     } catch (error: any) {
       toast({
@@ -1070,7 +1082,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   }, [toast, user?.id]);
   const handleDeleteSubuser = useCallback(
     async (subuser: SubuserListItem) => {
-      if (!isMasterUser) return;
+      if (!canEditSettings) return;
       const fullName = `${subuser.name || ""} ${subuser.surname || ""}`.trim() || subuser.email || "this subuser";
       const confirmed = window.confirm(
         `Are you sure you want to delete ${fullName}? This will remove the account from subusers and auth users.`,
@@ -1095,7 +1107,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
           title: "Subuser deleted",
           description: response.auth_deleted === false ? "Subuser row deleted. Auth user was not linked." : "Subuser removed successfully.",
         });
-        await fetchSubusersList();
+        await fetchSubusersList({ force: true });
       } catch (error: any) {
         toast({
           title: "Delete failed",
@@ -1106,8 +1118,53 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         setDeletingSubuserId(null);
       }
     },
-    [fetchSubusersList, isMasterUser, toast],
+    [canEditSettings, fetchSubusersList, toast],
   );
+  const handleSubuserEditSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canEditSettings || !editingSubuser || !isSubuserEditFormValid) return;
+
+    setSubuserEditSubmitting(true);
+    try {
+      const payload = {
+        name: subuserEditForm.name.trim(),
+        surname: subuserEditForm.surname.trim(),
+        contact_number: subuserEditForm.contact_number.trim(),
+        email: subuserEditForm.email.trim().toLowerCase(),
+        role: subuserEditForm.role.trim(),
+      };
+
+      const { error } = await (supabase as any)
+        .from("subusers")
+        .update(payload)
+        .eq("id", editingSubuser.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Subuser updated",
+        description: `${payload.name} ${payload.surname}`.trim() || "Subuser details updated successfully.",
+      });
+      await fetchSubusersList({ force: true });
+      handleSubuserEditDialogChange(false);
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSubuserEditSubmitting(false);
+    }
+  }, [
+    canEditSettings,
+    editingSubuser,
+    fetchSubusersList,
+    handleSubuserEditDialogChange,
+    isSubuserEditFormValid,
+    subuserEditForm,
+    toast,
+  ]);
   const handleMembershipFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1120,14 +1177,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const handleViewMembership = useCallback(async (membership: MembershipListItem) => {
     setViewingMembershipId(membership.id);
     try {
+      const storagePath = normalizeMembershipStoragePath(membership.storage_path);
+      if (!storagePath) {
+        toast({
+          title: "Document file missing",
+          description: "This membership record is not linked to a document file.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { data, error } = await supabase.storage
         .from(LLASA_MEMBERSHIPS_BUCKET)
-        .createSignedUrl(membership.storage_path, 300);
+        .createSignedUrl(storagePath, 300);
       if (error || !data?.signedUrl) throw error || new Error("Signed URL failed.");
       window.open(data.signedUrl, "_blank", "noopener,noreferrer");
     } catch (error: any) {
       toast({
-        title: "Unable to open certificate",
+        title: "Unable to open document",
         description: getSafeErrorMessage(error),
         variant: "destructive",
       });
@@ -1137,7 +1204,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   }, [toast]);
   const handleDeleteMembership = useCallback(async (membership: MembershipListItem) => {
     if (!canEditSettings) return;
-    const confirmed = window.confirm(`Delete the ${membership.organisation} membership certificate "${membership.description}"?`);
+    const confirmed = window.confirm(`Delete the membership document "${membership.description}"?`);
     if (!confirmed) return;
 
     setDeletingMembershipId(membership.id);
@@ -1155,7 +1222,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setMembershipsList((prev) => prev.filter((item) => item.id !== membership.id));
       toast({
         title: "Membership deleted",
-        description: "Certificate removed successfully.",
+        description: "Document removed successfully.",
       });
     } catch (error: any) {
       toast({
@@ -1186,7 +1253,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
       if (membershipForm.file) {
         const safeName = membershipForm.file.name.replace(/[^A-Za-z0-9._-]+/g, "_");
-        uploadedStoragePath = `${user.id}/${slugifyMembershipOrganisation(membershipForm.organisation)}/${Date.now()}_${safeName}`;
+        uploadedStoragePath = `${user.id}/membership-documents/${Date.now()}_${safeName}`;
         const { error: uploadError } = await supabase.storage
           .from(LLASA_MEMBERSHIPS_BUCKET)
           .upload(uploadedStoragePath, membershipForm.file, {
@@ -1199,7 +1266,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       }
 
       const payload = {
-        organisation: membershipForm.organisation,
         description: membershipForm.description.trim(),
         owner: membershipForm.owner.trim(),
         file_name: fileName,
@@ -1208,7 +1274,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       };
 
       if (!payload.storage_path || !payload.file_name) {
-        throw new Error("A certificate file is required.");
+        throw new Error("A document file is required.");
       }
 
       if (editingMembershipId) {
@@ -1235,8 +1301,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       toast({
         title: editingMembershipId ? "Membership updated" : "Membership added",
         description: editingMembershipId
-          ? "Certificate details updated successfully."
-          : "Certificate uploaded successfully.",
+          ? "Document details updated successfully."
+          : "Document uploaded successfully.",
       });
       await fetchMembershipsList();
       handleMembershipDialogChange(false);
@@ -1345,20 +1411,30 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         response?.message ||
         `${payload.name} ${payload.surname} has been created successfully.`,
     });
-    await fetchSubusersList();
+    await fetchSubusersList({ force: true });
     handleSubuserInviteDialogChange(false);
   };
 
   useEffect(() => {
     if (!user) return;
+    const timer = window.setTimeout(() => {
+      void fetchSubusersList();
+    }, 100);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [fetchSubusersList, user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
     if (settingsTab !== "subusers") return;
     void fetchSubusersList();
-  }, [fetchSubusersList, settingsTab, user]);
+  }, [fetchSubusersList, settingsTab, user?.id]);
   useEffect(() => {
     if (!user) return;
     if (settingsTab !== "memberships") return;
     void fetchMembershipsList();
-  }, [fetchMembershipsList, settingsTab, user]);
+  }, [fetchMembershipsList, settingsTab, user?.id]);
   useEffect(() => {
     let isCancelled = false;
     const resolvePermissions = async () => {
@@ -1447,7 +1523,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
             <div className="min-w-0 flex-1 min-h-0 flex flex-col">
             <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-[#3eca44] [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-[#3eca44] [&_[role=combobox]]:focus:border-[#3eca44] [&_[role=combobox]]:focus-visible:border-[#3eca44] [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-[#3eca44]">
-              {isPermissionsLoading || isCurrentTabLoading ? (
+              {shouldShowTabLoader ? (
                 <div className="flex h-full items-center justify-center">
                   <img src="/llasa_thumbnail.png" alt="Loading tab" className="h-10 w-10 animate-spin" style={{ animationDuration: "2s" }} />
                 </div>
@@ -1566,7 +1642,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     : "You can view active subusers. Only the main user can create subusers."}
                 </p>
               </div>
-              {isMasterUser ? (
+              {canEditSettings ? (
                 <div className={settingsActionRowClass.replace("justify-center", "justify-start")}>
                   <Button
                     type="button"
@@ -1578,12 +1654,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 </div>
               ) : null}
                 <div className="overflow-hidden rounded border border-slate-200">
-                <div className={`grid ${isMasterUser ? "grid-cols-[1.25fr_1.35fr_1.1fr_0.9fr_0.55fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white`}>
+                <div className={`grid ${canEditSettings ? "grid-cols-[1.2fr_1.3fr_1.05fr_0.85fr_0.75fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white`}>
                   <div>Name</div>
                   <div>Email</div>
                   <div>Contact Number</div>
                   <div>Role</div>
-                  {isMasterUser ? <div className="text-center">Actions</div> : null}
+                  {canEditSettings ? <div className="text-center">Actions</div> : null}
                 </div>
                 <div className="max-h-[330px] divide-y overflow-y-auto bg-white text-[11px]">
                   {subusersLoading ? (
@@ -1592,26 +1668,27 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <div className="px-3 py-3 text-slate-500">No active subusers found.</div>
                   ) : (
                     subusersList.map((item) => (
-                      <div key={item.id} className={`grid ${isMasterUser ? "grid-cols-[1.25fr_1.35fr_1.1fr_0.9fr_0.55fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Avatar className="h-7 w-7 shrink-0 rounded-full border border-slate-200">
-                            <AvatarImage src={item.profile_picture || undefined} alt={`${item.name || ""} ${item.surname || ""}`.trim() || "Subuser"} className="object-cover" />
-                            <AvatarFallback className="bg-[#eef9ef] text-[10px] font-semibold text-[#2f9f35]">
-                              {getInitials(item.name, item.surname)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
-                        </div>
+                      <div key={item.id} className={`grid ${canEditSettings ? "grid-cols-[1.2fr_1.3fr_1.05fr_0.85fr_0.75fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
+                        <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
                         <div className="truncate text-slate-700">{item.email || "--"}</div>
                         <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
                         <div className="truncate text-slate-700">{item.role || "--"}</div>
-                        {isMasterUser ? (
-                          <div className="flex items-center justify-center">
+                        {canEditSettings ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openSubuserEditDialog(item)}
+                              disabled={subuserEditSubmitting}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-600 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={`Edit subuser ${item.email || item.name || item.id}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => void handleDeleteSubuser(item)}
                               disabled={deletingSubuserId === item.id}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded border border-[#f0b5b5] bg-white text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-rose-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                               aria-label={`Delete subuser ${item.email || item.name || item.id}`}
                             >
                               {deletingSubuserId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -1631,14 +1708,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 <div className="space-y-1">
                   <h3 className="text-[20px] font-semibold text-[#2D4256]">Memberships</h3>
                   <p className="mb-2 text-[11px] text-slate-500">
-                    Upload and manage LLASA and/or its employees'membership certificates.
+                    Upload and manage LLASA membership certificates and related documents.
                   </p>
                 </div>
               {canEditSettings ? (
                 <div className={settingsActionRowClass.replace("mt-auto ", "").replace("justify-center", "justify-start")}>
                   <Button
                     type="button"
-                    onClick={() => openCreateMembershipDialog("AHI Employers Organisation")}
+                    onClick={() => openCreateMembershipDialog()}
                     className={popupActionButtonClass}
                   >
                     Add Membership
@@ -1655,7 +1732,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   {membershipsLoading ? (
                     <div className="px-3 py-3 text-slate-500">Loading memberships...</div>
                   ) : membershipsList.length === 0 ? (
-                    <div className="px-3 py-3 text-slate-500">No certificates uploaded.</div>
+                    <div className="px-3 py-3 text-slate-500">No membership documents uploaded.</div>
                   ) : (
                     membershipsList.map((item) => (
                       <div key={item.id} className="grid grid-cols-[1.8fr_1.2fr_0.8fr] items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5">
@@ -1668,7 +1745,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               onClick={() => void handleViewMembership(item)}
                               disabled={viewingMembershipId === item.id}
                               className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`View ${item.organisation} certificate`}
+                              aria-label={`View ${item.description || "membership document"}`}
                             >
                               {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
                             </button>
@@ -1676,7 +1753,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               type="button"
                               onClick={() => openEditMembershipDialog(item)}
                               className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35]"
-                              aria-label={`Edit ${item.organisation} certificate`}
+                              aria-label={`Edit ${item.description || "membership document"}`}
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
@@ -1685,7 +1762,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               onClick={() => void handleDeleteMembership(item)}
                               disabled={deletingMembershipId === item.id}
                               className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`Delete ${item.organisation} certificate`}
+                              aria-label={`Delete ${item.description || "membership document"}`}
                             >
                               {deletingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                             </button>
@@ -1697,7 +1774,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               onClick={() => void handleViewMembership(item)}
                               disabled={viewingMembershipId === item.id}
                               className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`View ${item.organisation} certificate`}
+                              aria-label={`View ${item.description || "membership document"}`}
                             >
                               {viewingMembershipId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
                             </button>
@@ -2079,6 +2156,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
             <Dialog open={isMembershipDialogOpen} onOpenChange={handleMembershipDialogChange}>
               <DialogContent
+                aria-describedby={undefined}
                 className="w-[94vw] max-w-[420px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 sm:rounded-sm [&>button]:hidden"
                 onCloseAutoFocus={(event) => event.preventDefault()}
               >
@@ -2098,30 +2176,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   </div>
                   <div className="mt-[46px] bg-white px-6 pb-6 pt-5">
                     <form onSubmit={handleMembershipSubmit} className="space-y-4">
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Organisation</span>
-                        <Select
-                          value={membershipForm.organisation}
-                          onValueChange={(value) =>
-                            setMembershipForm((prev) => ({ ...prev, organisation: value as MembershipOrganisation }))
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0">
-                            <SelectValue placeholder="Select organisation" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded text-[11px]">
-                            {membershipOrganisations.map((organisation) => (
-                              <SelectItem
-                                key={organisation}
-                                value={organisation}
-                                className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]"
-                              >
-                                {organisation}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
                       <div className="relative w-full max-w-none">
                         <span className={floatingLabelClass}>Description <span className="text-red-600">*</span></span>
                         <Input
@@ -2153,10 +2207,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-[11px] font-medium text-slate-900">
-                              {membershipForm.fileName || "No certificate selected"}
+                              {membershipForm.fileName || "No document selected"}
                             </p>
                             <p className="text-[10px] text-slate-500">
-                              {editingMembershipId ? "Upload a new file only if you want to replace the existing certificate." : "PDF and image files are supported."}
+                              {editingMembershipId ? "Upload a new file only if you want to replace the existing document." : "PDF and image files are supported."}
                             </p>
                           </div>
                           <Button
@@ -2191,11 +2245,89 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     </form>
                   </div>
                 </div>
+            </DialogContent>
+          </Dialog>
+
+            <Dialog open={Boolean(editingSubuser)} onOpenChange={handleSubuserEditDialogChange}>
+              <DialogContent
+                aria-describedby={undefined}
+                className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
+                onCloseAutoFocus={(event) => event.preventDefault()}
+              >
+                <div className="relative">
+                  <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
+                    <div className="flex items-center gap-2 pl-2">
+                      <Pencil className="h-4 w-4 text-white" />
+                      <DialogTitle className="text-sm font-semibold text-white">Edit Subuser</DialogTitle>
+                    </div>
+                    <DialogClose asChild>
+                      <button type="button" className="text-white hover:text-white/80" aria-label="Close edit subuser popup">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </DialogClose>
+                  </div>
+                  <div className="mt-[46px] bg-white">
+                    <div className="px-6 pt-0 pb-7"></div>
+                    <form onSubmit={handleSubuserEditSubmit} className="space-y-4 px-6 pb-6 pt-0">
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
+                        <Input value={subuserEditForm.name} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, name: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert name" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Surname <span className="text-red-600">*</span></span>
+                        <Input value={subuserEditForm.surname} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, surname: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert surname" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Contact Number <span className="text-red-600">*</span></span>
+                        <Input value={subuserEditForm.contact_number} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, contact_number: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert contact number" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Email <span className="text-red-600">*</span></span>
+                        <Input type="email" value={subuserEditForm.email} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, email: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert email" required />
+                      </div>
+                      <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
+                        <Select value={subuserEditForm.role} onValueChange={(value) => setSubuserEditForm((prev) => ({ ...prev, role: value as SubuserEditForm["role"] }))}>
+                          <SelectTrigger
+                            className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                          >
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded text-[11px]">
+                            <SelectItem value="Main" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main</SelectItem>
+                            <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
+                            <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 pt-4">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-[28px] w-[90px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                          onClick={() => handleSubuserEditDialogChange(false)}
+                          disabled={subuserEditSubmitting}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="h-[28px] w-[90px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b] disabled:bg-slate-300 disabled:text-white"
+                          disabled={subuserEditSubmitting || !isSubuserEditFormValid}
+                        >
+                          {subuserEditSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Save
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
               </DialogContent>
             </Dialog>
 
             <Dialog open={isInviteSubuserOpen} onOpenChange={handleSubuserInviteDialogChange}>
               <DialogContent
+                aria-describedby={undefined}
                 className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
                 onCloseAutoFocus={(event) => event.preventDefault()}
               >
@@ -2253,7 +2385,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       </div>
                       <div className="relative w-full max-w-none">
                         <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
-                        <Select value={subuserInviteForm.role || undefined} onValueChange={(value) => setSubuserInviteForm((prev) => ({ ...prev, role: value as SubuserInviteForm["role"] }))}>
+                        <Select value={subuserInviteForm.role} onValueChange={(value) => setSubuserInviteForm((prev) => ({ ...prev, role: value as SubuserInviteForm["role"] }))}>
                           <SelectTrigger
                             className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
                           >
@@ -2415,7 +2547,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   if (embedded) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-        <DialogContent className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
+        <DialogContent aria-describedby={undefined} className="h-[84vh] w-[94vw] max-w-[980px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:rounded-sm [&>button]:hidden">
+          <DialogTitle className="sr-only">Settings</DialogTitle>
           {content}
         </DialogContent>
       </Dialog>

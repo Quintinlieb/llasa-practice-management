@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type RefObject, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -14,7 +25,7 @@ import { logGeneratedDocument } from "@/lib/documentsLog";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
-import { Building2, CalendarDays, Check, ChevronsUpDown, Clock3, FileText, MapPinned, User2, X } from "lucide-react";
+import { AlertTriangle, Building2, CalendarDays, Check, ChevronDown, Clock3, FileText, MapPinned, User2, X } from "lucide-react";
 
 type DiscHearingNoticeGeneratorProps = {
   embedded?: boolean;
@@ -47,7 +58,7 @@ const steps = [
   "Client Details",
   "Employee Details",
   "Notice Details",
-  "Preview / Download",
+  "Preview / Edit",
 ] as const;
 
 const stepIcons = [Building2, User2, FileText, Check] as const;
@@ -119,7 +130,7 @@ type NoticeFormState = {
   hearingLocation: string;
   hearingPlatform: VirtualPlatform | "";
   misconductTypes: string[];
-  misconductDescriptions: Record<string, string>;
+  misconductDescriptions: Record<string, string[]>;
 };
 
 type DiscHearingNoticeDraftState = {
@@ -166,6 +177,8 @@ const emptyNoticeFormState: NoticeFormState = {
 
 const inputClassName =
   "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+const hiddenScrollClassName =
+  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 const employeeIdOrPassportMaxLength = 13;
 const generatedDocumentsBucket = "documents";
@@ -197,6 +210,23 @@ const hearingRights = [
   "The right to appeal against any disciplinary action in terms of the company appeal procedures.",
   "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalization thereof it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to inform your employer that you cannot attend with valid reasons. If absence is due to invalid reasons, the hearing will continue in your absence.",
 ] as const;
+
+const preliminaryIssuesRows = [
+  { number: "1.", label: "The Complainant is present." },
+  { number: "2.", label: "The Employee is present." },
+  { number: "3.", label: "Representation:" },
+  { number: "3.1", label: "A Shop Steward will represent the Employee." },
+  { number: "3.2", label: "An employee will represent the Employee." },
+  { number: "3.3", label: "The Employee will represent him / herself." },
+  { number: "4.", label: "The Employee requests an interpreter." },
+  { number: "5.", label: "The employee received the notice on ________________________." },
+  { number: "6.", label: "The Employee understands charge(s)." },
+  { number: "7.", label: "The Employee understands all his/her rights." },
+  { number: "8.", label: "The hearing process has been explained to the Employee." },
+  { number: "9.", label: "The Employee has witnesses." },
+  { number: "", label: "PLEA TO CHARGE(S)" },
+] as const;
+const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
 
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 
@@ -381,9 +411,14 @@ const normalizeNoticeFormState = (value: unknown): NoticeFormState => {
     misconductDescriptions:
       candidate.misconductDescriptions && typeof candidate.misconductDescriptions === "object"
         ? Object.fromEntries(
-            Object.entries(candidate.misconductDescriptions).filter(
-              (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
-            ),
+            Object.entries(candidate.misconductDescriptions)
+              .filter(
+                ([key, entryValue]) =>
+                  typeof key === "string" &&
+                  (typeof entryValue === "string" ||
+                    (Array.isArray(entryValue) && entryValue.every((item) => typeof item === "string"))),
+              )
+              .map(([key, entryValue]) => [key, Array.isArray(entryValue) ? entryValue : [entryValue]]),
           )
         : {},
   };
@@ -449,6 +484,32 @@ const formatDateLabel = (value: string) => {
   }).format(parsed);
 };
 
+const getTodayDateValue = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
+const parseLocalDateValue = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isPastHearingDateValue = (value: string) => {
+  const selectedDate = parseLocalDateValue(value);
+  const today = parseLocalDateValue(getTodayDateValue());
+  if (!selectedDate || !today) return false;
+  return selectedDate.getTime() < today.getTime();
+};
+
+const isHearingDateWithin48Hours = (value: string) => {
+  const selectedDate = parseLocalDateValue(value);
+  if (!selectedDate) return false;
+  const diffMs = selectedDate.getTime() - Date.now();
+  return diffMs >= 0 && diffMs <= 48 * 60 * 60 * 1000;
+};
+
 const formatTimeLabel = (value: string) => {
   const [hoursRaw, minutesRaw] = value.split(":");
   const hours = Number.parseInt(hoursRaw || "", 10);
@@ -462,6 +523,34 @@ const formatTimeLabel = (value: string) => {
 const formatHearingVenue = (hearingFormat: HearingFormat | "", hearingLocation: string, hearingPlatform: string) => {
   if (hearingFormat === "virtual") return hearingPlatform.trim();
   return hearingLocation.trim();
+};
+
+const formatRomanNumeral = (value: number) => {
+  const numerals = [
+    { value: 1000, symbol: "m" },
+    { value: 900, symbol: "cm" },
+    { value: 500, symbol: "d" },
+    { value: 400, symbol: "cd" },
+    { value: 100, symbol: "c" },
+    { value: 90, symbol: "xc" },
+    { value: 50, symbol: "l" },
+    { value: 40, symbol: "xl" },
+    { value: 10, symbol: "x" },
+    { value: 9, symbol: "ix" },
+    { value: 5, symbol: "v" },
+    { value: 4, symbol: "iv" },
+    { value: 1, symbol: "i" },
+  ] as const;
+
+  let remaining = Math.max(1, Math.trunc(value));
+  let output = "";
+  numerals.forEach((entry) => {
+    while (remaining >= entry.value) {
+      output += entry.symbol;
+      remaining -= entry.value;
+    }
+  });
+  return output;
 };
 
 const buildEmployeeFullName = (employeeForm: EmployeeFormState) =>
@@ -487,6 +576,26 @@ const buildFooterAddressLines = (clientForm: ClientFormState) => {
 const buildDefaultHearingLocation = (clientForm: ClientFormState) => {
   const companyName = clientForm.clientTradingAsName.trim() || clientForm.clientName.trim();
   return companyName ? `${companyName} (Company Premises)` : "";
+};
+
+const buildPreliminaryChargeRows = (noticeForm: NoticeFormState) => {
+  const rows = noticeForm.misconductTypes.flatMap((type, chargeIndex) => {
+    const label = String(type || "").trim() || `Charge ${chargeIndex + 1}`;
+    const counts = noticeForm.misconductDescriptions[type] || [""];
+    if (counts.length <= 1) {
+      return [{ number: `${chargeIndex + 1}`, label }];
+    }
+    return counts.map((_, countIndex) => ({
+      number: `${chargeIndex + 1}.${countIndex + 1}`,
+      label: `${label} - Charge ${countIndex + 1}`,
+    }));
+  });
+
+  if (rows.length > 0) return rows;
+  return Array.from({ length: 6 }, (_, index) => ({
+    number: `${index + 1}`,
+    label: `Charge ${index + 1}`,
+  }));
 };
 
 const formatSelectedClientLabel = (clientForm: ClientFormState) => {
@@ -536,6 +645,9 @@ const DiscHearingNoticeGeneratorContent = ({
   onEmployeeFormChange,
   noticeForm,
   onNoticeFormChange,
+  onMisconductDescriptionChange,
+  onAddMisconductCount,
+  onRemoveMisconductCount,
   misconductPickerOpen,
   setMisconductPickerOpen,
   conductOffences,
@@ -557,8 +669,11 @@ const DiscHearingNoticeGeneratorContent = ({
   noticeForm: NoticeFormState;
   onNoticeFormChange: (
     field: keyof NoticeFormState,
-    value: string | string[] | Record<string, string>,
+    value: string | string[] | Record<string, string[]>,
   ) => void;
+  onMisconductDescriptionChange: (type: string, countIndex: number, value: string) => void;
+  onAddMisconductCount: (type: string) => void;
+  onRemoveMisconductCount: (type: string, countIndex: number) => void;
   misconductPickerOpen: boolean;
   setMisconductPickerOpen: (open: boolean) => void;
   conductOffences: ConductOffence[];
@@ -593,13 +708,83 @@ const DiscHearingNoticeGeneratorContent = ({
   const employeeFullName = buildEmployeeFullName(employeeForm) || "______________________________";
   const previewLine = "______________________________";
   const employeeDetailRows = buildEmployeeDetailRows(employeeForm, previewLine);
+  const preliminaryChargeRows = buildPreliminaryChargeRows(noticeForm);
   const currentYear = new Date().getFullYear();
   const issuedAndSignedLine = `Issued and signed at __________________ on this _____ day of _____________________ ${currentYear}.`;
   const [selectedHour = "", selectedMinute = ""] = noticeForm.hearingTime.split(":");
   const hearingTimeMeridiem = selectedHour ? (Number.parseInt(selectedHour, 10) >= 12 ? "PM" : "AM") : "";
+  const renderMisconductCountFields = (type: string, options?: { showChargeHeader?: boolean; showAddCountButton?: boolean }) => {
+    const counts = noticeForm.misconductDescriptions[type] || [""];
+    const hasMultipleCounts = counts.length > 1;
+    const showChargeHeader = options?.showChargeHeader ?? true;
+    const showAddCountButton = options?.showAddCountButton ?? true;
+    const countLabel = `${counts.length} count${counts.length === 1 ? "" : "s"}`;
+
+    return (
+      <div className="space-y-3">
+        {showChargeHeader ? (
+          <div className="flex items-center gap-3">
+            <p className="text-[10px] font-semibold text-[#2f9f35]">{`${type} (${countLabel})`}</p>
+            {showAddCountButton ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onAddMisconductCount(type)}
+                className="h-6 rounded-[5px] px-2 text-[10px] text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+              >
+                Add Count
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {counts.map((description, countIndex) => (
+          <div key={`${type}-count-${countIndex}`} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label
+                htmlFor={`discHearingDescription-${type}-${countIndex}`}
+                className="text-[10px] font-semibold text-slate-600"
+              >
+                {hasMultipleCounts ? `Count ${countIndex + 1} Description` : "Charge Description"}{" "}
+                <span className="text-red-500">*</span>
+              </Label>
+              {hasMultipleCounts ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRemoveMisconductCount(type, countIndex)}
+                  className="h-6 rounded-[5px] px-2 text-[10px] text-slate-500 hover:border-rose-500 hover:bg-white hover:text-rose-600"
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+            <Textarea
+              id={`discHearingDescription-${type}-${countIndex}`}
+              value={description}
+              onChange={(event) => onMisconductDescriptionChange(type, countIndex, event.target.value)}
+              onInput={(event) => {
+                const textarea = event.currentTarget;
+                textarea.style.height = "auto";
+                textarea.style.height = `${textarea.scrollHeight}px`;
+              }}
+              placeholder={
+                hasMultipleCounts
+                  ? `Describe the allegation for ${type} (Count ${countIndex + 1})`
+                  : `Describe the allegation for ${type}`
+              }
+              rows={1}
+              className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
-    <div className="h-full overflow-y-auto py-1">
+    <div className={cn("h-full overflow-y-auto py-1", hiddenScrollClassName)}>
       <div className={cn("space-y-4", isClientStep || isEmployeeStep ? "pt-0" : "pt-5")}>
         {isClientStep ? (
           <>
@@ -623,7 +808,7 @@ const DiscHearingNoticeGeneratorContent = ({
                       )}
                     >
                       <span className="truncate">{selectedClientLabel}</span>
-                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
@@ -817,6 +1002,7 @@ const DiscHearingNoticeGeneratorContent = ({
                   <input
                     ref={hearingDatePickerRef}
                     type="date"
+                    min={getTodayDateValue()}
                     value={noticeForm.hearingDate}
                     onChange={(event) => onNoticeFormChange("hearingDate", event.target.value)}
                     className="sr-only"
@@ -832,8 +1018,9 @@ const DiscHearingNoticeGeneratorContent = ({
                 </Label>
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
                   <Select
+                    key={`disc-hearing-hour-${selectedHour || "empty"}`}
                     value={selectedHour || undefined}
-                    onValueChange={(value) => onNoticeFormChange("hearingTime", `${value}:${selectedMinute || "00"}`)}
+                    onValueChange={(value) => onNoticeFormChange("hearingTime", `${value}:${selectedMinute}`)}
                   >
                     <SelectTrigger
                       id="discHearingTime"
@@ -857,8 +1044,9 @@ const DiscHearingNoticeGeneratorContent = ({
                   </Select>
 
                   <Select
+                    key={`disc-hearing-minute-${selectedMinute || "empty"}`}
                     value={selectedMinute || undefined}
-                    onValueChange={(value) => onNoticeFormChange("hearingTime", `${selectedHour || "00"}:${value}`)}
+                    onValueChange={(value) => onNoticeFormChange("hearingTime", `${selectedHour}:${value}`)}
                   >
                     <SelectTrigger
                       className={cn(
@@ -977,7 +1165,7 @@ const DiscHearingNoticeGeneratorContent = ({
                     )}
                   >
                     <span className="truncate text-left">{selectedMisconductLabel}</span>
-                    <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -1080,34 +1268,77 @@ const DiscHearingNoticeGeneratorContent = ({
 
             {noticeForm.misconductTypes.length > 0 ? (
               <div className="space-y-4">
-                {noticeForm.misconductTypes.map((type) => (
-                  <div key={type} className="space-y-2">
-                    <Label htmlFor={`discHearingDescription-${type}`} className="text-[10px] font-semibold text-slate-600">
-                      {type} Description <span className="text-red-500">*</span>
-                    </Label>
-                    <Textarea
-                      id={`discHearingDescription-${type}`}
-                      value={noticeForm.misconductDescriptions[type] || ""}
-                      onChange={(event) => onNoticeFormChange("misconductDescriptions", {
-                        ...noticeForm.misconductDescriptions,
-                        [type]: event.target.value,
-                      })}
-                      onInput={(event) => {
-                        const textarea = event.currentTarget;
-                        textarea.style.height = "auto";
-                        textarea.style.height = `${textarea.scrollHeight}px`;
-                      }}
-                      placeholder={`Describe the allegation for ${type}`}
-                      rows={1}
-                      className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
-                    />
-                  </div>
-                ))}
+                {noticeForm.misconductTypes.length === 1 ? (
+                  <Accordion type="single" defaultValue={noticeForm.misconductTypes[0]} collapsible className="space-y-3">
+                    {noticeForm.misconductTypes.map((type) => (
+                      <AccordionItem
+                        key={type}
+                        value={type}
+                        className="overflow-hidden rounded-sm border border-slate-300 bg-white"
+                      >
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.misconductDescriptions[type] || [""]).length} count${(noticeForm.misconductDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddMisconductCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderMisconductCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                ) : (
+                  <Accordion type="multiple" className="space-y-3">
+                    {noticeForm.misconductTypes.map((type) => (
+                      <AccordionItem
+                        key={type}
+                        value={type}
+                        className="overflow-hidden rounded-sm border border-slate-300 bg-white"
+                      >
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.misconductDescriptions[type] || [""]).length} count${(noticeForm.misconductDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddMisconductCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderMisconductCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                )}
               </div>
             ) : null}
           </div>
         ) : isPreviewStep ? (
           <div className="mx-auto max-w-[860px]">
+            <div className="space-y-8">
             <div className="bg-white px-8 pt-4 pb-6 text-black">
               <h2 className="text-center text-[24px] font-bold uppercase tracking-tight text-black">
                 Notice of Disciplinary Hearing
@@ -1162,12 +1393,19 @@ const DiscHearingNoticeGeneratorContent = ({
                           <p className="font-bold">{`${index + 1}.`}</p>
                           <p className="font-bold">{type}</p>
                         </div>
-                        <p
-                          className="pl-[26px] whitespace-pre-wrap"
-                          style={{ textAlign: "justify", textJustify: "inter-word" }}
-                        >
-                          {noticeForm.misconductDescriptions[type] || previewLine}
-                        </p>
+                        <div className="space-y-1.5 pl-[26px]">
+                          {(noticeForm.misconductDescriptions[type] || [previewLine]).map((description, countIndex) => (
+                            <div key={`${type}-preview-count-${countIndex}`} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2">
+                              <p>{`${formatRomanNumeral(countIndex + 1)}.`}</p>
+                              <p
+                                className="whitespace-pre-wrap"
+                                style={{ textAlign: "justify", textJustify: "inter-word" }}
+                              >
+                                {description || previewLine}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))
                   ) : (
@@ -1200,7 +1438,110 @@ const DiscHearingNoticeGeneratorContent = ({
                 </div>
                 <div className="mt-12 grid grid-cols-3 gap-x-10 gap-y-14 text-[14px]">
                   {[
-                    "Employer/Issuer",
+                    "Employer",
+                    "Employee",
+                    "Representative (Optional)",
+                    "Witness 1",
+                    "Witness 2 (Optional)",
+                    "Interpreter (Optional)",
+                  ].map((label) => (
+                    <div key={label}>
+                      <div className="border-b border-black" />
+                      <p className="mt-2 text-[14px] font-normal">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex min-h-[56px] items-center rounded-[8px] border border-[#b8c2cc] bg-[#f5f7f9] px-4 py-2 text-[13px] italic leading-5 text-slate-700">
+                  <p>
+                    If the employee refuses to sign this notice, the witness&apos;s signature will confirm that the
+                    employee did receive the notice and that the contents were explained to him/her.
+                  </p>
+                </div>
+                <div className="mt-6 border-t-2 border-slate-900" />
+              </section>
+
+            </div>
+            <div className="bg-white px-8 pt-6 pb-6 text-black">
+              <div className="mb-[14px] space-y-1 text-center text-black">
+                <h2 className="text-[20px] font-bold uppercase tracking-tight">Preliminary Issues Form</h2>
+                <p className="text-[16px] font-bold tracking-wide">Disciplinary Hearing</p>
+              </div>
+              <section className="mt-[16px] overflow-hidden rounded-[4px] border border-[#5f6872]">
+                <div className="bg-[#d7dde4] px-4 py-2.5">
+                  <p className="text-[16px] font-bold uppercase tracking-wide text-black">Hearing Details</p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-10 gap-y-3 px-4 pt-4 pb-1 text-[15px] leading-6 text-black">
+                  <div className="grid grid-cols-[128px_minmax(0,1fr)] gap-2">
+                    <p className="font-bold">Date:</p>
+                    <p>{formatDateLabel(noticeForm.hearingDate) || previewLine}</p>
+                  </div>
+                  <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+                    <p className="font-bold">Time:</p>
+                    <p>{formatTimeLabel(noticeForm.hearingTime) || previewLine}</p>
+                  </div>
+                  <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+                    <p className="font-bold">Employer:</p>
+                    <p>{clientForm.clientTradingAsName || clientForm.clientName || previewLine}</p>
+                  </div>
+                  <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+                    <p className="font-bold">Employee:</p>
+                    <p>{employeeFullName || previewLine}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="mt-[14px] overflow-hidden rounded-[4px] border border-[#5f6872]">
+                <table className="w-full border-separate border-spacing-0 text-[13px] leading-5">
+                  <thead>
+                    <tr className="bg-slate-200">
+                      <th className="w-[60px] border border-slate-300 px-2 py-2 text-left font-bold uppercase">Item</th>
+                      <th className="border border-slate-300 px-2 py-2 text-left font-bold uppercase">Description</th>
+                      <th className="w-[88px] border border-slate-300 px-2 py-2 text-center font-bold uppercase">Yes</th>
+                      <th className="w-[110px] border border-slate-300 px-2 py-2 text-center font-bold uppercase">No</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preliminaryIssuesRows.map((row, rowIndex) => (
+                      <tr key={`${row.number}-${row.label}`} className={rowIndex === preliminaryPleaRowIndex ? "bg-slate-50" : ""}>
+                        <td className="border border-slate-300 px-2 py-1.5 align-top font-bold">
+                          {rowIndex === preliminaryPleaRowIndex ? "" : row.number}
+                        </td>
+                        <td className={cn("border border-slate-300 px-2 py-1.5 align-top", row.number === "3." && "font-bold")}>
+                          {row.label}
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center align-top font-bold">
+                          {rowIndex === preliminaryPleaRowIndex ? "GUILTY" : ""}
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center align-top font-bold">
+                          {rowIndex === preliminaryPleaRowIndex ? "NOT GUILTY" : ""}
+                        </td>
+                      </tr>
+                    ))}
+                    {preliminaryChargeRows.map((row) => (
+                      <tr key={`${row.number}-${row.label}`}>
+                        <td className="border border-slate-300 px-2 py-1.5 align-top font-bold">{row.number}</td>
+                        <td className="border border-slate-300 px-2 py-1.5 align-top">{row.label}</td>
+                        <td className="border border-slate-300 px-2 py-1.5" />
+                        <td className="border border-slate-300 px-2 py-1.5" />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="mt-10 px-2">
+                <div className="flex w-full items-end gap-1 overflow-hidden whitespace-nowrap text-[14px] font-normal text-black">
+                  <span>Done and signed at</span>
+                  <span className="inline-block w-[154px] border-b border-black" />
+                  <span>on this</span>
+                  <span className="inline-block w-[42px] border-b border-black" />
+                  <span>day of</span>
+                  <span className="inline-block w-[122px] border-b border-black" />
+                  <span>{currentYear}.</span>
+                </div>
+                <div className="mt-14 grid grid-cols-3 gap-x-10 gap-y-16 text-[14px]">
+                  {[
+                    "Employer",
                     "Employee",
                     "Representative (Optional)",
                     "Witness 1",
@@ -1213,14 +1554,8 @@ const DiscHearingNoticeGeneratorContent = ({
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 flex min-h-[56px] items-center rounded-[8px] border border-[#b8c2cc] bg-[#f5f7f9] px-4 py-2 text-[13px] italic leading-5 text-slate-700">
-                  <p>
-                    If the employee refuses to sign this notice, the witness&apos;s signature will confirm that the
-                    employee did receive the notice and that the contents were explained to him/her.
-                  </p>
-                </div>
               </section>
-
+            </div>
             </div>
           </div>
         ) : (
@@ -1251,6 +1586,7 @@ const DiscHearingNoticeGenerator = ({
   const [clientRows, setClientRows] = useState<ClientRow[]>([]);
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
   const [clientLoadMessage, setClientLoadMessage] = useState("No clients found.");
+  const [shortNoticeDialogOpen, setShortNoticeDialogOpen] = useState(false);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const [clientForm, setClientForm] = useState<ClientFormState>(() =>
     normalizeClientFormState(resolvedDraftState?.clientForm),
@@ -1436,8 +1772,21 @@ const DiscHearingNoticeGenerator = ({
 
   const handleNoticeFormChange = (
     field: keyof NoticeFormState,
-    value: string | string[] | Record<string, string>,
+    value: string | string[] | Record<string, string[]>,
   ) => {
+    if (field === "hearingDate") {
+      const nextDate = String(value || "").trim();
+      if (nextDate && isPastHearingDateValue(nextDate)) {
+        toast({
+          title: "Invalid hearing date",
+          description: "The hearing date cannot be earlier than today.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setShortNoticeDialogOpen(Boolean(nextDate) && isHearingDateWithin48Hours(nextDate));
+    }
+
     setNoticeForm((current) => {
       if (field === "hearingFormat") {
         const nextFormat = value as HearingFormat | "";
@@ -1449,10 +1798,19 @@ const DiscHearingNoticeGenerator = ({
         };
       }
 
+      if (field === "hearingDate") {
+        const nextDate = String(value || "").trim();
+        return {
+          ...current,
+          hearingDate: nextDate,
+          hearingTime: nextDate ? current.hearingTime : "",
+        };
+      }
+
       if (field === "misconductDescriptions") {
         return {
           ...current,
-          misconductDescriptions: value as Record<string, string>,
+          misconductDescriptions: value as Record<string, string[]>,
         };
       }
 
@@ -1471,9 +1829,42 @@ const DiscHearingNoticeGenerator = ({
         : [...current.misconductTypes, value],
       misconductDescriptions: current.misconductTypes.includes(value)
         ? Object.fromEntries(Object.entries(current.misconductDescriptions).filter(([key]) => key !== value))
-        : current.misconductDescriptions,
+        : {
+            ...current.misconductDescriptions,
+            [value]: current.misconductDescriptions[value] || [""],
+          },
     }));
   };
+
+  const handleMisconductDescriptionChange = useCallback((type: string, countIndex: number, value: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      misconductDescriptions: {
+        ...current.misconductDescriptions,
+        [type]: (current.misconductDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+      },
+    }));
+  }, []);
+
+  const handleAddMisconductCount = useCallback((type: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      misconductDescriptions: {
+        ...current.misconductDescriptions,
+        [type]: [...(current.misconductDescriptions[type] || [""]), ""],
+      },
+    }));
+  }, []);
+
+  const handleRemoveMisconductCount = useCallback((type: string, countIndex: number) => {
+    setNoticeForm((current) => ({
+      ...current,
+      misconductDescriptions: {
+        ...current.misconductDescriptions,
+        [type]: (current.misconductDescriptions[type] || [""]).filter((_, index) => index !== countIndex),
+      },
+    }));
+  }, []);
 
   const employeeStepComplete =
     employeeForm.employeeName.trim().length > 0 &&
@@ -1481,18 +1872,33 @@ const DiscHearingNoticeGenerator = ({
     employeeForm.employeeIdOrPassportNumber.trim().length > 0;
 
   const areMisconductDescriptionsComplete = noticeForm.misconductTypes.every(
-    (type) => String(noticeForm.misconductDescriptions[type] || "").trim().length > 0,
+    (type) =>
+      (noticeForm.misconductDescriptions[type] || [""]).length > 0 &&
+      (noticeForm.misconductDescriptions[type] || [""]).every((entry) => String(entry || "").trim().length > 0),
   );
-
+  const hearingTimeComplete = /^\d{2}:\d{2}$/.test(noticeForm.hearingTime);
   const noticeStepComplete =
     noticeForm.hearingDate.trim().length > 0 &&
-    noticeForm.hearingTime.trim().length > 0 &&
+    hearingTimeComplete &&
     Boolean(noticeForm.hearingFormat) &&
     (noticeForm.hearingFormat === "virtual"
       ? Boolean(noticeForm.hearingPlatform)
       : noticeForm.hearingLocation.trim().length > 0) &&
     noticeForm.misconductTypes.length > 0 &&
     areMisconductDescriptionsComplete;
+
+  const proceedShortNoticeDialog = useCallback(() => {
+    setShortNoticeDialogOpen(false);
+  }, []);
+
+  const cancelShortNoticeDialog = useCallback(() => {
+    setShortNoticeDialogOpen(false);
+    setNoticeForm((current) => ({
+      ...current,
+      hearingDate: "",
+      hearingTime: "",
+    }));
+  }, []);
 
   const handleDownloadPdf = useCallback(async () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -1507,6 +1913,7 @@ const DiscHearingNoticeGenerator = ({
     const sectionFill = [215, 221, 228] as const;
     const lineFallback = "______________________________";
     const employeeDetailRows = buildEmployeeDetailRows(employeeForm, lineFallback);
+    const preliminaryChargeRows = buildPreliminaryChargeRows(noticeForm);
     const placeValue = formatHearingVenue(noticeForm.hearingFormat, noticeForm.hearingLocation, noticeForm.hearingPlatform) || lineFallback;
     const footerAddressLines = buildFooterAddressLines(clientForm);
     const currentYear = new Date().getFullYear();
@@ -1637,6 +2044,8 @@ const DiscHearingNoticeGenerator = ({
       doc.setDrawColor(62, 202, 68);
       doc.setLineWidth(0.15);
       doc.line(generatedByUrlX, generatedByY + 0.35, generatedByUrlX + generatedByUrlWidth, generatedByY + 0.35);
+      doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(0, 0, 0);
     };
 
     const drawSectionBox = (
@@ -1719,9 +2128,12 @@ const DiscHearingNoticeGenerator = ({
     const misconductHeight =
       18 +
       noticeForm.misconductTypes.reduce((total, type, index) => {
-        const description = noticeForm.misconductDescriptions[type] || lineFallback;
-        const lines = doc.splitTextToSize(description, contentWidth - 12);
-        return total + 8 + lines.length * 4.2 + (index < noticeForm.misconductTypes.length - 1 ? 1.4 : 0);
+        const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
+        const countHeight = descriptions.reduce((countTotal, description) => {
+          const lines = doc.splitTextToSize(description || lineFallback, contentWidth - 22);
+          return countTotal + lines.length * 4.2 + 2.2;
+        }, 0);
+        return total + 8 + countHeight + (index < noticeForm.misconductTypes.length - 1 ? 1.4 : 0);
       }, 0);
 
     drawSectionBox("C. TRANSGRESSION(S) / CHARGE(S)", () => {
@@ -1732,10 +2144,15 @@ const DiscHearingNoticeGenerator = ({
         doc.text(type, margin + 12, y);
         y += 4.2;
 
-        const description = noticeForm.misconductDescriptions[type] || lineFallback;
-        const lines = doc.splitTextToSize(description, contentWidth - 18);
+        const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
         doc.setFont("helvetica", "normal");
-        drawJustifiedLines(lines, margin + 12, contentWidth - 18, 3.5);
+        descriptions.forEach((description, countIndex) => {
+          const marker = `${formatRomanNumeral(countIndex + 1)}.`;
+          const lines = doc.splitTextToSize(description || lineFallback, contentWidth - 24);
+          doc.text(marker, margin + 12, y);
+          drawJustifiedLines(lines, margin + 18, contentWidth - 24, 3.5);
+          y += 1.2;
+        });
         y += index < noticeForm.misconductTypes.length - 1 ? 2.6 : 0.8;
       });
     }, misconductHeight);
@@ -1803,7 +2220,7 @@ const DiscHearingNoticeGenerator = ({
     y += 15;
 
     const signatureLabels = [
-      "Employer/Issuer",
+      "Employer",
       "Employee",
       "Representative (Optional)",
       "Witness 1",
@@ -1843,6 +2260,184 @@ const DiscHearingNoticeGenerator = ({
     const noteTextY = y + (noteBlockHeight - noteTextHeight) / 2 + 2.3;
     doc.roundedRect(margin, y, contentWidth, noteBlockHeight, 1, 1, "FD");
     doc.text(noteLines, margin + 3, noteTextY);
+    drawFooter();
+
+    doc.addPage();
+    y = 14;
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("PRELIMINARY ISSUES FORM", pageWidth / 2, y, { align: "center" });
+    y += 6.5;
+    doc.setFontSize(11);
+    doc.text("Disciplinary Hearing", pageWidth / 2, y, { align: "center" });
+    y += 10;
+
+    drawSectionBox("HEARING DETAILS", () => {
+      drawTwoColumnRow(
+        "Date:",
+        formatDateLabel(noticeForm.hearingDate) || lineFallback,
+        "Time:",
+        formatTimeLabel(noticeForm.hearingTime) || lineFallback,
+      );
+      drawTwoColumnRow(
+        "Employer:",
+        clientForm.clientTradingAsName || clientForm.clientName || lineFallback,
+        "Employee:",
+        buildEmployeeFullName(employeeForm) || lineFallback,
+      );
+    }, 26);
+
+    const tableX = margin;
+    const tableWidth = contentWidth;
+    const numberColumnWidth = 16;
+    const yesColumnWidth = 22;
+    const noColumnWidth = 28;
+    const descriptionColumnWidth = tableWidth - numberColumnWidth - yesColumnWidth - noColumnWidth;
+    const headerHeight = 8;
+    const rowHeight = 7;
+    const tableRows = preliminaryIssuesRows.length + preliminaryChargeRows.length;
+    const tableHeight = headerHeight + tableRows * rowHeight;
+
+    const drawTableCell = (
+      x: number,
+      cellY: number,
+      width: number,
+      height: number,
+      text = "",
+      options?: { align?: "left" | "center"; bold?: boolean; fill?: [number, number, number]; stroke?: boolean },
+    ) => {
+      if (options?.fill) {
+        doc.setFillColor(...options.fill);
+        doc.rect(x, cellY, width, height, options.stroke === false ? "F" : "FD");
+      } else if (options?.stroke !== false) {
+        doc.rect(x, cellY, width, height);
+      }
+      doc.setFont("helvetica", options?.bold ? "bold" : "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(0, 0, 0);
+      if (!text) return;
+      if (options?.align === "center") {
+        doc.text(text, x + width / 2, cellY + 4.6, { align: "center" });
+      } else {
+        doc.text(text, x + 2, cellY + 4.6);
+      }
+    };
+
+    ensureSpace(tableHeight + 2);
+    const tableStartY = y;
+    const tableBorderColor: [number, number, number] = [88, 99, 110];
+    const headerRowFill: [number, number, number] = [215, 221, 228];
+    const rowElevenFill: [number, number, number] = [232, 237, 243];
+    doc.setDrawColor(...tableBorderColor);
+    doc.setLineWidth(0.18);
+    drawTableCell(tableX, y, numberColumnWidth, headerHeight, "ITEM", { bold: true, fill: headerRowFill, stroke: false });
+    drawTableCell(tableX + numberColumnWidth, y, descriptionColumnWidth, headerHeight, "DESCRIPTION", { bold: true, fill: headerRowFill, stroke: false });
+    drawTableCell(tableX + numberColumnWidth + descriptionColumnWidth, y, yesColumnWidth, headerHeight, "YES", { align: "center", bold: true, fill: headerRowFill, stroke: false });
+    drawTableCell(tableX + numberColumnWidth + descriptionColumnWidth + yesColumnWidth, y, noColumnWidth, headerHeight, "NO", { align: "center", bold: true, fill: headerRowFill, stroke: false });
+    const column1X = tableX + numberColumnWidth;
+    const column2X = column1X + descriptionColumnWidth;
+    const column3X = column2X + yesColumnWidth;
+    y += headerHeight;
+
+    preliminaryIssuesRows.forEach((row, rowIndex) => {
+      const isPleaRow = rowIndex === preliminaryPleaRowIndex;
+      const fill = isPleaRow ? rowElevenFill : undefined;
+      drawTableCell(tableX, y, numberColumnWidth, rowHeight, isPleaRow ? "" : row.number, { bold: true, fill, stroke: false });
+      drawTableCell(tableX + numberColumnWidth, y, descriptionColumnWidth, rowHeight, row.label, { bold: row.number === "3." || isPleaRow, fill, stroke: false });
+      drawTableCell(
+        tableX + numberColumnWidth + descriptionColumnWidth,
+        y,
+        yesColumnWidth,
+        rowHeight,
+        isPleaRow ? "GUILTY" : "",
+        { align: "center", bold: true, fill, stroke: false },
+      );
+      drawTableCell(
+        tableX + numberColumnWidth + descriptionColumnWidth + yesColumnWidth,
+        y,
+        noColumnWidth,
+        rowHeight,
+        isPleaRow ? "NOT GUILTY" : "",
+        { align: "center", bold: true, fill, stroke: false },
+      );
+      y += rowHeight;
+    });
+
+    preliminaryChargeRows.forEach((row) => {
+      drawTableCell(tableX, y, numberColumnWidth, rowHeight, row.number, { bold: true, stroke: false });
+      drawTableCell(tableX + numberColumnWidth, y, descriptionColumnWidth, rowHeight, row.label, { stroke: false });
+      drawTableCell(tableX + numberColumnWidth + descriptionColumnWidth, y, yesColumnWidth, rowHeight, "", { stroke: false });
+      drawTableCell(tableX + numberColumnWidth + descriptionColumnWidth + yesColumnWidth, y, noColumnWidth, rowHeight, "", { stroke: false });
+      y += rowHeight;
+    });
+    const tableBottomY = tableStartY + tableHeight;
+    doc.setDrawColor(...tableBorderColor);
+    doc.setLineWidth(0.18);
+    doc.line(column1X, tableStartY, column1X, tableBottomY);
+    doc.line(column2X, tableStartY, column2X, tableBottomY);
+    doc.line(column3X, tableStartY, column3X, tableBottomY);
+    for (let lineY = tableStartY + headerHeight; lineY < tableBottomY; lineY += rowHeight) {
+      doc.line(tableX, lineY, tableX + tableWidth, lineY);
+    }
+    doc.roundedRect(tableX, tableStartY, tableWidth, tableHeight, 1, 1);
+    y += 10;
+
+    ensureSpace(38);
+    doc.setFont("helvetica", "normal");
+    let doneLineFontSize = 9;
+    doc.setFontSize(doneLineFontSize);
+    const doneLineParts = {
+      prefix: "Done and signed at",
+      middle: "on this",
+      dayOf: "day of",
+      year: `${currentYear}.`,
+    };
+    const doneLineAfterAt = 48;
+    const doneLineAfterThis = 12;
+    const doneLineAfterOf = 50;
+    while (
+      doneLineFontSize > 7.5 &&
+      doc.getTextWidth(`${doneLineParts.prefix} ${doneLineParts.middle} ${doneLineParts.dayOf} ${doneLineParts.year}`) +
+        doneLineAfterAt +
+        doneLineAfterThis +
+        doneLineAfterOf >
+        contentWidth - 6
+    ) {
+      doneLineFontSize -= 0.2;
+      doc.setFontSize(doneLineFontSize);
+    }
+    let doneX = margin + 3;
+    doc.text(doneLineParts.prefix, doneX, y);
+    doneX += doc.getTextWidth(doneLineParts.prefix) + 1.5;
+    doc.line(doneX, y + 0.4, doneX + doneLineAfterAt, y + 0.4);
+    doneX += doneLineAfterAt + 1.8;
+    doc.text(doneLineParts.middle, doneX, y);
+    doneX += doc.getTextWidth(doneLineParts.middle) + 1.5;
+    doc.line(doneX, y + 0.4, doneX + doneLineAfterThis, y + 0.4);
+    doneX += doneLineAfterThis + 1.8;
+    doc.text(doneLineParts.dayOf, doneX, y);
+    doneX += doc.getTextWidth(doneLineParts.dayOf) + 1.5;
+    doc.line(doneX, y + 0.4, doneX + doneLineAfterOf, y + 0.4);
+    doneX += doneLineAfterOf + 1.8;
+    doc.text(doneLineParts.year, doneX, y);
+    y += 13;
+
+    signatureLabels.forEach((label, index) => {
+      const rowIndex = Math.floor(index / 3);
+      const columnIndex = index % 3;
+      const columnWidth = contentWidth / 3;
+      const startX = margin + 3 + columnIndex * columnWidth;
+      const lineY = y + 2 + rowIndex * 16;
+      doc.setDrawColor(0, 0, 0);
+      doc.line(startX, lineY, startX + columnWidth - 10, lineY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(doneLineFontSize);
+      doc.text(label, startX, lineY + 4);
+    });
+    y += 30;
+
     drawFooter();
 
     const employeeInitials = employeeForm.employeeName
@@ -1912,7 +2507,6 @@ const DiscHearingNoticeGenerator = ({
     }
 
     doc.save(downloadFileName);
-    onRequestClose?.();
   }, [clientForm, employeeForm, noticeForm, onRequestClose, user]);
 
   const stepMeta = useMemo(
@@ -2014,33 +2608,55 @@ const DiscHearingNoticeGenerator = ({
   }, [activeStep, clientForm, employeeForm, isFinished, noticeForm, onDraftStateChange]);
 
   const content = (
-    <DiscHearingNoticeGeneratorContent
-      activeStep={activeStep}
-      isFinished={isFinished}
-      clientRows={clientRows}
-      clientLoadMessage={clientLoadMessage}
-      clientSearchOpen={clientSearchOpen}
-      setClientSearchOpen={setClientSearchOpen}
-      clientForm={clientForm}
-      onClientSelect={handleClientSelect}
-      onClientLogoRemove={() =>
-        setClientForm((current) => ({
-          ...current,
-          companyLogoDataUrl: "",
-          companyLogoOrientation: "",
-        }))
-      }
-      employeeForm={employeeForm}
-      onEmployeeFormChange={handleEmployeeFormChange}
-      noticeForm={noticeForm}
-      hearingDatePickerRef={hearingDatePickerRef}
-      onNoticeFormChange={handleNoticeFormChange}
-      misconductPickerOpen={misconductPickerOpen}
-      setMisconductPickerOpen={setMisconductPickerOpen}
-      conductOffences={conductOffences}
-      misconductLoadMessage={misconductLoadMessage}
-      onToggleMisconductType={handleToggleMisconductType}
-    />
+    <>
+      <DiscHearingNoticeGeneratorContent
+        activeStep={activeStep}
+        isFinished={isFinished}
+        clientRows={clientRows}
+        clientLoadMessage={clientLoadMessage}
+        clientSearchOpen={clientSearchOpen}
+        setClientSearchOpen={setClientSearchOpen}
+        clientForm={clientForm}
+        onClientSelect={handleClientSelect}
+        onClientLogoRemove={() =>
+          setClientForm((current) => ({
+            ...current,
+            companyLogoDataUrl: "",
+            companyLogoOrientation: "",
+          }))
+        }
+        employeeForm={employeeForm}
+        onEmployeeFormChange={handleEmployeeFormChange}
+        noticeForm={noticeForm}
+        hearingDatePickerRef={hearingDatePickerRef}
+        onNoticeFormChange={handleNoticeFormChange}
+        onMisconductDescriptionChange={handleMisconductDescriptionChange}
+        onAddMisconductCount={handleAddMisconductCount}
+        onRemoveMisconductCount={handleRemoveMisconductCount}
+        misconductPickerOpen={misconductPickerOpen}
+        setMisconductPickerOpen={setMisconductPickerOpen}
+        conductOffences={conductOffences}
+        misconductLoadMessage={misconductLoadMessage}
+        onToggleMisconductType={handleToggleMisconductType}
+      />
+      <AlertDialog open={shortNoticeDialogOpen} onOpenChange={setShortNoticeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-white" />
+              <span>Caution</span>
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogDescription>
+            The selected hearing date is within 48 hours from now and may amount to short notice. Are you sure you want to proceed?
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelShortNoticeDialog}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={proceedShortNoticeDialog}>Proceed</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 
   if (embedded) {

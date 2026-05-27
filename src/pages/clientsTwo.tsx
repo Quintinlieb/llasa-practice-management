@@ -30,6 +30,8 @@ const AHI_CERTIFICATE_RECORD_TYPE = "AHI Certificate";
 const CLIENT_FILE_NOTE_TYPES = [
   "Incoming Call",
   "Outgoing Call",
+  "WhatsApp In",
+  "WhatsApp Out",
   "Email Received",
   "Email Sent",
   "Consultation",
@@ -40,6 +42,10 @@ const getClientFileNoteTypePillClassName = (value: string) => {
       return "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50 hover:text-sky-700";
     case "Outgoing Call":
       return "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700";
+    case "WhatsApp In":
+      return "border-lime-200 bg-lime-50 text-lime-700 hover:bg-lime-50 hover:text-lime-700";
+    case "WhatsApp Out":
+      return "border-green-200 bg-green-50 text-green-700 hover:bg-green-50 hover:text-green-700";
     case "Email Received":
       return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
     case "Email Sent":

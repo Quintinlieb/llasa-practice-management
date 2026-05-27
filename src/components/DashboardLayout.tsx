@@ -211,7 +211,6 @@ export default function DashboardLayout({
     });
   }, [orderedMinimizedDocumentTabs]);
   const [headerNotifications, setHeaderNotifications] = useState<HeaderNotificationRow[]>([]);
-  const [isNotificationsMenuOpen, setIsNotificationsMenuOpen] = useState(false);
   const [isHeaderProfileCollapsed, setIsHeaderProfileCollapsed] = useState<boolean>(() => {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEYS.HEADER_PROFILE_COLLAPSED);
@@ -266,7 +265,9 @@ export default function DashboardLayout({
     const avatarWidth = 40;
     const widthBuffer = 12;
     const nextWidth = avatarWidth + (contentWidth > 0 ? contentWidth : 0) + widthBuffer;
-    setExpandedHeaderProfileWidth(nextWidth);
+    setExpandedHeaderProfileWidth((currentWidth) =>
+      Math.abs(currentWidth - nextWidth) < 1 ? currentWidth : nextWidth,
+    );
   }, [greetingLabel, profile?.user_email, isHeaderProfileCollapsed]);
 
   useLayoutEffect(() => {
@@ -364,7 +365,14 @@ export default function DashboardLayout({
       isMounted = false;
       window.removeEventListener("header-profile-updated", handleHeaderProfileUpdated);
     };
-  }, [user]);
+  }, [
+    user?.email,
+    user?.id,
+    (user as any)?.user_metadata?.name,
+    (user as any)?.user_metadata?.surname,
+    (user as any)?.user_metadata?.user_name,
+    (user as any)?.user_metadata?.user_surname,
+  ]);
 
   useEffect(() => {
     const syncTabs = () => setMinimizedDocumentTabs(loadMinimizedDocumentTabs());
@@ -435,11 +443,6 @@ export default function DashboardLayout({
     };
   }, [loadHeaderNotifications, user?.id]);
 
-  useEffect(() => {
-    if (!isNotificationsMenuOpen || !user?.id) return;
-    void loadHeaderNotifications();
-  }, [isNotificationsMenuOpen, loadHeaderNotifications, user?.id]);
-
   const hasNewNotifications = headerNotifications.length > 0;
 
   const restoreMinimizedDocumentTab = (tabId: string) => {
@@ -454,7 +457,6 @@ export default function DashboardLayout({
     navigate("/settings", { state: { backgroundLocation: location } });
   };
   const handleNotificationClick = async (notification: HeaderNotificationRow) => {
-    setIsNotificationsMenuOpen(false);
     setHeaderNotifications((current) => current.filter((row) => row.id !== notification.id));
 
     if (notification.id) {
@@ -581,7 +583,7 @@ export default function DashboardLayout({
                   >
                     <Settings className="h-4 w-4" />
                   </button>
-                  <DropdownMenu open={isNotificationsMenuOpen} onOpenChange={setIsNotificationsMenuOpen}>
+                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"

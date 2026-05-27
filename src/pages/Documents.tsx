@@ -29,7 +29,6 @@ type DocumentKey =
   | "discWarningGenerator"
   | "disciplinaryHearingNotice"
   | "disciplinaryHearingOutcome"
-  | "disciplinaryHearingNoticeOld"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
   | "incapacityPerformanceHearingNotice"
@@ -235,7 +234,6 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
   disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DiscHearingNoticeGenerator")),
   disciplinaryHearingOutcome: lazyDocumentComponent(() => import("./DisciplinaryHearingOutcomeGenerator")),
-  disciplinaryHearingNoticeOld: lazyDocumentComponent(() => import("./DisciplinaryHearingNoticeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
   incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
@@ -259,7 +257,6 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
   disciplinaryHearingOutcome: { category: "Outcome", label: "Disciplinary Hearing Outcome" },
-  disciplinaryHearingNoticeOld: { category: "Notices", label: "Disciplinary Hearing (Old)" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
   incapacityPerformanceHearingNotice: { category: "Notices", label: "Incapacity Hearing (Performance)" },
@@ -299,7 +296,6 @@ const terminationLetterDocumentKeys = [
 
 const noticeDocumentKeys = [
   "disciplinaryHearingNotice",
-  "disciplinaryHearingNoticeOld",
   "precautionarySuspensionNotice",
   "contemplatedRetrenchmentNotice",
   "incapacityPerformanceHearingNotice",
@@ -340,7 +336,6 @@ const documentCreateFlyoutItems: Record<
   ],
   Notices: [
     { title: "Disciplinary Hearing", selectedDocument: "disciplinaryHearingNotice" },
-    { title: "Disciplinary Hearing (Old)", selectedDocument: "disciplinaryHearingNoticeOld" },
     { title: "Incapacity Hearing (Performance)", selectedDocument: "incapacityPerformanceHearingNotice" },
     { title: "Incapacity Hearing (Ill Health)", selectedDocument: "incapacityIllHealthHearingNotice" },
     { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
@@ -407,7 +402,6 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   discWarningGenerator: "Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
   disciplinaryHearingOutcome: "Disciplinary Hearing Outcome",
-  disciplinaryHearingNoticeOld: "Disciplinary Hearing (Old)",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
   incapacityPerformanceHearingNotice: "Incapacity Hearing (Performance)",
@@ -437,7 +431,6 @@ const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
   disciplinaryHearingOutcome: "Hearing Details",
-  disciplinaryHearingNoticeOld: "Notice Details",
   precautionarySuspensionNotice: "Notice Details",
   contemplatedRetrenchmentNotice: "Notice Details",
   incapacityPerformanceHearingNotice: "Notice Details",
@@ -1125,7 +1118,7 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permContract"
         ? permContractActiveNotes
-      : modalDocument === "disciplinaryHearingNotice" || modalDocument === "disciplinaryHearingNoticeOld"
+      : modalDocument === "disciplinaryHearingNotice"
         ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
         ? precautionarySuspensionActiveNotes

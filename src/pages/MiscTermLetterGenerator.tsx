@@ -142,7 +142,7 @@ const db = supabase as unknown as {
   from: (table: string) => LooseQuery;
 };
 
-const steps = ["Client Details", "Employee Details", "Termination Details", "Preview / Download"] as const;
+const steps = ["Client Details", "Employee Details", "Termination Details", "Preview / Edit"] as const;
 const stepIcons = [Building2, User2, Scale, FileText] as const;
 const generatedDocumentsBucket = "documents";
 

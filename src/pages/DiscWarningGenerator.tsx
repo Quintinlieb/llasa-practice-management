@@ -48,7 +48,7 @@ const steps = [
   "Client Details",
   "Employee Details",
   "Warning Details",
-  "Preview / Download",
+  "Preview / Edit",
 ] as const;
 
 const stepIcons = [Building2, User2, FileText, Check] as const;

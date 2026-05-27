@@ -124,7 +124,6 @@ export type Database = {
           description: string
           file_name: string
           id: string
-          organisation: string
           owner: string
           storage_path: string
           updated_at: string
@@ -135,7 +134,6 @@ export type Database = {
           description: string
           file_name: string
           id?: string
-          organisation: string
           owner: string
           storage_path: string
           updated_at?: string
@@ -146,7 +144,6 @@ export type Database = {
           description?: string
           file_name?: string
           id?: string
-          organisation?: string
           owner?: string
           storage_path?: string
           updated_at?: string

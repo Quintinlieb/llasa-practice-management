@@ -122,6 +122,7 @@ type PreviewFormState = {
   preliminaryExtra: string;
   issueInDispute: string;
   analysisIntro: string;
+  analysisDetail: string;
   employeeStatement: string;
   employeeStatementsByEmployee: string;
   employerStatement: string;
@@ -147,7 +148,7 @@ type OutcomeDraftState = {
   isPreviewEditable: boolean;
 };
 
-const steps = ["Parties", "Hearing Details", "Preview"] as const;
+const steps = ["Parties", "Hearing Details", "Preview / Edit"] as const;
 const stepIcons = [Building2, FileText, Check] as const;
 const inputClassName =
   "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
@@ -250,6 +251,7 @@ const emptyPreviewFormState: PreviewFormState = {
   preliminaryExtra: "",
   issueInDispute: "",
   analysisIntro: "",
+  analysisDetail: "",
   employeeStatement: "",
   employeeStatementsByEmployee: "",
   employerStatement: "",
@@ -864,6 +866,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     hasEditablePreviewText(previewForm.employerStatement) &&
     hasEditablePreviewText(previewForm.employerEvidence) &&
     (usesNoEmployeeEvidenceMessage || hasEditablePreviewText(previewForm.employeeEvidence)) &&
+    hasEditablePreviewText(previewForm.analysisDetail) &&
     hasEditablePreviewText(previewForm.analysisFinding) &&
     hasEditablePreviewText(previewForm.aggravatingFactors) &&
     (usesNoMitigatingFactorsMessage || hasEditablePreviewText(previewForm.mitigatingFactors)) &&
@@ -1326,7 +1329,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
       setPreviewForm((current) => ({
         ...current,
         analysisIntro: (lines[0] || "").trim(),
-        analysisFinding: lines.slice(1).join("\n").trim(),
+        analysisDetail: (lines[1] || "").trim(),
+        analysisFinding: lines.slice(2).join("\n").trim(),
       }));
       closeParagraphEditor();
       return;
@@ -1791,6 +1795,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       : "The employee was afforded proper notice of the proceedings, an opportunity to state his/her case, and the matter was dealt with in a procedurally fair manner."
   }`;
   const analysisIntroValue = previewForm.analysisIntro.trim() || defaultAnalysisIntroParagraph;
+  const analysisDetailValue = previewForm.analysisDetail.trim() || editablePlaceholderText;
   const analysisFindingValue = previewForm.analysisFinding.trim() || editablePlaceholderText;
   const aggravatingFactorsValue = previewForm.aggravatingFactors.trim() || editablePlaceholderText;
   const mitigatingFactorsValue = previewForm.mitigatingFactors.trim() || editablePlaceholderText;
@@ -1810,6 +1815,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ? "The employees submitted the following evidence:"
       : "The employee submitted the following evidence:";
   const analysisFindingsHeadingValue = defaultAnalysisFindingsHeadingParagraph;
+  const analysisDetailParagraphs = normalizeParagraphText(analysisDetailValue);
   const analysisParagraphs = normalizeParagraphText(analysisFindingValue);
   const aggravatingParagraphs = normalizeParagraphText(aggravatingFactorsValue);
   const mitigatingParagraphs = normalizeParagraphText(mitigatingFactorsValue);
@@ -1820,7 +1826,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const employerEvidenceNumber = employerStatementNumber + 1;
   const employeeEvidenceNumber = employerEvidenceNumber + 1;
   const analysisIntroNumber = employeeEvidenceNumber + 1;
-  const analysisFindingHeadingNumber = analysisIntroNumber + 1;
+  const analysisDetailNumber = analysisIntroNumber + 1;
+  const analysisFindingHeadingNumber = analysisDetailNumber + analysisDetailParagraphs.length;
   const aggravatingHeadingNumber = analysisFindingHeadingNumber + 1;
   const mitigatingHeadingNumber = aggravatingHeadingNumber + 1;
   const recommendationHeadingNumber = mitigatingHeadingNumber + 1;
@@ -2060,6 +2067,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     writeDocumentSection("Analysis Of Evidence And Finding", () => {
       writeNumberedParagraph(`${analysisIntroNumber}.`, analysisIntroValue);
+      analysisDetailParagraphs.forEach((paragraph, index) => {
+        writeNumberedParagraph(`${analysisDetailNumber + index}.`, paragraph);
+      });
       writeNumberedParagraph(`${analysisFindingHeadingNumber}.`, analysisFindingsHeadingValue);
       analysisParagraphs.forEach((paragraph, index) => {
         writeNumberedParagraph(`${analysisFindingHeadingNumber}.${index + 1}`, paragraph, { nested: true });
@@ -2264,7 +2274,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const getEditorParagraphNumber = (field: EditorTarget, index: number, rawLines?: string[]) => {
     if (field === "preliminarySection") return getPreliminarySectionEditorNumber(index, rawLines);
     if (field === "issueSection") return `${firstIssueNumber + index}.`;
-    if (field === "analysisSection") return index === 0 ? `${analysisIntroNumber}.` : `${analysisFindingHeadingNumber}.${index}`;
+    if (field === "analysisSection") {
+      if (index === 0) return `${analysisIntroNumber}.`;
+      return `${analysisDetailNumber + index - 1}.`;
+    }
     if (field === "employeeStatementGroup") {
       const targetGroupIndex = editingEmployeeStatementGroupIndex ?? 0;
       const mainNumber = employeeStatementNumber + (isSingleEmployeeFlow ? 0 : targetGroupIndex);
@@ -2278,6 +2291,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     if (field === "preliminaryExtra") return `${5 + index}.`;
     if (field === "issueInDispute") return `${firstIssueNumber}.`;
     if (field === "analysisIntro") return `${analysisIntroNumber}.`;
+    if (field === "analysisDetail") return `${analysisDetailNumber + index}.`;
     if (field === "employeeStatement") return `${employeeStatementNumber}.${index + 1}`;
     if (field === "employerStatement") return `${employerStatementNumber}.${index + 1}`;
     if (field === "employerEvidence") return `${employerEvidenceNumber}.${index + 1}`;
@@ -2381,9 +2395,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
       return;
     }
     if (field === "analysisSection") {
+      const savedAnalysisDetailParagraphs = removeEditablePlaceholderParagraphs(previewForm.analysisDetail);
       const savedAnalysisParagraphs = removeEditablePlaceholderParagraphs(previewForm.analysisFinding);
       setEditingParagraphDraft(
-        [analysisIntroValue, ...(savedAnalysisParagraphs.length > 0 ? savedAnalysisParagraphs : [""])]
+        [
+          analysisIntroValue,
+          ...(savedAnalysisDetailParagraphs.length > 0 ? savedAnalysisDetailParagraphs : [""]),
+          ...(savedAnalysisParagraphs.length > 0 ? savedAnalysisParagraphs : [""]),
+        ]
           .map((paragraph, index) => `${getEditorParagraphNumber("analysisSection", index)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
           .join("\n"),
       );
@@ -3320,6 +3339,26 @@ const DisciplinaryHearingOutcomeGenerator = ({
                         <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{analysisIntroValue}</p>
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => (isPreviewEditable ? openParagraphEditor("analysisDetail", "Analysis of evidence", 0) : undefined)}
+                      className={cn("w-full text-left", isPreviewEditable ? previewEditableParagraphClassName : "")}
+                    >
+                      {analysisDetailParagraphs.map((paragraph, index) => (
+                        <div
+                          key={`analysis-detail-${index}`}
+                          onClick={(event) => {
+                            if (!isPreviewEditable) return;
+                            event.stopPropagation();
+                            openParagraphEditor("analysisDetail", "Analysis of evidence", index);
+                          }}
+                          className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
+                        >
+                          <div className={previewNumberClassName}>{`${analysisDetailNumber + index}.`}</div>
+                          <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
+                        </div>
+                      ))}
+                    </button>
                     <div className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4">
                       <div className={previewNumberClassName}>{`${analysisFindingHeadingNumber}.`}</div>
                       <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{analysisFindingsHeadingValue}</p>

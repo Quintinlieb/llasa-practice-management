@@ -101,6 +101,8 @@ type MinimizedGeneratorTab = {
   id: string;
   documentKey: ModalDocumentKey;
   label: string;
+  instanceNumber?: number;
+  minimizedOrder?: number;
   draftState?: unknown;
 };
 
@@ -424,6 +426,13 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   mutualTermination: "Mutual Separation Agreement",
 };
 
+const minimizedTabLabelByDocument: Partial<Record<DocumentKey, string>> = {
+  noticeTermination: "Misc Termination",
+};
+
+const getMinimizedTabLabel = (documentKey: DocumentKey) =>
+  minimizedTabLabelByDocument[documentKey] || modalTitleByDocument[documentKey];
+
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
@@ -517,7 +526,39 @@ const Documents = () => {
 
   const minimizeModal = () => {
     if (!activeSession) return;
-    setMinimizedTabs((prev) => (prev.some((item) => item.id === activeSession.id) ? prev : [...prev, activeSession]));
+    const minimizedSession = { ...activeSession, label: getMinimizedTabLabel(activeSession.documentKey) };
+    setMinimizedTabs((prev) => {
+      if (prev.some((item) => item.id === activeSession.id)) return prev;
+
+      const sameDocumentTabs = prev.filter((item) => item.documentKey === activeSession.documentKey);
+      const usedInstanceNumbers = sameDocumentTabs
+        .map((item) => item.instanceNumber)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      let nextInstanceNumber = minimizedSession.instanceNumber;
+      if (!(typeof nextInstanceNumber === "number" && Number.isFinite(nextInstanceNumber))) {
+        if (sameDocumentTabs.length === 0) {
+          nextInstanceNumber = 1;
+        } else {
+          let candidate = 2;
+          while (usedInstanceNumbers.includes(candidate)) candidate += 1;
+          nextInstanceNumber = candidate;
+        }
+      }
+
+      const usedOrders = prev
+        .map((item) => item.minimizedOrder)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      const nextMinimizedOrder =
+        typeof minimizedSession.minimizedOrder === "number" && Number.isFinite(minimizedSession.minimizedOrder)
+          ? minimizedSession.minimizedOrder
+          : usedOrders.length > 0
+            ? Math.max(...usedOrders) + 1
+            : 0;
+
+      return [...prev, { ...minimizedSession, instanceNumber: nextInstanceNumber, minimizedOrder: nextMinimizedOrder }].sort(
+        (left, right) => (left.minimizedOrder ?? 0) - (right.minimizedOrder ?? 0),
+      );
+    });
     closeModal();
   };
 
@@ -559,7 +600,7 @@ const Documents = () => {
       setSelectedDocument(nextSelected);
       setStepMeta(null);
       setBreadcrumbStep(null);
-      setActiveSession({ id: crypto.randomUUID(), documentKey: nextSelected, label: modalTitleByDocument[nextSelected] });
+      setActiveSession({ id: crypto.randomUUID(), documentKey: nextSelected, label: getMinimizedTabLabel(nextSelected) });
       const nextState = { ...((routeState as Record<string, unknown> | null) ?? {}) };
       delete nextState.selectedDocument;
       navigate(location.pathname, {
@@ -756,19 +797,23 @@ const Documents = () => {
   const isCodeOfConductModal = modalDocument === "codeOfConduct";
   const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
   const modalSteps =
-    modalDocument && wizardDocumentSet.has(modalDocument)
-      ? ([
-          modalDocument === "discWarningGenerator" || modalDocument === "permContract" || modalDocument === "disciplinaryHearingOutcome" ? "Client Details" : "Employer Details",
-          "Employee Details",
-          detailStepLabelByDocument[modalDocument] ?? "Employment Details",
-          modalDocument === "disciplinaryHearingOutcome"
-            ? "Preview"
-            : modalDocument === "discWarningGenerator" || modalDocument === "permContract"
-              ? "Preview / Edit"
-              : "Preview / Edit",
-        ] as const)
-      : ([] as const);
-  const modalActiveStep = stepMeta?.isFinished ? 3 : Math.min(stepMeta?.activeStep ?? 0, 2);
+    stepMeta?.steps && stepMeta.steps.length > 0
+      ? stepMeta.steps
+      : modalDocument && wizardDocumentSet.has(modalDocument)
+        ? ([
+            modalDocument === "disciplinaryHearingOutcome"
+              ? "Parties"
+              : modalDocument === "discWarningGenerator" || modalDocument === "permContract"
+                ? "Client Details"
+                : "Employer Details",
+            "Employee Details",
+            detailStepLabelByDocument[modalDocument] ?? "Employment Details",
+            "Preview / Edit",
+          ] as const)
+        : ([] as const);
+  const modalActiveStep = stepMeta?.isFinished
+    ? Math.max(0, modalSteps.length - 1)
+    : Math.min(stepMeta?.activeStep ?? 0, Math.max(0, modalSteps.length - 1));
   const canSelectTrackerStep = (index: number) => {
     if (!stepMeta?.onStepSelect) return false;
     if (stepMeta.canSelectStep) return stepMeta.canSelectStep(index);

@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { logGeneratedDocument } from "@/lib/documentsLog";
 import { supabase } from "@/integrations/supabase/client";
-import { Building2, Check, ChevronDown, ChevronsUpDown, FileText, Info, Pencil, Plus, User2, X } from "lucide-react";
+import { Building2, Check, ChevronDown, ChevronsUpDown, FileText, Info, Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { jsPDF } from "jspdf";
 
@@ -74,7 +74,6 @@ type ClientFormState = {
 type EmployeeFormState = {
   employeeName: string;
   employeeSurname: string;
-  employeeIdOrPassportNumber: string;
 };
 
 type HearingFormat = "in_person" | "virtual";
@@ -88,6 +87,7 @@ type RepresentationOption =
   | "Attorney"
   | "Other";
 type InterpreterOption = "Yes" | "No";
+type AppealNoticeOption = "3" | "5" | "7" | "10";
 type PleaOption = "No plea" | "Guilty" | "Not guilty";
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
 
@@ -106,6 +106,7 @@ type HearingDetailsFormState = {
   bargainingCouncil: string;
   representation: RepresentationOption | "";
   interpreter: InterpreterOption | "";
+  appealNoticeDays: AppealNoticeOption;
   pleasByCharge: Record<string, PleaOption | "">;
 };
 
@@ -114,10 +115,15 @@ type PreviewFormState = {
   preliminaryTwo: string;
   preliminaryThree: string;
   preliminaryFour: string;
+  preliminaryPleaOverrides: string;
+  preliminaryChargeParagraphOverrides: string;
+  preliminaryChargePleaOverrides: string;
+  preliminaryProcess: string;
   preliminaryExtra: string;
   issueInDispute: string;
   analysisIntro: string;
   employeeStatement: string;
+  employeeStatementsByEmployee: string;
   employerStatement: string;
   employerEvidence: string;
   employeeEvidence: string;
@@ -127,30 +133,33 @@ type PreviewFormState = {
   recommendation: string;
 };
 
-type EditorTarget = keyof PreviewFormState | "preliminarySection" | "issueSection" | "analysisSection";
+type EditorTarget = keyof PreviewFormState | "preliminarySection" | "issueSection" | "analysisSection" | "employeeStatementGroup";
 
 type OutcomeDraftState = {
   activeStep: number;
   isFinished: boolean;
   clientForm: ClientFormState;
-  employeeForm: EmployeeFormState;
+  employeeForms: EmployeeFormState[];
   hearingDetailsForm: HearingDetailsFormState;
+  employeeHearingDetailsForms: HearingDetailsFormState[];
   previewForm: PreviewFormState;
   hasRecommendationSection: boolean;
   isPreviewEditable: boolean;
 };
 
-const steps = ["Client Details", "Employee Details", "Hearing Details", "Preview"] as const;
-const stepIcons = [Building2, User2, FileText, Check] as const;
-const employeeIdOrPassportMaxLength = 13;
-
+const steps = ["Parties", "Hearing Details", "Preview"] as const;
+const stepIcons = [Building2, FileText, Check] as const;
 const inputClassName =
   "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 const editablePlaceholderText = "Please start typing here...";
 const generatedDocumentsBucket = "documents";
+const quintinLiebenbergSignatureDataUrl =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHkAAACiCAMAAABS3ZKXAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAK1UExURQAAAP///wAAAA8PDxERERISEhMTExUVFRkZGRoaGhsbGxwcHB0dHR8fHyQkJCUlJSYmJicnJygoKCkpKSoqKiwsLC0tLS4uLjAwMDExMTIyMjQ0NDU1NTY2Njc3Nzg4ODk5OTo6Ojs7Ozw8PD09PT4+Pj8/P0BAQEFBQUJCQkNDQ0REREVFRUZGRkdHR0hISElJSUpKSktLS0xMTE1NTU5OTk9PT1BQUFFRUVJSUlNTU1RUVFVVVVZWVldXV1hYWFlZWVpaWltbW1xcXF1dXV5eXl9fX2BgYGFhYWJiYmNjY2RkZGVlZWZmZmdnZ2hoaGlpaWpqamtra2xsbG1tbW5ubm9vb3BwcHFxcXJycnNzc3R0dHV1dXZ2dnd3d3h4eHl5eXp6ent7e3x8fH19fX5+fn9/f4CAgIGBgYKCgoODg4SEhIWFhYaGhoeHh4iIiImJiYqKiouLi4yMjI2NjY6Ojo+Pj5CQkJGRkZKSkpOTk5SUlJWVlZaWlpeXl5iYmJmZmZqampubm5ycnJ2dnZ6enp+fn6CgoKGhoaKioqOjo6SkpKWlpaampqenp6ioqKmpqaqqqqurq6ysrK2tra6urq+vr7CwsLGxsbKysrOzs7S0tLW1tba2tre3t7i4uLm5ubq6uru7u7y8vL29vb6+vr+/v8DAwMHBwcLCwsPDw8TExMXFxcbGxsfHx8jIyMnJycrKysvLy8zMzM3Nzc7Ozs/Pz9DQ0NHR0dLS0tPT09TU1NXV1dbW1tfX19jY2NnZ2dra2tvb29zc3N3d3d7e3t/f3+Dg4OHh4eLi4uPj4+Tk5OXl5ebm5ufn5+jo6Onp6erq6uvr6+zs7O3t7e7u7u/v7/Dw8PHx8fLy8vPz8/T09PX19fb29vf39/j4+Pn5+fr6+vv7+/z8/P39/f7+/v///0MXzbkAAAACdFJOUwC/LU1jJQAAAAlwSFlzAAAOxAAADsMB2mqY3AAADUtJREFUeF7tm/lDE1cewLd7dLftbtfudre69aaKZxWRQ6AiooIccliMgkApgoBarBdn5aqiqFxyKBJERCKKoqAtCFRAboEgcpqQBJKZv2PfTN6EyWTeJCET+oufH/Q7Afwwb97xfd83/uH3A/+9eG+eT96b55P3ZjOiaJHDCDJf5t4zPm9gCJkn88zeP9/CYAyZJ3P7mqMyGFLMj7nBO45xx/NjHhPbruqE8SzzYB4KF+zqhTEN85snEz/531MY0zG7WRK1fF0VjLUwt3km7Y/LSmCsjbnN+X//9A4MGZjZXPvPf5UpYExAG1vmNTev/U8xDEk6++4NwdC85oGtXzyEIQHWFlaxNnsGXpnT3OezpAiGBFh/fk5TQs4wvDSjeergl3UwJJmufwv+fEI1t/nM8oRVT2CoBhuHgRqzmUfOLi+EITvmMksiF1XAEIGZzH2RX92AIQrzmNs8PuZuaoBZzI27PkqdgjESM5hltWc2hTFzH134N88UBFwI1R5ArPBufpNyPH7bb/CCC77NnT/alfn/Ci844dlcf+h0V0CQ7kNW6qSePJuv+2dIim374NUsoipqhZqFT/NYiU06PmhxVQWvNdStSJ+G4Sw8mjuiBOABn3YZhdcaWm1P6N4yf2ZVs7cvuLEnG1rgBxr69h3WvWMezUL/4+9wfNz+CD3tIpAf2KL74AG8mNtnZi75/US0aLF1l/ojDbIE++cw1MYAMyZuAXfDQb1zc8Hqx0TU6VBN/EVDmbHgHgwZGGBW3Vl5ldmEdJpsDyWGtxGRPMR+kvxoltvLsxi1AgpDWlvqF/9adyagaP0moPCMugu1rSxmjKi+TftZujWJYc95WKwzRin6Qu2qsibIUH7me8b9iY/Y/wJDHUztYT0C15RnMBaubYcRhcefKmGki4lmccKS8BcwntgWrd0dpoWfOI3BWBfTzFPRLrsewViVZy2GoRpVjr0Ty46dwiTzROLOBfkwxgc3ZCphqKbU++phCYxZMMX8LnHz5W2D8AK/7K7dsg17Svc8QA8Jk8yxFoMJN6lB02VRDiM1rQHZmaHUHoqNuZsVJevONwVL4ZXqhLPWGtXlF/PEm9hHIZm7OXtpyVu/TOqWWzbT96t4v3/ESNgpzgR0zuaHdhGyRksq1ZP6BtAnkWHB/pEHrj3wip25ml+4JOPKuHQ4gLHbC+hz1cRxh9GxjaXwCsEczY22Me/wKocReCndHUlbKiRROzrxwm+4b3luZqxindcEPuVxAeYaqmpXqqcBFJfsGvA2tzJyqu+/g1iq5mZ++JENuNu7btT2v9shjZbv5HuKcYn/ftI46SsAk8lYP1hOmEN7LuYaa2eQeXTbaCrWV61ewwgg9KgCo9myjPiiPHYdkE4EXxu8orPtMN4sa7dYBe5Qdfoo1Y69O27OLqJ1jmVgrTi7j9hLygtW3gJ/5dk9TbCq7GSMMaPNM/eiPCuBqMcF3A0J9oOmp4H22JEzjWOiL4muLi/zAynY2MugaxGOWSmXTTxNkNRcdowBtywJDiHuStUrxzs23Vd/DdC4miihy91CQI8buZF+AceHqu9UfvGXxDN5tJ5AYqR5Iv9Cjj8xKT5c2Qz+lBU4tU1956dpx/7DCcQIb1oKUv7RCwk1NdLW28O4aI1Pj25OY5xZnnIsL4xYncYO5oIlcSrLc2HH/U9r1V8EeUJEDCGe2HtAgQ/nZPZuij8b96wrcdVZttzVYPMQyADG849c2knOz1nbwFOTZIZWXBgNtKOWitHv95Nz2sNPHmC/iYretS5b5Nj80ufDY9qpCsQAs4QYH70hLvWS1KhnAYXEVZeDCDRt/IFnWeNCp/YS+AhTvyHzMFm4q/x1MthXqF686jrr73qUmQmr0W8WJ0hwrDnIKS4049i4IJL4/acEoQq89bB/c2ndiHPi+eieDtD0ioKIbvIH3tkUlIvUychTL/vErY1kCL6hcZCaAAj0mqWhWyfxds+wK9fSQrqK/cgCyP1//4IP+IRKWh6qqnwLDtedSJPhqnxrOFm8sj3uTG5oFKJNjv2Xv4SrdJsoTETvZ/rMU6kWQrwjJqMm7+LJvic25Ir01isBf/VD8lv8Vu9ru0vn+5Nch8FGJBimvFjFegGZCk6eXvqTROJSSmRnyo6ixOuzo55Aj1mRbCXE2wKDGwruRvdJDxcRv/RMor28ISxmGnueMZWwoBSvTbo+jv8aPbuVU/fktphlV3H80QrwIyO15fEHmeUibvNoms0NrNbzYq+wNuLx9PUT5E/3ri5v9UifwUd2lnZbunW88hXGjz4oYmY+lVu21YN7zbPIvlcWsyOhh/6ISTjN4iPuJYongtja249Ka7ur970iPsTOCd5WgsUCawqYDLU6Isy0dmvuTGJMysoiez9yFZkJWWzvEqGVKUG4zKMnPV421h+6Jo2seC76+d45Efl7tyx+Qd6fIv3gTwtFBQPPFt/vzGSM2OmrnybCEAmHWfzdke6i0uDC8Ru5LX2Ho5/XkIm8MjpyhFykZrKd/noSzN2t32ZnVmvn+DOpa87SUgV20ObhI3atGUX5j/B6i9yu6os9XeQdYzUbc6m+8igA5PbYg+2uHfADyEDC15qdBxqkuS/cZ6h5h1CGv3Fxb1TcqbqsbtDxLeupw4nhjSeJzxQDjGcsDlyqmck5QJnF4X79csckMCtlLMnD8ZJgoTqzfhNK9RYsm73y0h28R+vgBAXCPHAmToYXr78Dpmh/sFSMCNx06tXDS9O0n66aF4c89CSdEHbzRErsNN639mcMH/3uHFgPOoJ0t/4li5n7dIIGh0DtvSwSVnNbYdEkjv2W9w6fSglUVyJ0GNuZzMwyAOXOkWwNwQaLWdkSfQ2Oz+mLvqga+ZU1OlVGHH9gFYcqyOjAYpZna47Ir+xtgBGToaXxuo5bW7NhZACIHqam2pYqRTDBri5jDGLQVnet9R7Y0OAyv9xTpDPPQ0adGKUJsJD/TE+79cNh7g9MR/1LWI4FlW1TjB5bZURTA9Bm+ckgZLHh7bpvGRNX/1FLRH0TBdKsLA5CDkzsjpOmMKPm2T5PKt3SAvW0AEjzXX+qwqbLoFuSdscW7vRgGWO4pH4crUaYsda9HJNvxT+0lgRp3voTjMZXI9zP2EvRQZgVB5LQB4vKqG30TYM0xU4IQ23KklqMbu2p8oNoMd65jCyjQ7pjvV7CUJuOVZwn0OzmPB/dd5s0zCTvphUVX/m4sq0coClColgfAQWruS6I/S7UvLWenTGwWq9wxBJRvJXjtwewmUcDyVIDAuVNS02GqyjYEoFIuHo3EeUCDljMqvNJLOufBunmK9RdTp2zTUR8qyrCRc86zWK+78TM2umoni+kzsJ6zqxA9qEXlshjBIiuuWtfFUdb43IBVWV96efIfhIFGN2VwNVuBDrm4b0pnFnFoB3UVbmHotvz4mKOar4aplmZZqmz8NJR5W4lt4TSuu0c7xJ0rc3najcSplnkzZ05TjrHEc0o/tFf6/UrbaajdnF1FTUM85DHNe4MruMjYrA8Dd7Olcw3b0UfFmnQNkvjwxCpJgQr+7wdl5VtFLAtTRRj/kf1dS+AtrnCln0m1CA/HoYPnffL4ZwXCz+mzs640DKPCPK42xqf8L5dF7Gbsw/iMg8B5y8GoZunT3no+5Fxm9DdPzBTMG1UBQ60yi8auvnm6gcwQjLp5M72viqdoSUn9TScGpq5e73+XS+GqtBrUBZsNOhFFppZGejOXqwzjnYrsBk0hFnzzQ2GvO2jl7OaMqgeNObuhXpOeQyjZ1253nlTDWWWxvpwHSIaiixkttitB2iWFwSgtqtGUf+59puWHEBz40ZDiip6kR84obfzU0BzrWWTOjCNJ59pXhjWCzSP13CcjhuM1CuUI01nQPUwXnhsY1hZiIRP8xufXCO27nyabywi3+ExEB7N777/0eCODeDPrMpxHIChQfBn7llEviFmMPyZM5cbt9TxZhbbXDcoIdDAl1mVus3A1ZGCL/Nr62xjynAAnsxTyb5GdWwAT+bHq42sw/FlVhzfzb03YYEf8wv7SgNzoFl4McsimWVQA+DDjNV9JTT6lnkxKw/sNTwh0MCDGWv+rwiGxsCDeTp4PWfCLGGfYngwD9uwvzwB6W1lX8J4MD+0JF5qQaBsKkUsYaabZ045ol+yVj5KReUpppvFlugCmqohC9nrTTdXf4guY1eWobMFk82qjM9QZRN5JXEmj8Jks9TbB1FnHs4N4jjGMN08siKL/TGPF8dy7phMNo9asm/iunLruFNRk83dFmwTmOrZ+Ww9b1eYbK6y0n4diESS74MsfVOYbL6/Wdfcm+Kl/yUHk833dM1V7ocMSAdNNtdtYsydQ3XuB1g6nc7/7TLZPGbdpPVv1gki2d5PwmTMsWeyWertShu2r7NtfVl6HBsmm5WX/qbpTZOP/DcUGLq7MtmMD292Uz9puejgxnC9RzYaTDfjTxedaugfaKs5/fVq9tNgdngw49UOVns9t1s5lxiVdPNhxicz/H1jDatqz8KLeU68N88nf/jg9+GDD/4P4JFn6rxAyAAAAAAASUVORK5CYII=";
 
 const defaultAnalysisFindingParagraph =
-  "Having considered the evidence, the probabilities, and the submissions made during the disciplinary hearing, I am satisfied that the employer followed a fair procedure consistent with the Code of Good Practice: Dismissal contained in Schedule 8 to the Labour Relations Act 66 of 1995. The employee was afforded proper notice of the proceedings, an opportunity to state his/her case, and the matter was dealt with in a procedurally fair manner.";
+  "Having considered the evidence, the probabilities, and the submissions made during the disciplinary hearing, I am satisfied that the employer followed a fair procedure consistent with the Code of Good Practice: Dismissal contained in Schedule 8 to the Labour Relations Act 66 of 1995.";
+const defaultAnalysisFindingsHeadingParagraph =
+  "In light of the above, I make the following finding(s):";
 const defaultIssueInDisputeParagraph =
   "I must determine whether there are sufficient grounds to prove, on a balance of probability, that the alleged misconduct was committed and further that a fair and reasonable procedure has been followed.";
 
@@ -170,7 +179,6 @@ const emptyClientFormState: ClientFormState = {
 const emptyEmployeeFormState: EmployeeFormState = {
   employeeName: "",
   employeeSurname: "",
-  employeeIdOrPassportNumber: "",
 };
 
 const emptyHearingDetailsFormState: HearingDetailsFormState = {
@@ -183,7 +191,51 @@ const emptyHearingDetailsFormState: HearingDetailsFormState = {
   bargainingCouncil: "None",
   representation: "",
   interpreter: "",
+  appealNoticeDays: "5",
   pleasByCharge: {},
+};
+
+const createEmptyHearingDetailsFormState = (bargainingCouncil = "None"): HearingDetailsFormState => ({
+  ...emptyHearingDetailsFormState,
+  bargainingCouncil,
+});
+
+const createTransparentSignatureDataUrl = async (sourceDataUrl: string) => {
+  if (typeof window === "undefined" || typeof document === "undefined" || !sourceDataUrl) {
+    return sourceDataUrl;
+  }
+  return new Promise<string>((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(sourceDataUrl);
+          return;
+        }
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const { data } = imageData;
+        for (let index = 0; index < data.length; index += 4) {
+          const red = data[index];
+          const green = data[index + 1];
+          const blue = data[index + 2];
+          if (red > 235 && green > 235 && blue > 235) {
+            data[index + 3] = 0;
+          }
+        }
+        context.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch {
+        resolve(sourceDataUrl);
+      }
+    };
+    image.onerror = () => resolve(sourceDataUrl);
+    image.src = sourceDataUrl;
+  });
 };
 
 const emptyPreviewFormState: PreviewFormState = {
@@ -191,10 +243,15 @@ const emptyPreviewFormState: PreviewFormState = {
   preliminaryTwo: "",
   preliminaryThree: "",
   preliminaryFour: "",
+  preliminaryPleaOverrides: "",
+  preliminaryChargeParagraphOverrides: "",
+  preliminaryChargePleaOverrides: "",
+  preliminaryProcess: "",
   preliminaryExtra: "",
   issueInDispute: "",
   analysisIntro: "",
   employeeStatement: "",
+  employeeStatementsByEmployee: "",
   employerStatement: "",
   employerEvidence: "",
   employeeEvidence: "",
@@ -262,6 +319,7 @@ const representationOptions: readonly RepresentationOption[] = [
   "Other",
 ] as const;
 const interpreterOptions: readonly InterpreterOption[] = ["Yes", "No"] as const;
+const appealNoticeOptions: readonly AppealNoticeOption[] = ["3", "5", "7", "10"] as const;
 const pleaOptions: readonly PleaOption[] = ["No plea", "Guilty", "Not guilty"] as const;
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 const offenceGroupLabel: Record<OffenceCategory, string> = {
@@ -405,6 +463,13 @@ const normalizeClientBargainingCouncil = (value: string | null) => {
   return raw || "None";
 };
 
+const appealNoticeWordByValue: Record<AppealNoticeOption, string> = {
+  "3": "THREE",
+  "5": "FIVE",
+  "7": "SEVEN",
+  "10": "TEN",
+};
+
 const getOutcomeDisputeForumText = (bargainingCouncil: string) => {
   const councilName = String(bargainingCouncil || "").trim();
   if (!councilName || councilName.toLowerCase() === "none") return "the CCMA";
@@ -477,8 +542,9 @@ const serializeOutcomeDraftState = (draft: OutcomeDraftState) =>
     activeStep: draft.activeStep,
     isFinished: draft.isFinished,
     clientForm: draft.clientForm,
-    employeeForm: draft.employeeForm,
+    employeeForms: draft.employeeForms,
     hearingDetailsForm: draft.hearingDetailsForm,
+    employeeHearingDetailsForms: draft.employeeHearingDetailsForms,
     previewForm: draft.previewForm,
     hasRecommendationSection: draft.hasRecommendationSection,
     isPreviewEditable: draft.isPreviewEditable,
@@ -505,11 +571,38 @@ const joinWithAnd = (values: string[]) => {
   return `${normalized.slice(0, -1).join(", ")}, and ${normalized[normalized.length - 1]}`;
 };
 
+const joinSentenceParts = (values: string[]) => {
+  const normalized = values.map((value) => String(value || "").trim()).filter(Boolean);
+  if (normalized.length === 0) return "";
+  if (normalized.length === 1) return normalized[0];
+  if (normalized.length === 2) return `${normalized[0]} and ${normalized[1]}`;
+  return `${normalized.slice(0, -1).join(", ")}, and ${normalized[normalized.length - 1]}`;
+};
+
+const joinEmployeeReferences = (values: string[]) => {
+  const normalized = values.map((value) => String(value || "").trim()).filter(Boolean);
+  if (normalized.length === 0) return "";
+  const bare = normalized.map((value, index) => (index === 0 ? value : value.replace(/^the\s+/i, "")));
+  if (bare.length === 1) return bare[0];
+  if (bare.length === 2) return `${bare[0]} and ${bare[1]}`;
+  return `${bare.slice(0, -1).join(", ")}, and ${bare[bare.length - 1]}`;
+};
+
 const normalizeParagraphText = (value: string) =>
   String(value || "")
     .split(/\r?\n/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
+
+const parseEmployeeStatementOverrides = (value: string) => {
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((entry) => (typeof entry === "string" ? entry : "")).filter((entry) => typeof entry === "string");
+  } catch {
+    return [];
+  }
+};
 
 const sanitizeFileSegment = (value: string, fallback: string) =>
   value
@@ -530,8 +623,9 @@ const parseDraftState = (value: unknown): OutcomeDraftState => {
       activeStep: 0,
       isFinished: false,
       clientForm: emptyClientFormState,
-      employeeForm: emptyEmployeeFormState,
+      employeeForms: [emptyEmployeeFormState],
       hearingDetailsForm: emptyHearingDetailsFormState,
+      employeeHearingDetailsForms: [emptyHearingDetailsFormState],
       previewForm: emptyPreviewFormState,
       hasRecommendationSection: false,
       isPreviewEditable: false,
@@ -541,13 +635,34 @@ const parseDraftState = (value: unknown): OutcomeDraftState => {
     activeStep?: unknown;
     isFinished?: unknown;
     clientForm?: Partial<ClientFormState>;
+    employeeForms?: unknown;
     employeeForm?: Partial<EmployeeFormState>;
     hearingDetailsForm?: Partial<HearingDetailsFormState>;
+    employeeHearingDetailsForms?: unknown;
     previewForm?: Partial<PreviewFormState>;
     hasRecommendationSection?: unknown;
     isPreviewEditable?: unknown;
   };
-  const activeStep = Math.max(0, Math.min(2, Number(candidate.activeStep) || 0));
+  const normalizedEmployeeForms = Array.isArray(candidate.employeeForms)
+    ? candidate.employeeForms
+        .filter((entry): entry is Partial<EmployeeFormState> => Boolean(entry) && typeof entry === "object")
+        .map((entry) => ({
+          ...emptyEmployeeFormState,
+          ...entry,
+        }))
+    : candidate.employeeForm && typeof candidate.employeeForm === "object"
+      ? [{
+          ...emptyEmployeeFormState,
+          ...candidate.employeeForm,
+        }]
+      : [emptyEmployeeFormState];
+  const activeStep = Math.max(0, Math.min(1, Number(candidate.activeStep) || 0));
+  const normalizedHearingDetailsForm = normalizeHearingDetailsFormState(candidate.hearingDetailsForm);
+  const normalizedEmployeeHearingDetailsForms = Array.isArray(candidate.employeeHearingDetailsForms)
+    ? candidate.employeeHearingDetailsForms
+        .map((entry) => normalizeHearingDetailsFormState(entry))
+        .filter(Boolean)
+    : [];
   return {
     activeStep,
     isFinished: Boolean(candidate.isFinished),
@@ -555,11 +670,9 @@ const parseDraftState = (value: unknown): OutcomeDraftState => {
       ...emptyClientFormState,
       ...(candidate.clientForm || {}),
     },
-    employeeForm: {
-      ...emptyEmployeeFormState,
-      ...(candidate.employeeForm || {}),
-    },
-    hearingDetailsForm: normalizeHearingDetailsFormState(candidate.hearingDetailsForm),
+    employeeForms: normalizedEmployeeForms.length > 0 ? normalizedEmployeeForms : [emptyEmployeeFormState],
+    hearingDetailsForm: normalizedHearingDetailsForm,
+    employeeHearingDetailsForms: normalizedEmployeeHearingDetailsForms.length > 0 ? normalizedEmployeeHearingDetailsForms : [normalizedHearingDetailsForm],
     previewForm: {
       ...emptyPreviewFormState,
       ...(candidate.previewForm || {}),
@@ -577,12 +690,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
   onStepMetaChange,
 }: DisciplinaryHearingOutcomeGeneratorProps) => {
   const { user } = useAuth();
+  const [chairpersonSignatureDataUrl, setChairpersonSignatureDataUrl] = useState(quintinLiebenbergSignatureDataUrl);
   const initialDraft = useMemo(() => parseDraftState(draftState), [draftState]);
   const [activeStep, setActiveStep] = useState(initialDraft.activeStep);
   const [isFinished, setIsFinished] = useState(initialDraft.isFinished);
   const [clientForm, setClientForm] = useState<ClientFormState>(initialDraft.clientForm);
-  const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(initialDraft.employeeForm);
+  const [employeeForms, setEmployeeForms] = useState<EmployeeFormState[]>(initialDraft.employeeForms);
   const [hearingDetailsForm, setHearingDetailsForm] = useState<HearingDetailsFormState>(initialDraft.hearingDetailsForm);
+  const [employeeHearingDetailsForms, setEmployeeHearingDetailsForms] = useState<HearingDetailsFormState[]>(initialDraft.employeeHearingDetailsForms);
   const [previewForm, setPreviewForm] = useState<PreviewFormState>(initialDraft.previewForm);
   const [hasRecommendationSection, setHasRecommendationSection] = useState(initialDraft.hasRecommendationSection);
   const [isPreviewEditable, setIsPreviewEditable] = useState(initialDraft.isPreviewEditable);
@@ -591,18 +706,39 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
   const [clientSearchValue, setClientSearchValue] = useState("");
   const [chargePickerOpen, setChargePickerOpen] = useState(false);
+  const [activeEmployeeChargePickerIndex, setActiveEmployeeChargePickerIndex] = useState<number | null>(null);
   const [bargainingCouncilPickerOpen, setBargainingCouncilPickerOpen] = useState(false);
+  const [activeEmployeeBargainingCouncilPickerIndex, setActiveEmployeeBargainingCouncilPickerIndex] = useState<number | null>(null);
   const [bargainingCouncilSearchValue, setBargainingCouncilSearchValue] = useState("");
+  const [employeeBargainingCouncilSearchValues, setEmployeeBargainingCouncilSearchValues] = useState<Record<number, string>>({});
+  const [collapsedEmployeeHearingSectionIndexes, setCollapsedEmployeeHearingSectionIndexes] = useState<number[]>([]);
   const noticeDatePickerRef = useRef<HTMLInputElement | null>(null);
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const employeeNoticeDatePickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const employeeHearingDatePickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const editingTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const downloadPdfRef = useRef<(() => void) | null>(null);
   const lastEmittedDraftSnapshotRef = useRef<string | null>(null);
   const [editingParagraphId, setEditingParagraphId] = useState<EditorTarget | null>(null);
   const [editingParagraphLabel, setEditingParagraphLabel] = useState("");
   const [editingParagraphDraft, setEditingParagraphDraft] = useState("");
+  const [editingEmployeeStatementGroupIndex, setEditingEmployeeStatementGroupIndex] = useState<number | null>(null);
   const [isAddRecommendationOpen, setIsAddRecommendationOpen] = useState(false);
   const [recommendationDraft, setRecommendationDraft] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadTransparentSignature = async () => {
+      const nextSignature = await createTransparentSignatureDataUrl(quintinLiebenbergSignatureDataUrl);
+      if (isMounted) {
+        setChairpersonSignatureDataUrl(nextSignature);
+      }
+    };
+    void loadTransparentSignature();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const nextDraft = parseDraftState(draftState);
@@ -611,8 +747,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setActiveStep(nextDraft.activeStep);
     setIsFinished(nextDraft.isFinished);
     setClientForm(nextDraft.clientForm);
-    setEmployeeForm(nextDraft.employeeForm);
+    setEmployeeForms(nextDraft.employeeForms);
     setHearingDetailsForm(nextDraft.hearingDetailsForm);
+    setEmployeeHearingDetailsForms(nextDraft.employeeHearingDetailsForms);
     setPreviewForm(nextDraft.previewForm);
     setHasRecommendationSection(nextDraft.hasRecommendationSection);
     setIsPreviewEditable(nextDraft.isPreviewEditable);
@@ -650,48 +787,83 @@ const DisciplinaryHearingOutcomeGenerator = ({
       activeStep,
       isFinished,
       clientForm,
-      employeeForm,
+      employeeForms,
       hearingDetailsForm,
+      employeeHearingDetailsForms,
       previewForm,
       hasRecommendationSection,
       isPreviewEditable,
     } satisfies OutcomeDraftState;
     lastEmittedDraftSnapshotRef.current = serializeOutcomeDraftState(nextDraftState);
     onDraftStateChange?.(nextDraftState);
-  }, [activeStep, clientForm, employeeForm, hasRecommendationSection, hearingDetailsForm, isFinished, isPreviewEditable, onDraftStateChange, previewForm]);
+  }, [activeStep, clientForm, employeeForms, employeeHearingDetailsForms, hasRecommendationSection, hearingDetailsForm, isFinished, isPreviewEditable, onDraftStateChange, previewForm]);
 
   useEffect(() => {
-    onStepChange?.(isFinished ? steps[3] : steps[Math.min(activeStep, steps.length - 1)] ?? null);
+    onStepChange?.(isFinished ? steps[2] : steps[Math.min(activeStep, steps.length - 1)] ?? null);
   }, [activeStep, isFinished, onStepChange]);
 
-  const isClientStepValid = Boolean(clientForm.clientId.trim());
-  const isEmployeeStepValid = Boolean(employeeForm.employeeName.trim() && employeeForm.employeeSurname.trim());
-  const selectedPleaCount = hearingDetailsForm.misconductTypes.filter((type) =>
-    Boolean(String(hearingDetailsForm.pleasByCharge[type] || "").trim()),
-  ).length;
-  const isHearingDetailsStepValid = Boolean(
-    hearingDetailsForm.noticeDate.trim() &&
-      hearingDetailsForm.hearingDate.trim() &&
-      hearingDetailsForm.hearingFormat.trim() &&
-      hearingDetailsForm.misconductTypes.length > 0 &&
-      hearingDetailsForm.employeeAttendance.trim() &&
-      hearingDetailsForm.hearingProcess.trim() &&
-      hearingDetailsForm.bargainingCouncil.trim() &&
-      hearingDetailsForm.representation.trim() &&
-      hearingDetailsForm.interpreter.trim() &&
-      selectedPleaCount === hearingDetailsForm.misconductTypes.length,
-  );
+  useEffect(() => {
+    setEmployeeHearingDetailsForms((current) => {
+      const clientBargainingCouncil = hearingDetailsForm.bargainingCouncil || normalizeClientBargainingCouncil(clientRows.find((row) => row.id === clientForm.clientId)?.bargaining_council ?? null);
+      const nextForms = employeeForms.map((_, index) => {
+        if (index === 0) return current[index] ? current[index] : hearingDetailsForm;
+        return current[index] ? current[index] : createEmptyHearingDetailsFormState(clientBargainingCouncil);
+      });
+      return nextForms.length > 0 ? nextForms : [hearingDetailsForm];
+    });
+    setCollapsedEmployeeHearingSectionIndexes((current) => current.filter((index) => index < employeeForms.length));
+  }, [clientForm.clientId, clientRows, employeeForms, hearingDetailsForm]);
+
+  const isPartiesStepValid =
+    Boolean(clientForm.clientId.trim()) &&
+    employeeForms.length > 0 &&
+    employeeForms.every((employee) => Boolean(employee.employeeName.trim() && employee.employeeSurname.trim()));
+  const getSelectedPleaCount = (form: HearingDetailsFormState) =>
+    form.misconductTypes.filter((type) => Boolean(String(form.pleasByCharge[type] || "").trim())).length;
+  const isSingleEmployeeFlow = employeeForms.length <= 1;
+  const isHearingDetailsFormComplete = (form: HearingDetailsFormState) =>
+    Boolean(
+      form.noticeDate.trim() &&
+        form.hearingDate.trim() &&
+        form.hearingFormat.trim() &&
+        form.misconductTypes.length > 0 &&
+        form.employeeAttendance.trim() &&
+        form.hearingProcess.trim() &&
+        form.bargainingCouncil.trim() &&
+        form.representation.trim() &&
+        form.interpreter.trim() &&
+        form.appealNoticeDays.trim() &&
+        getSelectedPleaCount(form) === form.misconductTypes.length,
+    );
+  const selectedPleaCount = getSelectedPleaCount(hearingDetailsForm);
+  const isHearingDetailsStepValid = isSingleEmployeeFlow
+    ? isHearingDetailsFormComplete(hearingDetailsForm)
+    : employeeHearingDetailsForms.length === employeeForms.length && employeeHearingDetailsForms.every(isHearingDetailsFormComplete);
   const usesNoMitigatingFactorsMessage =
     hearingDetailsForm.employeeAttendance === "Absent" && hearingDetailsForm.hearingProcess === "Continued in absence";
+  const usesNoEmployeeEvidenceMessage =
+    isSingleEmployeeFlow &&
+    hearingDetailsForm.employeeAttendance === "Absent" &&
+    hearingDetailsForm.hearingProcess === "Continued in absence";
   const hasEditablePreviewText = (value: string) => {
     const trimmedValue = value.trim();
     return Boolean(trimmedValue) && trimmedValue !== editablePlaceholderText;
   };
+  const hasCompleteEmployeeStatements = (() => {
+    if (employeeForms.length <= 1) return hasEditablePreviewText(previewForm.employeeStatement);
+    const presentEmployeeCount = employeeHearingDetailsForms.filter((form) => form.employeeAttendance === "Present").length;
+    const statementGroups = parseEmployeeStatementOverrides(previewForm.employeeStatementsByEmployee);
+    return (
+      presentEmployeeCount > 0 &&
+      statementGroups.length >= presentEmployeeCount &&
+      statementGroups.slice(0, presentEmployeeCount).every((group) => hasEditablePreviewText(group))
+    );
+  })();
   const isPreviewDownloadReady =
-    hasEditablePreviewText(previewForm.employeeStatement) &&
+    hasCompleteEmployeeStatements &&
     hasEditablePreviewText(previewForm.employerStatement) &&
     hasEditablePreviewText(previewForm.employerEvidence) &&
-    hasEditablePreviewText(previewForm.employeeEvidence) &&
+    (usesNoEmployeeEvidenceMessage || hasEditablePreviewText(previewForm.employeeEvidence)) &&
     hasEditablePreviewText(previewForm.analysisFinding) &&
     hasEditablePreviewText(previewForm.aggravatingFactors) &&
     (usesNoMitigatingFactorsMessage || hasEditablePreviewText(previewForm.mitigatingFactors)) &&
@@ -700,27 +872,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
   useEffect(() => {
     onStepMetaChange?.({
       steps,
-      activeStep: isFinished ? 3 : activeStep,
+      activeStep: isFinished ? 2 : activeStep,
       icons: stepIcons,
       canGoBack: isFinished || activeStep > 0,
       canGoNext:
         isFinished
           ? isPreviewDownloadReady
           : activeStep === 0
-            ? isClientStepValid
+            ? isPartiesStepValid
             : activeStep === 1
-              ? isEmployeeStepValid
-              : activeStep === 2
-                ? isHearingDetailsStepValid
-                : false,
+              ? isHearingDetailsStepValid
+              : false,
       supportsPreviewEditToggle: true,
       isPreviewEditable,
       canSelectStep: (index) => {
-        if (index < 0 || index > 3) return false;
+        if (index < 0 || index > 2) return false;
         if (isFinished) return true;
         if (activeStep === 0) return index === 0;
         if (activeStep === 1) return index <= 1;
-        if (activeStep === 2) return index <= 2;
         return false;
       },
       onBack: () => {
@@ -737,30 +906,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
           return;
         }
         if (activeStep === 0) {
-          if (!isClientStepValid) return;
+          if (!isPartiesStepValid) return;
           setActiveStep(1);
           return;
         }
-        if (activeStep === 1) {
-          if (!isEmployeeStepValid) return;
-          setActiveStep(2);
-          return;
-        }
-        if (activeStep === 2 && isHearingDetailsStepValid) {
+        if (activeStep === 1 && isHearingDetailsStepValid) {
           setIsFinished(true);
           setIsPreviewEditable(false);
         }
       },
       onStepSelect: (index) => {
-        if (index < 0 || index > 3) return;
+        if (index < 0 || index > 2) return;
         if (isFinished) {
           setIsFinished(false);
           setIsPreviewEditable(false);
         }
         if (!isFinished && activeStep === 0 && index !== 0) return;
         if (!isFinished && activeStep === 1 && index > 1) return;
-        if (!isFinished && activeStep === 2 && index > 2) return;
-        setActiveStep(Math.max(0, Math.min(index, 2)));
+        setActiveStep(Math.max(0, Math.min(index, 1)));
       },
       onClear: () => {
         if (isFinished) {
@@ -769,26 +932,31 @@ const DisciplinaryHearingOutcomeGenerator = ({
         }
         if (activeStep === 0) {
           setClientForm(emptyClientFormState);
+          setEmployeeForms([emptyEmployeeFormState]);
+          setEmployeeHearingDetailsForms([createEmptyHearingDetailsFormState()]);
+          setCollapsedEmployeeHearingSectionIndexes([]);
           setClientSearchOpen(false);
           return;
         }
         if (activeStep === 1) {
-          setEmployeeForm(emptyEmployeeFormState);
-          return;
-        }
-        if (activeStep === 2) {
           setHearingDetailsForm(emptyHearingDetailsFormState);
+          setEmployeeHearingDetailsForms(employeeForms.map((_, index) => (index === 0 ? emptyHearingDetailsFormState : createEmptyHearingDetailsFormState())));
+          setCollapsedEmployeeHearingSectionIndexes([]);
           setHasRecommendationSection(false);
           setChargePickerOpen(false);
+          setActiveEmployeeChargePickerIndex(null);
           setBargainingCouncilPickerOpen(false);
+          setActiveEmployeeBargainingCouncilPickerIndex(null);
           setBargainingCouncilSearchValue("");
+          setEmployeeBargainingCouncilSearchValues({});
           return;
         }
       },
       supportsResetAtFirstStep: Boolean(clientForm.clientId.trim()),
+      temporaryEmployeeCount: employeeForms.length,
       isFinished,
     });
-  }, [activeStep, clientForm.clientId, isClientStepValid, isEmployeeStepValid, isFinished, isHearingDetailsStepValid, isPreviewDownloadReady, isPreviewEditable, onStepMetaChange]);
+  }, [activeStep, clientForm.clientId, employeeForms.length, isPartiesStepValid, isFinished, isHearingDetailsStepValid, isPreviewDownloadReady, isPreviewEditable, onStepMetaChange]);
 
   const selectedClientLabel = clientForm.clientId ? clientForm.clientName : "Select client";
   const filteredBargainingCouncilOptions = useMemo(() => {
@@ -824,11 +992,18 @@ const DisciplinaryHearingOutcomeGenerator = ({
     const selectedClient = clientRows.find((row) => row.id === clientId);
     if (!selectedClient) return;
     setClientForm(mapClientToFormState(selectedClient));
-    setEmployeeForm(emptyEmployeeFormState);
+    setEmployeeForms([emptyEmployeeFormState]);
     setHearingDetailsForm({
       ...emptyHearingDetailsFormState,
       bargainingCouncil: normalizeClientBargainingCouncil(selectedClient.bargaining_council),
     });
+    setEmployeeHearingDetailsForms([
+      {
+        ...emptyHearingDetailsFormState,
+        bargainingCouncil: normalizeClientBargainingCouncil(selectedClient.bargaining_council),
+      },
+    ]);
+    setCollapsedEmployeeHearingSectionIndexes([]);
     setPreviewForm(emptyPreviewFormState);
     setActiveStep(0);
     setIsFinished(false);
@@ -838,11 +1013,35 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setClientSearchOpen(false);
   };
 
-  const handleEmployeeFieldChange = (field: keyof EmployeeFormState, value: string) => {
-    setEmployeeForm((current) => ({
+  const handleEmployeeFieldChange = (index: number, field: keyof EmployeeFormState, value: string) => {
+    setEmployeeForms((current) =>
+      current.map((employee, employeeIndex) =>
+        employeeIndex === index
+          ? {
+              ...employee,
+              [field]: value,
+            }
+          : employee,
+      ),
+    );
+  };
+
+  const handleAddEmployee = () => {
+    setEmployeeForms((current) => [...current, emptyEmployeeFormState]);
+    setEmployeeHearingDetailsForms((current) => [
       ...current,
-      [field]: field === "employeeIdOrPassportNumber" ? value.slice(0, employeeIdOrPassportMaxLength) : value,
-    }));
+      createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil),
+    ]);
+  };
+
+  const handleRemoveEmployee = (index: number) => {
+    setEmployeeForms((current) => (current.length <= 1 ? current : current.filter((_, employeeIndex) => employeeIndex !== index)));
+    setEmployeeHearingDetailsForms((current) => (current.length <= 1 ? current : current.filter((_, employeeIndex) => employeeIndex !== index)));
+    setCollapsedEmployeeHearingSectionIndexes((current) =>
+      current
+        .filter((employeeIndex) => employeeIndex !== index)
+        .map((employeeIndex) => (employeeIndex > index ? employeeIndex - 1 : employeeIndex)),
+    );
   };
 
   const handleHearingDetailsFieldChange = <T extends keyof HearingDetailsFormState>(
@@ -853,21 +1052,94 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ...current,
       [field]: value,
     }));
+    setEmployeeHearingDetailsForms((current) => {
+      if (current.length === 0) {
+        return [
+          {
+            ...createEmptyHearingDetailsFormState(),
+            [field]: value,
+          },
+        ];
+      }
+      return current.map((form, index) =>
+        index === 0
+          ? {
+              ...form,
+              [field]: value,
+            }
+          : form,
+      );
+    });
+  };
+
+  const handleEmployeeHearingDetailsFieldChange = <T extends keyof HearingDetailsFormState>(
+    employeeIndex: number,
+    field: T,
+    value: HearingDetailsFormState[T],
+  ) => {
+    setEmployeeHearingDetailsForms((current) =>
+      current.map((form, index) =>
+        index === employeeIndex
+          ? {
+              ...form,
+              [field]: value,
+            }
+          : form,
+      ),
+    );
+    if (employeeIndex === 0) {
+      setHearingDetailsForm((current) => ({
+        ...current,
+        [field]: value,
+      }));
+    }
   };
 
   const handleEmployeeAttendanceChange = (value: EmployeeAttendance) => {
+    let nextPrimaryForm: HearingDetailsFormState | null = null;
     setHearingDetailsForm((current) => {
       const visibleOptions: readonly HearingProcess[] =
         value === "Present"
           ? hearingProcessOptions.filter((option) => option !== "Continued in absence")
           : hearingProcessOptions.filter((option) => option !== "Continued");
       const defaultProcess = value === "Present" ? "Continued" : "Continued in absence";
-      return {
+      nextPrimaryForm = {
         ...current,
         employeeAttendance: value,
         hearingProcess: visibleOptions.includes(current.hearingProcess as HearingProcess) ? current.hearingProcess : defaultProcess,
       };
+      return nextPrimaryForm;
     });
+    setEmployeeHearingDetailsForms((current) => {
+      const nextForm = nextPrimaryForm ?? {
+        ...createEmptyHearingDetailsFormState(),
+        employeeAttendance: value,
+        hearingProcess: value === "Present" ? "Continued" : "Continued in absence",
+      };
+      if (current.length === 0) return [nextForm];
+      return current.map((form, index) => (index === 0 ? nextForm : form));
+    });
+  };
+
+  const handleEmployeeSectionAttendanceChange = (employeeIndex: number, value: EmployeeAttendance) => {
+    setEmployeeHearingDetailsForms((current) =>
+      current.map((form, index) => {
+        if (index !== employeeIndex) return form;
+        const visibleOptions: readonly HearingProcess[] =
+          value === "Present"
+            ? hearingProcessOptions.filter((option) => option !== "Continued in absence")
+            : hearingProcessOptions.filter((option) => option !== "Continued");
+        const defaultProcess = value === "Present" ? "Continued" : "Continued in absence";
+        return {
+          ...form,
+          employeeAttendance: value,
+          hearingProcess: visibleOptions.includes(form.hearingProcess as HearingProcess) ? form.hearingProcess : defaultProcess,
+        };
+      }),
+    );
+    if (employeeIndex === 0) {
+      handleEmployeeAttendanceChange(value);
+    }
   };
 
   const handlePleaChange = (charge: string, plea: PleaOption) => {
@@ -878,12 +1150,55 @@ const DisciplinaryHearingOutcomeGenerator = ({
         [charge]: plea,
       },
     }));
+    setEmployeeHearingDetailsForms((current) => {
+      if (current.length === 0) {
+        return [
+          {
+            ...createEmptyHearingDetailsFormState(),
+            pleasByCharge: {
+              [charge]: plea,
+            },
+          },
+        ];
+      }
+      return current.map((form, index) =>
+        index === 0
+          ? {
+              ...form,
+              pleasByCharge: {
+                ...form.pleasByCharge,
+                [charge]: plea,
+              },
+            }
+          : form,
+      );
+    });
+  };
+
+  const handleEmployeePleaChange = (employeeIndex: number, charge: string, plea: PleaOption) => {
+    setEmployeeHearingDetailsForms((current) =>
+      current.map((form, index) =>
+        index === employeeIndex
+          ? {
+              ...form,
+              pleasByCharge: {
+                ...form.pleasByCharge,
+                [charge]: plea,
+              },
+            }
+          : form,
+      ),
+    );
+    if (employeeIndex === 0) {
+      handlePleaChange(charge, plea);
+    }
   };
 
   const closeParagraphEditor = () => {
     setEditingParagraphId(null);
     setEditingParagraphLabel("");
     setEditingParagraphDraft("");
+    setEditingEmployeeStatementGroupIndex(null);
   };
 
   const openAddRecommendationForm = () => {
@@ -934,14 +1249,35 @@ const DisciplinaryHearingOutcomeGenerator = ({
       return;
     }
     if (editingParagraphId === "preliminarySection") {
+      const rawLines = String(editingParagraphDraft || "").split(/\r?\n/);
       const lines = splitEditorDraftLines(editingParagraphDraft);
+      const preliminaryNumbers = getPreliminarySectionEditorNumbers(rawLines);
+      const chargeMainParagraphCount = isSingleEmployeeFlow ? 1 : employeeHearingSummaryRows.length;
+      const mainParagraphIndexes = preliminaryNumbers
+        .map((number, index) => ({ number, index }))
+        .filter((entry) => entry.index >= 3 && /^\d+\.$/.test(entry.number))
+        .map((entry) => entry.index);
+      const extraParagraphStartIndex = mainParagraphIndexes[chargeMainParagraphCount] ?? lines.length;
+      const chargeMainParagraphIndexes = mainParagraphIndexes.slice(0, chargeMainParagraphCount);
+      const chargePleaLines = preliminaryNumbers
+        .map((number, index) => ({ number, index }))
+        .filter((entry) => entry.index >= 3 && entry.index < extraParagraphStartIndex && /^\d+\.\d+$/.test(entry.number))
+        .map((entry) => lines[entry.index] || "");
       setPreviewForm((current) => ({
         ...current,
         preliminaryOne: (lines[0] || "").trim(),
         preliminaryTwo: (lines[1] || "").trim(),
         preliminaryThree: (lines[2] || "").trim(),
         preliminaryFour: (lines[3] || "").trim(),
-        preliminaryExtra: lines.slice(4).map((line) => line.trim()).filter(Boolean).join("\n"),
+        preliminaryPleaOverrides: isSingleEmployeeFlow ? chargePleaLines.map((line) => line.trim()).filter(Boolean).join("\n") : current.preliminaryPleaOverrides,
+        preliminaryChargeParagraphOverrides: !isSingleEmployeeFlow
+          ? chargeMainParagraphIndexes.map((index) => (lines[index] || "").trim()).filter(Boolean).join("\n")
+          : current.preliminaryChargeParagraphOverrides,
+        preliminaryChargePleaOverrides: !isSingleEmployeeFlow
+          ? chargePleaLines.map((line) => line.trim()).filter(Boolean).join("\n")
+          : current.preliminaryChargePleaOverrides,
+        preliminaryProcess: (lines[extraParagraphStartIndex] || "").trim(),
+        preliminaryExtra: lines.slice(extraParagraphStartIndex + 1).map((line) => line.trim()).filter(Boolean).join("\n"),
       }));
       closeParagraphEditor();
       return;
@@ -952,6 +1288,36 @@ const DisciplinaryHearingOutcomeGenerator = ({
         ...current,
         issueInDispute: lines.map((line) => line.trim()).filter(Boolean).join("\n"),
       }));
+      closeParagraphEditor();
+      return;
+    }
+    if (editingParagraphId === "employeeStatementGroup") {
+      const rawLines = String(editingParagraphDraft || "").split(/\r?\n/);
+      const lines = splitEditorDraftLines(editingParagraphDraft);
+      const groupLines = rawLines
+        .map((rawLine, index) => {
+          const numberMatch = String(rawLine || "").trim().match(/^(\d+(?:\.\d+)?)\.?/);
+          const number = numberMatch?.[1] || "";
+          if (/^\d+\.\d+$/.test(number)) return (lines[index] || "").trim();
+          return "";
+        })
+        .filter(Boolean);
+      if (isSingleEmployeeFlow) {
+        setPreviewForm((current) => ({
+          ...current,
+          employeeStatement: groupLines.join("\n"),
+        }));
+      } else {
+        const statementGroups = parseEmployeeStatementOverrides(previewForm.employeeStatementsByEmployee);
+        const targetIndex = editingEmployeeStatementGroupIndex ?? 0;
+        const nextGroups = Array.from({ length: Math.max(statementGroups.length, presentEmployeeStatementRows.length) }).map(
+          (_, index) => (index === targetIndex ? groupLines.join("\n") : statementGroups[index] || ""),
+        );
+        setPreviewForm((current) => ({
+          ...current,
+          employeeStatementsByEmployee: JSON.stringify(nextGroups),
+        }));
+      }
       closeParagraphEditor();
       return;
     }
@@ -991,6 +1357,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const currentLine = lines[lineIndex] || "";
       const currentContent = stripParagraphNumberPrefix(currentLine);
       if (!currentContent && lineIndex > 0) {
+        if (editingParagraphId === "employeeStatementGroup" && lineIndex === 1) {
+          event.preventDefault();
+          return;
+        }
         event.preventDefault();
         const nextLines = lines.filter((_, index) => index !== lineIndex);
         const renumbered = renumberEditorDraft(editingParagraphId, nextLines);
@@ -1035,6 +1405,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
   };
 
   const handleToggleCharge = (charge: string) => {
+    let nextPrimaryForm: HearingDetailsFormState | null = null;
     setHearingDetailsForm((current) => {
       const isSelected = current.misconductTypes.includes(charge);
       const nextMisconductTypes = isSelected
@@ -1046,12 +1417,52 @@ const DisciplinaryHearingOutcomeGenerator = ({
       } else if (!nextPleasByCharge[charge]) {
         nextPleasByCharge[charge] = "";
       }
-      return {
+      nextPrimaryForm = {
         ...current,
         misconductTypes: nextMisconductTypes,
         pleasByCharge: nextPleasByCharge,
       };
+      return nextPrimaryForm;
     });
+    setEmployeeHearingDetailsForms((current) => {
+      const nextForm = nextPrimaryForm ?? createEmptyHearingDetailsFormState();
+      if (current.length === 0) return [nextForm];
+      return current.map((form, index) => (index === 0 ? nextForm : form));
+    });
+  };
+
+  const handleEmployeeToggleCharge = (employeeIndex: number, charge: string) => {
+    setEmployeeHearingDetailsForms((current) =>
+      current.map((form, index) => {
+        if (index !== employeeIndex) return form;
+        const isSelected = form.misconductTypes.includes(charge);
+        const nextMisconductTypes = isSelected
+          ? form.misconductTypes.filter((item) => item !== charge)
+          : [...form.misconductTypes, charge];
+        const nextPleasByCharge = { ...form.pleasByCharge };
+        if (isSelected) {
+          delete nextPleasByCharge[charge];
+        } else if (!nextPleasByCharge[charge]) {
+          nextPleasByCharge[charge] = "";
+        }
+        return {
+          ...form,
+          misconductTypes: nextMisconductTypes,
+          pleasByCharge: nextPleasByCharge,
+        };
+      }),
+    );
+    if (employeeIndex === 0) {
+      handleToggleCharge(charge);
+    }
+  };
+
+  const toggleEmployeeHearingSection = (employeeIndex: number) => {
+    setCollapsedEmployeeHearingSectionIndexes((current) =>
+      current.includes(employeeIndex)
+        ? current.filter((index) => index !== employeeIndex)
+        : [...current, employeeIndex],
+    );
   };
 
   const selectedChargeLabel =
@@ -1061,59 +1472,278 @@ const DisciplinaryHearingOutcomeGenerator = ({
         ? hearingDetailsForm.misconductTypes[0]
         : `${hearingDetailsForm.misconductTypes.length} misconduct type(s) selected`;
   const misconductListLabel = joinWithAnd(hearingDetailsForm.misconductTypes);
+  const preliminaryPleaOverrideLines = normalizeParagraphText(previewForm.preliminaryPleaOverrides);
   const clientLocationHeading = [clientForm.clientCity, clientForm.clientProvince]
     .filter(Boolean)
     .join(", ")
     .toUpperCase() || "CITY, PROVINCE";
   const clientMatterName = (clientForm.clientName || "EMPLOYER NAME").toUpperCase();
-  const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim() || "______________________________";
-  const employeeMatterName =
-    [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim().toUpperCase() || "EMPLOYEE NAME";
-  const employeeStatementValue = previewForm.employeeStatement.trim() || editablePlaceholderText;
+  const normalizedEmployees = employeeForms.length > 0 ? employeeForms : [emptyEmployeeFormState];
+  const employeeFullNames = normalizedEmployees.map((employee) => {
+    const fullName = [employee.employeeName, employee.employeeSurname].filter(Boolean).join(" ").trim();
+    return fullName || "______________________________";
+  });
+  const employeeMatterNames = employeeFullNames.map((name) => name.toUpperCase() || "EMPLOYEE NAME");
+  const ordinalEmployeeLabels = ["First Employee", "Second Employee", "Third Employee", "Fourth Employee", "Fifth Employee", "Sixth Employee"];
+  const employeeRoleLabels = employeeMatterNames.map((_, index) =>
+    employeeMatterNames.length > 1 ? ordinalEmployeeLabels[index] || `Employee ${index + 1}` : "Employee",
+  );
   const employerStatementValue = previewForm.employerStatement.trim() || editablePlaceholderText;
   const employerEvidenceValue = previewForm.employerEvidence.trim() || editablePlaceholderText;
   const employeeEvidenceValue = previewForm.employeeEvidence.trim() || editablePlaceholderText;
+  const preliminaryChargeParagraphOverrideLines = normalizeParagraphText(previewForm.preliminaryChargeParagraphOverrides);
+  const preliminaryChargePleaOverrideLines = normalizeParagraphText(previewForm.preliminaryChargePleaOverrides);
   const selectedMisconductCount = hearingDetailsForm.misconductTypes.length;
-  const representationSentence =
-    hearingDetailsForm.representation === "Conduct own defense"
-      ? " and represented him/her self."
-      : hearingDetailsForm.representation
-        ? ` and was represented by ${withIndefiniteArticle(hearingDetailsForm.representation)}.`
-        : ".";
-  const hearingProcessLower = toSentenceCaseLower(hearingDetailsForm.hearingProcess);
-  const employeeAttendanceSentence =
-    hearingDetailsForm.employeeAttendance === "Absent"
-      ? hearingDetailsForm.hearingProcess === "Continued in absence"
-        ? "The employee was absent at the hearing and the hearing continued in his/her absence."
-        : hearingProcessLower
-          ? `The employee was absent at the hearing and the hearing was ${hearingProcessLower}.`
-          : "The employee was absent at the hearing."
-      : `The employee was ${String(hearingDetailsForm.employeeAttendance || "______________________________").toLowerCase()} at the hearing${representationSentence}`;
+  const employeeHearingSummaryRows = normalizedEmployees.map((employee, index) => ({
+    fullName: employeeRoleLabels[index] || `Employee ${index + 1}`,
+    referenceLabel: `The ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
+    inlineReferenceLabel: `the ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
+    hearingDetails: isSingleEmployeeFlow ? hearingDetailsForm : (employeeHearingDetailsForms[index] || createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil)),
+  }));
+  const presentEmployeeStatementRows = employeeHearingSummaryRows.filter((row) => row.hearingDetails.employeeAttendance === "Present");
+  const employeeStatementOverrideGroups = parseEmployeeStatementOverrides(previewForm.employeeStatementsByEmployee);
+  const employeeStatementGroups = isSingleEmployeeFlow
+    ? [normalizeParagraphText(previewForm.employeeStatement.trim() || editablePlaceholderText)]
+    : presentEmployeeStatementRows.map((_, index) =>
+        normalizeParagraphText(employeeStatementOverrideGroups[index] || editablePlaceholderText),
+      );
+  const employeeStatementValue = previewForm.employeeStatement.trim() || editablePlaceholderText;
+  const getRepresentationSentencePart = (representation: RepresentationOption | "") => {
+    if (representation === "Conduct own defense") return "elected to conduct own defence.";
+    if (representation) return `elected to be represented by ${withIndefiniteArticle(representation)}.`;
+    return "";
+  };
+  const employeeAttendanceSentence = (() => {
+    if (employeeHearingSummaryRows.length <= 1) {
+      const activeHearingDetails = employeeHearingSummaryRows[0]?.hearingDetails || hearingDetailsForm;
+      const representationSentence =
+        activeHearingDetails.representation === "Conduct own defense"
+          ? " and represented him/her self."
+          : activeHearingDetails.representation
+            ? ` and was represented by ${withIndefiniteArticle(activeHearingDetails.representation)}.`
+            : ".";
+      const hearingProcessLower = toSentenceCaseLower(activeHearingDetails.hearingProcess);
+      return activeHearingDetails.employeeAttendance === "Absent"
+        ? activeHearingDetails.hearingProcess === "Continued in absence"
+          ? "The employee was absent at the hearing and the hearing continued in his/her absence."
+          : hearingProcessLower
+            ? `The employee was absent at the hearing and the hearing was ${hearingProcessLower}.`
+            : "The employee was absent at the hearing."
+        : `The employee was ${String(activeHearingDetails.employeeAttendance || "______________________________").toLowerCase()} at the hearing${representationSentence}`;
+    }
+
+    const presentEmployees = employeeHearingSummaryRows.filter((row) => row.hearingDetails.employeeAttendance === "Present");
+    const absentEmployees = employeeHearingSummaryRows.filter((row) => row.hearingDetails.employeeAttendance === "Absent");
+    const allPresent = presentEmployees.length === employeeHearingSummaryRows.length;
+    const allPresentRepresentations = Array.from(new Set(presentEmployees.map((row) => row.hearingDetails.representation).filter(Boolean)));
+
+    if (allPresent) {
+      if (allPresentRepresentations.length === 1 && allPresentRepresentations[0] === "Conduct own defense") {
+        return "The employees were present at the hearing and represented themselves.";
+      }
+      if (allPresentRepresentations.length === 1 && allPresentRepresentations[0]) {
+        return `The employees were present at the hearing and were represented by ${withIndefiniteArticle(allPresentRepresentations[0])}.`;
+      }
+      const representationSentences = presentEmployees
+        .map((row) => {
+          const representationPart = getRepresentationSentencePart(row.hearingDetails.representation);
+          return representationPart ? `${row.referenceLabel} ${representationPart}` : "";
+        })
+        .filter(Boolean)
+        .join(" ");
+      return `The employees were present at the hearing.${representationSentences ? ` ${representationSentences}` : ""}`;
+    }
+
+    const attendanceSentenceParts: string[] = [];
+    if (presentEmployees.length > 0) {
+      attendanceSentenceParts.push(
+        `${joinEmployeeReferences(
+          presentEmployees.map((row, index) => (index === 0 ? row.referenceLabel : row.inlineReferenceLabel)),
+        )} ${presentEmployees.length > 1 ? "were" : "was"} present at the hearing`,
+      );
+    }
+    if (absentEmployees.length > 0) {
+      attendanceSentenceParts.push(
+        `${joinEmployeeReferences(
+          absentEmployees.map((row, index) =>
+            presentEmployees.length === 0 && index === 0 ? row.referenceLabel : row.inlineReferenceLabel,
+          ),
+        )} ${absentEmployees.length > 1 ? "were" : "was"} absent`,
+      );
+    }
+    const attendanceSentence = `${joinSentenceParts(attendanceSentenceParts)}.`;
+    const representationSentences = presentEmployees
+      .map((row) => {
+        const representationPart = getRepresentationSentencePart(row.hearingDetails.representation);
+        return representationPart ? `${row.referenceLabel} ${representationPart}` : "";
+      })
+      .filter(Boolean)
+      .join(" ");
+    return `${attendanceSentence}${representationSentences ? ` ${representationSentences}` : ""}`;
+  })();
   const preliminaryOneValue =
     previewForm.preliminaryOne.trim() ||
     `The disciplinary hearing was held on ${formatDateLabel(hearingDetailsForm.hearingDate) || "______________________________"}.`;
   const preliminaryTwoValue = previewForm.preliminaryTwo.trim() || employeeAttendanceSentence;
   const preliminaryThreeValue =
     previewForm.preliminaryThree.trim() ||
-    `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}.`;
-  const singleChargePlea = hearingDetailsForm.misconductTypes.length === 1
-    ? toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[hearingDetailsForm.misconductTypes[0]] || "").trim())
-    : "";
-  const preliminaryFourValue =
-    previewForm.preliminaryFour.trim() ||
-    (selectedMisconductCount === 1 && singleChargePlea
-      ? `The employee was charged with ${misconductListLabel} and pleaded ${singleChargePlea}.`
-      : selectedMisconductCount > 0
-        ? `The employee was charged with ${misconductListLabel}.`
-        : "The employee was charged with ______________________________.");
-  const pleaRows = hearingDetailsForm.misconductTypes.map((type, index) => {
-    const plea = toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[type] || "").trim());
-    const charge = toSentenceCaseLower(type);
-    return {
-      number: `4.${index + 1}`,
-      value: plea && charge ? `In respect of ${charge}, the employee pleaded ${plea}.` : "",
-    };
-  }).filter((row) => row.value);
+    (() => {
+      if (employeeHearingSummaryRows.length <= 1) {
+        return `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}.`;
+      }
+
+      const noticeDateGroups = employeeHearingSummaryRows.reduce<Array<{ noticeDate: string; names: string[] }>>((groups, row, rowIndex) => {
+        const noticeDate = row.hearingDetails.noticeDate || "";
+        const existingGroup = groups.find((group) => group.noticeDate === noticeDate);
+        if (existingGroup) {
+          existingGroup.names.push(existingGroup.names.length === 0 && groups.indexOf(existingGroup) === 0 ? row.referenceLabel : row.inlineReferenceLabel);
+          return groups;
+        }
+        groups.push({ noticeDate, names: [rowIndex === 0 ? row.referenceLabel : row.inlineReferenceLabel] });
+        return groups;
+      }, []);
+
+      if (noticeDateGroups.length === 1) {
+        return `The employees received the notice to attend on ${formatDateLabel(noticeDateGroups[0].noticeDate) || "______________________________"}.`;
+      }
+
+      return `${joinSentenceParts(
+        noticeDateGroups.map((group) => {
+          const groupedNames = joinSentenceParts(group.names);
+          const verb = group.names.length > 1 ? "received" : "received";
+          return `${groupedNames} ${verb} the notice to attend on ${formatDateLabel(group.noticeDate) || "______________________________"}`;
+        }),
+      )}.`;
+    })();
+  const preliminaryChargeRows = (() => {
+    if (isSingleEmployeeFlow) {
+      const singleChargePlea = hearingDetailsForm.misconductTypes.length === 1
+        ? toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[hearingDetailsForm.misconductTypes[0]] || "").trim())
+        : "";
+      const preliminaryFourValue =
+        previewForm.preliminaryFour.trim() ||
+        (selectedMisconductCount === 1 && singleChargePlea
+          ? `The employee was charged with ${misconductListLabel} and pleaded ${singleChargePlea}.`
+          : selectedMisconductCount > 0
+            ? `The employee was charged with ${misconductListLabel}.`
+            : "The employee was charged with ______________________________.");
+      const defaultPleaRowValues = hearingDetailsForm.misconductTypes
+        .map((type) => {
+          const plea = toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[type] || "").trim());
+          const charge = toSentenceCaseLower(type);
+          return plea && charge
+            ? plea === "no plea"
+              ? `In respect of ${charge}, the employee entered no plea.`
+              : `In respect of ${charge}, the employee pleaded ${plea}.`
+            : "";
+        })
+        .filter(Boolean);
+      const pleaRowValues = Array.from({
+        length: Math.max(defaultPleaRowValues.length, preliminaryPleaOverrideLines.length),
+      })
+        .map((_, index) => preliminaryPleaOverrideLines[index] || defaultPleaRowValues[index] || "")
+        .filter(Boolean);
+      return [
+        {
+          number: "4.",
+          value: preliminaryFourValue,
+          subRows: pleaRowValues.map((value, index) => ({
+            number: `4.${index + 1}`,
+            value,
+          })),
+        },
+      ];
+    }
+
+    let chargePleaOverrideCursor = 0;
+    return employeeHearingSummaryRows.map((row, employeeIndex) => {
+      const employeeCharges = row.hearingDetails.misconductTypes;
+      const employeeChargeLabel = joinWithAnd(employeeCharges);
+      const singleChargePlea = employeeCharges.length === 1
+        ? toSentenceCaseLower(String(row.hearingDetails.pleasByCharge[employeeCharges[0]] || "").trim())
+        : "";
+      const mainValue =
+        preliminaryChargeParagraphOverrideLines[employeeIndex] ||
+        (employeeCharges.length === 1 && singleChargePlea
+          ? `${row.referenceLabel} was charged with ${employeeChargeLabel} and pleaded ${singleChargePlea}.`
+          : employeeCharges.length > 0
+            ? `${row.referenceLabel} was charged with ${employeeChargeLabel}.`
+            : `${row.referenceLabel} was charged with ______________________________.`);
+      const subRows =
+        employeeCharges.length > 1
+          ? employeeCharges
+              .map((type, chargeIndex) => {
+                const plea = toSentenceCaseLower(String(row.hearingDetails.pleasByCharge[type] || "").trim());
+                const charge = toSentenceCaseLower(type);
+                const overrideValue = preliminaryChargePleaOverrideLines[chargePleaOverrideCursor];
+                chargePleaOverrideCursor += 1;
+                return {
+                  number: `${4 + employeeIndex}.${chargeIndex + 1}`,
+                  value:
+                    overrideValue ||
+                    (plea && charge
+                      ? plea === "no plea"
+                        ? `In respect of ${charge}, ${row.inlineReferenceLabel} entered no plea.`
+                        : `In respect of ${charge}, ${row.inlineReferenceLabel} pleaded ${plea}.`
+                      : ""),
+                };
+              })
+              .filter((entry) => entry.value)
+          : [];
+      return {
+        number: `${4 + employeeIndex}.`,
+        value: mainValue,
+        subRows,
+      };
+    });
+  })();
+  const preliminaryProcessValue =
+    previewForm.preliminaryProcess.trim() ||
+    (() => {
+      const activeRows = employeeHearingSummaryRows.map((row) => ({
+        ...row,
+        process: row.hearingDetails.hearingProcess,
+      }));
+      const continuedRows = activeRows.filter((row) => row.process === "Continued");
+      const proceededInAbsenceRows = activeRows.filter((row) => row.process === "Continued in absence");
+      const postponedRows = activeRows.filter((row) => row.process === "Postponed");
+      const withdrawnRows = activeRows.filter((row) => row.process === "Withdrawn");
+
+      const sentences: string[] = [];
+      if (proceededInAbsenceRows.length > 0) {
+        sentences.push(
+          `There were no objections to the continuation of the hearing, and the hearing proceeded in the absence of ${joinEmployeeReferences(
+            proceededInAbsenceRows.map((row) => row.inlineReferenceLabel),
+          )}.`,
+        );
+      } else if (continuedRows.length > 0) {
+        sentences.push("There were no objections to the continuation of the hearing, and the hearing proceeded.");
+      } else {
+        sentences.push("There were no objections to the continuation of the hearing.");
+      }
+
+      if (postponedRows.length > 0) {
+        sentences.push(
+          postponedRows.length === 1
+            ? `A postponement was granted in respect of ${postponedRows[0].inlineReferenceLabel}.`
+            : `Postponements were granted in respect of ${joinEmployeeReferences(
+                postponedRows.map((row, index) => (index === 0 ? row.referenceLabel : row.inlineReferenceLabel)),
+              )}.`,
+        );
+      }
+
+      if (withdrawnRows.length > 0) {
+        sentences.push(
+          withdrawnRows.length === 1
+            ? `The disciplinary proceedings against ${withdrawnRows[0].inlineReferenceLabel} were withdrawn.`
+            : `The disciplinary proceedings against ${joinEmployeeReferences(
+                withdrawnRows.map((row, index) => (index === 0 ? row.referenceLabel : row.inlineReferenceLabel)),
+              )} were withdrawn.`,
+        );
+      }
+
+      return sentences.join(" ");
+    })();
   const preliminaryRows = [
     {
       number: "1.",
@@ -1133,15 +1763,21 @@ const DisciplinaryHearingOutcomeGenerator = ({
       field: "preliminaryThree",
       label: "Preliminary paragraph 3",
     },
+    ...preliminaryChargeRows.map((row, index) => ({
+      number: row.number,
+      value: row.value,
+      field: "preliminaryFour" as const,
+      label: `Preliminary paragraph ${4 + index}`,
+      subRows: row.subRows,
+    })),
     {
-      number: "4.",
-      value: preliminaryFourValue,
-      field: "preliminaryFour",
-      label: "Preliminary paragraph 4",
-      subRows: selectedMisconductCount > 1 ? pleaRows : [],
+      number: `${4 + preliminaryChargeRows.length}.`,
+      value: preliminaryProcessValue,
+      field: "preliminaryProcess" as const,
+      label: "Preliminary process paragraph",
     },
     ...normalizeParagraphText(previewForm.preliminaryExtra).map((paragraph, index) => ({
-      number: `${5 + index}.`,
+      number: `${5 + preliminaryChargeRows.length + index}.`,
       value: paragraph,
       field: "preliminaryExtra" as const,
       label: "Preliminary paragraph",
@@ -1149,7 +1785,12 @@ const DisciplinaryHearingOutcomeGenerator = ({
   ];
   const firstIssueNumber = preliminaryRows.length + 1;
   const issueInDisputeValue = previewForm.issueInDispute.trim() || defaultIssueInDisputeParagraph;
-  const analysisIntroValue = previewForm.analysisIntro.trim() || defaultAnalysisFindingParagraph;
+  const defaultAnalysisIntroParagraph = `${defaultAnalysisFindingParagraph} ${
+    employeeForms.length > 1
+      ? "The employees were afforded proper notice of the proceedings, an opportunity to state their case, and the matter was dealt with in a procedurally fair manner."
+      : "The employee was afforded proper notice of the proceedings, an opportunity to state his/her case, and the matter was dealt with in a procedurally fair manner."
+  }`;
+  const analysisIntroValue = previewForm.analysisIntro.trim() || defaultAnalysisIntroParagraph;
   const analysisFindingValue = previewForm.analysisFinding.trim() || editablePlaceholderText;
   const aggravatingFactorsValue = previewForm.aggravatingFactors.trim() || editablePlaceholderText;
   const mitigatingFactorsValue = previewForm.mitigatingFactors.trim() || editablePlaceholderText;
@@ -1163,25 +1804,36 @@ const DisciplinaryHearingOutcomeGenerator = ({
   }));
   const employerEvidenceParagraphs = normalizeParagraphText(employerEvidenceValue);
   const employeeEvidenceParagraphs = normalizeParagraphText(employeeEvidenceValue);
+  const employeeEvidenceHeadingText = usesNoEmployeeEvidenceMessage
+    ? "The employee submitted no evidence."
+    : employeeForms.length > 1
+      ? "The employees submitted the following evidence:"
+      : "The employee submitted the following evidence:";
+  const analysisFindingsHeadingValue = defaultAnalysisFindingsHeadingParagraph;
   const analysisParagraphs = normalizeParagraphText(analysisFindingValue);
   const aggravatingParagraphs = normalizeParagraphText(aggravatingFactorsValue);
   const mitigatingParagraphs = normalizeParagraphText(mitigatingFactorsValue);
   const recommendationParagraphs = normalizeParagraphText(recommendationValue);
   const employeeStatementNumber = firstIssueNumber + issueParagraphs.length;
-  const employerStatementNumber = employeeStatementNumber + 1;
+  const employeeStatementMainParagraphCount = isSingleEmployeeFlow ? 1 : presentEmployeeStatementRows.length;
+  const employerStatementNumber = employeeStatementNumber + employeeStatementMainParagraphCount;
   const employerEvidenceNumber = employerStatementNumber + 1;
   const employeeEvidenceNumber = employerEvidenceNumber + 1;
   const analysisIntroNumber = employeeEvidenceNumber + 1;
-  const analysisFindingStartNumber = analysisIntroNumber + 1;
-  const aggravatingHeadingNumber = analysisFindingStartNumber + analysisParagraphs.length;
+  const analysisFindingHeadingNumber = analysisIntroNumber + 1;
+  const aggravatingHeadingNumber = analysisFindingHeadingNumber + 1;
   const mitigatingHeadingNumber = aggravatingHeadingNumber + 1;
   const recommendationHeadingNumber = mitigatingHeadingNumber + 1;
   const recourseHeadingNumber = hasRecommendationSection
     ? recommendationHeadingNumber + recommendationParagraphs.length
     : mitigatingHeadingNumber + 1;
   const disputeForumText = getOutcomeDisputeForumText(hearingDetailsForm.bargainingCouncil);
+  const appealNoticeDaysLabel = hearingDetailsForm.appealNoticeDays || "5";
+  const appealNoticeDaysWord = appealNoticeWordByValue[appealNoticeDaysLabel] || "FIVE";
   const recourseParagraph =
-    `If the employer chooses to dismiss the employee, he/she must be notified that he/she may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within 3 (THREE) days of dismissal.`;
+    employeeForms.length > 1
+      ? `If the employer chooses to dismiss any of the employees, they must be notified that they may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`
+      : `If the employer chooses to dismiss the employee, he/she must be notified that he/she may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`;
   const recourseParagraphNumber = `${recourseHeadingNumber}.`;
 
   async function handleDownloadPdf() {
@@ -1300,7 +1952,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     const writeNumberedParagraph = (number: string, text: string, options?: { nested?: boolean; gapAfter?: number }) => {
       const numberWidth = options?.nested ? nestedNumberColumnWidth : numberColumnWidth;
-      const leftOffset = numberWidth + 4;
+      const leftOffset = numberColumnWidth + 4;
       const lines = textLines(text, usableWidth - leftOffset);
       const blockHeight = lines.length * paragraphLineHeight + (options?.gapAfter ?? paragraphGap);
       keepRoom(blockHeight);
@@ -1336,7 +1988,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
     writeMatterRow(clientMatterName, "EMPLOYER", true);
     cursorY += 2.6;
     writePlainParagraph("and", { gapAfter: 4 });
-    writeMatterRow(employeeMatterName, "EMPLOYEE", true);
+    employeeMatterNames.forEach((employeeName, index) => {
+      writeMatterRow(employeeName, employeeRoleLabels[index].toUpperCase(), true);
+    });
     cursorY += 3;
 
     keepRoom(18);
@@ -1368,10 +2022,21 @@ const DisciplinaryHearingOutcomeGenerator = ({
     });
 
     writeDocumentSection("Background To The Issue", () => {
-      writeNumberedParagraph(`${employeeStatementNumber}.`, "The Employee's statement:");
-      normalizeParagraphText(employeeStatementValue).forEach((paragraph, index) => {
-        writeNumberedParagraph(`${employeeStatementNumber}.${index + 1}`, paragraph, { nested: true });
-      });
+      if (isSingleEmployeeFlow) {
+        writeNumberedParagraph(`${employeeStatementNumber}.`, "The Employee's statement:");
+        employeeStatementGroups[0].forEach((paragraph, index) => {
+          writeNumberedParagraph(`${employeeStatementNumber}.${index + 1}`, paragraph, { nested: true });
+        });
+      } else {
+        presentEmployeeStatementRows.forEach((row, rowIndex) => {
+          const mainNumber = employeeStatementNumber + rowIndex;
+          writeNumberedParagraph(`${mainNumber}.`, `${row.referenceLabel}'s statement:`);
+          (employeeStatementGroups[rowIndex] || [editablePlaceholderText]).forEach((paragraph, index) => {
+            writeNumberedParagraph(`${mainNumber}.${index + 1}`, paragraph, { nested: true });
+          });
+          cursorY += 1.2;
+        });
+      }
       cursorY += 1.2;
       writeNumberedParagraph(`${employerStatementNumber}.`, "The Employer's statement:");
       normalizeParagraphText(employerStatementValue).forEach((paragraph, index) => {
@@ -1385,16 +2050,19 @@ const DisciplinaryHearingOutcomeGenerator = ({
         writeNumberedParagraph(`${employerEvidenceNumber}.${index + 1}`, paragraph, { nested: true });
       });
       cursorY += 1.2;
-      writeNumberedParagraph(`${employeeEvidenceNumber}.`, "The employee submitted the following evidence:");
-      employeeEvidenceParagraphs.forEach((paragraph, index) => {
-        writeNumberedParagraph(`${employeeEvidenceNumber}.${index + 1}`, paragraph, { nested: true });
-      });
+      writeNumberedParagraph(`${employeeEvidenceNumber}.`, employeeEvidenceHeadingText);
+      if (!usesNoEmployeeEvidenceMessage) {
+        employeeEvidenceParagraphs.forEach((paragraph, index) => {
+          writeNumberedParagraph(`${employeeEvidenceNumber}.${index + 1}`, paragraph, { nested: true });
+        });
+      }
     });
 
     writeDocumentSection("Analysis Of Evidence And Finding", () => {
       writeNumberedParagraph(`${analysisIntroNumber}.`, analysisIntroValue);
+      writeNumberedParagraph(`${analysisFindingHeadingNumber}.`, analysisFindingsHeadingValue);
       analysisParagraphs.forEach((paragraph, index) => {
-        writeNumberedParagraph(`${analysisFindingStartNumber + index}.`, paragraph);
+        writeNumberedParagraph(`${analysisFindingHeadingNumber}.${index + 1}`, paragraph, { nested: true });
       });
     });
 
@@ -1426,8 +2094,23 @@ const DisciplinaryHearingOutcomeGenerator = ({
       writeNumberedParagraph(recourseParagraphNumber, recourseParagraph);
     });
 
-    keepRoom(24);
+    const chairpersonSignatureWidth = 23;
+    const chairpersonSignatureHeight = 31;
+    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 18 : 24);
     cursorY += 8;
+    if (chairpersonSignatureDataUrl) {
+      const chairpersonSignatureX = marginX + (58 - chairpersonSignatureWidth) / 2;
+      pdf.addImage(
+        chairpersonSignatureDataUrl,
+        "PNG",
+        chairpersonSignatureX,
+        cursorY - 16,
+        chairpersonSignatureWidth,
+        chairpersonSignatureHeight,
+        undefined,
+        "FAST",
+      );
+    }
     pdf.setDrawColor(0, 0, 0);
     pdf.line(marginX, cursorY, marginX + 58, cursorY);
     cursorY += 5.2;
@@ -1437,22 +2120,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     addPageNumbers();
 
+    const firstEmployee = normalizedEmployees[0] || emptyEmployeeFormState;
     const safeEmployeeName =
-      [employeeForm.employeeName, employeeForm.employeeSurname]
+      [firstEmployee.employeeName, firstEmployee.employeeSurname]
         .filter(Boolean)
         .join("_")
         .replace(/[^A-Za-z0-9_-]+/g, "_")
         .replace(/^_+|_+$/g, "") || "employee";
     const safeDate = hearingDetailsForm.hearingDate || new Date().toISOString().slice(0, 10);
     const documentLabel = "Disciplinary Hearing Outcome";
-    const employeeInitials = employeeForm.employeeName
+    const employeeInitials = firstEmployee.employeeName
       .trim()
       .split(/\s+/)
       .filter(Boolean)
       .map((part) => `${part.charAt(0).toUpperCase()}.`)
       .join("");
-    const employeeSurname = employeeForm.employeeSurname.trim();
-    const documentNameSuffix = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
+    const employeeSurname = firstEmployee.employeeSurname.trim();
+    const documentNameSuffixBase = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
+    const documentNameSuffix = normalizedEmployees.length > 1 ? `${documentNameSuffixBase} + ${normalizedEmployees.length - 1}` : documentNameSuffixBase;
     const documentName = `${documentLabel}${documentNameSuffix}`;
     const downloadFileName = `Disciplinary_Hearing_Outcome_${safeEmployeeName}_${safeDate}.pdf`;
     const uploadFilePath = [
@@ -1487,8 +2172,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
       clientId: clientForm.clientId,
       clientName: clientForm.clientName,
       fileUrl: uploadedFileUrl,
-      employeeName: employeeForm.employeeName,
-      employeeSurname: employeeForm.employeeSurname,
+      employeeName: firstEmployee.employeeName,
+      employeeSurname: firstEmployee.employeeSurname,
       tradingName: clientForm.clientTradingAsName,
       registeredName: clientForm.clientRegisteredName,
     });
@@ -1513,9 +2198,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
   downloadPdfRef.current = handleDownloadPdf;
 
-  const isClientStep = !isFinished && activeStep === 0;
-  const isEmployeeStep = !isFinished && activeStep === 1;
-  const isHearingDetailsStep = !isFinished && activeStep === 2;
+  const isPartiesStep = !isFinished && activeStep === 0;
+  const isHearingDetailsStep = !isFinished && activeStep === 1;
   const isPreviewStep = isFinished;
   const previewWrapperClassName = "rounded-sm bg-white px-8 pt-6 pb-10 text-black shadow-[0_0_0_1px_rgba(148,163,184,0.16)]";
   const previewNumberClassName = "pt-[1px] text-[13px] leading-7 text-black";
@@ -1525,10 +2209,68 @@ const DisciplinaryHearingOutcomeGenerator = ({
     "rounded-sm transition-colors hover:bg-slate-100/70";
   const placeholderRowClassName = "rounded-sm bg-red-50";
   const isEditablePlaceholder = (value: string) => value.trim() === editablePlaceholderText;
-  const getEditorParagraphNumber = (field: EditorTarget, index: number) => {
-    if (field === "preliminarySection") return `${index + 1}.`;
+  const getPreliminarySectionSourceLines = () => [
+    preliminaryOneValue,
+    preliminaryTwoValue,
+    preliminaryThreeValue,
+    ...preliminaryChargeRows.flatMap((row) => [row.value, ...row.subRows.map((subRow) => subRow.value)]),
+    preliminaryProcessValue,
+    ...normalizeParagraphText(previewForm.preliminaryExtra),
+  ];
+  const getPreliminarySectionEditorNumbers = (rawLines: string[]) => {
+    const normalizedLines = rawLines.length > 0 ? rawLines : [""];
+    const detectedTypes = normalizedLines.map((line, index) => {
+      if (index < 3) return "main";
+      const trimmedLine = String(line || "").trim();
+      if (/^\d+\.\d+/.test(trimmedLine)) return "sub";
+      if (/^\d+(?:\.\d+)?\.?/.test(trimmedLine)) return "main";
+      return null;
+    });
+
+    for (let index = 3; index < detectedTypes.length; index += 1) {
+      if (detectedTypes[index]) continue;
+      const previousType = detectedTypes[index - 1];
+      if (previousType) {
+        detectedTypes[index] = previousType;
+        continue;
+      }
+      const nextType = detectedTypes.slice(index + 1).find((type): type is "main" | "sub" => Boolean(type));
+      detectedTypes[index] = nextType || "main";
+    }
+
+    let mainParagraphNumber = 3;
+    let subParagraphNumber = 1;
+    let currentMainParagraphNumber = 3;
+    return normalizedLines.map((_, index) => {
+      if (index < 3) return `${index + 1}.`;
+      if (detectedTypes[index] === "sub") {
+        const value = `${currentMainParagraphNumber}.${subParagraphNumber}`;
+        subParagraphNumber += 1;
+        return value;
+      }
+      mainParagraphNumber += 1;
+      currentMainParagraphNumber = mainParagraphNumber;
+      const value = `${currentMainParagraphNumber}.`;
+      subParagraphNumber = 1;
+      return value;
+    });
+  };
+  const getPreliminarySectionEditorNumber = (index: number, rawLines?: string[]) => {
+    const sourceLines =
+      rawLines ??
+      (editingParagraphId === "preliminarySection" ? String(editingParagraphDraft || "").split(/\r?\n/) : getPreliminarySectionSourceLines());
+    return getPreliminarySectionEditorNumbers(sourceLines)[index] || `${index + 1}.`;
+  };
+  const getEditorParagraphNumber = (field: EditorTarget, index: number, rawLines?: string[]) => {
+    if (field === "preliminarySection") return getPreliminarySectionEditorNumber(index, rawLines);
     if (field === "issueSection") return `${firstIssueNumber + index}.`;
-    if (field === "analysisSection") return `${analysisIntroNumber + index}.`;
+    if (field === "analysisSection") return index === 0 ? `${analysisIntroNumber}.` : `${analysisFindingHeadingNumber}.${index}`;
+    if (field === "employeeStatementGroup") {
+      const targetGroupIndex = editingEmployeeStatementGroupIndex ?? 0;
+      const mainNumber = employeeStatementNumber + (isSingleEmployeeFlow ? 0 : targetGroupIndex);
+      if (index === 0) return `${mainNumber}.`;
+      return `${mainNumber}.${index}`;
+    }
     if (field === "preliminaryOne") return "1.";
     if (field === "preliminaryTwo") return "2.";
     if (field === "preliminaryThree") return "3.";
@@ -1540,7 +2282,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     if (field === "employerStatement") return `${employerStatementNumber}.${index + 1}`;
     if (field === "employerEvidence") return `${employerEvidenceNumber}.${index + 1}`;
     if (field === "employeeEvidence") return `${employeeEvidenceNumber}.${index + 1}`;
-    if (field === "analysisFinding") return `${analysisFindingStartNumber + index}.`;
+    if (field === "analysisFinding") return `${analysisFindingHeadingNumber}.${index + 1}`;
     if (field === "aggravatingFactors") return `${aggravatingHeadingNumber}.${index + 1}`;
     if (field === "mitigatingFactors") return `${mitigatingHeadingNumber}.${index + 1}`;
     if (field === "recommendation") return `${recommendationHeadingNumber + index}.`;
@@ -1549,10 +2291,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const formatEditorDraft = (field: EditorTarget, value: string) => {
     const paragraphs = normalizeParagraphText(value);
     if (paragraphs.length === 0) {
-      return `${getEditorParagraphNumber(field, 0)} `;
+      return `${getEditorParagraphNumber(field, 0, [""])} `;
     }
     return paragraphs
-      .map((paragraph, index) => `${getEditorParagraphNumber(field, index)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
+      .map((paragraph, index) => `${getEditorParagraphNumber(field, index, paragraphs)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
       .join("\n");
   };
   const parseEditorDraft = (value: string) =>
@@ -1565,7 +2307,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     lines
       .map((line) => stripParagraphNumberPrefix(line))
       .map((line, index) => {
-        const prefix = `${getEditorParagraphNumber(field, index)} `;
+        const prefix = `${getEditorParagraphNumber(field, index, lines)} `;
         return line.length > 0 ? `${prefix}${line}` : prefix;
       })
       .join("\n");
@@ -1592,10 +2334,20 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setEditingParagraphId(field);
     setEditingParagraphLabel(label);
     if (field === "preliminarySection") {
+      const extraPreliminaryParagraphs = normalizeParagraphText(previewForm.preliminaryExtra);
+      const preliminarySectionDraftLines = [
+        `1. ${stripParagraphNumberPrefix(preliminaryOneValue)}`.trimEnd(),
+        `2. ${stripParagraphNumberPrefix(preliminaryTwoValue)}`.trimEnd(),
+        `3. ${stripParagraphNumberPrefix(preliminaryThreeValue)}`.trimEnd(),
+        ...preliminaryChargeRows.flatMap((row) => [
+          `${row.number} ${stripParagraphNumberPrefix(row.value)}`.trimEnd(),
+          ...row.subRows.map((subRow) => `${subRow.number} ${stripParagraphNumberPrefix(subRow.value)}`.trimEnd()),
+        ]),
+        `${4 + preliminaryChargeRows.length}. ${stripParagraphNumberPrefix(preliminaryProcessValue)}`.trimEnd(),
+        ...extraPreliminaryParagraphs.map((paragraph, index) => `${5 + preliminaryChargeRows.length + index}. ${stripParagraphNumberPrefix(paragraph)}`.trimEnd()),
+      ];
       setEditingParagraphDraft(
-        [preliminaryOneValue, preliminaryTwoValue, preliminaryThreeValue, preliminaryFourValue, ...normalizeParagraphText(previewForm.preliminaryExtra)]
-          .map((paragraph, index) => `${getEditorParagraphNumber("preliminarySection", index)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
-          .join("\n"),
+        preliminarySectionDraftLines.join("\n"),
       );
       moveEditorCaretToLineEnd(selectedLineIndex);
       return;
@@ -1603,6 +2355,29 @@ const DisciplinaryHearingOutcomeGenerator = ({
     if (field === "issueSection") {
       setEditingParagraphDraft(formatEditorDraft("issueSection", issueInDisputeValue));
       moveEditorCaretToLineEnd(selectedLineIndex);
+      return;
+    }
+    if (field === "employeeStatementGroup") {
+      const targetGroupIndex = selectedLineIndex;
+      setEditingEmployeeStatementGroupIndex(targetGroupIndex);
+      const mainNumber = employeeStatementNumber + (isSingleEmployeeFlow ? 0 : targetGroupIndex);
+      const label = isSingleEmployeeFlow
+        ? "The Employee's statement:"
+        : `${presentEmployeeStatementRows[targetGroupIndex]?.referenceLabel || "The Employee"}'s statement:`;
+      const rawParagraphs = employeeStatementGroups[targetGroupIndex] || [editablePlaceholderText];
+      const paragraphs =
+        rawParagraphs.length === 1 && rawParagraphs[0] === editablePlaceholderText
+          ? [""]
+          : rawParagraphs;
+      const sectionLines = [
+        `${mainNumber}. ${label}`,
+        ...paragraphs.map((paragraph, index) => {
+          const normalizedParagraph = stripParagraphNumberPrefix(paragraph);
+          return normalizedParagraph.length > 0 ? `${mainNumber}.${index + 1} ${normalizedParagraph}` : `${mainNumber}.${index + 1} `;
+        }),
+      ];
+      setEditingParagraphDraft(sectionLines.join("\n"));
+      moveEditorCaretToLineEnd(Math.min(1, sectionLines.length - 1));
       return;
     }
     if (field === "analysisSection") {
@@ -1624,7 +2399,12 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const savedAnalysisParagraphs = removeEditablePlaceholderParagraphs(previewForm.analysisFinding);
       setEditingParagraphDraft(
         (savedAnalysisParagraphs.length > 0 ? savedAnalysisParagraphs : [""])
-          .map((paragraph, index) => `${getEditorParagraphNumber("analysisFinding", index)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
+          .map((paragraph, index) => {
+            const normalizedParagraph = stripParagraphNumberPrefix(paragraph);
+            return normalizedParagraph.length > 0
+              ? `${getEditorParagraphNumber("analysisFinding", index)} ${normalizedParagraph}`
+              : `${getEditorParagraphNumber("analysisFinding", index)} `;
+          })
           .join("\n"),
       );
       moveEditorCaretToLineEnd(selectedLineIndex);
@@ -1647,509 +2427,664 @@ const DisciplinaryHearingOutcomeGenerator = ({
     enforceEditorCaretAfterPrefix(event.currentTarget);
   };
 
-  return (
-    <div className="h-full overflow-y-auto py-1">
-      {isClientStep ? (
-        <div className="space-y-4 pt-0">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeClientName" className="text-[10px] font-semibold text-slate-600">
-                Client Name <span className="text-red-500">*</span>
-              </Label>
-              <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="disciplinaryOutcomeClientName"
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={clientSearchOpen}
-                    className={cn(
-                      inputClassName,
-                      "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                      !clientForm.clientId && "text-[10px] text-slate-400",
-                    )}
-                  >
-                    <span className="truncate">{selectedClientLabel}</span>
-                    <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
-                  onCloseAutoFocus={() => setClientSearchValue("")}
-                >
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      value={clientSearchValue}
-                      onValueChange={setClientSearchValue}
-                      placeholder="Search registered or trading name..."
-                      className="h-8 text-[11px] placeholder:text-[10px]"
-                    />
-                    <CommandList className="max-h-[320px] overscroll-contain">
-                      {filteredClientRows.length === 0 ? (
-                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
-                      ) : null}
-                      <CommandGroup>
-                        {filteredClientRows.map((client) => {
-                          const label = formatClientDisplayName(client);
-                          return (
-                            <CommandItem
-                              key={client.id}
-                              value={`${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`.trim()}
-                              onSelect={() => handleClientSelect(client.id)}
-                              className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
-                            >
-                              <span className="min-w-0 truncate font-medium text-slate-900">{label}</span>
-                              {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                            </CommandItem>
-                          );
-                        })}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+  const renderHearingDetailsFields = (form: HearingDetailsFormState, employeeIndex?: number) => {
+    const fieldSuffix = employeeIndex === undefined ? "" : `-${employeeIndex}`;
+    const isEmployeeScoped = employeeIndex !== undefined;
+    const isChargePickerActive = isEmployeeScoped ? activeEmployeeChargePickerIndex === employeeIndex : chargePickerOpen;
+    const isBargainingCouncilPickerActive = isEmployeeScoped
+      ? activeEmployeeBargainingCouncilPickerIndex === employeeIndex
+      : bargainingCouncilPickerOpen;
+    const bargainingCouncilSearch = isEmployeeScoped
+      ? employeeBargainingCouncilSearchValues[employeeIndex] || ""
+      : bargainingCouncilSearchValue;
+    const filteredCouncilOptions = !bargainingCouncilSearch.trim()
+      ? bargainingCouncilOptions
+      : bargainingCouncilOptions.filter(
+          (option) =>
+            option.label.toLowerCase().includes(bargainingCouncilSearch.trim().toLowerCase()) ||
+            option.value.toLowerCase().includes(bargainingCouncilSearch.trim().toLowerCase()),
+        );
+    const visibleProcessOptions =
+      form.employeeAttendance === "Present"
+        ? hearingProcessOptions.filter((option) => option !== "Continued in absence")
+        : form.employeeAttendance === "Absent"
+          ? hearingProcessOptions.filter((option) => option !== "Continued")
+          : hearingProcessOptions;
+    const selectedChargeValue =
+      form.misconductTypes.length === 0
+        ? "Select misconduct type(s)"
+        : form.misconductTypes.length === 1
+          ? form.misconductTypes[0]
+          : `${form.misconductTypes.length} misconduct type(s) selected`;
 
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeRegistrationNumber" className="text-[10px] font-semibold text-slate-600">
-                Registration Number
-              </Label>
-              <Input
-                id="disciplinaryOutcomeRegistrationNumber"
-                value={clientForm.registrationNumber}
-                readOnly
-                placeholder="Will populate from selected client"
-                className={inputClassName}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeClientContactNumber" className="text-[10px] font-semibold text-slate-600">
-                Contact Number
-              </Label>
-              <Input
-                id="disciplinaryOutcomeClientContactNumber"
-                value={clientForm.clientContactNumber}
-                readOnly
-                placeholder="Will populate from selected client"
-                className={inputClassName}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeClientEmail" className="text-[10px] font-semibold text-slate-600">
-                Client Email
-              </Label>
-              <Input
-                id="disciplinaryOutcomeClientEmail"
-                value={clientForm.clientEmail}
-                readOnly
-                placeholder="Will populate from selected client"
-                className={inputClassName}
-              />
-            </div>
-          </div>
-
+    return (
+      <>
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="disciplinaryOutcomeClientAddress" className="text-[10px] font-semibold text-slate-600">
-              Client Address
+            <Label htmlFor={`disciplinaryOutcomeNoticeDate${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Notice Date <span className="text-red-500">*</span>
             </Label>
             <Input
-              id="disciplinaryOutcomeClientAddress"
-              value={clientForm.clientAddress}
+              id={`disciplinaryOutcomeNoticeDate${fieldSuffix}`}
+              type="text"
               readOnly
-              placeholder="Will populate from selected client"
-              className={inputClassName}
+              value={form.noticeDate ? formatDateLabel(form.noticeDate) : ""}
+              placeholder="Please select a date"
+              onClick={() =>
+                openHiddenDatePicker(
+                  isEmployeeScoped
+                    ? { current: employeeNoticeDatePickerRefs.current[employeeIndex] ?? null }
+                    : noticeDatePickerRef,
+                )
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openHiddenDatePicker(
+                    isEmployeeScoped
+                      ? { current: employeeNoticeDatePickerRefs.current[employeeIndex] ?? null }
+                      : noticeDatePickerRef,
+                  );
+                }
+              }}
+              className={`${inputClassName} cursor-pointer`}
             />
-          </div>
-        </div>
-      ) : isEmployeeStep ? (
-        <div className="grid gap-4 pt-0 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="disciplinaryOutcomeEmployeeName" className="text-[10px] font-semibold text-slate-600">
-              Employee Name <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              id="disciplinaryOutcomeEmployeeName"
-              value={employeeForm.employeeName}
-              onChange={(event) => handleEmployeeFieldChange("employeeName", event.target.value)}
-              placeholder="Enter employee name"
-              className={inputClassName}
+            <input
+              ref={(node) => {
+                if (isEmployeeScoped) {
+                  employeeNoticeDatePickerRefs.current[employeeIndex] = node;
+                  return;
+                }
+                noticeDatePickerRef.current = node;
+              }}
+              type="date"
+              value={form.noticeDate}
+              onChange={(event) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "noticeDate", event.target.value)
+                  : handleHearingDetailsFieldChange("noticeDate", event.target.value)
+              }
+              className="sr-only"
+              aria-hidden="true"
+              tabIndex={-1}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="disciplinaryOutcomeEmployeeSurname" className="text-[10px] font-semibold text-slate-600">
-              Employee Surname <span className="text-red-500">*</span>
+            <Label htmlFor={`disciplinaryOutcomeHearingDate${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Hearing Date <span className="text-red-500">*</span>
             </Label>
             <Input
-              id="disciplinaryOutcomeEmployeeSurname"
-              value={employeeForm.employeeSurname}
-              onChange={(event) => handleEmployeeFieldChange("employeeSurname", event.target.value)}
-              placeholder="Enter employee surname"
-              className={inputClassName}
+              id={`disciplinaryOutcomeHearingDate${fieldSuffix}`}
+              type="text"
+              readOnly
+              value={form.hearingDate ? formatDateLabel(form.hearingDate) : ""}
+              placeholder="Please select a date"
+              onClick={() =>
+                openHiddenDatePicker(
+                  isEmployeeScoped
+                    ? { current: employeeHearingDatePickerRefs.current[employeeIndex] ?? null }
+                    : hearingDatePickerRef,
+                )
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openHiddenDatePicker(
+                    isEmployeeScoped
+                      ? { current: employeeHearingDatePickerRefs.current[employeeIndex] ?? null }
+                      : hearingDatePickerRef,
+                  );
+                }
+              }}
+              className={`${inputClassName} cursor-pointer`}
+            />
+            <input
+              ref={(node) => {
+                if (isEmployeeScoped) {
+                  employeeHearingDatePickerRefs.current[employeeIndex] = node;
+                  return;
+                }
+                hearingDatePickerRef.current = node;
+              }}
+              type="date"
+              value={form.hearingDate}
+              onChange={(event) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingDate", event.target.value)
+                  : handleHearingDetailsFieldChange("hearingDate", event.target.value)
+              }
+              className="sr-only"
+              aria-hidden="true"
+              tabIndex={-1}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="disciplinaryOutcomeEmployeeId" className="text-[10px] font-semibold text-slate-600">
-              Employee ID/Passport Number
+            <Label htmlFor={`disciplinaryOutcomeHearingFormat${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Hearing Format <span className="text-red-500">*</span>
             </Label>
-            <Input
-              id="disciplinaryOutcomeEmployeeId"
-              value={employeeForm.employeeIdOrPassportNumber}
-              onChange={(event) => handleEmployeeFieldChange("employeeIdOrPassportNumber", event.target.value)}
-              placeholder="Enter employee ID or passport number"
-              maxLength={employeeIdOrPassportMaxLength}
-              className={inputClassName}
-            />
+            <Select
+              value={form.hearingFormat || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingFormat", value as HearingFormat)
+                  : handleHearingDetailsFieldChange("hearingFormat", value as HearingFormat)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeHearingFormat${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select hearing format" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {hearingFormatOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        </div>
-      ) : isHearingDetailsStep ? (
-        <div className="space-y-4 pt-0">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeNoticeDate" className="text-[10px] font-semibold text-slate-600">
-                Notice Date <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="disciplinaryOutcomeNoticeDate"
-                type="text"
-                readOnly
-                value={hearingDetailsForm.noticeDate ? formatDateLabel(hearingDetailsForm.noticeDate) : ""}
-                placeholder="Please select a date"
-                onClick={() => openHiddenDatePicker(noticeDatePickerRef)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    openHiddenDatePicker(noticeDatePickerRef);
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeEmployeeAttendance${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Employee Attendance <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.employeeAttendance || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeSectionAttendanceChange(employeeIndex, value as EmployeeAttendance)
+                  : handleEmployeeAttendanceChange(value as EmployeeAttendance)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeEmployeeAttendance${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select attendance" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {employeeAttendanceOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeHearingProcess${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Hearing Process <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.hearingProcess || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingProcess", value as HearingProcess)
+                  : handleHearingDetailsFieldChange("hearingProcess", value as HearingProcess)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeHearingProcess${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select hearing process" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {visibleProcessOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeBargainingCouncil${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Bargaining Council <span className="text-red-500">*</span>
+            </Label>
+            <Popover
+              open={isBargainingCouncilPickerActive}
+              onOpenChange={(open) => {
+                if (isEmployeeScoped) {
+                  setActiveEmployeeBargainingCouncilPickerIndex(open ? employeeIndex : null);
+                  if (!open) {
+                    setEmployeeBargainingCouncilSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
                   }
-                }}
-                className={`${inputClassName} cursor-pointer`}
-              />
-              <input
-                ref={noticeDatePickerRef}
-                type="date"
-                value={hearingDetailsForm.noticeDate}
-                onChange={(event) => handleHearingDetailsFieldChange("noticeDate", event.target.value)}
-                className="sr-only"
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeHearingDate" className="text-[10px] font-semibold text-slate-600">
-                Hearing Date <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="disciplinaryOutcomeHearingDate"
-                type="text"
-                readOnly
-                value={hearingDetailsForm.hearingDate ? formatDateLabel(hearingDetailsForm.hearingDate) : ""}
-                placeholder="Please select a date"
-                onClick={() => openHiddenDatePicker(hearingDatePickerRef)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    openHiddenDatePicker(hearingDatePickerRef);
-                  }
-                }}
-                className={`${inputClassName} cursor-pointer`}
-              />
-              <input
-                ref={hearingDatePickerRef}
-                type="date"
-                value={hearingDetailsForm.hearingDate}
-                onChange={(event) => handleHearingDetailsFieldChange("hearingDate", event.target.value)}
-                className="sr-only"
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeHearingFormat" className="text-[10px] font-semibold text-slate-600">
-                Hearing Format <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={hearingDetailsForm.hearingFormat || undefined}
-                onValueChange={(value) => handleHearingDetailsFieldChange("hearingFormat", value as HearingFormat)}
-              >
-                <SelectTrigger id="disciplinaryOutcomeHearingFormat" className={inputClassName}>
-                  <SelectValue placeholder="Select hearing format" />
-                </SelectTrigger>
-                <SelectContent className="text-[10px]">
-                  {hearingFormatOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value} className="text-[10px]">
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeEmployeeAttendance" className="text-[10px] font-semibold text-slate-600">
-                Employee Attendance <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={hearingDetailsForm.employeeAttendance || undefined}
-                onValueChange={(value) => handleEmployeeAttendanceChange(value as EmployeeAttendance)}
-              >
-                <SelectTrigger id="disciplinaryOutcomeEmployeeAttendance" className={inputClassName}>
-                  <SelectValue placeholder="Select attendance" />
-                </SelectTrigger>
-                <SelectContent className="text-[10px]">
-                  {employeeAttendanceOptions.map((option) => (
-                    <SelectItem key={option} value={option} className="text-[10px]">
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeHearingProcess" className="text-[10px] font-semibold text-slate-600">
-                Hearing Process <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={hearingDetailsForm.hearingProcess || undefined}
-                onValueChange={(value) => handleHearingDetailsFieldChange("hearingProcess", value as HearingProcess)}
-              >
-                <SelectTrigger id="disciplinaryOutcomeHearingProcess" className={inputClassName}>
-                  <SelectValue placeholder="Select hearing process" />
-                </SelectTrigger>
-                <SelectContent className="text-[10px]">
-                  {visibleHearingProcessOptions.map((option) => (
-                    <SelectItem key={option} value={option} className="text-[10px]">
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeBargainingCouncil" className="text-[10px] font-semibold text-slate-600">
-                Bargaining Council <span className="text-red-500">*</span>
-              </Label>
-              <Popover open={bargainingCouncilPickerOpen} onOpenChange={setBargainingCouncilPickerOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    id="disciplinaryOutcomeBargainingCouncil"
-                    type="button"
-                    className={cn(
-                      inputClassName,
-                      "inline-flex w-full items-center justify-between border border-slate-300 px-3 text-[11px] hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                    )}
-                  >
-                    <span className="truncate text-left text-slate-900">{selectedBargainingCouncilLabel}</span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  sideOffset={6}
-                  className="w-[420px] border border-slate-200 bg-white p-0 shadow-lg"
-                  onCloseAutoFocus={() => setBargainingCouncilSearchValue("")}
-                >
-                  <Command shouldFilter={false} className="bg-white text-slate-700">
-                    <CommandInput
-                      value={bargainingCouncilSearchValue}
-                      onValueChange={setBargainingCouncilSearchValue}
-                      placeholder="Search bargaining council..."
-                      className="h-8 border-b border-slate-200 text-[11px] placeholder:text-slate-400"
-                    />
-                    <CommandList>
-                      <CommandEmpty className="py-3 text-[11px] text-slate-500">No councils found.</CommandEmpty>
-                      <CommandGroup>
-                        {filteredBargainingCouncilOptions.map((option) => (
-                          <CommandItem
-                            key={option.value}
-                            value={`${option.value} ${option.label}`}
-                            onSelect={() => {
-                              handleHearingDetailsFieldChange("bargainingCouncil", option.value);
-                              setBargainingCouncilSearchValue("");
-                              setBargainingCouncilPickerOpen(false);
-                            }}
-                            className="text-[11px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
-                          >
-                            <Check
-                              className={`mr-2 h-3.5 w-3.5 ${
-                                hearingDetailsForm.bargainingCouncil === option.value ? "opacity-100" : "opacity-0"
-                              }`}
-                            />
-                            <span className="truncate">{option.label}</span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeRepresentation" className="text-[10px] font-semibold text-slate-600">
-                Representation <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={hearingDetailsForm.representation || undefined}
-                onValueChange={(value) => handleHearingDetailsFieldChange("representation", value as RepresentationOption)}
-              >
-                <SelectTrigger id="disciplinaryOutcomeRepresentation" className={inputClassName}>
-                  <SelectValue placeholder="Select representation" />
-                </SelectTrigger>
-                <SelectContent className="text-[10px]">
-                  {representationOptions.map((option) => (
-                    <SelectItem key={option} value={option} className="text-[10px]">
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="disciplinaryOutcomeInterpreter" className="text-[10px] font-semibold text-slate-600">
-                Interpreter <span className="text-red-500">*</span>
-              </Label>
-              <Select
-                value={hearingDetailsForm.interpreter || undefined}
-                onValueChange={(value) => handleHearingDetailsFieldChange("interpreter", value as InterpreterOption)}
-              >
-                <SelectTrigger id="disciplinaryOutcomeInterpreter" className={inputClassName}>
-                  <SelectValue placeholder="Select interpreter option" />
-                </SelectTrigger>
-                <SelectContent className="text-[10px]">
-                  {interpreterOptions.map((option) => (
-                    <SelectItem key={option} value={option} className="text-[10px]">
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="disciplinaryOutcomeCharges" className="text-[10px] font-semibold text-slate-600">
-              Charge <span className="text-red-500">*</span>
-            </Label>
-            <Popover open={chargePickerOpen} onOpenChange={setChargePickerOpen}>
+                  return;
+                }
+                setBargainingCouncilPickerOpen(open);
+              }}
+            >
               <PopoverTrigger asChild>
-                <Button
-                  id="disciplinaryOutcomeCharges"
+                <button
+                  id={`disciplinaryOutcomeBargainingCouncil${fieldSuffix}`}
                   type="button"
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={chargePickerOpen}
                   className={cn(
                     inputClassName,
-                    "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                    hearingDetailsForm.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                    "inline-flex w-full items-center justify-between border border-slate-300 px-3 text-[11px] hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
                   )}
                 >
-                  <span className="truncate text-left">{selectedChargeLabel}</span>
-                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
-                </Button>
+                  <span className="truncate text-left text-slate-900">{form.bargainingCouncil || "None"}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                </button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0">
-                <Command shouldFilter>
+              <PopoverContent
+                align="start"
+                sideOffset={6}
+                className="w-[420px] border border-slate-200 bg-white p-0 shadow-lg"
+                onCloseAutoFocus={() => {
+                  if (isEmployeeScoped) {
+                    setEmployeeBargainingCouncilSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
+                    return;
+                  }
+                  setBargainingCouncilSearchValue("");
+                }}
+              >
+                <Command shouldFilter={false} className="bg-white text-slate-700">
                   <CommandInput
-                    placeholder="Search misconduct types..."
-                    className="h-8 text-[11px] placeholder:text-[10px]"
+                    value={bargainingCouncilSearch}
+                    onValueChange={(value) => {
+                      if (isEmployeeScoped) {
+                        setEmployeeBargainingCouncilSearchValues((current) => ({ ...current, [employeeIndex]: value }));
+                        return;
+                      }
+                      setBargainingCouncilSearchValue(value);
+                    }}
+                    placeholder="Search bargaining council..."
+                    className="h-8 border-b border-slate-200 text-[11px] placeholder:text-slate-400"
                   />
-                  <CommandList className="max-h-[248px] overscroll-contain">
-                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">No matching misconduct type found.</CommandEmpty>
-                    {offenceCategoryOrder.map((category) => {
-                      const offences = conductOffenceOptions.filter((offence) => offence.category === category);
-                      if (offences.length === 0) return null;
-                      return (
-                        <CommandGroup
-                          key={category}
-                          heading={offenceGroupLabel[category]}
-                          className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-[11px] text-slate-500">No councils found.</CommandEmpty>
+                    <CommandGroup>
+                      {filteredCouncilOptions.map((option) => (
+                        <CommandItem
+                          key={option.value}
+                          value={`${option.value} ${option.label}`}
+                          onSelect={() => {
+                            if (isEmployeeScoped) {
+                              handleEmployeeHearingDetailsFieldChange(employeeIndex, "bargainingCouncil", option.value);
+                              setEmployeeBargainingCouncilSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
+                              setActiveEmployeeBargainingCouncilPickerIndex(null);
+                              return;
+                            }
+                            handleHearingDetailsFieldChange("bargainingCouncil", option.value);
+                            setBargainingCouncilSearchValue("");
+                            setBargainingCouncilPickerOpen(false);
+                          }}
+                          className="text-[11px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
                         >
-                          {offences.map((offence) => {
-                            const isSelected = hearingDetailsForm.misconductTypes.includes(offence.name);
-                            return (
-                              <CommandItem
-                                key={`${category}-${offence.name}`}
-                                value={`${offenceGroupLabel[category]} ${offence.name}`}
-                                onSelect={() => handleToggleCharge(offence.name)}
-                                className={cn(
-                                  "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
-                                  isSelected ? "text-[#2f9f35]" : "text-slate-600",
-                                )}
-                              >
-                                <span className={cn("min-w-0 truncate font-medium", isSelected ? "text-[#2f9f35]" : "text-slate-600")}>
-                                  {offence.name}
-                                </span>
-                                {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      );
-                    })}
+                          <Check className={`mr-2 h-3.5 w-3.5 ${form.bargainingCouncil === option.value ? "opacity-100" : "opacity-0"}`} />
+                          <span className="truncate">{option.label}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
                   </CommandList>
                 </Command>
               </PopoverContent>
             </Popover>
-            {hearingDetailsForm.misconductTypes.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {hearingDetailsForm.misconductTypes.map((type) => (
-                  <div
-                    key={type}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
-                  >
-                    <span className="truncate">{type}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${type}`}
-                      onClick={() => handleToggleCharge(type)}
-                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </div>
 
-          {hearingDetailsForm.misconductTypes.length > 0 ? (
-            <div className="space-y-4">
-              {hearingDetailsForm.misconductTypes.map((type) => (
-                <div key={type} className="space-y-2">
-                  <Label htmlFor={`disciplinaryOutcomePlea-${type}`} className="text-[10px] font-semibold text-slate-600">
-                    Plea for {type} <span className="text-red-500">*</span>
-                  </Label>
-                  <Select
-                    value={hearingDetailsForm.pleasByCharge[type] || undefined}
-                    onValueChange={(value) => handlePleaChange(type, value as PleaOption)}
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeRepresentation${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Representation <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.representation || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "representation", value as RepresentationOption)
+                  : handleHearingDetailsFieldChange("representation", value as RepresentationOption)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeRepresentation${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select representation" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {representationOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Interpreter <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.interpreter || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "interpreter", value as InterpreterOption)
+                  : handleHearingDetailsFieldChange("interpreter", value as InterpreterOption)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select interpreter option" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {interpreterOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Appeal Notice <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.appealNoticeDays}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "appealNoticeDays", value as AppealNoticeOption)
+                  : handleHearingDetailsFieldChange("appealNoticeDays", value as AppealNoticeOption)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select appeal notice period" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {appealNoticeOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option} days
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={`disciplinaryOutcomeCharges${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            Charge <span className="text-red-500">*</span>
+          </Label>
+          <Popover
+            open={isChargePickerActive}
+            onOpenChange={(open) => {
+              if (isEmployeeScoped) {
+                setActiveEmployeeChargePickerIndex(open ? employeeIndex : null);
+                return;
+              }
+              setChargePickerOpen(open);
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                id={`disciplinaryOutcomeCharges${fieldSuffix}`}
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={isChargePickerActive}
+                className={cn(
+                  inputClassName,
+                  "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                  form.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                )}
+              >
+                <span className="truncate text-left">{selectedChargeValue}</span>
+                <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
+            >
+              <Command>
+                <CommandInput
+                  placeholder="Search offences..."
+                  className="h-9 border-0 text-[10px] focus:ring-0"
+                />
+                <CommandList className="max-h-[320px]">
+                  <CommandEmpty className="py-4 text-center text-[10px] text-slate-500">
+                    No offence found.
+                  </CommandEmpty>
+                  {offenceCategoryOrder.map((category) => {
+                    const options = conductOffenceOptions.filter((offence) => offence.category === category);
+                    if (options.length === 0) return null;
+                    return (
+                      <CommandGroup key={category} heading={offenceGroupLabel[category]}>
+                        {options.map((offence) => {
+                          const isSelected = form.misconductTypes.includes(offence.name);
+                          return (
+                            <CommandItem
+                              key={offence.name}
+                              value={offence.name}
+                              onSelect={() =>
+                                isEmployeeScoped
+                                  ? handleEmployeeToggleCharge(employeeIndex, offence.name)
+                                  : handleToggleCharge(offence.name)
+                              }
+                              className="text-[10px]"
+                            >
+                              <Check className={`mr-2 h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                              <span>{offence.name}</span>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    );
+                  })}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {form.misconductTypes.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {form.misconductTypes.map((type) => (
+              <div key={`${fieldSuffix}-${type}`} className="space-y-2">
+                <Label htmlFor={`disciplinaryOutcomePlea${fieldSuffix}-${type}`} className="text-[10px] font-semibold text-slate-600">
+                  Plea For {type} <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={String(form.pleasByCharge[type] || "") || undefined}
+                  onValueChange={(value) =>
+                    isEmployeeScoped
+                      ? handleEmployeePleaChange(employeeIndex, type, value as PleaOption)
+                      : handlePleaChange(type, value as PleaOption)
+                  }
+                >
+                  <SelectTrigger id={`disciplinaryOutcomePlea${fieldSuffix}-${type}`} className={inputClassName}>
+                    <SelectValue placeholder="Select plea" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[10px]">
+                    {pleaOptions.map((option) => (
+                      <SelectItem key={option} value={option} className="text-[10px]">
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
+  };
+
+  return (
+    <div className="h-full overflow-y-auto py-1">
+      {isPartiesStep ? (
+        <div className="space-y-6 pt-0">
+          <section className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Employer</p>
+              <div className="border-t border-[#3eca44]" />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="disciplinaryOutcomeClientName" className="text-[10px] font-semibold text-slate-600">
+                  Client Name <span className="text-red-500">*</span>
+                </Label>
+                <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="disciplinaryOutcomeClientName"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={clientSearchOpen}
+                      className={cn(
+                        inputClassName,
+                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        !clientForm.clientId && "text-[10px] text-slate-400",
+                      )}
+                    >
+                      <span className="truncate">{selectedClientLabel}</span>
+                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
+                    onCloseAutoFocus={() => setClientSearchValue("")}
                   >
-                    <SelectTrigger id={`disciplinaryOutcomePlea-${type}`} className={inputClassName}>
-                      <SelectValue placeholder="Select plea" />
-                    </SelectTrigger>
-                    <SelectContent className="text-[10px]">
-                      {pleaOptions.map((option) => (
-                        <SelectItem key={option} value={option} className="text-[10px]">
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        value={clientSearchValue}
+                        onValueChange={setClientSearchValue}
+                        placeholder="Search registered or trading name..."
+                        className="h-8 text-[11px] placeholder:text-[10px]"
+                      />
+                      <CommandList className="max-h-[320px] overscroll-contain">
+                        {filteredClientRows.length === 0 ? (
+                          <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{clientLoadMessage}</CommandEmpty>
+                        ) : null}
+                        <CommandGroup>
+                          {filteredClientRows.map((client) => {
+                            const label = formatClientDisplayName(client);
+                            return (
+                              <CommandItem
+                                key={client.id}
+                                value={`${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`.trim()}
+                                onSelect={() => handleClientSelect(client.id)}
+                                className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
+                              >
+                                <span className="min-w-0 truncate font-medium text-slate-900">{label}</span>
+                                {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="disciplinaryOutcomeRegistrationNumber" className="text-[10px] font-semibold text-slate-600">
+                  Registration Number
+                </Label>
+                <Input
+                  id="disciplinaryOutcomeRegistrationNumber"
+                  value={clientForm.registrationNumber}
+                  readOnly
+                  placeholder="Will populate from selected client"
+                  className={inputClassName}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="space-y-2">
+              <div className="flex items-end justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">Employee(s)</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-7 rounded border-[#3eca44] px-2.5 text-[10px] font-medium text-[#2f9f35] hover:bg-[#3eca44] hover:text-white"
+                  onClick={handleAddEmployee}
+                >
+                  Add Employee
+                </Button>
+              </div>
+              <div className="border-t border-[#3eca44]" />
+            </div>
+
+            <div className="space-y-2.5">
+              {employeeForms.map((employee, index) => (
+                <div key={`employee-form-${index}`} className="space-y-0">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label htmlFor={`disciplinaryOutcomeEmployeeName-${index}`} className="text-[10px] font-semibold text-slate-600">
+                        Employee Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`disciplinaryOutcomeEmployeeName-${index}`}
+                        value={employee.employeeName}
+                        onChange={(event) => handleEmployeeFieldChange(index, "employeeName", event.target.value)}
+                        placeholder="Enter employee name"
+                        className={inputClassName}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor={`disciplinaryOutcomeEmployeeSurname-${index}`} className="text-[10px] font-semibold text-slate-600">
+                        Employee Surname <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id={`disciplinaryOutcomeEmployeeSurname-${index}`}
+                        value={employee.employeeSurname}
+                        onChange={(event) => handleEmployeeFieldChange(index, "employeeSurname", event.target.value)}
+                        placeholder="Enter employee surname"
+                        className={inputClassName}
+                      />
+                    </div>
+                  </div>
+
+                  {employeeForms.length > 1 ? (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEmployee(index)}
+                        className="inline-flex h-4 items-center gap-1 text-[9px] font-medium leading-none text-slate-500 transition-colors hover:text-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
-          ) : null}
+          </section>
         </div>
+      ) : isHearingDetailsStep ? (
+        isSingleEmployeeFlow ? (
+          <div className="space-y-4 pt-0">{renderHearingDetailsFields(hearingDetailsForm)}</div>
+        ) : (
+          <div className="space-y-6 pt-0">
+            {employeeForms.map((employee, index) => {
+              const employeeLabel = [employee.employeeName, employee.employeeSurname].filter(Boolean).join(" ").trim() || `Employee ${index + 1}`;
+              const isCollapsed = collapsedEmployeeHearingSectionIndexes.includes(index);
+              return (
+                <section key={`employee-hearing-details-${index}`} className="rounded-sm border border-slate-200 bg-white px-4 py-3">
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleEmployeeHearingSection(index)}
+                        className="flex w-full items-end justify-between gap-3 text-left"
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">{employeeLabel}</p>
+                        <ChevronDown className={cn("h-4 w-4 text-[#2f9f35] transition-transform", !isCollapsed && "rotate-180")} />
+                      </button>
+                      <div className="border-t border-[#3eca44]" />
+                    </div>
+                    {!isCollapsed ? <div className="space-y-4">{renderHearingDetailsFields(employeeHearingDetailsForms[index], index)}</div> : null}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )
       ) : isPreviewStep ? (
         <div className="h-full py-1">
           <div className="mx-auto max-w-[820px] space-y-5">
@@ -2167,9 +3102,13 @@ const DisciplinaryHearingOutcomeGenerator = ({
                     <p className="text-right text-[13px] uppercase leading-7">Employer</p>
                   </div>
                   <p className={previewBodyClassName}>And</p>
-                  <div className="grid grid-cols-[minmax(0,1fr)_140px] items-center gap-6">
-                    <p className="text-[13px] font-bold uppercase leading-7">{employeeMatterName}</p>
-                    <p className="text-right text-[13px] uppercase leading-7">Employee</p>
+                  <div className="space-y-2">
+                    {employeeMatterNames.map((employeeName, index) => (
+                      <div key={`${employeeName}-${index}`} className="grid grid-cols-[minmax(0,1fr)_140px] items-center gap-6">
+                        <p className="text-[13px] font-bold uppercase leading-7">{employeeName}</p>
+                        <p className="text-right text-[13px] uppercase leading-7">{employeeRoleLabels[index]}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -2197,10 +3136,20 @@ const DisciplinaryHearingOutcomeGenerator = ({
                           </div>
                           {"subRows" in row && row.subRows.length > 0 ? (
                             <div className="space-y-2 pl-10">
-                              {row.subRows.map((subRow) => (
+                              {row.subRows.map((subRow, subRowIndex) => (
                                 <div key={subRow.number} className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4">
                                   <div className={previewNumberClassName}>{subRow.number}</div>
-                                  <p className={previewBodyClassName}>{subRow.value}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      (isPreviewEditable
+                                        ? openParagraphEditor("preliminarySection", "Preliminary", 4 + subRowIndex)
+                                        : undefined)
+                                    }
+                                    className={cn("text-left", isPreviewEditable ? previewEditableParagraphClassName : "")}
+                                  >
+                                    <p className={previewBodyClassName}>{subRow.value}</p>
+                                  </button>
                                 </div>
                               ))}
                             </div>
@@ -2231,39 +3180,40 @@ const DisciplinaryHearingOutcomeGenerator = ({
                   <section className="space-y-3">
                     <p className={previewSectionHeadingClassName}>Background To The Issue</p>
 
-                    <div className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4">
-                      <div className={previewNumberClassName}>{`${employeeStatementNumber}.`}</div>
-                      <div className="space-y-1.5">
-                        <p className={previewBodyClassName}>The Employee&apos;s statement:</p>
-                      </div>
-                    </div>
-
-                    <div className="pl-10">
-                      <div>
+                    <div className="space-y-3">
+                      {(isSingleEmployeeFlow
+                        ? [{ label: "The Employee's statement:", paragraphs: employeeStatementGroups[0], mainNumber: employeeStatementNumber }]
+                        : presentEmployeeStatementRows.map((row, index) => ({
+                            label: `${row.referenceLabel}'s statement:`,
+                            paragraphs: employeeStatementGroups[index] || [editablePlaceholderText],
+                            mainNumber: employeeStatementNumber + index,
+                          }))).map((statementGroup, groupIndex) => (
                         <button
+                          key={`employee-statement-group-${groupIndex}`}
                           type="button"
-                          onClick={() => (isPreviewEditable ? openParagraphEditor("employeeStatement", "The Employee's statement", 0) : undefined)}
-                          className={cn(
-                            "w-full text-left",
-                            isPreviewEditable ? previewEditableParagraphClassName : "",
-                          )}
+                          onClick={() => (isPreviewEditable ? openParagraphEditor("employeeStatementGroup", "Employee statement", groupIndex) : undefined)}
+                          className={cn("w-full space-y-1.5 text-left", isPreviewEditable ? previewEditableParagraphClassName : "")}
                         >
-                          {normalizeParagraphText(employeeStatementValue).map((paragraph, index) => (
-                            <div
-                              key={`employee-${index}`}
-                              onClick={(event) => {
-                                if (!isPreviewEditable) return;
-                                event.stopPropagation();
-                                openParagraphEditor("employeeStatement", "The Employee's statement", index);
-                              }}
-                              className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
-                            >
-                              <div className={previewNumberClassName}>{`${employeeStatementNumber}.${index + 1}`}</div>
-                              <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
+                          <div className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4">
+                            <div className={previewNumberClassName}>{`${statementGroup.mainNumber}.`}</div>
+                            <div className="space-y-1.5">
+                              <p className={previewBodyClassName}>{statementGroup.label}</p>
                             </div>
-                          ))}
+                          </div>
+
+                          <div className="pl-10">
+                            {statementGroup.paragraphs.map((paragraph, index) => (
+                              <div
+                                key={`employee-${groupIndex}-${index}`}
+                                className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
+                              >
+                                <div className={previewNumberClassName}>{`${statementGroup.mainNumber}.${index + 1}`}</div>
+                                <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
+                              </div>
+                            ))}
+                          </div>
                         </button>
-                      </div>
+                      ))}
                     </div>
 
                     <div className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4 pt-2">
@@ -2331,28 +3281,30 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       </button>
                       <div className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4 pt-2">
                         <div className={previewNumberClassName}>{`${employeeEvidenceNumber}.`}</div>
-                        <p className={previewBodyClassName}>The employee submitted the following evidence:</p>
+                        <p className={previewBodyClassName}>{employeeEvidenceHeadingText}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => (isPreviewEditable ? openParagraphEditor("employeeEvidence", "Employee evidence", 0) : undefined)}
-                        className={cn("w-full text-left", isPreviewEditable ? previewEditableParagraphClassName : "")}
-                      >
-                        {employeeEvidenceParagraphs.map((paragraph, index) => (
-                          <div
-                            key={`evidence-employee-${index}`}
-                            onClick={(event) => {
-                              if (!isPreviewEditable) return;
-                              event.stopPropagation();
-                              openParagraphEditor("employeeEvidence", "Employee evidence", index);
-                            }}
-                            className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
-                          >
-                            <div className={previewNumberClassName}>{`${employeeEvidenceNumber}.${index + 1}`}</div>
-                            <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
-                          </div>
-                        ))}
-                      </button>
+                      {usesNoEmployeeEvidenceMessage ? null : (
+                        <button
+                          type="button"
+                          onClick={() => (isPreviewEditable ? openParagraphEditor("employeeEvidence", "Employee evidence", 0) : undefined)}
+                          className={cn("w-full text-left", isPreviewEditable ? previewEditableParagraphClassName : "")}
+                        >
+                          {employeeEvidenceParagraphs.map((paragraph, index) => (
+                            <div
+                              key={`evidence-employee-${index}`}
+                              onClick={(event) => {
+                                if (!isPreviewEditable) return;
+                                event.stopPropagation();
+                                openParagraphEditor("employeeEvidence", "Employee evidence", index);
+                              }}
+                              className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
+                            >
+                              <div className={previewNumberClassName}>{`${employeeEvidenceNumber}.${index + 1}`}</div>
+                              <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
+                            </div>
+                          ))}
+                        </button>
+                      )}
                     </div>
                   </section>
 
@@ -2367,6 +3319,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       >
                         <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{analysisIntroValue}</p>
                       </button>
+                    </div>
+                    <div className="grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4">
+                      <div className={previewNumberClassName}>{`${analysisFindingHeadingNumber}.`}</div>
+                      <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{analysisFindingsHeadingValue}</p>
                     </div>
                     <button
                       type="button"
@@ -2383,7 +3339,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                           }}
                           className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
                         >
-                          <div className={previewNumberClassName}>{`${analysisFindingStartNumber + index}.`}</div>
+                          <div className={previewNumberClassName}>{`${analysisFindingHeadingNumber}.${index + 1}`}</div>
                           <p className={cn(previewBodyClassName, "whitespace-pre-wrap")}>{paragraph}</p>
                         </div>
                       ))}
@@ -2500,7 +3456,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 </div>
 
                 <div className="pt-6">
-                  <div className="w-[220px] border-t border-black" />
+                  <div className="relative w-[220px]">
+                    {chairpersonSignatureDataUrl ? (
+                      <img
+                        src={chairpersonSignatureDataUrl}
+                        alt="Chairperson signature"
+                        className="pointer-events-none absolute left-1/2 top-[-69px] h-[136px] w-auto -translate-x-1/2 object-contain"
+                      />
+                    ) : null}
+                    <div className="w-[220px] border-t border-black" />
+                  </div>
                   <p className="mt-2 text-[13px] font-bold uppercase leading-7 text-black">Chairperson</p>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -191,6 +191,25 @@ export default function DashboardLayout({
   const [minimizedDocumentTabs, setMinimizedDocumentTabs] = useState<StoredMinimizedDocumentTab[]>(() =>
     loadMinimizedDocumentTabs(),
   );
+  const orderedMinimizedDocumentTabs = useMemo(
+    () => [...minimizedDocumentTabs].sort((left, right) => (left.minimizedOrder ?? 0) - (right.minimizedOrder ?? 0)),
+    [minimizedDocumentTabs],
+  );
+  const minimizedTabDisplayLabels = useMemo(() => {
+    const countsByDocumentKey = new Map<string, number>();
+    orderedMinimizedDocumentTabs.forEach((tab) => {
+      countsByDocumentKey.set(tab.documentKey, (countsByDocumentKey.get(tab.documentKey) ?? 0) + 1);
+    });
+
+    return orderedMinimizedDocumentTabs.map((tab) => {
+      const total = countsByDocumentKey.get(tab.documentKey) ?? 0;
+      if (total <= 1) return tab.label;
+      if (typeof tab.instanceNumber === "number" && Number.isFinite(tab.instanceNumber)) {
+        return tab.instanceNumber <= 1 ? tab.label : `${tab.label} (${tab.instanceNumber - 1})`;
+      }
+      return tab.label;
+    });
+  }, [orderedMinimizedDocumentTabs]);
   const [headerNotifications, setHeaderNotifications] = useState<HeaderNotificationRow[]>([]);
   const [isNotificationsMenuOpen, setIsNotificationsMenuOpen] = useState(false);
   const [isHeaderProfileCollapsed, setIsHeaderProfileCollapsed] = useState<boolean>(() => {
@@ -510,7 +529,7 @@ export default function DashboardLayout({
             style={{ left: "var(--app-sidebar-width, 14rem)", right: 0 }}
           >
             <div className="relative flex h-full w-full items-center justify-between bg-[#2D4256] pl-6 pr-6 shadow-sm">
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2 pr-4">
                 <button
                   type="button"
                   onClick={() => setIsCollapsed((prev) => !prev)}
@@ -524,29 +543,20 @@ export default function DashboardLayout({
                   />
                   <span className="sr-only">Toggle sidebar</span>
                 </button>
-                {resolvedHeaderTitle ? (
-                  <div className="flex flex-col gap-1">
-                    <h1 className="text-[17px] font-semibold text-white/80">{resolvedHeaderTitle}</h1>
-                    {headerDescription && (
-                      <p className="text-xs text-white/60">{headerDescription}</p>
-                    )}
-                  </div>
-                ) : null}
                 {headerInlineContent ? <div className="flex items-center gap-2">{headerInlineContent}</div> : null}
-                {minimizedDocumentTabs.length > 0 ? (
-                  <div className="pointer-events-none absolute left-[320px] right-[260px] flex items-center gap-2 overflow-x-auto py-1">
-                    <span className="h-6 w-px bg-white/10 self-center" aria-hidden="true" />
-                    {minimizedDocumentTabs.map((tab, index) => (
+                {orderedMinimizedDocumentTabs.length > 0 ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1">
+                    {orderedMinimizedDocumentTabs.map((tab, index) => (
                       <div
                         key={tab.id}
-                        className="group pointer-events-auto inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
+                        className="group inline-flex items-center rounded-sm border border-white/10 bg-white/70 shadow-sm transition-colors hover:border-[#3eca44] hover:bg-[#3eca44]"
                       >
                         <button
                           type="button"
                           onClick={() => restoreMinimizedDocumentTab(tab.id)}
                           className="inline-flex h-6 items-center px-2.5 text-[10px] font-semibold text-[#2D4256] transition-colors group-hover:text-[#2D4256]"
                         >
-                          {`${tab.label} (${index + 1})`}
+                          {minimizedTabDisplayLabels[index]}
                         </button>
                         <button
                           type="button"

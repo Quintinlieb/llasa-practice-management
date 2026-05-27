@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { createPortal } from "react-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -13,7 +14,7 @@ import { nationalityOptions } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF, type AcroFormComboBox, type AcroFormTextField } from "jspdf";
-import { Building2, Check, ChevronsUpDown, FileText, Info, Pencil, Plus, User2, X } from "lucide-react";
+import { Building2, Check, ChevronDown, FileText, Info, Pencil, Plus, User2, X } from "lucide-react";
 
 type PermContractGeneratorProps = {
   embedded?: boolean;
@@ -3196,7 +3197,7 @@ const PermContractGenerator = ({
                   )}
                 >
                   <span className="truncate">{selectedCompanyLabel}</span>
-                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent
@@ -3409,7 +3410,7 @@ const PermContractGenerator = ({
                   )}
                 >
                   <span className="truncate">{selectedNationalityLabel}</span>
-                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent
@@ -3691,7 +3692,7 @@ const PermContractGenerator = ({
                   >
                     {contract.permContractBargainingCouncil || "Select bargaining council"}
                   </span>
-                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-[420px] border border-slate-200 bg-white p-0 shadow-lg" align="start" sideOffset={6}>
@@ -4059,8 +4060,14 @@ const PermContractGenerator = ({
           })()}
         </div>
 
-        {isPreviewEditable && activeEditingClause ? (
-          <div className="fixed inset-0 z-[999]">
+      </div>
+    </div>
+  );
+
+  const clauseEditorOverlay =
+    typeof document !== "undefined" && isPreviewEditable && activeEditingClause
+      ? createPortal(
+          <div className="fixed inset-0 z-[70]">
             <div className="absolute inset-0 bg-slate-900/35" />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
               <div
@@ -4145,11 +4152,15 @@ const PermContractGenerator = ({
                 </div>
               </div>
             </div>
-          </div>
-        ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
 
-        {isPreviewEditable && addingAfterId !== undefined ? (
-          <div className="fixed inset-0 z-[999]">
+  const addClauseOverlay =
+    typeof document !== "undefined" && isPreviewEditable && addingAfterId !== undefined
+      ? createPortal(
+          <div className="fixed inset-0 z-[70]">
             <div className="absolute inset-0 bg-slate-900/35" />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
               <div
@@ -4220,16 +4231,22 @@ const PermContractGenerator = ({
                 </div>
               </div>
             </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
+          </div>,
+          document.body,
+        )
+      : null;
 
   const body = isFinished ? previewBody : activeStep === 0 ? stepOneBody : activeStep === 1 ? stepTwoBody : stepThreeBody;
+  const content = (
+    <>
+      {body}
+      {clauseEditorOverlay}
+      {addClauseOverlay}
+    </>
+  );
 
   if (embedded) {
-    return body;
+    return content;
   }
 
   return (
@@ -4237,7 +4254,7 @@ const PermContractGenerator = ({
       <div className="mx-auto mt-6 max-w-[1020px] overflow-hidden rounded-sm border border-slate-300 bg-white">
         <TopStepper activeStep={isFinished ? 3 : activeStep} onStepSelect={(index) => stepMeta.onStepSelect?.(index)} canSelectStep={(index) => stepMeta.canSelectStep?.(index) ?? false} />
         <div className="p-4">
-          <div className="mx-auto max-w-[900px] rounded-sm border border-slate-300 bg-white px-5 pt-3 pb-4">{body}</div>
+          <div className="mx-auto max-w-[900px] rounded-sm border border-slate-300 bg-white px-5 pt-3 pb-4">{content}</div>
         </div>
       </div>
     </DashboardLayout>

@@ -57,6 +57,7 @@ type ClientRecord = {
   city: string | null;
   province: string | null;
   area_code: string | null;
+  bargaining_council: string | null;
 };
 
 type ClientLogoRecord = {
@@ -100,9 +101,9 @@ type TerminationStepState = {
   hearingDate: string;
   misconductTypes: string[];
   progressiveDisciplinaryAction: "" | "Yes" | "No PDA applied";
+  terminationNotice: "None" | "One week" | "Two weeks" | "One month";
   appealNotice: "3 days" | "5 days" | "7 days" | "10 days";
   issuingMethods: string[];
-  disputeForum: "" | "ccma" | "bargaining_council";
   bargainingCouncil: string;
 };
 
@@ -177,10 +178,10 @@ const emptyTerminationState: TerminationStepState = {
   hearingDate: "",
   misconductTypes: [],
   progressiveDisciplinaryAction: "",
+  terminationNotice: "None",
   appealNotice: "5 days",
-  issuingMethods: [],
-  disputeForum: "",
-  bargainingCouncil: "",
+  issuingMethods: ["By Hand"],
+  bargainingCouncil: "None",
 };
 
 const fieldClassName =
@@ -213,12 +214,9 @@ const fallbackMisconductTypeOptions = [
 ] as const;
 
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
+const terminationNoticeOptions = ["None", "One week", "Two weeks", "One month"] as const;
 const appealNoticeOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const issuingMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
-const disputeForumOptions = [
-  { label: "CCMA", value: "ccma" },
-  { label: "Bargaining Council", value: "bargaining_council" },
-] as const;
 const bargainingCouncilOptions = [
   { label: "None", value: "None" },
   { label: "National Bargaining Council for the Road Freight and Logistics Industry (NBCRFLI)", value: "NBCRFLI" },
@@ -528,6 +526,11 @@ const mapClientRecordToState = (record: ClientRecord): ClientStepState => ({
   logoOrientation: "",
 });
 
+const normalizeClientBargainingCouncil = (value: string | null | undefined) => {
+  const raw = String(value || "").trim();
+  return raw || "None";
+};
+
 const isDraftState = (value: unknown): value is MiscTermDraftState => {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -549,6 +552,7 @@ const normalizeTerminationDraft = (value: unknown): TerminationStepState => {
   return {
     ...emptyTerminationState,
     ...candidate,
+    bargainingCouncil: String(candidate.bargainingCouncil || emptyTerminationState.bargainingCouncil).trim() || "None",
     misconductTypes: Array.isArray(candidate.misconductTypes)
       ? candidate.misconductTypes.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
@@ -583,11 +587,17 @@ const formatMisconductList = (values: string[]) => {
 };
 
 const getDisputeForumText = (termination: TerminationStepState) => {
-  if (termination.disputeForum === "bargaining_council") {
-    const councilName = termination.bargainingCouncil.trim();
-    return councilName ? `the ${councilName}` : "the bargaining council";
-  }
-  return "the CCMA";
+  const councilName = String(termination.bargainingCouncil || "").trim();
+  if (!councilName || councilName.toLowerCase() === "none") return "the CCMA";
+  const councilLabel = bargainingCouncilOptions.find((option) => option.value === councilName)?.label || councilName;
+  return `the ${councilLabel}`;
+};
+
+const terminationNoticeTextByValue: Record<TerminationStepState["terminationNotice"], string> = {
+  None: "",
+  "One week": "with 1 week's notice",
+  "Two weeks": "with 2 weeks' notice",
+  "One month": "with 1 month's notice",
 };
 
 const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
@@ -596,13 +606,18 @@ const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
   const appealNoticeDisplay = termination.appealNotice || "5 days";
   const usesPda = termination.progressiveDisciplinaryAction === "Yes";
   const disputeForumText = getDisputeForumText(termination);
+  const noticeText = terminationNoticeTextByValue[termination.terminationNotice] || "";
+  const terminationActionText = noticeText ? `terminated ${noticeText}` : "terminated summarily";
+  const propertyReturnText = noticeText
+    ? "You are required to return all company property in your possession to the employer on your last day of employment."
+    : "You are required to return all company property in your possession to the employer immediately.";
 
   return [
     `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay}.`,
     `After considering the statements and/or evidence presented at the disciplinary hearing, you were found guilty of misconduct relating to ${misconductSummary}.`,
     usesPda
-      ? `Take notice that we are implementing progressive disciplinary action and your employment is hereby terminated summarily for misconduct relating to ${misconductSummary}. You are required to return all company property in your possession to the employer immediately.`
-      : `Take notice that your employment is hereby terminated summarily for misconduct relating to ${misconductSummary}. You are required to return all company property in your possession to the employer immediately.`,
+      ? `Take notice that we are implementing progressive disciplinary action and your employment is hereby ${terminationActionText} for misconduct relating to ${misconductSummary}. ${propertyReturnText}`
+      : `Take notice that your employment is hereby ${terminationActionText} for misconduct relating to ${misconductSummary}. ${propertyReturnText}`,
     `You may appeal against this decision to terminate your employment within ${appealNoticeDisplay.replace(" days", "")} days from the date of this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
     "We trust you find the above in order and wish you well in your future endeavours.",
   ];
@@ -933,6 +948,7 @@ const MiscTermLetterGenerator = ({
   const [misconductSearchOpen, setMisconductSearchOpen] = useState(false);
   const [issuingMethodSearchOpen, setIssuingMethodSearchOpen] = useState(false);
   const [bargainingCouncilSearchOpen, setBargainingCouncilSearchOpen] = useState(false);
+  const [bargainingCouncilSearchValue, setBargainingCouncilSearchValue] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -948,7 +964,7 @@ const MiscTermLetterGenerator = ({
       const { data, error } = await db
         .from("clients")
         .select(
-          "id,registered_name,trading_as,company_type,registration_number,primary_number,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
+          "id,registered_name,trading_as,company_type,registration_number,primary_number,primary_email,physical_address_line1,physical_address_line2,city,province,area_code,bargaining_council",
         )
         .order("registered_name", { ascending: true, nullsFirst: false });
 
@@ -1113,9 +1129,32 @@ const MiscTermLetterGenerator = ({
   const handleClientSelect = (clientId: string) => {
     const nextRecord = clients.find((entry) => entry.id === clientId);
     if (!nextRecord) return;
+    if (client.clientId === nextRecord.id) {
+      setClientSearchValue("");
+      setClientMenuOpen(false);
+      return;
+    }
 
     setClient(mapClientRecordToState(nextRecord));
+    setEmployee(emptyEmployeeState);
+    setTermination({
+      ...emptyTerminationState,
+      bargainingCouncil: normalizeClientBargainingCouncil(nextRecord.bargaining_council),
+    });
+    setPreviewBodyEdits([]);
+    setCustomParagraphs([]);
+    setEditingParagraphId(null);
+    setParagraphDraft("");
+    setAddingAfterId(undefined);
+    setNewParagraphDraft("");
+    setIsPreviewEditable(false);
+    setMisconductSearchOpen(false);
+    setIssuingMethodSearchOpen(false);
+    setBargainingCouncilSearchOpen(false);
+    setBargainingCouncilSearchValue("");
+    setActiveStep(0);
     setClientSearchValue("");
+    setClientMenuOpen(false);
     void loadLogoForClient(clientId);
   };
 
@@ -1136,8 +1175,7 @@ const MiscTermLetterGenerator = ({
     termination.progressiveDisciplinaryAction.trim().length > 0 &&
     termination.appealNotice.trim().length > 0 &&
     termination.issuingMethods.length > 0 &&
-    termination.disputeForum.trim().length > 0 &&
-    (termination.disputeForum !== "bargaining_council" || termination.bargainingCouncil.trim().length > 0);
+    termination.bargainingCouncil.trim().length > 0;
   const selectedClientLabel = client.companyName || "Select client";
   const filteredClients = useMemo(() => {
     const searchValue = clientSearchValue.trim().toLowerCase();
@@ -1159,7 +1197,7 @@ const MiscTermLetterGenerator = ({
   const selectedBargainingCouncilLabel =
     bargainingCouncilOptions.find((option) => option.value === termination.bargainingCouncil)?.label ||
     termination.bargainingCouncil ||
-    "Select bargaining council";
+    "None";
 
   const updateEmployee = <K extends keyof EmployeeStepState>(key: K, value: EmployeeStepState[K]) => {
     setEmployee((current) => ({ ...current, [key]: value }));
@@ -2062,6 +2100,27 @@ const MiscTermLetterGenerator = ({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="miscTermTerminationNotice" className="text-[10px] font-semibold text-slate-600">
+              Termination Notice <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={termination.terminationNotice}
+              onValueChange={(value) => updateTermination("terminationNotice", value as TerminationStepState["terminationNotice"])}
+            >
+              <SelectTrigger id="miscTermTerminationNotice" className={selectTriggerClassName}>
+                <SelectValue placeholder="Select termination notice" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {terminationNoticeOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="miscTermIssuingMethods" className="text-[10px] font-semibold text-slate-600">
               Method of Issuing <span className="text-red-500">*</span>
             </Label>
@@ -2143,117 +2202,83 @@ const MiscTermLetterGenerator = ({
             </Popover>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="miscTermDisputeForum" className="text-[10px] font-semibold text-slate-600">
-              Forum <span className="text-red-500">*</span>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="miscTermBargainingCouncil" className="text-[10px] font-semibold text-slate-600">
+              Bargaining Council <span className="text-red-500">*</span>
             </Label>
-            <Select
-              value={termination.disputeForum}
-              onValueChange={(value) =>
-                setTermination((current) => ({
-                  ...current,
-                  disputeForum: value as TerminationStepState["disputeForum"],
-                  bargainingCouncil: value === "bargaining_council" ? current.bargainingCouncil : "",
-                }))
-              }
+            <Popover
+              open={bargainingCouncilSearchOpen}
+              onOpenChange={(open) => {
+                if (!open) setBargainingCouncilSearchValue("");
+                setBargainingCouncilSearchOpen(open);
+              }}
             >
-              <SelectTrigger id="miscTermDisputeForum" className={selectTriggerClassName}>
-                <SelectValue placeholder="Select forum" />
-              </SelectTrigger>
-              <SelectContent className="text-[10px]">
-                {disputeForumOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {termination.disputeForum === "bargaining_council" ? (
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="miscTermBargainingCouncil" className="text-[10px] font-semibold text-slate-600">
-                Bargaining Council <span className="text-red-500">*</span>
-              </Label>
-              <Popover open={bargainingCouncilSearchOpen} onOpenChange={setBargainingCouncilSearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="miscTermBargainingCouncil"
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={bargainingCouncilSearchOpen}
-                    className={cn(
-                      fieldClassName,
-                      "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900 [&>svg]:ml-2 [&>svg]:shrink-0",
-                      !termination.bargainingCouncil && "text-[10px] text-slate-400",
-                    )}
-                  >
-                    <span className="truncate text-left">{selectedBargainingCouncilLabel}</span>
-                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
-                  onWheel={(event) => event.stopPropagation()}
+              <PopoverTrigger asChild>
+                <Button
+                  id="miscTermBargainingCouncil"
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={bargainingCouncilSearchOpen}
+                  className={cn(
+                    fieldClassName,
+                    "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900 [&>svg]:ml-2 [&>svg]:shrink-0",
+                    !termination.bargainingCouncil && "text-[10px] text-slate-400",
+                  )}
                 >
-                  <Command shouldFilter={false}>
-                    <CommandInput
-                      value={termination.bargainingCouncil}
-                      onValueChange={(value) => updateTermination("bargainingCouncil", value)}
-                      placeholder="Search or type bargaining council..."
-                      className="h-8 text-[11px] placeholder:text-[10px]"
-                    />
-                    <CommandList className="max-h-[248px] overscroll-contain">
-                      <CommandEmpty className="px-3 py-4 text-sm text-slate-500">
-                        Press Enter to use the typed bargaining council.
-                      </CommandEmpty>
-                      <CommandGroup className="px-1">
-                        {bargainingCouncilOptions
-                          .filter((option) => {
-                            const query = termination.bargainingCouncil.trim().toLowerCase();
-                            if (!query) return true;
-                            return (
-                              option.label.toLowerCase().includes(query) ||
-                              option.value.toLowerCase().includes(query)
-                            );
-                          })
-                          .map((option) => (
-                            <CommandItem
-                              key={option.value}
-                              value={`${option.label} ${option.value}`}
-                              onSelect={() => {
-                                updateTermination("bargainingCouncil", option.label);
-                                setBargainingCouncilSearchOpen(false);
-                              }}
-                              className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
-                            >
-                              <p className="min-w-0 truncate text-[10px] font-medium text-slate-900">{option.label}</p>
-                              {selectedBargainingCouncilLabel === option.label ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                            </CommandItem>
-                          ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                  <div className="border-t border-slate-200 bg-white px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => setBargainingCouncilSearchOpen(false)}
-                      className="text-[10px] font-medium text-[#2f9f35]"
-                    >
-                      Use typed value
-                    </button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-          ) : null}
+                  <span className="truncate text-left">{selectedBargainingCouncilLabel}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    value={bargainingCouncilSearchValue}
+                    onValueChange={setBargainingCouncilSearchValue}
+                    placeholder="Search bargaining council..."
+                    className="h-8 text-[11px] placeholder:text-[10px]"
+                  />
+                  <CommandList className="max-h-[248px] overscroll-contain">
+                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">
+                      No matching bargaining councils found.
+                    </CommandEmpty>
+                    <CommandGroup className="px-1">
+                      {bargainingCouncilOptions
+                        .filter((option) => {
+                          const query = bargainingCouncilSearchValue.trim().toLowerCase();
+                          if (!query) return true;
+                          return option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query);
+                        })
+                        .map((option) => (
+                          <CommandItem
+                            key={option.value}
+                            value={`${option.label} ${option.value}`}
+                            onSelect={() => {
+                              updateTermination("bargainingCouncil", option.value);
+                              setBargainingCouncilSearchValue("");
+                              setBargainingCouncilSearchOpen(false);
+                            }}
+                            className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
+                          >
+                            <p className="min-w-0 truncate text-[10px] font-medium text-slate-900">{option.label}</p>
+                            {termination.bargainingCouncil === option.value ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                          </CommandItem>
+                        ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         {!isTerminationStepComplete ? (
           <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
-            Hearing date, misconduct type, PDA, appeal notice, dispute forum, and at least one issuing method must be completed.
+            Hearing date, misconduct type, PDA, appeal notice, bargaining council, and at least one issuing method must be completed.
           </div>
         ) : null}
       </div>

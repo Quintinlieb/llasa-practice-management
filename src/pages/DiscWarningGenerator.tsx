@@ -15,7 +15,7 @@ import { logGeneratedDocument } from "@/lib/documentsLog";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
-import { Building2, Check, ChevronsUpDown, FileText, User2, X } from "lucide-react";
+import { Building2, Check, ChevronDown, FileText, User2, X } from "lucide-react";
 
 type DiscWarningGeneratorProps = {
   embedded?: boolean;
@@ -847,7 +847,7 @@ const DiscWarningGeneratorContent = ({
                         )}
                       >
                         <span className="truncate">{selectedClientLabel}</span>
-                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent
@@ -1076,7 +1076,7 @@ const DiscWarningGeneratorContent = ({
                       )}
                     >
                       <span className="truncate text-left">{misconductSelectionLabel}</span>
-                      <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent

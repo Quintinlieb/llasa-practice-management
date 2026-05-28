@@ -15,8 +15,10 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { read, utils } from "xlsx";
-import { Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
+import { CalendarDays, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
@@ -35,6 +37,24 @@ const CLIENT_FILE_NOTE_TYPES = [
   "Email Received",
   "Email Sent",
   "Consultation",
+] as const;
+const DIARY_TASK_PRIORITY_OPTIONS: readonly DiaryTaskPriority[] = ["Low", "Medium", "High"] as const;
+const DIARY_TASK_TYPE_OPTIONS = [
+  "Phone Call",
+  "Email / Correspondence",
+  "Follow-Up",
+  "Draft Document",
+  "Review Document",
+  "Request Information",
+  "Prepare Bundle",
+  "Case Preparation",
+  "Schedule Meeting",
+  "Client Update",
+  "Submit / File Document",
+  "Check Deadline",
+  "Internal Review",
+  "Invoice / Accounts",
+  "General Admin",
 ] as const;
 const getClientFileNoteTypePillClassName = (value: string) => {
   switch (String(value || "").trim()) {
@@ -58,6 +78,7 @@ const getClientFileNoteTypePillClassName = (value: string) => {
 };
 const CLIENTS_TABLE_PAGE_SIZE = 25;
 const CLIENTS_TABLE_VISIBLE_ROWS = 18;
+const CLIENT_FILE_TABLE_PAGE_SIZE = 7;
 const FILE_NOTE_EDIT_TAG_REGEX =
   /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
 const parseDisplayDateValue = (value: string | Date) => {
@@ -148,6 +169,18 @@ const splitFileNoteContentAndEditTag = (raw: string) => {
   const content = editTag ? value.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim() : value;
   return { content, editTag };
 };
+const getPaginationNumbers = (currentPage: number, totalPages: number) => {
+  if (totalPages <= 6) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, "ellipsis", totalPages];
+  }
+  if (currentPage >= totalPages - 2) {
+    return [1, "ellipsis", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, "ellipsis", currentPage - 1, currentPage, currentPage + 1, "ellipsis-2", totalPages];
+};
 type MentionOption = { id: string; label: string; token: string; searchText: string; recipientUserId: string };
 type ClientGeneratedDocument = {
   id: string;
@@ -167,13 +200,34 @@ type ClientMatter = {
   status: string;
   currentStage: string;
   nextDate: string;
+  shortDescription: string;
+};
+type DiaryTaskPriority = "Low" | "Medium" | "High";
+type DiaryTaskType = (typeof DIARY_TASK_TYPE_OPTIONS)[number];
+type DiaryTask = {
+  id: string;
+  diaryDate: string;
+  description: string;
+  taskType: DiaryTaskType;
+  createdByUserId: string;
+  assignedToUserId: string;
+  assignedToName: string;
+  priority: DiaryTaskPriority;
+  relatedMatterId: string;
+  relatedMatterLabel: string;
+  createdByName: string;
+  createdAt: string;
+};
+type DiaryTaskAssigneeOption = {
+  userId: string;
+  label: string;
 };
 type MembershipDocumentRecord = {
   id: string;
   fileName: string;
   fileUrl: string;
 };
-type ClientDetailsTab = "company" | "membership" | "notes" | "matters" | "documents";
+type ClientDetailsTab = "company" | "membership" | "notes" | "matters" | "tasks" | "documents";
 type ClientExportOption =
   | {
       kind: "inactive";
@@ -284,7 +338,13 @@ const formatClientMatterType = (matter: Pick<ClientMatter, "caseType" | "subtype
   if (subtype === "incapacity (performance)") return "Poor Performance Hearing";
   if (subtype === "incapacity (ill health)") return "Ill Health Hearing";
   if (subtype === "grievance") return "Grievance Hearing";
+  if (subtype === "abscondment") return "Abscondment Hearing";
   return "Hearing";
+};
+const buildClientTaskRelatedMatterLabel = (matter: Pick<ClientMatter, "fileNumber" | "caseType" | "subtype">) => {
+  const fileNumber = String(matter.fileNumber || "").trim() || "MATTER";
+  const matterTitle = formatClientMatterType(matter);
+  return matterTitle ? `${fileNumber} - ${matterTitle}` : fileNumber;
 };
 const resolveCurrentCompanyIdForMentions = async (user: any) => {
   if (!user?.id) return "";
@@ -621,6 +681,7 @@ const ClientsTwo = () => {
   const [newClientStep, setNewClientStep] = useState<1 | 2 | 3>(1);
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const editStartDateInputRef = useRef<HTMLInputElement | null>(null);
+  const clientTaskDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const slaFileInputRef = useRef<HTMLInputElement | null>(null);
   const ahiCertificateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -670,6 +731,26 @@ const ClientsTwo = () => {
   const [clientMatters, setClientMatters] = useState<ClientMatter[]>([]);
   const [isClientMattersLoading, setIsClientMattersLoading] = useState(false);
   const [clientMattersSearchQuery, setClientMattersSearchQuery] = useState("");
+  const [clientTasks, setClientTasks] = useState<DiaryTask[]>([]);
+  const [isClientTasksLoading, setIsClientTasksLoading] = useState(false);
+  const [clientNotesTablePage, setClientNotesTablePage] = useState(1);
+  const [clientMattersTablePage, setClientMattersTablePage] = useState(1);
+  const [clientTasksTablePage, setClientTasksTablePage] = useState(1);
+  const [clientDocumentsTablePage, setClientDocumentsTablePage] = useState(1);
+  const [isClientTaskDialogOpen, setIsClientTaskDialogOpen] = useState(false);
+  const [isSavingClientTask, setIsSavingClientTask] = useState(false);
+  const [editingClientTaskId, setEditingClientTaskId] = useState<string | null>(null);
+  const [isClientTaskPreviewOpen, setIsClientTaskPreviewOpen] = useState(false);
+  const [previewClientTask, setPreviewClientTask] = useState<DiaryTask | null>(null);
+  const [taskAssigneeOptions, setTaskAssigneeOptions] = useState<DiaryTaskAssigneeOption[]>([]);
+  const [clientTaskForm, setClientTaskForm] = useState({
+    diaryDate: "",
+    description: "",
+    taskType: "General Admin" as DiaryTaskType,
+    assignedToUserId: "",
+    priority: "Medium" as DiaryTaskPriority,
+    relatedMatterId: "",
+  });
   const [isClientEditMode, setIsClientEditMode] = useState(false);
   const [isSavingClientEdit, setIsSavingClientEdit] = useState(false);
   const [isSlaUploading, setIsSlaUploading] = useState(false);
@@ -1122,18 +1203,7 @@ const ClientsTwo = () => {
     [paginatedTableRows, selectedClientIds],
   );
   const selectedCount = selectedClientIds.size;
-  const clientTablePageNumbers = useMemo(() => {
-    if (totalClientTablePages <= 6) {
-      return Array.from({ length: totalClientTablePages }, (_, index) => index + 1);
-    }
-    if (currentClientTablePage <= 3) {
-      return [1, 2, 3, 4, "ellipsis", totalClientTablePages];
-    }
-    if (currentClientTablePage >= totalClientTablePages - 2) {
-      return [1, "ellipsis", totalClientTablePages - 3, totalClientTablePages - 2, totalClientTablePages - 1, totalClientTablePages];
-    }
-    return [1, "ellipsis", currentClientTablePage - 1, currentClientTablePage, currentClientTablePage + 1, "ellipsis-2", totalClientTablePages];
-  }, [currentClientTablePage, totalClientTablePages]);
+  const clientTablePageNumbers = useMemo(() => getPaginationNumbers(currentClientTablePage, totalClientTablePages), [currentClientTablePage, totalClientTablePages]);
   const filteredClientFileNotes = useMemo(() => {
     const q = clientFileNotesSearchQuery.trim().toLowerCase();
     if (!q) return clientFileNotes;
@@ -1168,6 +1238,46 @@ const ClientsTwo = () => {
       ].some((value) => String(value || "").toLowerCase().includes(query)),
     );
   }, [clientMatters, clientMattersSearchQuery]);
+  const totalClientNotesTablePages = Math.max(1, Math.ceil(filteredClientFileNotes.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const currentClientNotesTablePage = Math.min(clientNotesTablePage, totalClientNotesTablePages);
+  const paginatedClientFileNotes = useMemo(
+    () => filteredClientFileNotes.slice((currentClientNotesTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientNotesTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
+    [currentClientNotesTablePage, filteredClientFileNotes],
+  );
+  const clientNotesTablePageNumbers = useMemo(
+    () => getPaginationNumbers(currentClientNotesTablePage, totalClientNotesTablePages),
+    [currentClientNotesTablePage, totalClientNotesTablePages],
+  );
+  const totalClientMattersTablePages = Math.max(1, Math.ceil(filteredClientMatters.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const currentClientMattersTablePage = Math.min(clientMattersTablePage, totalClientMattersTablePages);
+  const paginatedClientMatters = useMemo(
+    () => filteredClientMatters.slice((currentClientMattersTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientMattersTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
+    [currentClientMattersTablePage, filteredClientMatters],
+  );
+  const clientMattersTablePageNumbers = useMemo(
+    () => getPaginationNumbers(currentClientMattersTablePage, totalClientMattersTablePages),
+    [currentClientMattersTablePage, totalClientMattersTablePages],
+  );
+  const totalClientTasksTablePages = Math.max(1, Math.ceil(clientTasks.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const currentClientTasksTablePage = Math.min(clientTasksTablePage, totalClientTasksTablePages);
+  const paginatedClientTasks = useMemo(
+    () => clientTasks.slice((currentClientTasksTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientTasksTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
+    [clientTasks, currentClientTasksTablePage],
+  );
+  const clientTasksTablePageNumbers = useMemo(
+    () => getPaginationNumbers(currentClientTasksTablePage, totalClientTasksTablePages),
+    [currentClientTasksTablePage, totalClientTasksTablePages],
+  );
+  const totalClientDocumentsTablePages = Math.max(1, Math.ceil(filteredClientGeneratedDocuments.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const currentClientDocumentsTablePage = Math.min(clientDocumentsTablePage, totalClientDocumentsTablePages);
+  const paginatedClientGeneratedDocuments = useMemo(
+    () => filteredClientGeneratedDocuments.slice((currentClientDocumentsTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientDocumentsTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
+    [currentClientDocumentsTablePage, filteredClientGeneratedDocuments],
+  );
+  const clientDocumentsTablePageNumbers = useMemo(
+    () => getPaginationNumbers(currentClientDocumentsTablePage, totalClientDocumentsTablePages),
+    [currentClientDocumentsTablePage, totalClientDocumentsTablePages],
+  );
   const normalizedGroupSearch = groupSearchQuery.trim().toLowerCase();
   const filteredGroupOptions = useMemo(
     () =>
@@ -1418,7 +1528,7 @@ const ClientsTwo = () => {
     try {
       const { data, error } = await (supabase as any)
         .from("case_files")
-        .select("id, file_number, parties, case_type, case_subtype, status, current_stage, next_date")
+        .select("id, file_number, parties, case_type, case_subtype, status, current_stage, next_date, short_description")
         .eq("client_id", clientId)
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
@@ -1463,6 +1573,7 @@ const ClientsTwo = () => {
               dateEventsByCaseId.get(id) ?? [],
             ),
             nextDate: String(row?.next_date ?? "").trim(),
+            shortDescription: String(row?.short_description ?? "").trim(),
           };
         }),
       );
@@ -1477,6 +1588,93 @@ const ClientsTwo = () => {
       setIsClientMattersLoading(false);
     }
   }, [toast]);
+  const fetchClientTasks = useCallback(async (clientRow: any) => {
+    const clientId = String(clientRow?.id ?? "").trim();
+    if (!clientId) {
+      setClientTasks([]);
+      return;
+    }
+
+    setIsClientTasksLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("diary_tasks")
+        .select("id, diary_date, description, task_type, assigned_to_user_id, assigned_to_name, priority, related_matter_id, created_by, created_by_name, created_at")
+        .eq("client_id", clientId)
+        .order("diary_date", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true, nullsFirst: false });
+      if (error) throw error;
+
+      const activeMatterLabelById = new Map(
+        clientMatters
+          .filter((matter) => String(matter.status || "").trim().toLowerCase() === "active")
+          .map((matter) => [matter.id, buildClientTaskRelatedMatterLabel(matter)]),
+      );
+
+      setClientTasks(
+        (Array.isArray(data) ? data : []).map((row: any) => ({
+          id: String(row?.id || crypto.randomUUID()),
+          diaryDate: String(row?.diary_date || "").trim(),
+          description: String(row?.description || "").trim(),
+          taskType: (String(row?.task_type || "General Admin").trim() || "General Admin") as DiaryTaskType,
+          createdByUserId: String(row?.created_by || "").trim(),
+          assignedToUserId: String(row?.assigned_to_user_id || "").trim(),
+          assignedToName: String(row?.assigned_to_name || "").trim() || "--",
+          priority: (String(row?.priority || "Medium").trim() || "Medium") as DiaryTaskPriority,
+          relatedMatterId: String(row?.related_matter_id || "").trim(),
+          relatedMatterLabel: activeMatterLabelById.get(String(row?.related_matter_id || "").trim()) || "--",
+          createdByName: String(row?.created_by_name || "").trim() || "--",
+          createdAt: String(row?.created_at || "").trim(),
+        })),
+      );
+    } catch (error: any) {
+      setClientTasks([]);
+      toast({
+        title: "Unable to load tasks",
+        description: error?.message || "Load failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClientTasksLoading(false);
+    }
+  }, [clientMatters, toast]);
+  const fetchTaskAssigneeOptions = useCallback(async () => {
+    if (!user?.id) return;
+    const options: DiaryTaskAssigneeOption[] = [];
+    const seen = new Set<string>();
+    const addOption = (userId: string, label: string) => {
+      const safeUserId = String(userId || "").trim();
+      const safeLabel = String(label || "").trim();
+      if (!safeUserId || !safeLabel) return;
+      const dedupeKey = safeUserId.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      options.push({ userId: safeUserId, label: safeLabel });
+    };
+
+    const { data: profiles } = await (supabase as any)
+      .from("profiles")
+      .select("id,user_name,user_surname,user_email");
+    (Array.isArray(profiles) ? profiles : []).forEach((row: any) => {
+      const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+      addOption(String(row?.id || "").trim(), fullName || String(row?.user_email || "").trim());
+    });
+
+    const companyId = await resolveCurrentCompanyIdForMentions(user);
+    const { data: subusers } = await (supabase as any)
+      .from("subusers")
+      .select("auth_user_id,name,surname,email,status,company_id");
+    (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+      const status = String(row?.status || "").trim().toLowerCase();
+      const rowCompanyId = String(row?.company_id || "").trim();
+      if (status && status !== "accepted" && status !== "active") return;
+      if (companyId && rowCompanyId && rowCompanyId !== companyId) return;
+      const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+      addOption(String(row?.auth_user_id || "").trim(), fullName || String(row?.email || "").trim());
+    });
+
+    setTaskAssigneeOptions(options.sort((a, b) => a.label.localeCompare(b.label)));
+  }, [user]);
   const handleViewClientGeneratedDocument = useCallback((document: ClientGeneratedDocument) => {
     const fileUrl = String(document.fileUrl || "").trim();
     if (!fileUrl) {
@@ -1544,6 +1742,128 @@ const ClientsTwo = () => {
     const fromEmail = String(user?.email || "").trim();
     return fromEmail || "Unknown User";
   }, [currentUserDisplayName, user]);
+  const resetClientTaskForm = useCallback(() => {
+    const currentUserName = resolveCurrentUserName();
+    const defaultAssignee =
+      taskAssigneeOptions.find((option) => option.label.toLowerCase() === currentUserName.trim().toLowerCase()) ||
+      taskAssigneeOptions.find((option) => option.userId === String(user?.id || "").trim()) ||
+      taskAssigneeOptions[0];
+    setClientTaskForm({
+      diaryDate: dateToday(),
+      description: "",
+      taskType: "General Admin",
+      assignedToUserId: defaultAssignee?.userId || "",
+      priority: "Medium",
+      relatedMatterId: "",
+    });
+  }, [resolveCurrentUserName, taskAssigneeOptions, user?.id]);
+  const openAddClientTaskDialog = useCallback(() => {
+    setEditingClientTaskId(null);
+    resetClientTaskForm();
+    setIsClientTaskDialogOpen(true);
+  }, [resetClientTaskForm]);
+  const openEditClientTaskDialog = useCallback((task: DiaryTask) => {
+    if (String(task.createdByUserId || "").trim() !== String(user?.id || "").trim()) return;
+    setEditingClientTaskId(task.id);
+    setClientTaskForm({
+      diaryDate: task.diaryDate,
+      description: task.description,
+      taskType: task.taskType,
+      assignedToUserId: task.assignedToUserId,
+      priority: task.priority,
+      relatedMatterId: task.relatedMatterId,
+    });
+    setIsClientTaskDialogOpen(true);
+  }, [user?.id]);
+  const openClientTaskPreviewDialog = useCallback((task: DiaryTask) => {
+    setPreviewClientTask(task);
+    setIsClientTaskPreviewOpen(true);
+  }, []);
+  const handleDeleteClientTask = useCallback(async (taskId: string) => {
+    const safeTaskId = String(taskId || "").trim();
+    if (!safeTaskId || !selectedClientRow?.id || currentUserIsSubuser) return;
+    const confirmed = window.confirm("Are you sure you want to delete this task?");
+    if (!confirmed) return;
+
+    try {
+      const { error } = await (supabase as any)
+        .from("diary_tasks")
+        .delete()
+        .eq("id", safeTaskId);
+      if (error) throw error;
+      if (previewClientTask?.id === safeTaskId) {
+        setIsClientTaskPreviewOpen(false);
+        setPreviewClientTask(null);
+      }
+      await fetchClientTasks(selectedClientRow);
+      toast({ title: "Task deleted", description: "Diary task deleted successfully." });
+    } catch (error: any) {
+      toast({
+        title: "Unable to delete task",
+        description: error?.message || "Delete failed.",
+        variant: "destructive",
+      });
+    }
+  }, [currentUserIsSubuser, fetchClientTasks, previewClientTask?.id, selectedClientRow, toast]);
+  const handleSaveClientTask = useCallback(async () => {
+    if (!selectedClientRow?.id || !user?.id) return;
+    const diaryDate = String(clientTaskForm.diaryDate || "").trim();
+    const description = String(clientTaskForm.description || "").trim();
+    const taskType = String(clientTaskForm.taskType || "").trim();
+    const assignedToUserId = String(clientTaskForm.assignedToUserId || "").trim();
+    const assignee = taskAssigneeOptions.find((option) => option.userId === assignedToUserId);
+    const companyId = await resolveCurrentCompanyIdForMentions(user);
+    if (!diaryDate || !description || !taskType || !assignedToUserId || !assignee?.label || !companyId) {
+      toast({
+        title: "Missing fields",
+        description: "Diary date, task type, description and assigned to are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingClientTask(true);
+    try {
+      const relatedMatterId = String(clientTaskForm.relatedMatterId || "").trim();
+      const payload = {
+        related_matter_id: relatedMatterId || null,
+        diary_date: diaryDate,
+        description,
+        task_type: taskType,
+        assigned_to_user_id: assignedToUserId,
+        assigned_to_name: assignee.label,
+        priority: clientTaskForm.priority,
+      };
+      const { error } = editingClientTaskId
+        ? await (supabase as any)
+            .from("diary_tasks")
+            .update(payload)
+            .eq("id", editingClientTaskId)
+        : await (supabase as any)
+            .from("diary_tasks")
+            .insert({
+              company_id: companyId,
+              client_id: selectedClientRow.id,
+              ...payload,
+              created_by: user.id,
+              created_by_name: resolveCurrentUserName(),
+            });
+      if (error) throw error;
+      setIsClientTaskDialogOpen(false);
+      setEditingClientTaskId(null);
+      resetClientTaskForm();
+      await fetchClientTasks(selectedClientRow);
+      toast({ title: "Task saved", description: editingClientTaskId ? "Diary task updated successfully." : "Diary task created successfully." });
+    } catch (error: any) {
+      toast({
+        title: "Unable to save task",
+        description: error?.message || "Save failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingClientTask(false);
+    }
+  }, [clientTaskForm, editingClientTaskId, fetchClientTasks, resetClientTaskForm, resolveCurrentUserName, selectedClientRow, taskAssigneeOptions, toast, user]);
   const isNoteEditableByCurrentUser = useCallback(
     (note: any) => {
       const actor = resolveCurrentUserName().trim().toLowerCase();
@@ -1553,11 +1873,13 @@ const ClientsTwo = () => {
     },
     [resolveCurrentUserName],
   );
-  const canCurrentUserDeleteNotes = useMemo(() => {
-    const role = currentUserSubuserRole.trim().toLowerCase();
-    if (!role) return true;
-    return role !== "consultant" && role !== "administrator";
-  }, [currentUserSubuserRole]);
+  const isTaskEditableByCurrentUser = useCallback(
+    (task: DiaryTask) => String(task.createdByUserId || "").trim() === String(user?.id || "").trim(),
+    [user?.id],
+  );
+  const canCurrentUserDeleteNotes = useMemo(() => !currentUserIsSubuser, [currentUserIsSubuser]);
+  const canCurrentUserDeleteTasks = useMemo(() => !currentUserIsSubuser, [currentUserIsSubuser]);
+  const canCurrentUserManageSla = useMemo(() => !currentUserIsSubuser, [currentUserIsSubuser]);
   const canCurrentUserChangeStatus = useMemo(() => {
     const role = currentUserSubuserRole.trim().toLowerCase();
     if (!role) return true;
@@ -1772,6 +2094,16 @@ const ClientsTwo = () => {
     setClientMattersSearchQuery("");
     void fetchClientMatters(selectedClientRow);
   }, [fetchClientMatters, selectedClientRow]);
+  useEffect(() => {
+    if (!selectedClientRow?.id) {
+      setClientTasks([]);
+      return;
+    }
+    void fetchClientTasks(selectedClientRow);
+  }, [fetchClientTasks, selectedClientRow]);
+  useEffect(() => {
+    void fetchTaskAssigneeOptions();
+  }, [fetchTaskAssigneeOptions]);
   useEffect(() => {
     if (!selectedClientRow?.id) return;
     const reloadDocuments = () => void fetchClientGeneratedDocuments(selectedClientRow);
@@ -3080,8 +3412,13 @@ const ClientsTwo = () => {
     setFileName(file.name);
   }, [selectedClientRow?.id, toast, user?.id]);
   const handleSlaFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (currentUserIsSubuser) {
+      event.target.value = "";
+      toast({ title: "Change not allowed", description: "Only main users can upload or change the SLA file.", variant: "destructive" });
+      return;
+    }
     await handleMembershipDocumentFileChange(event, setPendingSlaFile, setPendingSlaFileName);
-  }, [handleMembershipDocumentFileChange]);
+  }, [currentUserIsSubuser, handleMembershipDocumentFileChange, toast]);
   const handleAhiCertificateFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     await handleMembershipDocumentFileChange(event, setPendingAhiCertificateFile, setPendingAhiCertificateFileName);
   }, [handleMembershipDocumentFileChange]);
@@ -3130,6 +3467,11 @@ const ClientsTwo = () => {
     }
   }, [selectedClientRow?.id, toast, user?.id]);
   const handleRemoveSla = useCallback(async () => {
+    if (currentUserIsSubuser) {
+      toast({ title: "Change not allowed", description: "Only main users can delete the SLA file.", variant: "destructive" });
+      return;
+    }
+    if (!window.confirm("Are you sure you want to delete this SLA file?")) return;
     await handleRemoveMembershipDocument(
       pendingSlaFile,
       pendingSlaFileName,
@@ -3142,7 +3484,7 @@ const ClientsTwo = () => {
       "SLA removed",
       "Agreement file removed.",
     );
-  }, [handleRemoveMembershipDocument, pendingSlaFile, pendingSlaFileName, selectedClientRow?.id, slaRecordByClient]);
+  }, [currentUserIsSubuser, handleRemoveMembershipDocument, pendingSlaFile, pendingSlaFileName, selectedClientRow?.id, slaRecordByClient, toast]);
   const handleRemoveAhiCertificate = useCallback(async () => {
     await handleRemoveMembershipDocument(
       pendingAhiCertificateFile,
@@ -3419,7 +3761,7 @@ const ClientsTwo = () => {
       });
       return;
     }
-    if (!window.confirm("Delete this file note?")) return;
+    if (!window.confirm("Are you sure you want to delete this file note?")) return;
     try {
       const { error } = await (supabase as any)
         .from("client_file_notes")
@@ -3933,9 +4275,10 @@ const ClientsTwo = () => {
                         {paginatedTableRows.map((row) => (
                           <div
                             key={row.id}
-                            className="grid w-full grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
+                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
+                            onClick={() => openClientFile(row)}
                           >
-                            <div className="flex items-center justify-center">
+                            <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
                               <Checkbox
                                 indicator="x"
                                 aria-label={`Select ${row.companyNameDisplay}`}
@@ -3944,14 +4287,14 @@ const ClientsTwo = () => {
                                 className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                               />
                             </div>
-                            <button type="button" onClick={() => openClientFile(row)} className="font-medium text-left hover:underline">
+                            <div className="text-left text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">
                               {row.companyNameDisplay}
-                            </button>
-                            <div>{row.tradingAs}</div>
-                            <div>{row.contactPerson}</div>
-                            <div>{row.contactNumber}</div>
-                            <div>{row.email}</div>
-                            <div>{getClientStatusIndicator(row.status).label}</div>
+                            </div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.tradingAs}</div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactPerson}</div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactNumber}</div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.email}</div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{getClientStatusIndicator(row.status).label}</div>
                           </div>
                         ))}
                       </div>
@@ -4422,7 +4765,7 @@ const ClientsTwo = () => {
             onClick={() => setSelectedClientRow(null)}
           />
           <div className="absolute inset-0 flex items-center justify-center">
-            <section className="relative z-10 w-[94vw] max-w-[980px] h-[92vh] rounded-sm bg-[#2D4256] shadow-2xl overflow-hidden border-0">
+            <section className="relative z-10 w-[94vw] max-w-[1040px] h-[92vh] rounded-sm bg-[#2D4256] shadow-2xl overflow-hidden border-0">
               <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
                 <div className="flex items-center gap-5">
                   <h2 className="text-sm font-semibold text-white">Client File</h2>
@@ -4553,12 +4896,13 @@ const ClientsTwo = () => {
                   </div>
 
                   <Tabs value={activeClientTab} onValueChange={(value) => setActiveClientTab(value as ClientDetailsTab)} className="flex min-h-0 flex-1 flex-col">
-                    <TabsList className="grid w-full grid-cols-5 bg-slate-100">
-                      <TabsTrigger value="company" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
-                      <TabsTrigger value="membership" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
-                      <TabsTrigger value="notes" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
-                      <TabsTrigger value="matters" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
-                      <TabsTrigger value="documents" className="text-[11px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-6 bg-slate-100">
+                      <TabsTrigger value="company" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
+                      <TabsTrigger value="membership" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
+                      <TabsTrigger value="notes" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
+                      <TabsTrigger value="tasks" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Tasks</TabsTrigger>
+                      <TabsTrigger value="matters" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
+                      <TabsTrigger value="documents" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="company" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
@@ -5096,7 +5440,18 @@ const ClientsTwo = () => {
                                             value={clientEditForm.renewalDate ? formatDisplayDate(clientEditForm.renewalDate) : ""}
                                           />
                                         ) : field === "agreement" || field === "ahiCertificate" ? (
-                                          (field === "agreement"
+                                          field === "agreement" && !canCurrentUserManageSla ? (
+                                            pendingSlaFileName ? (
+                                              <p className="text-[11px] font-medium text-slate-900">{pendingSlaFileName}</p>
+                                            ) : selectedClientRow?.id && slaRecordByClient[selectedClientRow.id] ? (
+                                              <button type="button" onClick={handleOpenSla} className="group inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-900 hover:text-[#2f9f35] hover:underline text-left">
+                                                <Paperclip className="h-3 w-3 shrink-0" />
+                                                <span>{slaRecordByClient[selectedClientRow.id]?.fileName || "View SLA"}</span>
+                                              </button>
+                                            ) : (
+                                              <p className="text-[11px] font-medium text-slate-900">None</p>
+                                            )
+                                          ) : (field === "agreement"
                                             ? pendingSlaFileName || (selectedClientRow?.id && slaRecordByClient[selectedClientRow.id])
                                             : pendingAhiCertificateFileName || (selectedClientRow?.id && ahiCertificateRecordByClient[selectedClientRow.id])) ? (
                                             <div className="h-8 flex items-center justify-between gap-2">
@@ -5284,13 +5639,17 @@ const ClientsTwo = () => {
                                 >
                                   <p className="text-[10px] font-medium text-slate-500">{membershipLabelByValue[serviceCode] ?? serviceCode}</p>
                                   {isClientEditMode ? (
-                                    <Input
-                                      className="h-8 rounded !text-[11px] md:!text-[11px] font-medium"
-                                      value={rowRetainerValue || ""}
-                                      onChange={(e) => setClientEditForm((p) => ({ ...p, [retainerField]: normalizeRetainerInput(e.target.value) }))}
-                                    />
+                                    currentUserIsSubuser ? (
+                                      <p className="text-[11px] font-medium text-slate-900">--</p>
+                                    ) : (
+                                      <Input
+                                        className="h-8 rounded !text-[11px] md:!text-[11px] font-medium"
+                                        value={rowRetainerValue || ""}
+                                        onChange={(e) => setClientEditForm((p) => ({ ...p, [retainerField]: normalizeRetainerInput(e.target.value) }))}
+                                      />
+                                    )
                                   ) : (
-                                    <p className="text-[11px] font-medium text-slate-900">{formatRetainerDisplay(rowRetainerValue)}</p>
+                                    <p className="text-[11px] font-medium text-slate-900">{currentUserIsSubuser ? "--" : formatRetainerDisplay(rowRetainerValue)}</p>
                                   )}
                                   <p className="text-[10px] font-medium text-slate-500">{serviceCode} Billing Cycle</p>
                                   {isClientEditMode ? (
@@ -5319,118 +5678,151 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="notes" className="mt-6 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-0">
-                        {isNotesLoading ? (
-                          <div className="px-2 py-3 text-[11px] text-slate-500">Loading notes...</div>
-                        ) : clientFileNotes.length === 0 ? (
-                          <div className="space-y-3">
-                            <div className="px-2 py-3 text-[11px] text-slate-500">No file notes yet.</div>
-                            <Button
-                              type="button"
-                              className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                              onClick={openAddFileNoteDialog}
-                            >
-                              New Note
-                            </Button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="mb-3 flex items-center justify-between gap-2">
-                              <div className="group relative w-full max-w-[360px]">
-                                <Input
-                                  placeholder="Search by type, user, or note content..."
-                                  value={clientFileNotesSearchQuery}
-                                  onChange={(e) => setClientFileNotesSearchQuery(e.target.value)}
-                                  className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
-                                    clientFileNotesSearchQuery.trim().length > 0 ? "pr-20" : "pr-9"
-                                  }`}
-                                />
-                                {clientFileNotesSearchQuery.trim().length > 0 ? (
-                                  <button
-                                    type="button"
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
-                                    onClick={() => setClientFileNotesSearchQuery("")}
-                                  >
-                                    Clear
-                                  </button>
-                                ) : (
-                                  <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-                                )}
-                              </div>
-                              <Button
+                    <TabsContent value="notes" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="group relative w-full max-w-[360px]">
+                            <Input
+                              placeholder="Search by type, user, or note content..."
+                              value={clientFileNotesSearchQuery}
+                              onChange={(e) => setClientFileNotesSearchQuery(e.target.value)}
+                              className={`h-8 rounded border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                                clientFileNotesSearchQuery.trim().length > 0 ? "pr-20" : "pr-9"
+                              }`}
+                            />
+                            {clientFileNotesSearchQuery.trim().length > 0 ? (
+                              <button
                                 type="button"
-                                className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                                onClick={openAddFileNoteDialog}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                                onClick={() => setClientFileNotesSearchQuery("")}
                               >
-                                New Note
-                              </Button>
-                            </div>
-                            <div className="grid grid-cols-[0.7fr_0.8fr_2.9fr_1fr_0.5fr] items-center gap-2 rounded-t border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
-                              <div>Date</div>
-                              <div>Type</div>
-                              <div>Note</div>
-                              <div>Created By</div>
-                              <div>Actions</div>
-                            </div>
-                            <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
-                              {filteredClientFileNotes.length === 0 ? (
-                                <div className="px-2 py-3 text-slate-500">No file notes found.</div>
-                              ) : (
-                                filteredClientFileNotes.map((note) => (
-                                  <div key={note.id} className="grid grid-cols-[0.7fr_0.8fr_2.9fr_1fr_0.5fr] items-start gap-2 px-2 py-2 hover:bg-[#3eca44]/5">
-                                    {(() => {
-                                      const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
-                                      return (
-                                        <>
-                                    <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
-                                    <div className="flex min-w-0 items-center truncate">
-                                      <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientFileNoteTypePillClassName(String(note.note_type || ""))}`}>
-                                        {String(note.note_type || "--")}
-                                      </Badge>
-                                    </div>
-                                    <div className="min-w-0 pr-2">
-                                      <button
-                                        type="button"
-                                        className="block w-full overflow-hidden text-ellipsis whitespace-nowrap text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
-                                        onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""), String(note.note_type || ""))}
-                                        dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
-                                      />
-                                    </div>
-                                    <div className="flex min-w-0 items-center truncate">
-                                      <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
-                                        {String(note.note_user_name || "--")}
-                                      </Badge>
-                                    </div>
-                                    <div className="min-w-0 flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        className={`text-slate-500 ${isNoteEditableByCurrentUser(note) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
-                                        onClick={() => openEditFileNoteDialog(note)}
-                                        aria-label="Edit note"
-                                        disabled={!isNoteEditableByCurrentUser(note)}
-                                      >
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className={`text-slate-500 ${canCurrentUserDeleteNotes ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
-                                        onClick={() => void handleDeleteFileNote(note.id)}
-                                        aria-label="Delete note"
-                                        disabled={!canCurrentUserDeleteNotes}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                        </>
-                                      );
-                                    })()}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </>
-                        )}
+                                Clear
+                              </button>
+                            ) : (
+                              <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                            onClick={openAddFileNoteDialog}
+                          >
+                            Add Note
+                          </Button>
+                        </div>
+                        <div className="overflow-hidden rounded border border-slate-200">
+                          <div className="grid grid-cols-[110px_170px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                            <div>Date</div>
+                            <div>Type</div>
+                            <div>Description</div>
+                            <div>Created By</div>
+                            <div>Actions</div>
+                          </div>
+                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                            {isNotesLoading ? (
+                              <div className="px-3 py-3 text-slate-500">Loading notes...</div>
+                            ) : clientFileNotes.length === 0 ? (
+                              <div className="px-3 py-3 text-slate-500">No file notes yet.</div>
+                            ) : filteredClientFileNotes.length === 0 ? (
+                              <div className="px-3 py-3 text-slate-500">No file notes found.</div>
+                            ) : (
+                              paginatedClientFileNotes.map((note) => (
+                                <div key={note.id} className="grid grid-cols-[110px_170px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
+                                  {(() => {
+                                    const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
+                                    return (
+                                      <>
+                                        <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                        <div className="flex min-w-0 items-center truncate">
+                                          <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientFileNoteTypePillClassName(String(note.note_type || ""))}`}>
+                                            {String(note.note_type || "--")}
+                                          </Badge>
+                                        </div>
+                                        <div
+                                          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-2 text-slate-900"
+                                          dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
+                                        />
+                                        <div className="flex min-w-0 items-center truncate">
+                                          <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                            {String(note.note_user_name || "--")}
+                                          </Badge>
+                                        </div>
+                                        <div className="min-w-0 flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            className="text-slate-500 hover:text-[#2f9f35]"
+                                            onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""), String(note.note_type || ""))}
+                                            aria-label="View note"
+                                          >
+                                            <Eye className="h-3.5 w-3.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`text-slate-500 ${isNoteEditableByCurrentUser(note) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
+                                            onClick={() => openEditFileNoteDialog(note)}
+                                            aria-label="Edit note"
+                                            disabled={!isNoteEditableByCurrentUser(note)}
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`text-slate-500 ${canCurrentUserDeleteNotes ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
+                                            onClick={() => void handleDeleteFileNote(note.id)}
+                                            aria-label="Delete note"
+                                            disabled={!canCurrentUserDeleteNotes}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2 px-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientNotesTablePage((prev) => Math.max(1, prev - 1))}
+                            disabled={currentClientNotesTablePage === 1}
+                          >
+                            Previous
+                          </Button>
+                          {clientNotesTablePageNumbers.map((page) =>
+                            typeof page === "number" ? (
+                              <button
+                                key={page}
+                                type="button"
+                                onClick={() => setClientNotesTablePage(page)}
+                                className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                                  page === currentClientNotesTablePage
+                                    ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                    : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ) : (
+                              <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                                ...
+                              </span>
+                            ),
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientNotesTablePage((prev) => Math.min(totalClientNotesTablePages, prev + 1))}
+                            disabled={currentClientNotesTablePage === totalClientNotesTablePages}
+                          >
+                            Next
+                          </Button>
+                        </div>
                       </div>
                     </TabsContent>
 
@@ -5465,13 +5857,13 @@ const ClientsTwo = () => {
                             <div>Stage</div>
                             <div>Next Date</div>
                           </div>
-                          <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
                             {isClientMattersLoading ? (
                               <div className="px-2 py-3 text-slate-500">Loading matters...</div>
                             ) : filteredClientMatters.length === 0 ? (
                               <div className="px-2 py-3 text-slate-500">No matters found for this client.</div>
                             ) : (
-                              filteredClientMatters.map((matter) => (
+                              paginatedClientMatters.map((matter) => (
                                 <div
                                   key={matter.id}
                                   className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
@@ -5495,6 +5887,165 @@ const ClientsTwo = () => {
                               ))
                             )}
                           </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2 px-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientMattersTablePage((prev) => Math.max(1, prev - 1))}
+                            disabled={currentClientMattersTablePage === 1}
+                          >
+                            Previous
+                          </Button>
+                          {clientMattersTablePageNumbers.map((page) =>
+                            typeof page === "number" ? (
+                              <button
+                                key={page}
+                                type="button"
+                                onClick={() => setClientMattersTablePage(page)}
+                                className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                                  page === currentClientMattersTablePage
+                                    ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                    : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ) : (
+                              <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                                ...
+                              </span>
+                            ),
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientMattersTablePage((prev) => Math.min(totalClientMattersTablePages, prev + 1))}
+                            disabled={currentClientMattersTablePage === totalClientMattersTablePages}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="tasks" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                      <div className="space-y-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="w-full max-w-[360px]" aria-hidden="true" />
+                          <Button
+                            type="button"
+                            className="h-8 rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                            onClick={openAddClientTaskDialog}
+                          >
+                            Add Task
+                          </Button>
+                        </div>
+                        <div className="overflow-hidden rounded border border-slate-200">
+                          <div className="grid grid-cols-[110px_170px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                            <div>Date</div>
+                            <div>Type</div>
+                            <div>Description</div>
+                            <div>Assigned to</div>
+                            <div>Actions</div>
+                          </div>
+                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                            {isClientTasksLoading ? (
+                              <div className="px-3 py-3 text-slate-500">Loading tasks...</div>
+                            ) : clientTasks.length === 0 ? (
+                              <div className="px-3 py-3 text-slate-500">No diary tasks created for this client yet.</div>
+                            ) : (
+                              paginatedClientTasks.map((task) => (
+                                <div key={task.id} className="grid grid-cols-[110px_170px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
+                                  <div className="min-w-0 text-slate-700">{formatDisplayDate(task.diaryDate) || "--"}</div>
+                                  <div className="flex min-w-0 items-center truncate">
+                                    <Badge className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-medium text-sky-700 shadow-none hover:bg-sky-50 hover:text-sky-700">
+                                      {task.taskType || "--"}
+                                    </Badge>
+                                  </div>
+                                  <div className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-2 text-slate-900">
+                                    {task.priority === "High" ? <span className="mr-1 font-bold text-rose-600">!</span> : null}
+                                    {task.description || "--"}
+                                  </div>
+                                  <div className="flex min-w-0 items-center truncate">
+                                    <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
+                                      {task.assignedToName || "--"}
+                                    </Badge>
+                                  </div>
+                                  <div className="min-w-0 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="text-slate-500 hover:text-[#2f9f35]"
+                                      onClick={() => openClientTaskPreviewDialog(task)}
+                                      aria-label="View task"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`text-slate-500 ${isTaskEditableByCurrentUser(task) ? "hover:text-[#2f9f35]" : "cursor-not-allowed opacity-40"}`}
+                                      onClick={() => openEditClientTaskDialog(task)}
+                                      aria-label="Edit task"
+                                      disabled={!isTaskEditableByCurrentUser(task)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`text-slate-500 ${canCurrentUserDeleteTasks ? "hover:text-rose-600" : "cursor-not-allowed opacity-40"}`}
+                                      onClick={() => void handleDeleteClientTask(task.id)}
+                                      aria-label="Delete task"
+                                      disabled={!canCurrentUserDeleteTasks}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2 px-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientTasksTablePage((prev) => Math.max(1, prev - 1))}
+                            disabled={currentClientTasksTablePage === 1}
+                          >
+                            Previous
+                          </Button>
+                          {clientTasksTablePageNumbers.map((page) =>
+                            typeof page === "number" ? (
+                              <button
+                                key={page}
+                                type="button"
+                                onClick={() => setClientTasksTablePage(page)}
+                                className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                                  page === currentClientTasksTablePage
+                                    ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                    : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ) : (
+                              <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                                ...
+                              </span>
+                            ),
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientTasksTablePage((prev) => Math.min(totalClientTasksTablePages, prev + 1))}
+                            disabled={currentClientTasksTablePage === totalClientTasksTablePages}
+                          >
+                            Next
+                          </Button>
                         </div>
                       </div>
                     </TabsContent>
@@ -5530,13 +6081,13 @@ const ClientsTwo = () => {
                             <div>Drafted By</div>
                             <div>Actions</div>
                           </div>
-                          <div className="max-h-[300px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
                             {isClientGeneratedDocumentsLoading ? (
                               <div className="px-2 py-3 text-slate-500">Loading documents...</div>
                             ) : filteredClientGeneratedDocuments.length === 0 ? (
                               <div className="px-2 py-3 text-slate-500">No generated documents found for this client.</div>
                             ) : (
-                              filteredClientGeneratedDocuments.map((document) => (
+                              paginatedClientGeneratedDocuments.map((document) => (
                                 <div
                                   key={document.id}
                                   className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
@@ -5581,6 +6132,46 @@ const ClientsTwo = () => {
                             )}
                           </div>
                         </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2 px-1 pt-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientDocumentsTablePage((prev) => Math.max(1, prev - 1))}
+                            disabled={currentClientDocumentsTablePage === 1}
+                          >
+                            Previous
+                          </Button>
+                          {clientDocumentsTablePageNumbers.map((page) =>
+                            typeof page === "number" ? (
+                              <button
+                                key={page}
+                                type="button"
+                                onClick={() => setClientDocumentsTablePage(page)}
+                                className={`flex h-8 min-w-8 items-center justify-center rounded-[4px] border px-3 text-[11px] font-medium transition-colors ${
+                                  page === currentClientDocumentsTablePage
+                                    ? "border-[#3eca44] bg-[#3eca44] text-white"
+                                    : "border-[#b9e3bc] bg-white text-[#2f9f35] hover:border-[#3eca44] hover:bg-[#eaf8eb]"
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            ) : (
+                              <span key={page} className="px-1 text-[11px] font-medium text-[#2f9f35]">
+                                ...
+                              </span>
+                            ),
+                          )}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 min-w-[86px] rounded-[4px] border border-[#8fd693] bg-white px-4 text-[11px] font-medium text-[#2f9f35] transition-colors hover:border-[#3eca44] hover:bg-[#eaf8eb] hover:text-[#2f9f35] disabled:border-[#d6ead7] disabled:text-[#a7c9a9]"
+                            onClick={() => setClientDocumentsTablePage((prev) => Math.min(totalClientDocumentsTablePages, prev + 1))}
+                            disabled={currentClientDocumentsTablePage === totalClientDocumentsTablePages}
+                          >
+                            Next
+                          </Button>
+                        </div>
                       </div>
                     </TabsContent>
                   </Tabs>
@@ -5590,6 +6181,195 @@ const ClientsTwo = () => {
           </div>
         </div>
       )}
+      <Dialog
+        open={isClientTaskDialogOpen}
+        onOpenChange={(open) => {
+          setIsClientTaskDialogOpen(open);
+          if (!open) {
+            setEditingClientTaskId(null);
+            resetClientTaskForm();
+          }
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[460px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-white">
+              <CalendarDays className="h-4 w-4" />
+              <span>{editingClientTaskId ? "Edit Task" : "Add Task"}</span>
+            </DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="text-white hover:text-white/80">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="bg-white px-4 py-4">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="clientTaskDiaryDate" className="text-[11px] font-medium text-slate-600">Diary Date</Label>
+                  <Input
+                    id="clientTaskDiaryDate"
+                    type="text"
+                    readOnly
+                    placeholder="Please select a date"
+                    value={clientTaskForm.diaryDate ? formatDisplayDate(clientTaskForm.diaryDate) : ""}
+                    onClick={() => openDatePicker(clientTaskDateInputRef.current)}
+                    onFocus={() => openDatePicker(clientTaskDateInputRef.current)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDatePicker(clientTaskDateInputRef.current);
+                      }
+                    }}
+                    className="h-8 rounded !text-[11px] md:!text-[11px] font-medium"
+                  />
+                  <input
+                    ref={clientTaskDateInputRef}
+                    type="date"
+                    value={clientTaskForm.diaryDate}
+                    onChange={(e) => setClientTaskForm((prev) => ({ ...prev, diaryDate: e.target.value }))}
+                    className="sr-only"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="clientTaskPriority" className="text-[11px] font-medium text-slate-600">Priority</Label>
+                  <Select value={clientTaskForm.priority} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, priority: value as DiaryTaskPriority }))}>
+                    <SelectTrigger id="clientTaskPriority" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent className="text-[11px]">
+                      {DIARY_TASK_PRIORITY_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clientTaskType" className="text-[11px] font-medium text-slate-600">Task Type</Label>
+                <Select value={clientTaskForm.taskType} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskType: value as DiaryTaskType }))}>
+                  <SelectTrigger id="clientTaskType" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                    <SelectValue placeholder="Select task type" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[11px]">
+                    {DIARY_TASK_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clientTaskDescription" className="text-[11px] font-medium text-slate-600">Task Description</Label>
+                <Textarea
+                  id="clientTaskDescription"
+                  value={clientTaskForm.description}
+                  onChange={(e) => setClientTaskForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="min-h-[88px] rounded !text-[11.67px] md:!text-[11.67px] font-medium"
+                  placeholder="Enter the task description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clientTaskAssignedTo" className="text-[11px] font-medium text-slate-600">Assigned To</Label>
+                <Select value={clientTaskForm.assignedToUserId || undefined} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, assignedToUserId: value }))}>
+                  <SelectTrigger id="clientTaskAssignedTo" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                    <SelectValue placeholder="Select assignee" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[11px]">
+                    {taskAssigneeOptions.map((option) => (
+                      <SelectItem key={option.userId} value={option.userId} className={addModalSelectItemClass}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="clientTaskRelatedMatter" className="text-[11px] font-medium text-slate-600">Related Matter</Label>
+                <Select value={clientTaskForm.relatedMatterId || "__none__"} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, relatedMatterId: value === "__none__" ? "" : value }))}>
+                  <SelectTrigger id="clientTaskRelatedMatter" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                    <SelectValue placeholder="Select related matter (optional)" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[11px]">
+                    <SelectItem value="__none__" className={addModalSelectItemClass}>No related matter</SelectItem>
+                    {clientMatters
+                      .filter((matter) => String(matter.status || "").trim().toLowerCase() === "active")
+                      .map((matter) => (
+                        <SelectItem key={matter.id} value={matter.id} className={addModalSelectItemClass}>
+                          {buildClientTaskRelatedMatterLabel(matter)}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white px-4 pb-4">
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsClientTaskDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] text-[11px] text-white hover:bg-[#34b73b]" disabled={isSavingClientTask} onClick={() => void handleSaveClientTask()}>
+                {isSavingClientTask ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={isClientTaskPreviewOpen}
+        onOpenChange={(open) => {
+          setIsClientTaskPreviewOpen(open);
+          if (!open) setPreviewClientTask(null);
+        }}
+      >
+        <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+          <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+            <DialogTitle className="text-sm font-semibold text-white">Task Preview</DialogTitle>
+            <DialogClose asChild>
+              <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white">
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+          </div>
+          <div className="space-y-3 bg-white p-4 text-[11px]">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Diary Date</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.diaryDate ? formatDisplayDate(previewClientTask.diaryDate) : "--"}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Task Type</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.taskType || "--"}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Assigned To</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.assignedToName || "--"}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Priority</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.priority || "--"}</div>
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <div className="text-[10px] font-semibold text-slate-500">Related Matter</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.relatedMatterId ? previewClientTask.relatedMatterLabel : "--"}</div>
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <div className="text-[10px] font-semibold text-slate-500">Description</div>
+                <div className="min-h-[96px] whitespace-pre-wrap rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.description || "--"}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Created By</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.createdByName || "--"}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Created At</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.createdAt ? `${formatDisplayDate(previewClientTask.createdAt)} @ ${formatDisplayTime(previewClientTask.createdAt)}` : "--"}</div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={isFileNoteDialogOpen}
         onOpenChange={(open) => {

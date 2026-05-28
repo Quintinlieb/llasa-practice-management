@@ -1,20 +1,18 @@
 import { useEffect, useState } from "react";
 import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { southAfricanProvinces } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Bell,
   Building2,
   Calendar,
   CalendarCheck2,
   ChevronDown,
-  CircleAlert,
   Files,
   FolderOpen,
   Search,
-  TriangleAlert,
   Users,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -27,6 +25,13 @@ type DashboardEventRow = {
   matterType: string;
   client: string;
   consultant: string;
+};
+
+type DashboardTaskRow = {
+  id: string;
+  dateLabel: string;
+  taskType: string;
+  assignedTo: string;
 };
 
 type CachedDashboardUpcomingEvents = {
@@ -68,6 +73,15 @@ const consultantPillClassNames = [
   "border-[#fde2c8] bg-[#fff4e8] text-[#ea580c]",
 ] as const;
 
+const avatarClassNames = [
+  "border-[#cfe7d2] bg-[#eef9ef] text-[#2f9f35]",
+  "border-[#d8e6fb] bg-[#eef5ff] text-[#3267e3]",
+  "border-[#eadcfb] bg-[#f5edff] text-[#7c3aed]",
+  "border-[#fde2c8] bg-[#fff4e8] text-[#ea580c]",
+  "border-[#f7d2e4] bg-[#fff1f7] text-[#db2777]",
+  "border-[#f2d9c2] bg-[#fff6ee] text-[#b45309]",
+] as const;
+
 const dashboardUpcomingEventsCacheKey = "dashboard:upcoming-events";
 
 type DashboardCaseDatesQuery = {
@@ -86,41 +100,6 @@ type DashboardCaseDatesQuery = {
     };
   };
 };
-
-const notificationRows = [
-  {
-    title: "3 matters are overdue",
-    description: "These matters require immediate attention.",
-    actionLabel: "View matters",
-    age: "2h ago",
-    icon: CircleAlert,
-    iconShellClassName: "bg-[#fff0f0] text-[#ff6b6b]",
-  },
-  {
-    title: "5 documents awaiting review",
-    description: "Documents need your review or approval.",
-    actionLabel: "View documents",
-    age: "4h ago",
-    icon: TriangleAlert,
-    iconShellClassName: "bg-[#fff7eb] text-[#f59e0b]",
-  },
-  {
-    title: "2 events tomorrow",
-    description: "You have 2 scheduled events tomorrow.",
-    actionLabel: "View calendar",
-    age: "5h ago",
-    icon: Calendar,
-    iconShellClassName: "bg-[#eef5ff] text-[#3b82f6]",
-  },
-  {
-    title: "Client renewal due soon",
-    description: "3 client memberships expire in the next 30 days.",
-    actionLabel: "View clients",
-    age: "1d ago",
-    icon: Users,
-    iconShellClassName: "bg-[#f5edff] text-[#8b5cf6]",
-  },
-] as const;
 
 const statCards = [
   {
@@ -265,6 +244,7 @@ function getMatterHeaderTitle(caseType: unknown, subtype: unknown) {
   if (normalizedSubtype === "incapacity (performance)") return "Poor Performance Hearing";
   if (normalizedSubtype === "incapacity (ill health)") return "Ill Health Hearing";
   if (normalizedSubtype === "grievance") return "Grievance Hearing";
+  if (normalizedSubtype === "abscondment") return "Abscondment Hearing";
   return "Hearing";
 }
 function getDashboardEventLabel(dateType: unknown, eventLabel: unknown) {
@@ -285,6 +265,25 @@ function getConsultantPillClassName(value: string) {
     hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
   }
   return consultantPillClassNames[hash % consultantPillClassNames.length];
+}
+
+function getAvatarClassName(value: string) {
+  const normalized = value.trim().toLowerCase();
+  let hash = 0;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
+  }
+  return avatarClassNames[hash % avatarClassNames.length];
+}
+
+function getInitials(value: string) {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0 || value.trim() === "--") return "--";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
 function loadCachedDashboardUpcomingEvents() {
@@ -368,6 +367,7 @@ function normalizeProvinceLabel(value: unknown) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [eventRows, setEventRows] = useState<DashboardEventRow[]>(() => loadCachedDashboardUpcomingEvents());
+  const [taskRows, setTaskRows] = useState<DashboardTaskRow[]>([]);
   const [activeClientCount, setActiveClientCount] = useState<number>(0);
   const [activeClientsThisMonthCount, setActiveClientsThisMonthCount] = useState<number>(0);
   const [documentsThisMonthCount, setDocumentsThisMonthCount] = useState<number>(0);
@@ -440,6 +440,38 @@ export default function Dashboard() {
     };
 
     void loadUpcomingEvents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadDiaryTasks = async () => {
+      const todayLabel = new Date().toISOString().slice(0, 10);
+      const { data, error } = await (supabase as any)
+        .from("diary_tasks")
+        .select("id,diary_date,task_type,assigned_to_name")
+        .gte("diary_date", todayLabel)
+        .order("diary_date", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: true, nullsFirst: false })
+        .limit(5);
+
+      if (!isMounted || error) return;
+
+      const mapped = (Array.isArray(data) ? data : []).map((row: any) => ({
+        id: String(row?.id || ""),
+        dateLabel: formatDashboardDate(row?.diary_date),
+        taskType: String(row?.task_type || "").trim() || "--",
+        assignedTo: String(row?.assigned_to_name || "").trim() || "--",
+      })).filter((row) => row.id);
+
+      setTaskRows(mapped);
+    };
+
+    void loadDiaryTasks();
 
     return () => {
       isMounted = false;
@@ -834,7 +866,7 @@ export default function Dashboard() {
                       </CardContent>
                     </Card>
 
-                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none">
+                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col">
                       <CardHeader className="border-b border-slate-200 px-5 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
@@ -851,60 +883,84 @@ export default function Dashboard() {
                                 justifyContent: "center",
                               }}
                             >
-                              <Bell size={16} strokeWidth={2.1} />
+                              <CalendarCheck2 size={16} strokeWidth={2.1} />
                             </div>
                             <CardTitle className="text-[14px] font-semibold leading-none text-slate-900">
-                              Notifications
+                              Diary / Tasks
                             </CardTitle>
                           </div>
-                          <CardLink label="View all" onClick={() => navigate("/documents")} />
+                          <CardLink label="View all" onClick={() => navigate("/clients")} />
                         </div>
                       </CardHeader>
 
-                      <CardContent className="p-0">
-                        {notificationRows.map((row, index) => {
-                          const Icon = row.icon;
-                          const target =
-                            row.actionLabel === "View matters"
-                              ? "/matters"
-                              : row.actionLabel === "View documents"
-                                ? "/documents"
-                                : "/employees";
-
-                          return (
-                            <div
-                              key={row.title}
-                              className={cn(
-                                "flex gap-4 px-5 py-3.5",
-                                index !== notificationRows.length - 1 && "border-b border-slate-200",
+                      <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+                        <div className="min-h-0 flex-1 overflow-x-auto">
+                          <table className="w-full min-w-[320px]">
+                            <colgroup>
+                              <col className="w-[84px]" />
+                              <col className="w-auto" />
+                              <col className="w-[72px]" />
+                            </colgroup>
+                            <thead>
+                              <tr className="border-b border-slate-200 text-left">
+                                {["DATE", "TYPE", "ASSIGNED"].map((label) => (
+                                  <th
+                                    key={label}
+                                    className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500 ${label === "ASSIGNED" ? "text-right" : ""}`}
+                                  >
+                                    {label}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {taskRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={3} className="px-5 py-4 text-[11px] text-slate-500">
+                                    No diary tasks found.
+                                  </td>
+                                </tr>
+                              ) : (
+                                taskRows.map((row) => (
+                                  <tr
+                                    key={row.id}
+                                    className="border-b border-slate-100 transition-colors hover:bg-[#3eca44]/5 last:border-b-0"
+                                    style={{ height: "45px" }}
+                                  >
+                                    <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>
+                                      {row.dateLabel}
+                                    </td>
+                                    <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>
+                                      {row.taskType}
+                                    </td>
+                                    <td className="px-5 py-0 align-middle" style={{ height: "45px" }}>
+                                      <div className="flex items-center justify-end">
+                                        <TooltipProvider delayDuration={0}>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <span
+                                                className={cn(
+                                                  "inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold",
+                                                  getAvatarClassName(row.assignedTo),
+                                                )}
+                                                aria-label={row.assignedTo}
+                                              >
+                                                {getInitials(row.assignedTo)}
+                                              </span>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[10px] shadow-none">
+                                              {row.assignedTo}
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))
                               )}
-                            >
-                              <div
-                                className={cn(
-                                  "mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]",
-                                  row.iconShellClassName,
-                                )}
-                              >
-                                <Icon className="h-4 w-4" />
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-3">
-                                  <p className="text-[12px] font-semibold text-slate-900">{row.title}</p>
-                                  <span className="shrink-0 text-[10px] text-slate-400">{row.age}</span>
-                                </div>
-                                <p className="mt-1 text-[11px] text-slate-500">{row.description}</p>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(target)}
-                                  className="mt-2 text-[11px] font-semibold text-[#3267e3] transition-colors hover:text-[#234fb7]"
-                                >
-                                  {row.actionLabel}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                            </tbody>
+                          </table>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>

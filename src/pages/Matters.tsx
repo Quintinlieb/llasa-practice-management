@@ -214,7 +214,7 @@ const NEW_MATTER_OPTIONS: Array<{ label: string; caseType: (typeof CASE_TYPE_OPT
 ];
 const SUBTYPE_NONE = "None";
 const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[number], readonly string[]>> = {
-  Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance"],
+  Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance", "Abscondment"],
   Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
   CCMA: ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
   "Bargaining Council": ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
@@ -933,6 +933,7 @@ const getMatterHeaderTitle = (caseFile: CaseFile | null) => {
   if (subtype === "incapacity (performance)") return "Poor Performance Hearing";
   if (subtype === "incapacity (ill health)") return "Ill Health Hearing";
   if (subtype === "grievance") return "Grievance Hearing";
+  if (subtype === "abscondment") return "Abscondment Hearing";
   return "Hearing";
 };
 
@@ -1041,6 +1042,7 @@ const Matters = () => {
   const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
   const [isNewCaseDialogOpen, setIsNewCaseDialogOpen] = useState(false);
   const [isClientSelectOpen, setIsClientSelectOpen] = useState(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [newCaseStep, setNewCaseStep] = useState<NewCaseStep>(1);
   const [newCaseForm, setNewCaseForm] = useState<NewCaseForm>(createBlankCaseForm());
   const [isSavingCase, setIsSavingCase] = useState(false);
@@ -1056,6 +1058,11 @@ const Matters = () => {
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
+  const filteredClientOptions = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase();
+    if (!query) return clientOptions;
+    return clientOptions.filter((client) => client.label.toLowerCase().includes(query));
+  }, [clientOptions, clientSearchQuery]);
   const activeOutcomeCaseType = caseEditForm?.caseType || selectedCase?.caseType || "";
   const activeOutcomeSubtype = caseEditForm?.subtype || selectedCase?.subtype || "";
   const activeOutcomeFlow = useMemo(
@@ -1125,7 +1132,7 @@ const Matters = () => {
     if (hasLoadedClientOptionsRef.current) return;
     const { data, error } = await (supabase as any)
       .from("clients")
-      .select("id,registered_name,company_name,client_name,company_type,trading_as,trading_name,client_surname,status")
+      .select("id,registered_name,company_type,trading_as,status")
       .or("status.is.null,status.eq.active")
       .order("created_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false, nullsFirst: false });
@@ -1135,8 +1142,8 @@ const Matters = () => {
       return;
     }
     const mapped = (data ?? []).map((c: any) => {
-      const registered = String(c.registered_name ?? c.company_name ?? c.client_name ?? "").trim();
-      const trading = String(c.trading_as ?? c.trading_name ?? c.client_surname ?? "").trim();
+      const registered = String(c.registered_name ?? "").trim();
+      const trading = String(c.trading_as ?? "").trim();
       const companyType = String(c.company_type ?? "").trim();
       return {
         id: c.id,
@@ -3042,18 +3049,24 @@ const Matters = () => {
                             className="w-[--radix-popover-trigger-width] p-0"
                             onWheelCapture={(event) => event.stopPropagation()}
                           >
-                            <Command>
-                              <CommandInput placeholder="Search client name..." className="h-8 text-[11px]" />
+                            <Command shouldFilter={false}>
+                              <CommandInput
+                                placeholder="Search client name..."
+                                className="h-8 text-[11px]"
+                                value={clientSearchQuery}
+                                onValueChange={setClientSearchQuery}
+                              />
                               <CommandList className="max-h-[min(420px,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain">
                                 <CommandEmpty className="py-3 text-[11px] text-slate-500 px-2 text-center">{clientLoadMessage}</CommandEmpty>
                                 <CommandGroup>
-                                  {clientOptions.map((client) => (
+                                  {filteredClientOptions.map((client) => (
                                     <CommandItem
                                       key={client.id}
                                       value={client.label}
                                       className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
                                       onSelect={() => {
                                         setNewCaseForm((prev) => ({ ...prev, clientId: client.id, clientName: client.label }));
+                                        setClientSearchQuery("");
                                         setIsClientSelectOpen(false);
                                       }}
                                     >
@@ -3299,7 +3312,7 @@ const Matters = () => {
         <div className="fixed inset-0 z-50">
           <button type="button" className="absolute inset-0 bg-slate-900/65" aria-label="Close case details" onClick={() => setSelectedCase(null)} />
           <div className="absolute inset-0 flex items-center justify-center">
-            <section className="relative z-10 w-[94vw] max-w-[980px] h-[92vh] rounded-sm bg-[#2D4256] shadow-2xl overflow-hidden border-0">
+            <section className="relative z-10 w-[94vw] max-w-[1040px] h-[92vh] rounded-sm bg-[#2D4256] shadow-2xl overflow-hidden border-0">
               <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-4 w-4 text-white" />

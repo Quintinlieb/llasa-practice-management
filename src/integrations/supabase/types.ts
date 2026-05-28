@@ -73,6 +73,65 @@ export type Database = {
           },
         ]
       }
+      diary_tasks: {
+        Row: {
+          assigned_to_name: string
+          assigned_to_user_id: string
+          client_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          created_by_name: string
+          description: string
+          diary_date: string
+          id: string
+          priority: string
+          related_matter_id: string | null
+          task_type: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to_name: string
+          assigned_to_user_id: string
+          client_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          created_by_name: string
+          description: string
+          diary_date: string
+          id?: string
+          priority?: string
+          related_matter_id?: string | null
+          task_type?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to_name?: string
+          assigned_to_user_id?: string
+          client_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          created_by_name?: string
+          description?: string
+          diary_date?: string
+          id?: string
+          priority?: string
+          related_matter_id?: string | null
+          task_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "diary_tasks_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
           company_id: string

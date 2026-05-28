@@ -72,6 +72,7 @@ type ClientRow = {
   client_number: string | null;
   owner_number: string | null;
   primary_number: string | null;
+  main_office_number: string | null;
   owner_email: string | null;
   primary_email: string | null;
   physical_address_line1: string | null;
@@ -376,7 +377,7 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientRegisteredName: String(client.registered_name || "").trim(),
   clientTradingAsName: String(client.trading_as || "").trim(),
   registrationNumber: String(client.registration_number || "").trim(),
-  clientContactNumber: String(client.primary_number || client.owner_number || client.client_number || "").trim(),
+  clientContactNumber: String(client.main_office_number || client.primary_number || client.owner_number || client.client_number || "").trim(),
   clientEmail: String(client.primary_email || client.owner_email || "").trim(),
   clientAddress: formatClientAddress(client),
   clientAddressLine1: String(client.physical_address_line1 || "").trim(),
@@ -1394,17 +1395,28 @@ const DiscHearingNoticeGeneratorContent = ({
                           <p className="font-bold">{type}</p>
                         </div>
                         <div className="space-y-1.5 pl-[26px]">
-                          {(noticeForm.misconductDescriptions[type] || [previewLine]).map((description, countIndex) => (
-                            <div key={`${type}-preview-count-${countIndex}`} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2">
-                              <p>{`${formatRomanNumeral(countIndex + 1)}.`}</p>
+                          {(noticeForm.misconductDescriptions[type] || [previewLine]).map((description, countIndex, descriptions) => {
+                            const hasMultipleCounts = descriptions.length > 1;
+                            return hasMultipleCounts ? (
+                              <div key={`${type}-preview-count-${countIndex}`} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2">
+                                <p>{`${formatRomanNumeral(countIndex + 1)}.`}</p>
+                                <p
+                                  className="whitespace-pre-wrap"
+                                  style={{ textAlign: "justify", textJustify: "inter-word" }}
+                                >
+                                  {description || previewLine}
+                                </p>
+                              </div>
+                            ) : (
                               <p
+                                key={`${type}-preview-count-${countIndex}`}
                                 className="whitespace-pre-wrap"
                                 style={{ textAlign: "justify", textJustify: "inter-word" }}
                               >
                                 {description || previewLine}
                               </p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))
@@ -1614,7 +1626,7 @@ const DiscHearingNoticeGenerator = ({
       const { data, error } = await supabaseUntyped
         .from("clients")
         .select(
-          "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
+          "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,main_office_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
         )
         .order("registered_name", { ascending: true, nullsFirst: false });
 
@@ -2130,7 +2142,11 @@ const DiscHearingNoticeGenerator = ({
       noticeForm.misconductTypes.reduce((total, type, index) => {
         const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
         const countHeight = descriptions.reduce((countTotal, description) => {
-          const lines = doc.splitTextToSize(description || lineFallback, contentWidth - 22);
+          const hasMultipleCounts = descriptions.length > 1;
+          const lines = doc.splitTextToSize(
+            description || lineFallback,
+            hasMultipleCounts ? contentWidth - 24 : contentWidth - 18,
+          );
           return countTotal + lines.length * 4.2 + 2.2;
         }, 0);
         return total + 8 + countHeight + (index < noticeForm.misconductTypes.length - 1 ? 1.4 : 0);
@@ -2147,10 +2163,15 @@ const DiscHearingNoticeGenerator = ({
         const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
         doc.setFont("helvetica", "normal");
         descriptions.forEach((description, countIndex) => {
+          const hasMultipleCounts = descriptions.length > 1;
           const marker = `${formatRomanNumeral(countIndex + 1)}.`;
-          const lines = doc.splitTextToSize(description || lineFallback, contentWidth - 24);
-          doc.text(marker, margin + 12, y);
-          drawJustifiedLines(lines, margin + 18, contentWidth - 24, 3.5);
+          const textX = hasMultipleCounts ? margin + 18 : margin + 12;
+          const textWidth = hasMultipleCounts ? contentWidth - 24 : contentWidth - 18;
+          const lines = doc.splitTextToSize(description || lineFallback, textWidth);
+          if (hasMultipleCounts) {
+            doc.text(marker, margin + 12, y);
+          }
+          drawJustifiedLines(lines, textX, textWidth, 3.5);
           y += 1.2;
         });
         y += index < noticeForm.misconductTypes.length - 1 ? 2.6 : 0.8;
@@ -2507,6 +2528,7 @@ const DiscHearingNoticeGenerator = ({
     }
 
     doc.save(downloadFileName);
+    onRequestClose?.();
   }, [clientForm, employeeForm, noticeForm, onRequestClose, user]);
 
   const stepMeta = useMemo(

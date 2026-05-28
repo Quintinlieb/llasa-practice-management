@@ -19,6 +19,20 @@ import {
   cacheHeaderProfile,
   readCachedHeaderProfilePicture,
 } from "@/lib/headerProfileCache";
+import {
+  buildProfilePictureStoragePath,
+  getProfilePictureStoragePath,
+  removeProfilePicture,
+  resolveProfilePictureUrl,
+  uploadProfilePicture,
+} from "@/lib/profilePictures";
+import {
+  buildUserSignatureStoragePath,
+  getUserSignatureStoragePath,
+  removeUserSignature,
+  resolveUserSignatureUrl,
+  uploadUserSignature,
+} from "@/lib/userSignatures";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")
@@ -80,6 +94,7 @@ type SubuserListItem = {
   email: string;
   role: string | null;
   profile_picture?: string | null;
+  signature_storage_path?: string | null;
   created_at: string | null;
 };
 
@@ -179,6 +194,9 @@ const LLASA_MEMBERSHIPS_BUCKET = "llasa-memberships";
 type SettingsProfileCache = {
   userDetails?: UserDetailsForm;
   userProfilePicture?: string;
+  userProfilePictureStoredValue?: string;
+  userSignature?: string;
+  userSignatureStoredValue?: string;
   companyDetails?: CompanyDetailsForm;
   loadedGroups: Set<ProfileDataGroup>;
 };
@@ -294,6 +312,20 @@ const isUserProfilePictureColumnError = (error: unknown) => {
   );
 };
 
+const isUserSignatureColumnError = (error: unknown) => {
+  const err = error as { code?: string; message?: string; details?: string; hint?: string } | null;
+  const message = String(err?.message || "").toLowerCase();
+  const details = String(err?.details || "").toLowerCase();
+  const hint = String(err?.hint || "").toLowerCase();
+  const combined = `${message} ${details} ${hint}`;
+  return (
+    err?.code === "42703" ||
+    err?.code === "PGRST204" ||
+    (combined.includes("column") && combined.includes("signature_storage_path")) ||
+    (combined.includes("could not find") && combined.includes("signature_storage_path"))
+  );
+};
+
 const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -306,6 +338,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [initialUserDetails, setInitialUserDetails] = useState<UserDetailsForm>(emptyUserDetails);
   const [userProfilePicture, setUserProfilePicture] = useState("");
   const [initialUserProfilePicture, setInitialUserProfilePicture] = useState("");
+  const [userProfilePictureStoredValue, setUserProfilePictureStoredValue] = useState("");
+  const [userProfilePictureFile, setUserProfilePictureFile] = useState<File | null>(null);
+  const [userSignature, setUserSignature] = useState("");
+  const [initialUserSignature, setInitialUserSignature] = useState("");
+  const [userSignatureStoredValue, setUserSignatureStoredValue] = useState("");
+  const [userSignatureFile, setUserSignatureFile] = useState<File | null>(null);
 
   const [companyDetails, setCompanyDetails] = useState<CompanyDetailsForm>(emptyCompanyDetails);
   const [initialCompanyDetails, setInitialCompanyDetails] = useState<CompanyDetailsForm>(emptyCompanyDetails);
@@ -324,6 +362,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const [showSubuserPassword, setShowSubuserPassword] = useState(false);
   const [showSubuserConfirmPassword, setShowSubuserConfirmPassword] = useState(false);
   const [subuserProfilePictureName, setSubuserProfilePictureName] = useState("");
+  const [subuserProfilePictureFile, setSubuserProfilePictureFile] = useState<File | null>(null);
+  const [subuserEditSignature, setSubuserEditSignature] = useState("");
+  const [subuserEditSignatureStoredValue, setSubuserEditSignatureStoredValue] = useState("");
+  const [subuserEditSignatureFile, setSubuserEditSignatureFile] = useState<File | null>(null);
+  const [subuserEditSignatureFileName, setSubuserEditSignatureFileName] = useState("");
   const [subusersList, setSubusersList] = useState<SubuserListItem[]>([]);
   const [subusersLoading, setSubusersLoading] = useState(false);
   const [deletingSubuserId, setDeletingSubuserId] = useState<string | null>(null);
@@ -345,6 +388,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   const loadingGroupsRef = useRef<Set<ProfileDataGroup>>(new Set());
   const userProfilePictureInputRef = useRef<HTMLInputElement | null>(null);
   const subuserProfilePictureInputRef = useRef<HTMLInputElement | null>(null);
+  const userSignatureInputRef = useRef<HTMLInputElement | null>(null);
+  const subuserEditSignatureInputRef = useRef<HTMLInputElement | null>(null);
   const membershipFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const settingsTabs: Array<{ value: SettingsTab; label: string; icon: LucideIcon }> = [
@@ -424,6 +469,16 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setUserProfilePicture(cached.userProfilePicture);
       setInitialUserProfilePicture(cached.userProfilePicture);
     }
+    if (typeof cached.userProfilePictureStoredValue === "string") {
+      setUserProfilePictureStoredValue(cached.userProfilePictureStoredValue);
+    }
+    if (typeof cached.userSignature === "string") {
+      setUserSignature(cached.userSignature);
+      setInitialUserSignature(cached.userSignature);
+    }
+    if (typeof cached.userSignatureStoredValue === "string") {
+      setUserSignatureStoredValue(cached.userSignatureStoredValue);
+    }
     if (cached.companyDetails) {
       setCompanyDetails(cached.companyDetails);
       setInitialCompanyDetails(cached.companyDetails);
@@ -446,11 +501,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       if (group === "user") {
         let { data, error } = await (supabase as any)
           .from("profiles")
-          .select("user_name, user_surname, user_email, user_contact, profile_picture")
+          .select("user_name, user_surname, user_email, user_contact, profile_picture, signature_storage_path")
           .eq("id", user.id)
           .maybeSingle();
 
-        if (error && isUserProfilePictureColumnError(error)) {
+        if (error && (isUserProfilePictureColumnError(error) || isUserSignatureColumnError(error))) {
           const fallback = await (supabase as any)
             .from("profiles")
             .select("user_name, user_surname, user_email, user_contact")
@@ -463,6 +518,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         if (error) throw error;
         let nextUserDetails: UserDetailsForm | null = null;
         let nextUserProfilePicture = "";
+        let nextUserProfilePictureStoredValue = "";
+        let nextUserSignature = "";
+        let nextUserSignatureStoredValue = "";
         if (data) {
           nextUserDetails = {
             user_name: data.user_name || "",
@@ -470,13 +528,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             user_email: data.user_email || "",
             user_contact: data.user_contact || "",
           };
-          nextUserProfilePicture = String((data as any).profile_picture || "").trim();
+          nextUserProfilePictureStoredValue = String((data as any).profile_picture || "").trim();
+          nextUserProfilePicture = resolveProfilePictureUrl(nextUserProfilePictureStoredValue);
+          nextUserSignatureStoredValue = String((data as any).signature_storage_path || "").trim();
+          nextUserSignature = resolveUserSignatureUrl(nextUserSignatureStoredValue);
           setUserProfilePicture(nextUserProfilePicture);
           setInitialUserProfilePicture(nextUserProfilePicture);
+          setUserProfilePictureStoredValue(nextUserProfilePictureStoredValue);
+          setUserProfilePictureFile(null);
+          setUserSignature(nextUserSignature);
+          setInitialUserSignature(nextUserSignature);
+          setUserSignatureStoredValue(nextUserSignatureStoredValue);
+          setUserSignatureFile(null);
         } else {
           const { data: subuserData } = await (supabase as any)
             .from("subusers")
-            .select("name,surname,email,contact_number,user_name,user_surname,user_email,user_contact,phone_number,contact,profile_picture")
+            .select("name,surname,email,contact_number,user_name,user_surname,user_email,user_contact,phone_number,contact,profile_picture,signature_storage_path")
             .eq("auth_user_id", user.id)
             .maybeSingle();
 
@@ -489,10 +556,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 subuserData.contact_number ?? subuserData.user_contact ?? subuserData.phone_number ?? subuserData.contact ?? "",
               ).trim(),
             };
+            nextUserProfilePictureStoredValue = String((subuserData as any).profile_picture || "").trim();
             nextUserProfilePicture =
-              String((subuserData as any).profile_picture || "").trim() || readCachedHeaderProfilePicture(user.id);
+              resolveProfilePictureUrl(nextUserProfilePictureStoredValue) || readCachedHeaderProfilePicture(user.id);
+            nextUserSignatureStoredValue = String((subuserData as any).signature_storage_path || "").trim();
+            nextUserSignature = resolveUserSignatureUrl(nextUserSignatureStoredValue);
             setUserProfilePicture(nextUserProfilePicture);
             setInitialUserProfilePicture(nextUserProfilePicture);
+            setUserProfilePictureStoredValue(nextUserProfilePictureStoredValue);
+            setUserProfilePictureFile(null);
+            setUserSignature(nextUserSignature);
+            setInitialUserSignature(nextUserSignature);
+            setUserSignatureStoredValue(nextUserSignatureStoredValue);
+            setUserSignatureFile(null);
           } else {
             const metaName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || "").trim();
             const metaSurname = String((user as any)?.user_metadata?.user_surname || (user as any)?.user_metadata?.surname || "").trim();
@@ -513,6 +589,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             setUserProfilePicture("");
             setInitialUserProfilePicture(nextUserProfilePicture);
             setUserProfilePicture(nextUserProfilePicture);
+            setUserProfilePictureStoredValue("");
+            setUserProfilePictureFile(null);
+            setUserSignature("");
+            setInitialUserSignature("");
+            setUserSignatureStoredValue("");
+            setUserSignatureFile(null);
           }
         }
         if (!nextUserDetails) return;
@@ -522,6 +604,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         const nextCache = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
         nextCache.userDetails = nextUserDetails;
         nextCache.userProfilePicture = nextUserProfilePicture;
+        nextCache.userProfilePictureStoredValue = nextUserProfilePictureStoredValue;
+        nextCache.userSignature = nextUserSignature;
+        nextCache.userSignatureStoredValue = nextUserSignatureStoredValue;
         nextCache.loadedGroups.add(group);
         settingsProfileCacheByUser.set(user.id, nextCache);
         loadedGroupsRef.current.add(group);
@@ -617,6 +702,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!user) return;
     setSaving(true);
 
+    let uploadedProfilePicturePath = "";
+    let uploadedSignaturePath = "";
     try {
       // Validate user fields using existing schema
       const validated = companySetupBaseSchema.pick({
@@ -630,7 +717,33 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         userEmail: userDetails.user_email,
         userContact: userDetails.user_contact
       });
-      
+
+      const previousProfilePictureStoredValue = userProfilePictureStoredValue;
+      let nextProfilePictureStoredValue = previousProfilePictureStoredValue;
+      const previousSignatureStoredValue = userSignatureStoredValue;
+      let nextSignatureStoredValue = previousSignatureStoredValue;
+
+      if (userProfilePictureFile) {
+        uploadedProfilePicturePath = buildProfilePictureStoragePath(
+          isMasterUser ? "users" : "subusers",
+          user.id,
+          userProfilePictureFile,
+        );
+        const { error: uploadError } = await uploadProfilePicture(uploadedProfilePicturePath, userProfilePictureFile);
+        if (uploadError) throw uploadError;
+        nextProfilePictureStoredValue = uploadedProfilePicturePath;
+      }
+      if (userSignatureFile) {
+        uploadedSignaturePath = buildUserSignatureStoragePath(
+          isMasterUser ? "users" : "subusers",
+          user.id,
+          userSignatureFile,
+        );
+        const { error: uploadError } = await uploadUserSignature(uploadedSignaturePath, userSignatureFile);
+        if (uploadError) throw uploadError;
+        nextSignatureStoredValue = uploadedSignaturePath;
+      }
+
       let error: unknown = null;
       if (isMasterUser) {
         let result = await (supabase as any)
@@ -640,10 +753,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             user_surname: validated.userSurname,
             user_email: validated.userEmail,
             user_contact: validated.userContact,
-            profile_picture: userProfilePicture || null,
+            profile_picture: nextProfilePictureStoredValue || null,
+            signature_storage_path: nextSignatureStoredValue || null,
           })
           .eq("id", user.id);
-        if (result.error && isUserProfilePictureColumnError(result.error)) {
+        if (result.error && (isUserProfilePictureColumnError(result.error) || isUserSignatureColumnError(result.error))) {
           result = await (supabase as any)
             .from("profiles")
             .update({
@@ -663,7 +777,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
             surname: validated.userSurname,
             email: validated.userEmail,
             contact_number: validated.userContact,
-            profile_picture: userProfilePicture || null,
+            profile_picture: nextProfilePictureStoredValue || null,
+            signature_storage_path: nextSignatureStoredValue || null,
           })
           .eq("auth_user_id", user.id);
         error = result.error;
@@ -678,6 +793,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         user_contact: validated.userContact,
       });
       setInitialUserProfilePicture(userProfilePicture);
+      setUserProfilePictureStoredValue(nextProfilePictureStoredValue);
+      setUserProfilePictureFile(null);
+      setInitialUserSignature(userSignature);
+      setUserSignatureStoredValue(nextSignatureStoredValue);
+      setUserSignatureFile(null);
       const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
       cached.userDetails = {
         user_name: validated.userName,
@@ -686,6 +806,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         user_contact: validated.userContact,
       };
       cached.userProfilePicture = userProfilePicture;
+      cached.userProfilePictureStoredValue = nextProfilePictureStoredValue;
+      cached.userSignature = userSignature;
+      cached.userSignatureStoredValue = nextSignatureStoredValue;
       cached.loadedGroups.add("user");
       settingsProfileCacheByUser.set(user.id, cached);
       cacheHeaderProfile(user.id, {
@@ -705,11 +828,28 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         }),
       );
 
+      const previousStoragePath = getProfilePictureStoragePath(previousProfilePictureStoredValue);
+      const nextStoragePath = getProfilePictureStoragePath(nextProfilePictureStoredValue);
+      if (previousStoragePath && previousStoragePath !== nextStoragePath) {
+        await removeProfilePicture(previousProfilePictureStoredValue);
+      }
+      const previousSignaturePath = getUserSignatureStoragePath(previousSignatureStoredValue);
+      const nextSignaturePath = getUserSignatureStoragePath(nextSignatureStoredValue);
+      if (previousSignaturePath && previousSignaturePath !== nextSignaturePath) {
+        await removeUserSignature(previousSignatureStoredValue);
+      }
+
       toast({
         title: "Success",
         description: "User details updated successfully",
       });
     } catch (error: any) {
+      if (uploadedProfilePicturePath) {
+        await removeProfilePicture(uploadedProfilePicturePath);
+      }
+      if (uploadedSignaturePath) {
+        await removeUserSignature(uploadedSignaturePath);
+      }
       toast({
         title: "Error",
         description: getSafeErrorMessage(error),
@@ -873,7 +1013,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const isUserDirty =
     JSON.stringify(userDetails) !== JSON.stringify(initialUserDetails) ||
-    userProfilePicture !== initialUserProfilePicture;
+    userProfilePicture !== initialUserProfilePicture ||
+    userSignature !== initialUserSignature;
   const isCompanyProfileDirty = companyProfileKeys.some(
     (key) => companyDetails[key] !== initialCompanyDetails[key],
   );
@@ -903,6 +1044,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!file) return;
     try {
       const dataUrl = await fileToDataUrl(file);
+      setSubuserProfilePictureFile(file);
       setSubuserInviteForm((prev) => ({ ...prev, profile_picture: dataUrl }));
       setSubuserProfilePictureName(file.name);
     } catch (error: any) {
@@ -919,10 +1061,48 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!file) return;
     try {
       const dataUrl = await fileToDataUrl(file);
+      setUserProfilePictureFile(file);
       setUserProfilePicture(dataUrl);
     } catch (error: any) {
       toast({
         title: "Profile picture failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleUserSignatureSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setUserSignatureFile(file);
+      setUserSignature(dataUrl);
+    } catch (error: any) {
+      toast({
+        title: "Signature upload failed",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handleSubuserEditSignatureSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setSubuserEditSignatureFile(file);
+      setSubuserEditSignature(dataUrl);
+      setSubuserEditSignatureFileName(file.name);
+    } catch (error: any) {
+      toast({
+        title: "Signature upload failed",
         description: getSafeErrorMessage(error),
         variant: "destructive",
       });
@@ -937,6 +1117,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!open) {
       setSubuserInviteForm(emptySubuserInviteForm);
       setSubuserProfilePictureName("");
+      setSubuserProfilePictureFile(null);
       setSubuserInviteSubmitting(false);
       setSubuserInviteStep(1);
       setShowSubuserPassword(false);
@@ -948,6 +1129,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!open) {
       setEditingSubuser(null);
       setSubuserEditForm(emptySubuserEditForm);
+      setSubuserEditSignature("");
+      setSubuserEditSignatureStoredValue("");
+      setSubuserEditSignatureFile(null);
+      setSubuserEditSignatureFileName("");
       setSubuserEditSubmitting(false);
     }
   }, [canEditSettings]);
@@ -961,6 +1146,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       email: subuser.email || "",
       role: (subuser.role || "") as SubuserEditForm["role"],
     });
+    setSubuserEditSignature(resolveUserSignatureUrl(subuser.signature_storage_path));
+    setSubuserEditSignatureStoredValue(String(subuser.signature_storage_path || "").trim());
+    setSubuserEditSignatureFile(null);
+    setSubuserEditSignatureFileName("");
     setSubuserEditSubmitting(false);
   }, [canEditSettings]);
   const resetMembershipDialog = useCallback(() => {
@@ -1038,7 +1227,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     try {
       let { data, error } = await (supabase as any)
         .from("subusers")
-        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,status,created_at")
+        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,status,created_at,profile_picture,signature_storage_path")
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) {
         const code = String((error as any)?.code || "");
@@ -1064,6 +1253,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         email: String(row.email ?? "").trim(),
         role: String(row.role ?? row.user_role ?? "").trim(),
         profile_picture: String(row.profile_picture ?? "").trim() || null,
+        signature_storage_path: String(row.signature_storage_path ?? "").trim() || null,
         status: String(row.status ?? "active").trim(),
         created_at: row.created_at ?? row.invited_at ?? null,
       })) as SubuserListItem[];
@@ -1125,6 +1315,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     if (!canEditSettings || !editingSubuser || !isSubuserEditFormValid) return;
 
     setSubuserEditSubmitting(true);
+    let uploadedSignaturePath = "";
     try {
       const payload = {
         name: subuserEditForm.name.trim(),
@@ -1132,7 +1323,23 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         contact_number: subuserEditForm.contact_number.trim(),
         email: subuserEditForm.email.trim().toLowerCase(),
         role: subuserEditForm.role.trim(),
-      };
+      } as Record<string, unknown>;
+
+      const previousSignatureStoredValue = subuserEditSignatureStoredValue;
+      let nextSignatureStoredValue = previousSignatureStoredValue;
+
+      if (subuserEditSignatureFile) {
+        uploadedSignaturePath = buildUserSignatureStoragePath(
+          "subusers",
+          editingSubuser.auth_user_id || editingSubuser.id,
+          subuserEditSignatureFile,
+        );
+        const { error: uploadError } = await uploadUserSignature(uploadedSignaturePath, subuserEditSignatureFile);
+        if (uploadError) throw uploadError;
+        nextSignatureStoredValue = uploadedSignaturePath;
+      }
+
+      payload.signature_storage_path = nextSignatureStoredValue || null;
 
       const { error } = await (supabase as any)
         .from("subusers")
@@ -1145,9 +1352,17 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         title: "Subuser updated",
         description: `${payload.name} ${payload.surname}`.trim() || "Subuser details updated successfully.",
       });
+      const previousSignaturePath = getUserSignatureStoragePath(previousSignatureStoredValue);
+      const nextSignaturePath = getUserSignatureStoragePath(nextSignatureStoredValue);
+      if (previousSignaturePath && previousSignaturePath !== nextSignaturePath) {
+        await removeUserSignature(previousSignatureStoredValue);
+      }
       await fetchSubusersList({ force: true });
       handleSubuserEditDialogChange(false);
     } catch (error: any) {
+      if (uploadedSignaturePath) {
+        await removeUserSignature(uploadedSignaturePath);
+      }
       toast({
         title: "Update failed",
         description: getSafeErrorMessage(error),
@@ -1162,6 +1377,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     fetchSubusersList,
     handleSubuserEditDialogChange,
     isSubuserEditFormValid,
+    subuserEditSignatureFile,
+    subuserEditSignatureStoredValue,
+    subuserEditSignature,
     subuserEditForm,
     toast,
   ]);
@@ -1354,13 +1572,28 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
     setSubuserInviteSubmitting(true);
 
+    let uploadedProfilePicturePath = "";
+    if (subuserProfilePictureFile && user?.id) {
+      uploadedProfilePicturePath = buildProfilePictureStoragePath("subusers", user.id, subuserProfilePictureFile);
+      const { error: uploadError } = await uploadProfilePicture(uploadedProfilePicturePath, subuserProfilePictureFile);
+      if (uploadError) {
+        toast({
+          title: "Invite failed",
+          description: getSafeErrorMessage(uploadError),
+          variant: "destructive",
+        });
+        setSubuserInviteSubmitting(false);
+        return;
+      }
+    }
+
     const payload = {
       name: subuserInviteForm.name.trim(),
       surname: subuserInviteForm.surname.trim(),
       contact_number: subuserInviteForm.contact_number.trim(),
       email: subuserInviteForm.email.trim().toLowerCase(),
       role: subuserInviteForm.role,
-      profile_picture: subuserInviteForm.profile_picture.trim(),
+      profile_picture: uploadedProfilePicturePath,
       username: subuserInviteForm.username.trim(),
       password: subuserInviteForm.password,
     };
@@ -1371,6 +1604,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     const response = (data ?? null) as { ok?: boolean; error?: string; message?: string; email_notification_sent?: boolean } | null;
 
     if (error) {
+      if (uploadedProfilePicturePath) {
+        await removeProfilePicture(uploadedProfilePicturePath);
+      }
       let errorMessage = error.message || "Unable to send invite right now.";
       const errorWithContext = error as { context?: Response };
       if (errorWithContext.context) {
@@ -1396,6 +1632,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
 
     if (!response?.ok) {
+      if (uploadedProfilePicturePath) {
+        await removeProfilePicture(uploadedProfilePicturePath);
+      }
       toast({
         title: "Invite failed",
         description: response?.error || "Unable to send invite right now.",
@@ -1539,32 +1778,74 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               </div>
               <div className="flex flex-1 flex-col gap-7">
                 <div className="space-y-1 pt-1">
-                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Profile Picture</h4>
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Profile</h4>
                   <div className="h-[0.5px] w-full bg-[#3eca44]" />
                 </div>
-                <div className="space-y-1">
-                  <input
-                    ref={userProfilePictureInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    className="hidden"
-                    onChange={handleUserProfilePictureSelect}
-                  />
-                  <div className="relative flex w-fit items-center justify-center">
-                    <Avatar className="h-32 w-32 border border-slate-200">
-                      <AvatarImage src={userProfilePicture || undefined} alt="User profile picture" className="object-cover" />
-                      <AvatarFallback className="bg-[#eef9ef] text-[22px] font-semibold text-[#2f9f35]">
-                        {getInitials(userDetails.user_name, userDetails.user_surname)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="absolute bottom-1.5 left-1.5 h-6 w-6 rounded-full border-slate-300 bg-white/95 p-0 text-slate-600 hover:bg-white/95 hover:border-[#3eca44] hover:text-[#2f9f35]"
-                      onClick={() => userProfilePictureInputRef.current?.click()}
-                    >
-                      {userProfilePicture ? <Pencil className="h-3 w-3" /> : <Camera className="h-3 w-3" />}
-                    </Button>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <input
+                      ref={userProfilePictureInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={handleUserProfilePictureSelect}
+                    />
+                    <div className="relative flex w-fit items-center justify-center">
+                      <Avatar className="h-32 w-32 border border-slate-200">
+                        <AvatarImage src={userProfilePicture || undefined} alt="User profile picture" className="object-cover" />
+                        <AvatarFallback className="bg-[#eef9ef] text-[22px] font-semibold text-[#2f9f35]">
+                          {getInitials(userDetails.user_name, userDetails.user_surname)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="absolute bottom-1.5 left-1.5 h-6 w-6 rounded-full border-slate-300 bg-white/95 p-0 text-slate-600 hover:bg-white/95 hover:border-[#3eca44] hover:text-[#2f9f35]"
+                        onClick={() => userProfilePictureInputRef.current?.click()}
+                      >
+                        {userProfilePicture ? <Pencil className="h-3 w-3" /> : <Camera className="h-3 w-3" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <input
+                      ref={userSignatureInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={handleUserSignatureSelect}
+                    />
+                    <div className="flex flex-col gap-3">
+                      <div className="relative flex h-[128px] w-[220px] items-center justify-center rounded border border-slate-200 bg-white px-4">
+                        {userSignature ? (
+                          <img src={userSignature} alt="User signature" className="max-h-[88px] w-auto object-contain" />
+                        ) : (
+                          <span className="text-[11px] text-slate-400">No signature uploaded.</span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="absolute bottom-1.5 left-1.5 h-6 w-6 rounded-full border-slate-300 bg-white/95 p-0 text-slate-600 hover:bg-white/95 hover:border-[#3eca44] hover:text-[#2f9f35]"
+                          onClick={() => userSignatureInputRef.current?.click()}
+                        >
+                          {userSignature ? <Pencil className="h-3 w-3" /> : <Camera className="h-3 w-3" />}
+                        </Button>
+                        {userSignature ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="absolute bottom-1.5 right-1.5 h-6 w-6 rounded-full border-slate-300 bg-white/95 p-0 text-slate-600 hover:bg-white/95 hover:border-rose-500 hover:text-rose-600"
+                            onClick={() => {
+                              setUserSignature("");
+                              setUserSignatureStoredValue("");
+                              setUserSignatureFile(null);
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-1 pt-3">
@@ -2269,6 +2550,53 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   <div className="mt-[46px] bg-white">
                     <div className="px-6 pt-0 pb-7"></div>
                     <form onSubmit={handleSubuserEditSubmit} className="space-y-4 px-6 pb-6 pt-0">
+                      <input
+                        ref={subuserEditSignatureInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        className="hidden"
+                        onChange={handleSubuserEditSignatureSelect}
+                      />
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Signature</span>
+                        <div className="rounded border border-slate-200 bg-slate-50 px-4 py-4">
+                          <div className="flex min-h-[96px] items-center justify-center rounded border border-slate-200 bg-white px-4">
+                            {subuserEditSignature ? (
+                              <img src={subuserEditSignature} alt="Subuser signature" className="max-h-[72px] w-auto object-contain" />
+                            ) : (
+                              <span className="text-[11px] text-slate-400">No signature uploaded.</span>
+                            )}
+                          </div>
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-[28px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                              onClick={() => subuserEditSignatureInputRef.current?.click()}
+                            >
+                              {subuserEditSignature ? "Change Signature" : "Upload Signature"}
+                            </Button>
+                            {subuserEditSignature ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="h-[28px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-rose-500 hover:bg-white hover:text-rose-600"
+                                onClick={() => {
+                                  setSubuserEditSignature("");
+                                  setSubuserEditSignatureStoredValue("");
+                                  setSubuserEditSignatureFile(null);
+                                  setSubuserEditSignatureFileName("");
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            ) : null}
+                          </div>
+                          {subuserEditSignatureFileName ? (
+                            <p className="mt-2 text-[10px] text-slate-500">{subuserEditSignatureFileName}</p>
+                          ) : null}
+                        </div>
+                      </div>
                       <div className="relative w-full max-w-none">
                         <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
                         <Input value={subuserEditForm.name} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, name: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert name" required />
@@ -2439,6 +2767,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               className="h-[28px] rounded border-slate-300 bg-white px-3 text-xs text-slate-600 hover:border-rose-500 hover:bg-white hover:text-rose-600"
                               onClick={() => {
                                 setSubuserInviteForm((prev) => ({ ...prev, profile_picture: "" }));
+                                setSubuserProfilePictureFile(null);
                                 setSubuserProfilePictureName("");
                                 if (subuserProfilePictureInputRef.current) subuserProfilePictureInputRef.current.value = "";
                               }}

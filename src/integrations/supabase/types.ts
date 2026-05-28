@@ -166,6 +166,8 @@ export type Database = {
           id: string
           id_number: string | null
           lr_billing_cycle: string | null
+          logo_storage_path: string | null
+          main_office_number: string | null
           pr_billing_cycle: string | null
           race: string | null
           status: string | null
@@ -185,6 +187,8 @@ export type Database = {
           id?: string
           id_number?: string | null
           lr_billing_cycle?: string | null
+          logo_storage_path?: string | null
+          main_office_number?: string | null
           pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null
@@ -204,6 +208,8 @@ export type Database = {
           id?: string
           id_number?: string | null
           lr_billing_cycle?: string | null
+          logo_storage_path?: string | null
+          main_office_number?: string | null
           pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null
@@ -232,6 +238,7 @@ export type Database = {
           registration_number: string
           representative_name: string
           representative_surname: string
+          signature_storage_path: string | null
           updated_at: string | null
           user_contact: string
           user_email: string
@@ -259,6 +266,7 @@ export type Database = {
           registration_number: string
           representative_name: string
           representative_surname: string
+          signature_storage_path?: string | null
           updated_at?: string | null
           user_contact: string
           user_email: string
@@ -286,6 +294,7 @@ export type Database = {
           registration_number?: string
           representative_name?: string
           representative_surname?: string
+          signature_storage_path?: string | null
           updated_at?: string | null
           user_contact?: string
           user_email?: string

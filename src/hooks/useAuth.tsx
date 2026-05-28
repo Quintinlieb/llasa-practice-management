@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { User, Session } from "@supabase/supabase-js";
 import { readPersistedSupabaseSession, supabase } from "@/integrations/supabase/client";
 import { cacheHeaderProfile, readCachedHeaderProfilePicture } from "@/lib/headerProfileCache";
+import { resolveProfilePictureUrl } from "@/lib/profilePictures";
 
 type AuthContextValue = {
   user: User | null;
@@ -42,7 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user_name: String(profileData.user_name || "").trim(),
         user_surname: String(profileData.user_surname || "").trim(),
         user_email: String(profileData.user_email || authUser.email || "").trim(),
-        profile_picture: String((profileData as any).profile_picture || "").trim(),
+        profile_picture: resolveProfilePictureUrl((profileData as any).profile_picture),
       });
       return;
     }
@@ -58,7 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user_name: String((subuserData as any).name || "").trim(),
         user_surname: String((subuserData as any).surname || "").trim(),
         user_email: String((subuserData as any).email || authUser.email || "").trim(),
-        profile_picture: String((subuserData as any).profile_picture || "").trim(),
+        profile_picture: resolveProfilePictureUrl((subuserData as any).profile_picture),
       });
       return;
     }

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { logGeneratedDocument } from "@/lib/documentsLog";
+import { resolveUserSignatureUrl } from "@/lib/userSignatures";
 import { supabase } from "@/integrations/supabase/client";
 import { Building2, Check, ChevronDown, ChevronsUpDown, FileText, Info, Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -100,6 +101,7 @@ type HearingDetailsFormState = {
   noticeDate: string;
   hearingDate: string;
   hearingFormat: HearingFormat | "";
+  hearingVenue: string;
   misconductTypes: string[];
   employeeAttendance: EmployeeAttendance | "";
   hearingProcess: HearingProcess | "";
@@ -185,7 +187,8 @@ const emptyEmployeeFormState: EmployeeFormState = {
 const emptyHearingDetailsFormState: HearingDetailsFormState = {
   noticeDate: "",
   hearingDate: "",
-  hearingFormat: "",
+  hearingFormat: "in_person",
+  hearingVenue: "",
   misconductTypes: [],
   employeeAttendance: "",
   hearingProcess: "",
@@ -196,9 +199,15 @@ const emptyHearingDetailsFormState: HearingDetailsFormState = {
   pleasByCharge: {},
 };
 
-const createEmptyHearingDetailsFormState = (bargainingCouncil = "None"): HearingDetailsFormState => ({
+const createDefaultInPersonVenue = (city: string, province: string) =>
+  [String(city || "").trim(), String(province || "").trim()].filter(Boolean).join(", ");
+
+const getDefaultVirtualHearingVenue = () => virtualHearingVenueOptions[0];
+
+const createEmptyHearingDetailsFormState = (bargainingCouncil = "None", hearingVenue = ""): HearingDetailsFormState => ({
   ...emptyHearingDetailsFormState,
   bargainingCouncil,
+  hearingVenue,
 });
 
 const createTransparentSignatureDataUrl = async (sourceDataUrl: string) => {
@@ -286,8 +295,15 @@ const hearingFormatOptions: Array<{ value: HearingFormat; label: string }> = [
   { value: "in_person", label: "In person" },
   { value: "virtual", label: "Virtual" },
 ];
+const virtualHearingVenueOptions = [
+  "Microsoft Teams",
+  "WhatsApp Video Call",
+  "Zoom",
+  "Google Meet",
+  "Skype",
+] as const;
 
-const employeeAttendanceOptions: readonly EmployeeAttendance[] = ["Absent", "Present"] as const;
+const employeeAttendanceOptions: readonly EmployeeAttendance[] = ["Present", "Absent"] as const;
 const hearingProcessOptions: readonly HearingProcess[] = ["Continued", "Continued in absence", "Postponed", "Withdrawn"] as const;
 const bargainingCouncilOptions = [
   { label: "None", value: "None" },
@@ -460,9 +476,23 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientProvince: String(client.province || "").trim(),
 });
 
+const getDefaultVenueForClientForm = (clientForm: Pick<ClientFormState, "clientCity" | "clientProvince">) =>
+  createDefaultInPersonVenue(clientForm.clientCity, clientForm.clientProvince);
+
 const normalizeClientBargainingCouncil = (value: string | null) => {
   const raw = String(value || "").trim();
-  return raw || "None";
+  if (!raw || raw === "--") return "None";
+  const direct = bargainingCouncilOptions.find((option) => option.value === raw);
+  if (direct) return direct.value;
+  const labelMatch = bargainingCouncilOptions.find((option) => option.label.toLowerCase() === raw.toLowerCase());
+  if (labelMatch) return labelMatch.value;
+  const abbreviationMatch = raw.match(/\(([^)]+)\)\s*$/);
+  if (abbreviationMatch?.[1]) {
+    const extracted = abbreviationMatch[1].trim();
+    const extractedDirect = bargainingCouncilOptions.find((option) => option.value === extracted);
+    if (extractedDirect) return extractedDirect.value;
+  }
+  return raw;
 };
 
 const appealNoticeWordByValue: Record<AppealNoticeOption, string> = {
@@ -479,8 +509,18 @@ const getOutcomeDisputeForumText = (bargainingCouncil: string) => {
   return `the ${councilLabel}`;
 };
 
-const normalizeHearingDetailsFormState = (value: unknown): HearingDetailsFormState => {
+const normalizeHearingDetailsFormState = (
+  value: unknown,
+  options?: { defaultInPersonVenue?: string },
+): HearingDetailsFormState => {
   const candidate = (value && typeof value === "object" ? value : {}) as Partial<HearingDetailsFormState>;
+  const hearingFormat =
+    candidate.hearingFormat === "in_person" || candidate.hearingFormat === "virtual" ? candidate.hearingFormat : "in_person";
+  const defaultInPersonVenue = String(options?.defaultInPersonVenue || "").trim();
+  const hearingVenue =
+    hearingFormat === "virtual"
+      ? String(candidate.hearingVenue || "").trim() || getDefaultVirtualHearingVenue()
+      : String(candidate.hearingVenue || "").trim() || defaultInPersonVenue;
   const employeeAttendance =
     candidate.employeeAttendance === "Present" || candidate.employeeAttendance === "Absent" ? candidate.employeeAttendance : "";
   const visibleProcessOptions =
@@ -500,6 +540,8 @@ const normalizeHearingDetailsFormState = (value: unknown): HearingDetailsFormSta
   return {
     ...emptyHearingDetailsFormState,
     ...candidate,
+    hearingFormat,
+    hearingVenue,
     employeeAttendance,
     hearingProcess,
     bargainingCouncil: String(candidate.bargainingCouncil || emptyHearingDetailsFormState.bargainingCouncil).trim() || "None",
@@ -645,6 +687,11 @@ const parseDraftState = (value: unknown): OutcomeDraftState => {
     hasRecommendationSection?: unknown;
     isPreviewEditable?: unknown;
   };
+  const normalizedClientForm = {
+    ...emptyClientFormState,
+    ...(candidate.clientForm || {}),
+  };
+  const defaultInPersonVenue = getDefaultVenueForClientForm(normalizedClientForm);
   const normalizedEmployeeForms = Array.isArray(candidate.employeeForms)
     ? candidate.employeeForms
         .filter((entry): entry is Partial<EmployeeFormState> => Boolean(entry) && typeof entry === "object")
@@ -659,19 +706,18 @@ const parseDraftState = (value: unknown): OutcomeDraftState => {
         }]
       : [emptyEmployeeFormState];
   const activeStep = Math.max(0, Math.min(1, Number(candidate.activeStep) || 0));
-  const normalizedHearingDetailsForm = normalizeHearingDetailsFormState(candidate.hearingDetailsForm);
+  const normalizedHearingDetailsForm = normalizeHearingDetailsFormState(candidate.hearingDetailsForm, {
+    defaultInPersonVenue,
+  });
   const normalizedEmployeeHearingDetailsForms = Array.isArray(candidate.employeeHearingDetailsForms)
     ? candidate.employeeHearingDetailsForms
-        .map((entry) => normalizeHearingDetailsFormState(entry))
+        .map((entry) => normalizeHearingDetailsFormState(entry, { defaultInPersonVenue }))
         .filter(Boolean)
     : [];
   return {
     activeStep,
     isFinished: Boolean(candidate.isFinished),
-    clientForm: {
-      ...emptyClientFormState,
-      ...(candidate.clientForm || {}),
-    },
+    clientForm: normalizedClientForm,
     employeeForms: normalizedEmployeeForms.length > 0 ? normalizedEmployeeForms : [emptyEmployeeFormState],
     hearingDetailsForm: normalizedHearingDetailsForm,
     employeeHearingDetailsForms: normalizedEmployeeHearingDetailsForms.length > 0 ? normalizedEmployeeHearingDetailsForms : [normalizedHearingDetailsForm],
@@ -709,6 +755,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const [clientSearchValue, setClientSearchValue] = useState("");
   const [chargePickerOpen, setChargePickerOpen] = useState(false);
   const [activeEmployeeChargePickerIndex, setActiveEmployeeChargePickerIndex] = useState<number | null>(null);
+  const [chargeSearchValue, setChargeSearchValue] = useState("");
+  const [employeeChargeSearchValues, setEmployeeChargeSearchValues] = useState<Record<number, string>>({});
   const [bargainingCouncilPickerOpen, setBargainingCouncilPickerOpen] = useState(false);
   const [activeEmployeeBargainingCouncilPickerIndex, setActiveEmployeeBargainingCouncilPickerIndex] = useState<number | null>(null);
   const [bargainingCouncilSearchValue, setBargainingCouncilSearchValue] = useState("");
@@ -727,11 +775,32 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const [editingEmployeeStatementGroupIndex, setEditingEmployeeStatementGroupIndex] = useState<number | null>(null);
   const [isAddRecommendationOpen, setIsAddRecommendationOpen] = useState(false);
   const [recommendationDraft, setRecommendationDraft] = useState("");
+  const defaultClientVenue = getDefaultVenueForClientForm(clientForm);
 
   useEffect(() => {
     let isMounted = true;
     const loadTransparentSignature = async () => {
-      const nextSignature = await createTransparentSignatureDataUrl(quintinLiebenbergSignatureDataUrl);
+      let sourceSignature = quintinLiebenbergSignatureDataUrl;
+      if (user?.id) {
+        const { data: profileData } = await (supabase as any)
+          .from("profiles")
+          .select("signature_storage_path")
+          .eq("id", user.id)
+          .maybeSingle();
+        const profileSignature = resolveUserSignatureUrl((profileData as any)?.signature_storage_path);
+        if (profileSignature) {
+          sourceSignature = profileSignature;
+        } else {
+          const { data: subuserData } = await (supabase as any)
+            .from("subusers")
+            .select("signature_storage_path")
+            .eq("auth_user_id", user.id)
+            .maybeSingle();
+          const subuserSignature = resolveUserSignatureUrl((subuserData as any)?.signature_storage_path);
+          if (subuserSignature) sourceSignature = subuserSignature;
+        }
+      }
+      const nextSignature = await createTransparentSignatureDataUrl(sourceSignature);
       if (isMounted) {
         setChairpersonSignatureDataUrl(nextSignature);
       }
@@ -740,7 +809,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     const nextDraft = parseDraftState(draftState);
@@ -809,12 +878,39 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const clientBargainingCouncil = hearingDetailsForm.bargainingCouncil || normalizeClientBargainingCouncil(clientRows.find((row) => row.id === clientForm.clientId)?.bargaining_council ?? null);
       const nextForms = employeeForms.map((_, index) => {
         if (index === 0) return current[index] ? current[index] : hearingDetailsForm;
-        return current[index] ? current[index] : createEmptyHearingDetailsFormState(clientBargainingCouncil);
+        return current[index] ? current[index] : createEmptyHearingDetailsFormState(clientBargainingCouncil, defaultClientVenue);
       });
       return nextForms.length > 0 ? nextForms : [hearingDetailsForm];
     });
     setCollapsedEmployeeHearingSectionIndexes((current) => current.filter((index) => index < employeeForms.length));
-  }, [clientForm.clientId, clientRows, employeeForms, hearingDetailsForm]);
+  }, [clientForm.clientId, clientRows, defaultClientVenue, employeeForms, hearingDetailsForm]);
+
+  useEffect(() => {
+    if (!clientForm.clientId) return;
+    const selectedClient = clientRows.find((row) => row.id === clientForm.clientId);
+    if (!selectedClient) return;
+    const nextCouncil = normalizeClientBargainingCouncil(selectedClient.bargaining_council);
+    setHearingDetailsForm((current) => {
+      const currentCouncil = String(current.bargainingCouncil || "").trim();
+      if (currentCouncil && currentCouncil.toLowerCase() !== "none") return current;
+      if (currentCouncil === nextCouncil) return current;
+      return {
+        ...current,
+        bargainingCouncil: nextCouncil,
+      };
+    });
+    setEmployeeHearingDetailsForms((current) =>
+      current.map((form) => {
+        const currentCouncil = String(form.bargainingCouncil || "").trim();
+        if (currentCouncil && currentCouncil.toLowerCase() !== "none") return form;
+        if (currentCouncil === nextCouncil) return form;
+        return {
+          ...form,
+          bargainingCouncil: nextCouncil,
+        };
+      }),
+    );
+  }, [clientForm.clientId, clientRows]);
 
   const isPartiesStepValid =
     Boolean(clientForm.clientId.trim()) &&
@@ -828,6 +924,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       form.noticeDate.trim() &&
         form.hearingDate.trim() &&
         form.hearingFormat.trim() &&
+        form.hearingVenue.trim() &&
         form.misconductTypes.length > 0 &&
         form.employeeAttendance.trim() &&
         form.hearingProcess.trim() &&
@@ -942,12 +1039,23 @@ const DisciplinaryHearingOutcomeGenerator = ({
           return;
         }
         if (activeStep === 1) {
-          setHearingDetailsForm(emptyHearingDetailsFormState);
-          setEmployeeHearingDetailsForms(employeeForms.map((_, index) => (index === 0 ? emptyHearingDetailsFormState : createEmptyHearingDetailsFormState())));
+          const clearedPrimaryForm = {
+            ...emptyHearingDetailsFormState,
+            hearingFormat: "in_person" as const,
+            hearingVenue: defaultClientVenue,
+          };
+          setHearingDetailsForm(clearedPrimaryForm);
+          setEmployeeHearingDetailsForms(
+            employeeForms.map((_, index) =>
+              index === 0 ? clearedPrimaryForm : createEmptyHearingDetailsFormState("None", defaultClientVenue),
+            ),
+          );
           setCollapsedEmployeeHearingSectionIndexes([]);
           setHasRecommendationSection(false);
           setChargePickerOpen(false);
           setActiveEmployeeChargePickerIndex(null);
+          setChargeSearchValue("");
+          setEmployeeChargeSearchValues({});
           setBargainingCouncilPickerOpen(false);
           setActiveEmployeeBargainingCouncilPickerIndex(null);
           setBargainingCouncilSearchValue("");
@@ -959,7 +1067,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       temporaryEmployeeCount: employeeForms.length,
       isFinished,
     });
-  }, [activeStep, clientForm.clientId, employeeForms.length, isPartiesStepValid, isFinished, isHearingDetailsStepValid, isPreviewDownloadReady, isPreviewEditable, onStepMetaChange]);
+  }, [activeStep, clientForm.clientId, defaultClientVenue, employeeForms.length, isPartiesStepValid, isFinished, isHearingDetailsStepValid, isPreviewDownloadReady, isPreviewEditable, onStepMetaChange]);
 
   const selectedClientLabel = clientForm.clientId ? clientForm.clientName : "Select client";
   const filteredBargainingCouncilOptions = useMemo(() => {
@@ -994,15 +1102,21 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const handleClientSelect = (clientId: string) => {
     const selectedClient = clientRows.find((row) => row.id === clientId);
     if (!selectedClient) return;
-    setClientForm(mapClientToFormState(selectedClient));
+    const nextClientForm = mapClientToFormState(selectedClient);
+    const nextDefaultVenue = getDefaultVenueForClientForm(nextClientForm);
+    setClientForm(nextClientForm);
     setEmployeeForms([emptyEmployeeFormState]);
     setHearingDetailsForm({
       ...emptyHearingDetailsFormState,
+      hearingFormat: "in_person",
+      hearingVenue: nextDefaultVenue,
       bargainingCouncil: normalizeClientBargainingCouncil(selectedClient.bargaining_council),
     });
     setEmployeeHearingDetailsForms([
       {
         ...emptyHearingDetailsFormState,
+        hearingFormat: "in_person",
+        hearingVenue: nextDefaultVenue,
         bargainingCouncil: normalizeClientBargainingCouncil(selectedClient.bargaining_council),
       },
     ]);
@@ -1033,7 +1147,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setEmployeeForms((current) => [...current, emptyEmployeeFormState]);
     setEmployeeHearingDetailsForms((current) => [
       ...current,
-      createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil),
+      createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil, defaultClientVenue),
     ]);
   };
 
@@ -1051,6 +1165,36 @@ const DisciplinaryHearingOutcomeGenerator = ({
     field: T,
     value: HearingDetailsFormState[T],
   ) => {
+    if (field === "hearingFormat") {
+      const nextFormat = value as HearingFormat;
+      const nextVenue = nextFormat === "virtual" ? getDefaultVirtualHearingVenue() : defaultClientVenue;
+      setHearingDetailsForm((current) => ({
+        ...current,
+        hearingFormat: nextFormat,
+        hearingVenue: nextVenue,
+      }));
+      setEmployeeHearingDetailsForms((current) => {
+        if (current.length === 0) {
+          return [
+            {
+              ...createEmptyHearingDetailsFormState("None", defaultClientVenue),
+              hearingFormat: nextFormat,
+              hearingVenue: nextVenue,
+            },
+          ];
+        }
+        return current.map((form, index) =>
+          index === 0
+            ? {
+                ...form,
+                hearingFormat: nextFormat,
+                hearingVenue: nextVenue,
+              }
+            : form,
+        );
+      });
+      return;
+    }
     setHearingDetailsForm((current) => ({
       ...current,
       [field]: value,
@@ -1080,6 +1224,29 @@ const DisciplinaryHearingOutcomeGenerator = ({
     field: T,
     value: HearingDetailsFormState[T],
   ) => {
+    if (field === "hearingFormat") {
+      const nextFormat = value as HearingFormat;
+      const nextVenue = nextFormat === "virtual" ? getDefaultVirtualHearingVenue() : defaultClientVenue;
+      setEmployeeHearingDetailsForms((current) =>
+        current.map((form, index) =>
+          index === employeeIndex
+            ? {
+                ...form,
+                hearingFormat: nextFormat,
+                hearingVenue: nextVenue,
+              }
+            : form,
+        ),
+      );
+      if (employeeIndex === 0) {
+        setHearingDetailsForm((current) => ({
+          ...current,
+          hearingFormat: nextFormat,
+          hearingVenue: nextVenue,
+        }));
+      }
+      return;
+    }
     setEmployeeHearingDetailsForms((current) =>
       current.map((form, index) =>
         index === employeeIndex
@@ -1477,10 +1644,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
         : `${hearingDetailsForm.misconductTypes.length} misconduct type(s) selected`;
   const misconductListLabel = joinWithAnd(hearingDetailsForm.misconductTypes);
   const preliminaryPleaOverrideLines = normalizeParagraphText(previewForm.preliminaryPleaOverrides);
-  const clientLocationHeading = [clientForm.clientCity, clientForm.clientProvince]
-    .filter(Boolean)
-    .join(", ")
-    .toUpperCase() || "CITY, PROVINCE";
+  const hearingVenueLabel = hearingDetailsForm.hearingVenue.trim() || defaultClientVenue || "CITY, PROVINCE";
+  const documentVenueHeading =
+    hearingDetailsForm.hearingFormat === "virtual"
+      ? `HELD VIRTUALLY VIA ${hearingVenueLabel.toUpperCase()}`
+      : `HELD AT ${hearingVenueLabel.toUpperCase()}`;
   const clientMatterName = (clientForm.clientName || "EMPLOYER NAME").toUpperCase();
   const normalizedEmployees = employeeForms.length > 0 ? employeeForms : [emptyEmployeeFormState];
   const employeeFullNames = normalizedEmployees.map((employee) => {
@@ -1989,7 +2157,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     };
 
     writeCenteredLine("IN THE DISCIPLINARY HEARING", 10, "bold", 0.2);
-    writeCenteredLine(`HELD AT ${clientLocationHeading}`, 10, "bold", 10);
+    writeCenteredLine(documentVenueHeading, 10, "bold", 10);
 
     writePlainParagraph("In the matter between:", { gapAfter: 4 });
     writeMatterRow(clientMatterName, "EMPLOYER", true);
@@ -2453,9 +2621,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
     const isBargainingCouncilPickerActive = isEmployeeScoped
       ? activeEmployeeBargainingCouncilPickerIndex === employeeIndex
       : bargainingCouncilPickerOpen;
+    const chargeSearch = isEmployeeScoped ? employeeChargeSearchValues[employeeIndex] || "" : chargeSearchValue;
     const bargainingCouncilSearch = isEmployeeScoped
       ? employeeBargainingCouncilSearchValues[employeeIndex] || ""
       : bargainingCouncilSearchValue;
+    const normalizedChargeSearch = chargeSearch.trim().toLowerCase();
     const filteredCouncilOptions = !bargainingCouncilSearch.trim()
       ? bargainingCouncilOptions
       : bargainingCouncilOptions.filter(
@@ -2602,6 +2772,45 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeHearingVenue${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+              Hearing Venue <span className="text-red-500">*</span>
+            </Label>
+            {form.hearingFormat === "virtual" ? (
+              <Select
+                value={form.hearingVenue || undefined}
+                onValueChange={(value) =>
+                  isEmployeeScoped
+                    ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingVenue", value)
+                    : handleHearingDetailsFieldChange("hearingVenue", value)
+                }
+              >
+                <SelectTrigger id={`disciplinaryOutcomeHearingVenue${fieldSuffix}`} className={inputClassName}>
+                  <SelectValue placeholder="Select hearing venue" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {virtualHearingVenueOptions.map((option) => (
+                    <SelectItem key={option} value={option} className="text-[10px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id={`disciplinaryOutcomeHearingVenue${fieldSuffix}`}
+                value={form.hearingVenue}
+                onChange={(event) =>
+                  isEmployeeScoped
+                    ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingVenue", event.target.value)
+                    : handleHearingDetailsFieldChange("hearingVenue", event.target.value)
+                }
+                placeholder="Enter hearing venue"
+                className={inputClassName}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
@@ -2850,9 +3059,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
             <PopoverContent
               align="start"
               className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
+              onCloseAutoFocus={() => {
+                if (isEmployeeScoped) {
+                  setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
+                  return;
+                }
+                setChargeSearchValue("");
+              }}
             >
-              <Command>
+              <Command shouldFilter={false}>
                 <CommandInput
+                  value={chargeSearch}
+                  onValueChange={(value) => {
+                    if (isEmployeeScoped) {
+                      setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: value }));
+                      return;
+                    }
+                    setChargeSearchValue(value);
+                  }}
                   placeholder="Search offences..."
                   className="h-9 border-0 text-[10px] focus:ring-0"
                 />
@@ -2861,7 +3085,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
                     No offence found.
                   </CommandEmpty>
                   {offenceCategoryOrder.map((category) => {
-                    const options = conductOffenceOptions.filter((offence) => offence.category === category);
+                    const options = conductOffenceOptions.filter(
+                      (offence) =>
+                        offence.category === category &&
+                        (!normalizedChargeSearch || offence.name.toLowerCase().startsWith(normalizedChargeSearch)),
+                    );
                     if (options.length === 0) return null;
                     return (
                       <CommandGroup key={category} heading={offenceGroupLabel[category]}>
@@ -2873,8 +3101,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
                               value={offence.name}
                               onSelect={() =>
                                 isEmployeeScoped
-                                  ? handleEmployeeToggleCharge(employeeIndex, offence.name)
-                                  : handleToggleCharge(offence.name)
+                                  ? (handleEmployeeToggleCharge(employeeIndex, offence.name), setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" })))
+                                  : (handleToggleCharge(offence.name), setChargeSearchValue(""))
                               }
                               className="text-[10px]"
                             >
@@ -3111,7 +3339,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <div className="space-y-10">
                 <div className="pt-6 text-center">
                   <p className="text-[13px] font-bold uppercase leading-6">In The Disciplinary Hearing</p>
-                  <p className="text-[13px] font-bold uppercase leading-6">Held At {clientLocationHeading}</p>
+                  <p className="text-[13px] font-bold uppercase leading-6">{documentVenueHeading}</p>
                 </div>
 
                 <div className="space-y-4">

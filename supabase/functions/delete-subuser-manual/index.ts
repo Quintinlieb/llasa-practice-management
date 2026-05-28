@@ -22,6 +22,8 @@ type SubuserLookupRow = {
   id: string
   auth_user_id: string | null
   email: string | null
+  profile_picture: string | null
+  signature_storage_path: string | null
 }
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -92,7 +94,7 @@ Deno.serve(async (req: Request) => {
   const tryLookup = async (column: "id" | "auth_user_id" | "email", value: string) => {
     const { data, error } = await adminClient
       .from("subusers")
-      .select("id,auth_user_id,email")
+      .select("id,auth_user_id,email,profile_picture,signature_storage_path")
       .eq(column, value)
       .limit(1)
       .maybeSingle()
@@ -134,6 +136,8 @@ Deno.serve(async (req: Request) => {
   }
 
   const resolvedAuthUserId = String(row.auth_user_id ?? "").trim()
+  const profilePicturePath = String(row.profile_picture ?? "").trim()
+  const signatureStoragePath = String(row.signature_storage_path ?? "").trim()
 
   const { error: deleteSubuserError } = await adminClient
     .from("subusers")
@@ -156,6 +160,15 @@ Deno.serve(async (req: Request) => {
         400,
       )
     }
+  }
+
+  if (profilePicturePath && !/^(?:data:|blob:|https?:\/\/)/i.test(profilePicturePath)) {
+    const normalizedProfilePicturePath = profilePicturePath.replace(/^profile-pictures\//, "")
+    await adminClient.storage.from("profile-pictures").remove([normalizedProfilePicturePath])
+  }
+  if (signatureStoragePath && !/^(?:data:|blob:|https?:\/\/)/i.test(signatureStoragePath)) {
+    const normalizedSignaturePath = signatureStoragePath.replace(/^user-signatures\//, "")
+    await adminClient.storage.from("user-signatures").remove([normalizedSignaturePath])
   }
 
   return json({

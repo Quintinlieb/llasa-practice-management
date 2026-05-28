@@ -1050,6 +1050,9 @@ const Matters = () => {
   const newCaseDateEventInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const caseNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const openingNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasLoadedClientOptionsRef = useRef(false);
+  const hasLoadedConsultantOptionsRef = useRef(false);
+  const hasLoadedMentionOptionsRef = useRef(false);
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
@@ -1118,6 +1121,79 @@ const Matters = () => {
     const profileFullName = `${profileName} ${profileSurname}`.trim();
     if (profileFullName) setCurrentUserDisplayName(profileFullName);
   }, [user?.id]);
+  const loadClientOptions = useCallback(async () => {
+    if (hasLoadedClientOptionsRef.current) return;
+    const { data, error } = await (supabase as any)
+      .from("clients")
+      .select("id,registered_name,company_name,client_name,company_type,trading_as,trading_name,client_surname,status")
+      .or("status.is.null,status.eq.active")
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false, nullsFirst: false });
+    if (error) {
+      setClientOptions([]);
+      setClientLoadMessage(`Unable to load clients: ${error.message}`);
+      return;
+    }
+    const mapped = (data ?? []).map((c: any) => {
+      const registered = String(c.registered_name ?? c.company_name ?? c.client_name ?? "").trim();
+      const trading = String(c.trading_as ?? c.trading_name ?? c.client_surname ?? "").trim();
+      const companyType = String(c.company_type ?? "").trim();
+      return {
+        id: c.id,
+        label: buildMatterClientLabel(registered, companyType, trading),
+      };
+    });
+    const valid = mapped.filter((c) => c.label.trim().length > 0);
+    hasLoadedClientOptionsRef.current = true;
+    if (valid.length > 0) {
+      setClientOptions(valid);
+      setClientLoadMessage("No clients found.");
+      return;
+    }
+    setClientOptions([]);
+    setClientLoadMessage("No clients found.");
+  }, []);
+  const loadConsultantOptions = useCallback(async () => {
+    if (!user?.id || hasLoadedConsultantOptionsRef.current) return;
+    const options: ConsultantOption[] = [];
+    const seen = new Set<string>();
+    const addOption = (id: string, label: string) => {
+      const safeId = String(id || "").trim();
+      const safeLabel = String(label || "").trim();
+      if (!safeId || !safeLabel) return;
+      const dedupeKey = safeLabel.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      options.push({ id: safeId, label: safeLabel });
+    };
+
+    const { data: masterProfiles } = await (supabase as any)
+      .from("profiles")
+      .select("id,user_name,user_surname,user_email")
+      .order("user_name", { ascending: true, nullsFirst: false })
+      .order("user_surname", { ascending: true, nullsFirst: false });
+    (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
+      const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+      addOption(String(row?.id || fullName), fullName || String(row?.user_email || "").trim());
+    });
+
+    const { data: subusers } = await (supabase as any)
+      .from("subusers")
+      .select("id,name,surname,email,role,status,company_id")
+      .order("name", { ascending: true, nullsFirst: false })
+      .order("surname", { ascending: true, nullsFirst: false });
+    (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+      const role = String(row?.role || "").trim().toLowerCase();
+      const status = String(row?.status || "").trim().toLowerCase();
+      if (role !== "consultant") return;
+      if (status && status !== "accepted" && status !== "active") return;
+      const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+      addOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
+    });
+
+    hasLoadedConsultantOptionsRef.current = true;
+    setConsultantOptions(options);
+  }, [user?.id]);
   const resolveCurrentCompanyId = useCallback(async () => {
     if (!user?.id) return "";
     let { data: subuserData } = await (supabase as any)
@@ -1142,6 +1218,57 @@ const Matters = () => {
     if (metadataCompanyId) return metadataCompanyId;
     return user.id;
   }, [user]);
+  const loadMentionOptions = useCallback(async () => {
+    if (!user?.id || hasLoadedMentionOptionsRef.current) return;
+    const companyId = await resolveCurrentCompanyId();
+    if (!companyId) {
+      setMentionOptions([]);
+      return;
+    }
+    const options: MentionOption[] = [];
+    const seen = new Set<string>();
+    const addMentionOption = (id: string, label: string) => {
+      const safeLabel = String(label || "").trim();
+      const token = toMentionToken(safeLabel);
+      if (!safeLabel || !token) return;
+      const dedupeKey = token.toLowerCase();
+      if (seen.has(dedupeKey)) return;
+      seen.add(dedupeKey);
+      const recipientUserId = String(id || token).trim();
+      options.push({
+        id: recipientUserId,
+        label: safeLabel,
+        token,
+        searchText: `${safeLabel} ${token}`.toLowerCase(),
+        recipientUserId,
+      });
+    };
+
+    const { data: masterProfiles } = await (supabase as any)
+      .from("profiles")
+      .select("id,auth_user_id,user_name,user_surname,user_email")
+      .order("user_name", { ascending: true, nullsFirst: false })
+      .order("user_surname", { ascending: true, nullsFirst: false });
+    (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
+      const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
+      addMentionOption(String(row?.auth_user_id || row?.id || fullName), fullName || String(row?.user_email || "").trim());
+    });
+
+    const { data: subusers } = await (supabase as any)
+      .from("subusers")
+      .select("id,auth_user_id,name,surname,email,status,company_id")
+      .order("name", { ascending: true, nullsFirst: false })
+      .order("surname", { ascending: true, nullsFirst: false });
+    (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
+      const status = String(row?.status || "").trim().toLowerCase();
+      if (status && status !== "accepted" && status !== "active") return;
+      const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
+      addMentionOption(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.email || "").trim());
+    });
+
+    hasLoadedMentionOptionsRef.current = true;
+    setMentionOptions(options);
+  }, [resolveCurrentCompanyId, user?.id]);
   const resolveCurrentUserName = useCallback(() => {
     if (currentUserDisplayName.trim()) return currentUserDisplayName.trim();
     const firstName = String((user as any)?.user_metadata?.user_name || (user as any)?.user_metadata?.name || (user as any)?.user_metadata?.given_name || "").trim();
@@ -1301,7 +1428,7 @@ const Matters = () => {
     }
     const { data, error } = await (supabase as any)
       .from("case_files")
-      .select("*")
+      .select("id,client_id,file_number,client_name,parties,case_type,forum,next_date,consultant,status,priority,last_updated,updated_at,created_at,case_subtype,case_number,current_stage,short_description")
       .order("created_at", { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -1311,58 +1438,9 @@ const Matters = () => {
     }
 
     const rows: any[] = Array.isArray(data) ? data : [];
-    const caseIds = rows.map((r) => r.id).filter(Boolean);
-    const deadlineByCase = new Map<string, string>();
-    const dateEventsByCase = new Map<string, CaseDateEvent[]>();
-
-    if (caseIds.length > 0) {
-      const { data: dateRows } = await (supabase as any)
-        .from("case_dates")
-        .select("id,case_file_id,date_type,date_value,event_time,description,event_label,created_by_name,created_at,updated_at")
-        .in("case_file_id", caseIds);
-      (dateRows ?? []).forEach((d: any) => {
-        const caseFileId = String(d?.case_file_id || "");
-        if (caseFileId) {
-          const nextEvents = dateEventsByCase.get(caseFileId) ?? [];
-          nextEvents.push(
-            createCaseDateEventDraft({
-              id: String(d?.id || ""),
-              case_file_id: caseFileId,
-              eventType: String(d?.date_type || ""),
-              eventLabel: String(d?.event_label || ""),
-              eventDate: String(d?.date_value || ""),
-              eventTime: parseCaseDateEventTime(d?.event_time, d?.description),
-              createdByName: String(d?.created_by_name || ""),
-              created_at: d?.created_at ? String(d.created_at) : null,
-              updated_at: d?.updated_at ? String(d.updated_at) : null,
-            }),
-          );
-          dateEventsByCase.set(caseFileId, nextEvents);
-        }
-        if (d?.date_type === "Deadline Date" && d?.case_file_id && d?.date_value) {
-          const nextValue = String(d.date_value);
-          const previousValue = String(deadlineByCase.get(caseFileId) || "");
-          if (!previousValue || nextValue > previousValue) {
-            deadlineByCase.set(caseFileId, nextValue);
-          }
-        }
-      });
-    }
-
     const mapped: CaseFile[] = rows.map((row) => {
       const persistedNextDate = row.next_date ?? "--";
-      const deadlineDate = deadlineByCase.get(row.id) ?? "--";
-      const rawDateEvents = dateEventsByCase.get(String(row.id)) ?? [];
-      const dateEvents = sortCaseDateEvents([
-        ...rawDateEvents,
-        ...(rawDateEvents.length === 0 && persistedNextDate && persistedNextDate !== "--"
-          ? [createCaseDateEventDraft({ id: `summary-next-${row.id}`, eventType: "Next Action Date", eventDate: persistedNextDate })]
-          : []),
-        ...(deadlineDate && deadlineDate !== "--"
-          ? [createCaseDateEventDraft({ id: `summary-deadline-${row.id}`, eventType: "Deadline Date", eventDate: deadlineDate })]
-          : []),
-      ]);
-      const nextDate = getCasePrimaryNextDate(dateEvents);
+      const normalizedStatus = normalizeStatus(row.status ?? "Active");
       return {
         id: row.id,
         clientId: row.client_id ?? "",
@@ -1371,18 +1449,18 @@ const Matters = () => {
         parties: row.parties ?? "--",
         caseType: row.case_type ?? "--",
         forumVenue: row.forum ?? "--",
-        nextDate: nextDate !== "--" ? nextDate : persistedNextDate,
+        nextDate: persistedNextDate,
         consultant: row.consultant ?? "--",
-        status: normalizeStatus(row.status ?? "Active"),
+        status: normalizedStatus,
         priority: normalizePriority(row.priority),
         lastUpdated: toIsoDate(row.last_updated ?? row.updated_at ?? row.created_at ?? new Date().toISOString()),
         caseTitle: row.parties ?? "--",
         subtype: row.case_subtype ?? "--",
         caseNumber: row.case_number ?? "--",
         employerRepresentative: "--",
-        currentStage: resolveCurrentStage(row.current_stage ?? "--", normalizeStatus(row.status ?? "Active"), dateEvents),
+        currentStage: String(row.current_stage || "").trim() || resolveCurrentStage("--", normalizedStatus, []),
         shortDescription: row.short_description ?? "--",
-        dateEvents,
+        dateEvents: [],
         notes: [],
         documents: [],
         tasks: [],
@@ -1401,40 +1479,6 @@ const Matters = () => {
     setIsCaseFilesLoading(false);
   }, [caseFiles.length, toast]);
 
-  useEffect(() => {
-    const loadClients = async () => {
-      const baseQuery = (supabase as any)
-        .from("clients")
-        .select("*");
-      const { data, error } = await baseQuery
-        .or("status.is.null,status.eq.active")
-        .order("created_at", { ascending: false, nullsFirst: false })
-        .order("id", { ascending: false, nullsFirst: false });
-      if (error) {
-        setClientOptions([]);
-        setClientLoadMessage(`Unable to load clients: ${error.message}`);
-        return;
-      }
-      const mapped = (data ?? []).map((c: any) => {
-        const registered = String(c.registered_name ?? c.company_name ?? c.client_name ?? "").trim();
-        const trading = String(c.trading_as ?? c.trading_name ?? c.client_surname ?? "").trim();
-        const companyType = String(c.company_type ?? "").trim();
-        return {
-          id: c.id,
-          label: buildMatterClientLabel(registered, companyType, trading),
-        };
-      });
-      const valid = mapped.filter((c) => c.label.trim().length > 0);
-      if (valid.length > 0) {
-        setClientOptions(valid);
-        setClientLoadMessage("No clients found.");
-        return;
-      }
-      setClientOptions([]);
-      setClientLoadMessage("No clients found.");
-    };
-    void loadClients();
-  }, []);
   useEffect(() => {
     void fetchCurrentUserDisplayName();
   }, [fetchCurrentUserDisplayName]);
@@ -1534,113 +1578,25 @@ const Matters = () => {
   }, [isCaseNotesLoading, navigate, pendingOpenCaseNoteId, selectedCase?.id, selectedCase?.notes]);
 
   useEffect(() => {
-    const loadConsultants = async () => {
-      if (!user?.id) {
-        setConsultantOptions([]);
-        return;
-      }
-
-      const options: ConsultantOption[] = [];
-      const seen = new Set<string>();
-
-      const addOption = (id: string, label: string) => {
-        const safeId = String(id || "").trim();
-        const safeLabel = String(label || "").trim();
-        if (!safeId || !safeLabel) return;
-        const dedupeKey = safeLabel.toLowerCase();
-        if (seen.has(dedupeKey)) return;
-        seen.add(dedupeKey);
-        options.push({ id: safeId, label: safeLabel });
-      };
-
-      const { data: masterProfiles } = await (supabase as any)
-        .from("profiles")
-        .select("id,user_name,user_surname,user_email")
-        .order("user_name", { ascending: true, nullsFirst: false })
-        .order("user_surname", { ascending: true, nullsFirst: false });
-
-      (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
-        const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
-        addOption(String(row?.id || fullName), fullName || String(row?.user_email || "").trim());
-      });
-
-      const { data: subusers } = await (supabase as any)
-        .from("subusers")
-        .select("id,name,surname,email,role,status,company_id")
-        .order("name", { ascending: true, nullsFirst: false })
-        .order("surname", { ascending: true, nullsFirst: false });
-
-      (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
-        const role = String(row?.role || "").trim().toLowerCase();
-        const status = String(row?.status || "").trim().toLowerCase();
-        if (role !== "consultant") return;
-        if (status && status !== "accepted" && status !== "active") return;
-        const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
-        addOption(String(row?.id || fullName), fullName || String(row?.email || "").trim());
-      });
-
-      setConsultantOptions(options);
-    };
-
-    void loadConsultants();
-  }, [user?.id]);
-  useEffect(() => {
-    const loadMentionOptions = async () => {
-      if (!user?.id) {
-        setMentionOptions([]);
-        return;
-      }
-      const companyId = await resolveCurrentCompanyId();
-      if (!companyId) {
-        setMentionOptions([]);
-        return;
-      }
-      const options: MentionOption[] = [];
-      const seen = new Set<string>();
-      const addMentionOption = (id: string, label: string) => {
-        const safeLabel = String(label || "").trim();
-        const token = toMentionToken(safeLabel);
-        if (!safeLabel || !token) return;
-        const dedupeKey = token.toLowerCase();
-        if (seen.has(dedupeKey)) return;
-        seen.add(dedupeKey);
-        const recipientUserId = String(id || token).trim();
-        options.push({
-          id: recipientUserId,
-          label: safeLabel,
-          token,
-          searchText: `${safeLabel} ${token}`.toLowerCase(),
-          recipientUserId,
-        });
-      };
-      const { data: masterProfiles } = await (supabase as any)
-        .from("profiles")
-        .select("id,auth_user_id,user_name,user_surname,user_email")
-        .order("user_name", { ascending: true, nullsFirst: false })
-        .order("user_surname", { ascending: true, nullsFirst: false });
-      (Array.isArray(masterProfiles) ? masterProfiles : []).forEach((row: any) => {
-        const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim();
-        addMentionOption(String(row?.auth_user_id || row?.id || fullName), fullName || String(row?.user_email || "").trim());
-      });
-      const { data: subusers } = await (supabase as any)
-        .from("subusers")
-        .select("id,auth_user_id,name,surname,email,status,company_id")
-        .order("name", { ascending: true, nullsFirst: false })
-        .order("surname", { ascending: true, nullsFirst: false });
-      (Array.isArray(subusers) ? subusers : []).forEach((row: any) => {
-        const status = String(row?.status || "").trim().toLowerCase();
-        if (status && status !== "accepted" && status !== "active") return;
-        const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim();
-        addMentionOption(String(row?.auth_user_id || row?.id || ""), fullName || String(row?.email || "").trim());
-      });
-      setMentionOptions(options);
-    };
-    void loadMentionOptions();
-  }, [resolveCurrentCompanyId, user?.id]);
-
-  useEffect(() => {
     void fetchCaseFiles();
   }, [fetchCaseFiles]);
+
+  useEffect(() => {
+    if (!isNewCaseDialogOpen) return;
+    void loadClientOptions();
+    void loadConsultantOptions();
+    void loadMentionOptions();
+  }, [isNewCaseDialogOpen, loadClientOptions, loadConsultantOptions, loadMentionOptions]);
+
+  useEffect(() => {
+    if (!isCaseEditMode && expandedFilterSection !== "consultant") return;
+    void loadConsultantOptions();
+  }, [expandedFilterSection, isCaseEditMode, loadConsultantOptions]);
+
+  useEffect(() => {
+    if (!isCaseNoteDialogOpen) return;
+    void loadMentionOptions();
+  }, [isCaseNoteDialogOpen, loadMentionOptions]);
 
   useEffect(() => {
     saveCachedCaseFiles(caseFiles);
@@ -2013,6 +1969,9 @@ const Matters = () => {
     }
     setNewCaseForm(nextForm);
     setIsNewCaseDialogOpen(true);
+    void loadClientOptions();
+    void loadConsultantOptions();
+    void loadMentionOptions();
   };
 
   const isSubtypeHidden = shouldHideSubtype(newCaseForm.caseType.trim());
@@ -2503,6 +2462,7 @@ const Matters = () => {
   const openAddCaseNoteDialog = () => {
     resetCaseNoteForm();
     setIsCaseNoteDialogOpen(true);
+    void loadMentionOptions();
   };
   const openCaseNotePreviewDialog = (rawContent: string, updatedAt?: string) => {
     const { content, editTag } = splitFileNoteContentAndEditTag(rawContent);
@@ -2530,6 +2490,7 @@ const Matters = () => {
     setCaseNoteMentionRange(null);
     setCaseNoteMentionPopupPosition(null);
     setIsCaseNoteDialogOpen(true);
+    void loadMentionOptions();
   };
   const handleSaveCaseNote = async () => {
     if (!selectedCase?.id || !user?.id) return;

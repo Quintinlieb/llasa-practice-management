@@ -731,6 +731,7 @@ const ClientsTwo = () => {
     primaryName: "",
     primaryJobTitle: "",
     primaryNumber: "",
+    mainOfficeNumber: "",
     primaryEmail: "",
     secondaryName: "",
     secondaryJobTitle: "",
@@ -1040,6 +1041,7 @@ const ClientsTwo = () => {
     "Road Freight and Logistics Industry",
     "Civil Engineering Industry",
     "Building and Construction Industry",
+    "Electrical Contracting / Electrical Services",
     "Private Security Industry",
     "Hairdressing, Beauty and Skincare Industry",
     "Furniture Manufacturing Industry",
@@ -1274,6 +1276,7 @@ const ClientsTwo = () => {
   }, []);
   const mapClientRow = (row: any) => ({
     id: row.id,
+    logoStoragePath: row.logo_storage_path || "",
     companyName: row.registered_name || "--",
     companyNameDisplay: getCompanyNameDisplay(row.registered_name, row.company_type),
     tradingAs: row.trading_as || row.trading_name || "--",
@@ -1293,6 +1296,7 @@ const ClientsTwo = () => {
     primaryName: row.primary_name || "--",
     primaryJobTitle: row.primary_job_title || "--",
     primaryNumber: row.primary_number || "--",
+    mainOfficeNumber: row.main_office_number || "--",
     primaryEmail: row.primary_email || "--",
     secondaryName: row.secondary_name || "--",
     secondaryJobTitle: row.secondary_job_title || "--",
@@ -1336,8 +1340,31 @@ const ClientsTwo = () => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
     }
-    setClientRows((data ?? []).map(mapClientRow));
+    const nextRows = (data ?? []).map(mapClientRow);
+    setClientRows(nextRows);
+    setClientLogoPathByClient(
+      nextRows.reduce((acc, row) => {
+        const path = String(row?.logoStoragePath || "").trim();
+        if (path) acc[String(row.id)] = path;
+        return acc;
+      }, {} as Record<string, string>),
+    );
   }, [toast, user?.id]);
+  const loadLegacyClientLogoPath = useCallback(async (clientId: string) => {
+    const { data, error } = await clientLogoTable()
+      .select("storage_path,logo_path,logo_url,company_logo_url")
+      .eq("client_id", clientId)
+      .limit(1);
+    if (error) return;
+    const row = Array.isArray(data) ? data[0] : data;
+    const path =
+      String((row as any)?.storage_path || "").trim() ||
+      String((row as any)?.logo_path || "").trim() ||
+      getClientLogoStoragePathFromUrl(String((row as any)?.logo_url || "").trim()) ||
+      getClientLogoStoragePathFromUrl(String((row as any)?.company_logo_url || "").trim());
+    if (!path) return;
+    setClientLogoPathByClient((prev) => ({ ...prev, [clientId]: path }));
+  }, []);
   const fetchClientGeneratedDocuments = useCallback(async (clientRow: any) => {
     const clientId = String(clientRow?.id ?? "").trim();
     if (!clientId) {
@@ -2872,51 +2899,47 @@ const ClientsTwo = () => {
     if (markerIndex === -1) return "";
     return decodeURIComponent(value.slice(markerIndex + marker.length));
   };
-  const getClientLogoPathFromRecord = (record?: Record<string, unknown> | null) => {
-    if (!record) return "";
-    const fromStoragePath = String(record.storage_path ?? "").trim();
-    if (fromStoragePath) return fromStoragePath;
-    const fromLogoPath = String(record.logo_path ?? "").trim();
-    if (fromLogoPath) return fromLogoPath;
-    const fromLogoUrl = String(record.logo_url ?? "").trim();
-    if (fromLogoUrl) return getClientLogoStoragePathFromUrl(fromLogoUrl);
-    const fromCompanyLogoUrl = String(record.company_logo_url ?? "").trim();
-    if (fromCompanyLogoUrl) return getClientLogoStoragePathFromUrl(fromCompanyLogoUrl);
-    return "";
-  };
-
-  const loadClientLogoPath = useCallback(async (clientId: string) => {
-    const { data, error } = await clientLogoTable().select("*").eq("client_id", clientId).limit(1);
-    if (error) return;
-    const row = Array.isArray(data) ? data[0] : data;
-    const path = getClientLogoPathFromRecord((row as Record<string, unknown>) ?? null);
-    setClientLogoPathByClient((prev) => ({ ...prev, [clientId]: path }));
-  }, []);
-
   const resolveClientLogoUrl = useCallback(
     (clientId: string) => {
       const cached = clientLogoPreviewByClient[clientId];
       if (cached) return cached;
-      const path = (clientLogoPathByClient[clientId] || "").trim();
+      const selectedClientPath =
+        String(selectedClientRow?.id) === String(clientId) ? String(selectedClientRow?.logoStoragePath || "").trim() : "";
+      const rowPath =
+        String(clientRows.find((row) => String(row.id) === String(clientId))?.logoStoragePath || "").trim();
+      const path = selectedClientPath || rowPath || (clientLogoPathByClient[clientId] || "").trim();
       if (!path) return "";
       const { data } = supabase.storage.from("client-logos").getPublicUrl(path);
       return data.publicUrl || "";
     },
-    [clientLogoPathByClient, clientLogoPreviewByClient],
+    [clientLogoPathByClient, clientLogoPreviewByClient, clientRows, selectedClientRow?.id, selectedClientRow?.logoStoragePath],
   );
 
   useEffect(() => {
     if (!selectedClientRow?.id) return;
-    if (Object.prototype.hasOwnProperty.call(clientLogoPathByClient, selectedClientRow.id)) return;
-    void loadClientLogoPath(selectedClientRow.id);
-  }, [clientLogoPathByClient, loadClientLogoPath, selectedClientRow?.id]);
+    const latestRow = clientRows.find((row) => String(row.id) === String(selectedClientRow.id));
+    if (!latestRow) return;
+    if (String(latestRow.logoStoragePath || "").trim() === String(selectedClientRow.logoStoragePath || "").trim()) return;
+    setSelectedClientRow((prev: any) =>
+      prev && String(prev.id) === String(latestRow.id) ? { ...prev, logoStoragePath: latestRow.logoStoragePath || "" } : prev,
+    );
+  }, [clientRows, selectedClientRow?.id, selectedClientRow?.logoStoragePath]);
+
+  useEffect(() => {
+    if (!selectedClientRow?.id) return;
+    const selectedPath = String(selectedClientRow.logoStoragePath || "").trim();
+    const cachedPath = String(clientLogoPathByClient[selectedClientRow.id] || "").trim();
+    if (selectedPath || cachedPath) return;
+    void loadLegacyClientLogoPath(String(selectedClientRow.id));
+  }, [clientLogoPathByClient, loadLegacyClientLogoPath, selectedClientRow?.id, selectedClientRow?.logoStoragePath]);
 
   const uploadClientLogoFile = useCallback(
     async (file: File) => {
       if (!selectedClientRow?.id || !user?.id) return;
       const safeName = file.name.replace(/\s+/g, "_");
       const storagePath = `${user.id}/${selectedClientRow.id}/${Date.now()}_${safeName}`;
-      const mappedLogoPath = (clientLogoPathByClient[selectedClientRow.id] ?? "").trim();
+      const mappedLogoPath =
+        String(selectedClientRow.logoStoragePath || "").trim() || (clientLogoPathByClient[selectedClientRow.id] ?? "").trim();
       const existingLogoPath = getClientLogoStoragePathFromUrl(mappedLogoPath);
       setIsClientLogoUploading(true);
       try {
@@ -2929,6 +2952,11 @@ const ClientsTwo = () => {
         const nextLogoUrl = data.publicUrl || "";
         setClientLogoPreviewByClient((prev) => ({ ...prev, [selectedClientRow.id]: nextLogoUrl }));
         setClientLogoPathByClient((prev) => ({ ...prev, [selectedClientRow.id]: storagePath }));
+        const { error: clientUpdateError } = await (supabase as any)
+          .from("clients")
+          .update({ logo_storage_path: storagePath })
+          .eq("id", selectedClientRow.id);
+        if (clientUpdateError) throw clientUpdateError;
         const { error: logoUpsertError } = await clientLogoTable().upsert(
           {
             client_id: selectedClientRow.id,
@@ -2938,6 +2966,14 @@ const ClientsTwo = () => {
           { onConflict: "client_id" },
         );
         if (logoUpsertError) throw logoUpsertError;
+        setClientRows((prev) =>
+          prev.map((row) =>
+            String(row.id) === String(selectedClientRow.id) ? { ...row, logoStoragePath: storagePath } : row,
+          ),
+        );
+        setSelectedClientRow((prev: any) =>
+          prev && String(prev.id) === String(selectedClientRow.id) ? { ...prev, logoStoragePath: storagePath } : prev,
+        );
         if (existingLogoPath && existingLogoPath !== storagePath) {
           await supabase.storage.from("client-logos").remove([existingLogoPath]);
         }
@@ -2989,14 +3025,28 @@ const ClientsTwo = () => {
   const removeClientLogo = useCallback(async () => {
     if (!isClientEditMode) return;
     if (!selectedClientRow?.id) return;
-    const mappedLogoPath = (clientLogoPathByClient[selectedClientRow.id] ?? "").trim();
+    const mappedLogoPath =
+      String(selectedClientRow.logoStoragePath || "").trim() || (clientLogoPathByClient[selectedClientRow.id] ?? "").trim();
     const existingLogoPath = getClientLogoStoragePathFromUrl(mappedLogoPath);
     setIsClientLogoUploading(true);
     try {
+      const { error: clientUpdateError } = await (supabase as any)
+        .from("clients")
+        .update({ logo_storage_path: null })
+        .eq("id", selectedClientRow.id);
+      if (clientUpdateError) throw clientUpdateError;
       await clientLogoTable().delete().eq("client_id", selectedClientRow.id);
       if (existingLogoPath) {
         await supabase.storage.from("client-logos").remove([existingLogoPath]);
       }
+      setClientRows((prev) =>
+        prev.map((row) =>
+          String(row.id) === String(selectedClientRow.id) ? { ...row, logoStoragePath: "" } : row,
+        ),
+      );
+      setSelectedClientRow((prev: any) =>
+        prev && String(prev.id) === String(selectedClientRow.id) ? { ...prev, logoStoragePath: "" } : prev,
+      );
       setClientLogoPreviewByClient((prev) => {
         const next = { ...prev };
         delete next[selectedClientRow.id];
@@ -3013,7 +3063,7 @@ const ClientsTwo = () => {
     } finally {
       setIsClientLogoUploading(false);
     }
-  }, [clientLogoPathByClient, isClientEditMode, selectedClientRow?.id, toast]);
+  }, [clientLogoPathByClient, isClientEditMode, selectedClientRow?.id, selectedClientRow?.logoStoragePath, toast]);
   const handleMembershipDocumentFileChange = useCallback(async (
     event: React.ChangeEvent<HTMLInputElement>,
     setFile: Dispatch<SetStateAction<File | null>>,
@@ -3128,6 +3178,7 @@ const ClientsTwo = () => {
       primaryName: row.primaryName === "--" ? "" : row.primaryName || "",
       primaryJobTitle: row.primaryJobTitle === "--" ? "" : row.primaryJobTitle || "",
       primaryNumber: row.primaryNumber === "--" ? "" : row.primaryNumber || "",
+      mainOfficeNumber: row.mainOfficeNumber === "--" ? "" : row.mainOfficeNumber || "",
       primaryEmail: row.primaryEmail === "--" ? "" : row.primaryEmail || "",
       secondaryName: row.secondaryName === "--" ? "" : row.secondaryName || "",
       secondaryJobTitle: row.secondaryJobTitle === "--" ? "" : row.secondaryJobTitle || "",
@@ -3517,6 +3568,7 @@ const ClientsTwo = () => {
         primary_name: clientEditForm.primaryName.trim() || null,
         primary_job_title: clientEditForm.primaryJobTitle.trim() || null,
         primary_number: clientEditForm.primaryNumber.trim() || null,
+        main_office_number: clientEditForm.mainOfficeNumber.trim() || null,
         primary_email: clientEditForm.primaryEmail.trim() || null,
         secondary_name: clientEditForm.secondaryName.trim() || null,
         secondary_job_title: clientEditForm.secondaryJobTitle.trim() || null,
@@ -3593,6 +3645,7 @@ const ClientsTwo = () => {
               primaryName: clientEditForm.primaryName || "--",
               primaryJobTitle: clientEditForm.primaryJobTitle || "--",
               primaryNumber: clientEditForm.primaryNumber || "--",
+              mainOfficeNumber: clientEditForm.mainOfficeNumber || "--",
               primaryEmail: clientEditForm.primaryEmail || "--",
               secondaryName: clientEditForm.secondaryName || "--",
               secondaryJobTitle: clientEditForm.secondaryJobTitle || "--",
@@ -3675,9 +3728,9 @@ const ClientsTwo = () => {
       if (contractFiles.length > 0) {
         await supabase.storage.from("contracts").remove(contractFiles);
       }
-      const { data: logoRows } = await clientLogoTable().select("storage_path,logo_path,logo_url,company_logo_url").in("client_id", ids);
-      const logoPaths = (logoRows ?? [])
-        .map((row: any) => getClientLogoPathFromRecord((row as Record<string, unknown>) ?? null))
+      const logoPaths = clientRows
+        .filter((row) => ids.includes(String(row.id)))
+        .map((row) => String(row?.logoStoragePath || "").trim())
         .filter(Boolean);
       if (logoPaths.length > 0) {
         await supabase.storage.from("client-logos").remove(logoPaths);
@@ -3703,7 +3756,7 @@ const ClientsTwo = () => {
         variant: "destructive",
       });
     }
-  }, [currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
+  }, [clientRows, currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
   const selectedClientIndexInTableRows = useMemo(() => {
     if (!selectedClientRow?.id) return -1;
     return tableRows.findIndex((row) => String(row.id) === String(selectedClientRow.id));
@@ -4831,6 +4884,10 @@ const ClientsTwo = () => {
                               [
                                 ["Primary Email", "primaryEmail", selectedClientRow.primaryEmail],
                                 ["Secondary Email", "secondaryEmail", selectedClientRow.secondaryEmail],
+                              ],
+                              [
+                                ["Main Office Number", "mainOfficeNumber", selectedClientRow.mainOfficeNumber],
+                                ["", "", ""],
                               ],
                             ].map((row, rowIndex) => (
                               <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">

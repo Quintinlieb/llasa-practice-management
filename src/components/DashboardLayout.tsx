@@ -17,6 +17,7 @@ import {
   readCachedHeaderProfile,
   type HeaderProfileCacheValue,
 } from "@/lib/headerProfileCache";
+import { resolveProfilePictureUrl } from "@/lib/profilePictures";
 import { Icon } from "@iconify/react";
 import { Bell, Calendar, Headset, Settings, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -59,35 +60,35 @@ const supportContacts = [
     role: "CEO",
     cell: "073 845 1557",
     email: "qliebenberg@llasa.co.za",
-    imageSrc: "/support-headshots/quintin.png",
+    imageSrc: "/support-headshots/quintin.jpg",
   },
   {
     name: "Mildrid Ellis",
     role: "Founder",
     cell: "083 393 8527",
     email: "ml@llasa.co.za",
-    imageSrc: "/support-headshots/mildrid.png",
+    imageSrc: "/support-headshots/mildrid.jpg",
   },
   {
     name: "Willem Olivier",
     role: "Head of Compliance",
     cell: "076 920 8861",
     email: "wolivier@llasa.co.za",
-    imageSrc: "/support-headshots/willem.png",
+    imageSrc: "/support-headshots/willem.jpg",
   },
   {
     name: "Nelisiwe Mhlongo",
     role: "Administrator",
     cell: "071 191 0373",
     email: "admin@llasa.co.za",
-    imageSrc: "/support-headshots/nelisiwe.png",
+    imageSrc: "/support-headshots/nelisiwe.jpg",
   },
   {
     name: "Jaco Nienaber",
     role: "IT Support",
     cell: "082 445 9094",
     email: "jaco@rootsict.co.za",
-    imageSrc: "/support-headshots/jaco.png",
+    imageSrc: "/support-headshots/jaco.jpg",
   },
 ] as const;
 
@@ -321,7 +322,10 @@ export default function DashboardLayout({
       if (!isMounted) return;
 
       if (data) {
-        const resolvedProfile = data as UserHeaderProfile;
+        const resolvedProfile = {
+          ...(data as UserHeaderProfile),
+          profile_picture: resolveProfilePictureUrl((data as any).profile_picture),
+        } satisfies UserHeaderProfile;
         setProfile(resolvedProfile);
         cacheHeaderProfile(user.id, resolvedProfile);
         return;
@@ -340,7 +344,7 @@ export default function DashboardLayout({
           user_name: String((subuserData as any).name || "").trim(),
           user_surname: String((subuserData as any).surname || "").trim(),
           user_email: String((subuserData as any).email || user.email || "").trim(),
-          profile_picture: String((subuserData as any).profile_picture || "").trim(),
+          profile_picture: resolveProfilePictureUrl((subuserData as any).profile_picture),
         } satisfies UserHeaderProfile;
         setProfile(resolvedProfile);
         cacheHeaderProfile(user.id, resolvedProfile);

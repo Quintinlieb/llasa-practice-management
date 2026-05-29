@@ -81,7 +81,11 @@ const getClientFileNoteTypePillClassName = (value: string) => {
 };
 const CLIENTS_TABLE_PAGE_SIZE = 25;
 const CLIENTS_TABLE_VISIBLE_ROWS = 18;
-const CLIENT_FILE_TABLE_PAGE_SIZE = 7;
+const CLIENT_FILE_TABLE_PAGE_SIZE = 15;
+const getResponsiveClientFileTablePageSize = () => {
+  if (typeof window === "undefined") return CLIENT_FILE_TABLE_PAGE_SIZE;
+  return Math.max(CLIENT_FILE_TABLE_PAGE_SIZE, Math.floor((window.innerHeight * 0.92 - 460) / 48));
+};
 const FILE_NOTE_EDIT_TAG_REGEX =
   /\s*(?:\((Edited by .* on [^)]+)\)|(Edited by .* on .+?(?:\s+at\s+\d{1,2}:\d{2}\s*[AP]M)?))\s*$/i;
 const parseDisplayDateValue = (value: string | Date) => {
@@ -741,6 +745,7 @@ const ClientsTwo = () => {
   const [clientMattersSearchQuery, setClientMattersSearchQuery] = useState("");
   const [clientTasks, setClientTasks] = useState<DiaryTask[]>([]);
   const [isClientTasksLoading, setIsClientTasksLoading] = useState(false);
+  const [clientFileTablePageSize, setClientFileTablePageSize] = useState(() => getResponsiveClientFileTablePageSize());
   const [clientNotesTablePage, setClientNotesTablePage] = useState(1);
   const [clientMattersTablePage, setClientMattersTablePage] = useState(1);
   const [clientTasksTablePage, setClientTasksTablePage] = useState(1);
@@ -756,7 +761,7 @@ const ClientsTwo = () => {
     taskTime: "",
     duration: "30 mins",
     description: "",
-    taskType: "General Admin" as DiaryTaskType,
+    taskType: "" as DiaryTaskType | "",
     assignedToUserId: "",
     relatedMatterId: "",
   });
@@ -789,6 +794,15 @@ const ClientsTwo = () => {
   const [clientFileNotes, setClientFileNotes] = useState<any[]>([]);
   const [clientFileNotesSearchQuery, setClientFileNotesSearchQuery] = useState("");
   const [isNotesLoading, setIsNotesLoading] = useState(false);
+
+  useEffect(() => {
+    const updateClientFileTablePageSize = () => {
+      setClientFileTablePageSize(getResponsiveClientFileTablePageSize());
+    };
+    updateClientFileTablePageSize();
+    window.addEventListener("resize", updateClientFileTablePageSize);
+    return () => window.removeEventListener("resize", updateClientFileTablePageSize);
+  }, []);
   const [isFileNoteDialogOpen, setIsFileNoteDialogOpen] = useState(false);
   const [isSavingFileNote, setIsSavingFileNote] = useState(false);
   const [editingFileNoteId, setEditingFileNoteId] = useState<string | null>(null);
@@ -1186,17 +1200,23 @@ const ClientsTwo = () => {
   };
   const tableRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return clientRows.filter((row) => {
-      if (!q) return true;
-      return [
-        row.companyName,
-        row.companyNameDisplay,
-        row.tradingAs,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
-    });
+    return clientRows
+      .filter((row) => {
+        if (!q) return true;
+        return [
+          row.companyName,
+          row.companyNameDisplay,
+          row.tradingAs,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      })
+      .sort((left, right) => {
+        const leftClientName = String(left.tradingAs || left.companyNameDisplay || left.companyName || "").trim();
+        const rightClientName = String(right.tradingAs || right.companyNameDisplay || right.companyName || "").trim();
+        return leftClientName.localeCompare(rightClientName, undefined, { sensitivity: "base" });
+      });
   }, [clientRows, searchQuery]);
   const totalClientTablePages = Math.max(1, Math.ceil(tableRows.length / CLIENTS_TABLE_PAGE_SIZE));
   const currentClientTablePage = Math.min(clientTablePage, totalClientTablePages);
@@ -1247,41 +1267,41 @@ const ClientsTwo = () => {
       ].some((value) => String(value || "").toLowerCase().includes(query)),
     );
   }, [clientMatters, clientMattersSearchQuery]);
-  const totalClientNotesTablePages = Math.max(1, Math.ceil(filteredClientFileNotes.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const totalClientNotesTablePages = Math.max(1, Math.ceil(filteredClientFileNotes.length / clientFileTablePageSize));
   const currentClientNotesTablePage = Math.min(clientNotesTablePage, totalClientNotesTablePages);
   const paginatedClientFileNotes = useMemo(
-    () => filteredClientFileNotes.slice((currentClientNotesTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientNotesTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
-    [currentClientNotesTablePage, filteredClientFileNotes],
+    () => filteredClientFileNotes.slice((currentClientNotesTablePage - 1) * clientFileTablePageSize, currentClientNotesTablePage * clientFileTablePageSize),
+    [clientFileTablePageSize, currentClientNotesTablePage, filteredClientFileNotes],
   );
   const clientNotesTablePageNumbers = useMemo(
     () => getPaginationNumbers(currentClientNotesTablePage, totalClientNotesTablePages),
     [currentClientNotesTablePage, totalClientNotesTablePages],
   );
-  const totalClientMattersTablePages = Math.max(1, Math.ceil(filteredClientMatters.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const totalClientMattersTablePages = Math.max(1, Math.ceil(filteredClientMatters.length / clientFileTablePageSize));
   const currentClientMattersTablePage = Math.min(clientMattersTablePage, totalClientMattersTablePages);
   const paginatedClientMatters = useMemo(
-    () => filteredClientMatters.slice((currentClientMattersTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientMattersTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
-    [currentClientMattersTablePage, filteredClientMatters],
+    () => filteredClientMatters.slice((currentClientMattersTablePage - 1) * clientFileTablePageSize, currentClientMattersTablePage * clientFileTablePageSize),
+    [clientFileTablePageSize, currentClientMattersTablePage, filteredClientMatters],
   );
   const clientMattersTablePageNumbers = useMemo(
     () => getPaginationNumbers(currentClientMattersTablePage, totalClientMattersTablePages),
     [currentClientMattersTablePage, totalClientMattersTablePages],
   );
-  const totalClientTasksTablePages = Math.max(1, Math.ceil(clientTasks.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const totalClientTasksTablePages = Math.max(1, Math.ceil(clientTasks.length / clientFileTablePageSize));
   const currentClientTasksTablePage = Math.min(clientTasksTablePage, totalClientTasksTablePages);
   const paginatedClientTasks = useMemo(
-    () => clientTasks.slice((currentClientTasksTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientTasksTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
-    [clientTasks, currentClientTasksTablePage],
+    () => clientTasks.slice((currentClientTasksTablePage - 1) * clientFileTablePageSize, currentClientTasksTablePage * clientFileTablePageSize),
+    [clientFileTablePageSize, clientTasks, currentClientTasksTablePage],
   );
   const clientTasksTablePageNumbers = useMemo(
     () => getPaginationNumbers(currentClientTasksTablePage, totalClientTasksTablePages),
     [currentClientTasksTablePage, totalClientTasksTablePages],
   );
-  const totalClientDocumentsTablePages = Math.max(1, Math.ceil(filteredClientGeneratedDocuments.length / CLIENT_FILE_TABLE_PAGE_SIZE));
+  const totalClientDocumentsTablePages = Math.max(1, Math.ceil(filteredClientGeneratedDocuments.length / clientFileTablePageSize));
   const currentClientDocumentsTablePage = Math.min(clientDocumentsTablePage, totalClientDocumentsTablePages);
   const paginatedClientGeneratedDocuments = useMemo(
-    () => filteredClientGeneratedDocuments.slice((currentClientDocumentsTablePage - 1) * CLIENT_FILE_TABLE_PAGE_SIZE, currentClientDocumentsTablePage * CLIENT_FILE_TABLE_PAGE_SIZE),
-    [currentClientDocumentsTablePage, filteredClientGeneratedDocuments],
+    () => filteredClientGeneratedDocuments.slice((currentClientDocumentsTablePage - 1) * clientFileTablePageSize, currentClientDocumentsTablePage * clientFileTablePageSize),
+    [clientFileTablePageSize, currentClientDocumentsTablePage, filteredClientGeneratedDocuments],
   );
   const clientDocumentsTablePageNumbers = useMemo(
     () => getPaginationNumbers(currentClientDocumentsTablePage, totalClientDocumentsTablePages),
@@ -1753,21 +1773,16 @@ const ClientsTwo = () => {
     return fromEmail || "Unknown User";
   }, [currentUserDisplayName, user]);
   const resetClientTaskForm = useCallback(() => {
-    const currentUserName = resolveCurrentUserName();
-    const defaultAssignee =
-      taskAssigneeOptions.find((option) => option.label.toLowerCase() === currentUserName.trim().toLowerCase()) ||
-      taskAssigneeOptions.find((option) => option.userId === String(user?.id || "").trim()) ||
-      taskAssigneeOptions[0];
     setClientTaskForm({
-      diaryDate: dateToday(),
+      diaryDate: "",
       taskTime: "",
       duration: "30 mins",
       description: "",
-      taskType: "General Admin",
-      assignedToUserId: defaultAssignee?.userId || "",
+      taskType: "",
+      assignedToUserId: "",
       relatedMatterId: "",
     });
-  }, [resolveCurrentUserName, taskAssigneeOptions, user?.id]);
+  }, []);
   const openAddClientTaskDialog = useCallback(() => {
     setEditingClientTaskId(null);
     resetClientTaskForm();
@@ -1957,6 +1972,12 @@ const ClientsTwo = () => {
   useEffect(() => {
     setClientTablePage((prev) => Math.min(prev, totalClientTablePages));
   }, [totalClientTablePages]);
+  useEffect(() => {
+    setClientNotesTablePage((prev) => Math.min(prev, totalClientNotesTablePages));
+    setClientMattersTablePage((prev) => Math.min(prev, totalClientMattersTablePages));
+    setClientTasksTablePage((prev) => Math.min(prev, totalClientTasksTablePages));
+    setClientDocumentsTablePage((prev) => Math.min(prev, totalClientDocumentsTablePages));
+  }, [totalClientDocumentsTablePages, totalClientMattersTablePages, totalClientNotesTablePages, totalClientTasksTablePages]);
   useEffect(() => {
     setClientTablePage(1);
   }, [searchQuery]);
@@ -4281,7 +4302,7 @@ const ClientsTwo = () => {
                   </CardHeader>
                   <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
                     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                      <div className="grid grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -4291,19 +4312,18 @@ const ClientsTwo = () => {
                             className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
-                        <div>Company Name</div>
-                        <div>Trading As</div>
+                        <div>Client Name</div>
+                        <div>Registered Name</div>
                         <div>Contact Person</div>
                         <div>Contact Number</div>
                         <div>Email</div>
-                        <div>Status</div>
                       </div>
 
                       <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {paginatedTableRows.map((row) => (
                           <div
                             key={row.id}
-                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.1fr_1.9fr_1.3fr_1fr_2fr_0.75fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
+                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
                             onClick={() => openClientFile(row)}
                           >
                             <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
@@ -4316,13 +4336,12 @@ const ClientsTwo = () => {
                               />
                             </div>
                             <div className="text-left text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">
-                              {row.companyNameDisplay}
+                              {row.tradingAs}
                             </div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.tradingAs}</div>
+                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.companyNameDisplay}</div>
                             <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactPerson}</div>
                             <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactNumber}</div>
                             <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.email}</div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{getClientStatusIndicator(row.status).label}</div>
                           </div>
                         ))}
                       </div>
@@ -5706,8 +5725,8 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="notes" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-3 text-xs">
+                    <TabsContent value="notes" className="mt-4 flex-1 min-h-0 overflow-hidden pr-1">
+                      <div className="flex h-full min-h-0 flex-col gap-3 text-xs">
                         <div className="flex items-center justify-between gap-2">
                           <div className="group relative w-full max-w-[360px]">
                             <Input
@@ -5738,7 +5757,7 @@ const ClientsTwo = () => {
                             Add Note
                           </Button>
                         </div>
-                        <div className="overflow-hidden rounded border border-slate-200">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
                           <div className="grid grid-cols-[110px_170px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
                             <div>Date</div>
                             <div>Type</div>
@@ -5746,7 +5765,7 @@ const ClientsTwo = () => {
                             <div>Created By</div>
                             <div>Actions</div>
                           </div>
-                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isNotesLoading ? (
                               <div className="px-3 py-3 text-slate-500">Loading notes...</div>
                             ) : clientFileNotes.length === 0 ? (
@@ -5854,8 +5873,8 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="matters" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-3 text-xs">
+                    <TabsContent value="matters" className="mt-4 flex-1 min-h-0 overflow-hidden pr-1">
+                      <div className="flex h-full min-h-0 flex-col gap-3 text-xs">
                         <div className="group relative w-full max-w-[360px]">
                           <Input
                             placeholder="Search matters..."
@@ -5877,7 +5896,7 @@ const ClientsTwo = () => {
                             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                           )}
                         </div>
-                        <div className="overflow-hidden rounded border border-slate-200">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
                           <div className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
                             <div>File No</div>
                             <div>Parties</div>
@@ -5885,7 +5904,7 @@ const ClientsTwo = () => {
                             <div>Stage</div>
                             <div>Next Date</div>
                           </div>
-                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientMattersLoading ? (
                               <div className="px-2 py-3 text-slate-500">Loading matters...</div>
                             ) : filteredClientMatters.length === 0 ? (
@@ -5959,8 +5978,8 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="tasks" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-3 text-xs">
+                    <TabsContent value="tasks" className="mt-4 flex-1 min-h-0 overflow-hidden pr-1">
+                      <div className="flex h-full min-h-0 flex-col gap-3 text-xs">
                         <div className="flex items-center justify-between gap-2">
                           <div className="w-full max-w-[360px]" aria-hidden="true" />
                           <Button
@@ -5971,7 +5990,7 @@ const ClientsTwo = () => {
                             Add Task
                           </Button>
                         </div>
-                        <div className="overflow-hidden rounded border border-slate-200">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
                           <div className="grid grid-cols-[110px_64px_86px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
                             <div>Date</div>
                             <div>Time</div>
@@ -5981,7 +6000,7 @@ const ClientsTwo = () => {
                             <div>Assigned to</div>
                             <div>Actions</div>
                           </div>
-                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientTasksLoading ? (
                               <div className="px-3 py-3 text-slate-500">Loading tasks...</div>
                             ) : clientTasks.length === 0 ? (
@@ -6081,8 +6100,8 @@ const ClientsTwo = () => {
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="documents" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
-                      <div className="space-y-3 text-xs">
+                    <TabsContent value="documents" className="mt-4 flex-1 min-h-0 overflow-hidden pr-1">
+                      <div className="flex h-full min-h-0 flex-col gap-3 text-xs">
                         <div className="group relative w-full max-w-[360px]">
                           <Input
                             placeholder="Search documents..."
@@ -6104,7 +6123,7 @@ const ClientsTwo = () => {
                             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                           )}
                         </div>
-                        <div className="overflow-hidden rounded border border-slate-200">
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
                           <div className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
                             <div>Description</div>
                             <div>Type</div>
@@ -6112,7 +6131,7 @@ const ClientsTwo = () => {
                             <div>Drafted By</div>
                             <div>Actions</div>
                           </div>
-                          <div className="h-[330px] divide-y divide-slate-100 overflow-y-auto text-[11px]">
+                          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientGeneratedDocumentsLoading ? (
                               <div className="px-2 py-3 text-slate-500">Loading documents...</div>
                             ) : filteredClientGeneratedDocuments.length === 0 ? (
@@ -6237,7 +6256,7 @@ const ClientsTwo = () => {
           <div className="bg-white px-4 py-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="relative space-y-1">
-                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Diary Date <span className="text-red-600">*</span></span>
+                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></span>
                   <Input
                     id="clientTaskDiaryDate"
                     type="text"
@@ -6269,52 +6288,66 @@ const ClientsTwo = () => {
                   />
                 </div>
                 <div className="relative space-y-1">
-                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></span>
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
-                    <Select
-                      value={(clientTaskForm.taskTime.split(":")[0] || "") || undefined}
-                      onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${value}:${prev.taskTime.split(":")[1] || "00"}` }))}
+                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Assigned To <span className="text-red-600">*</span></span>
+                  <Select value={clientTaskForm.assignedToUserId || undefined} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, assignedToUserId: value }))}>
+                    <SelectTrigger id="clientTaskAssignedTo" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                      <SelectValue placeholder="Select assignee" />
+                    </SelectTrigger>
+                    <SelectContent className="text-[11px]">
+                      {taskAssigneeOptions.map((option) => (
+                        <SelectItem key={option.userId} value={option.userId} className={addModalSelectItemClass}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+              <div className="relative space-y-1">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Start Time <span className="text-red-600">*</span></span>
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                  <Select
+                    value={(clientTaskForm.taskTime.split(":")[0] || "") || undefined}
+                    onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${value}:${prev.taskTime.split(":")[1] || "00"}` }))}
+                  >
+                    <SelectTrigger
+                      id="clientTaskTimeHour"
+                      className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
                     >
-                      <SelectTrigger
-                        id="clientTaskTimeHour"
-                        className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          <SelectValue placeholder="Hour" />
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent className="text-[10px]">
-                        {DIARY_TASK_TIME_HOUR_OPTIONS.map((hour) => (
-                          <SelectItem key={hour} value={hour} className="text-[10px]">
-                            {hour}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={(clientTaskForm.taskTime.split(":")[1] || "") || undefined}
-                      onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${prev.taskTime.split(":")[0] || "00"}:${value}` }))}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <SelectValue placeholder="Hour" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent className="text-[10px]">
+                      {DIARY_TASK_TIME_HOUR_OPTIONS.map((hour) => (
+                        <SelectItem key={hour} value={hour} className="text-[10px]">
+                          {hour}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={(clientTaskForm.taskTime.split(":")[1] || "") || undefined}
+                    onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${prev.taskTime.split(":")[0] || "00"}:${value}` }))}
+                  >
+                    <SelectTrigger
+                      id="clientTaskTimeMinute"
+                      className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
                     >
-                      <SelectTrigger
-                        id="clientTaskTimeMinute"
-                        className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
-                      >
-                        <SelectValue placeholder="Min" />
-                      </SelectTrigger>
-                      <SelectContent className="text-[10px]">
-                        {DIARY_TASK_TIME_MINUTE_OPTIONS.map((minute) => (
-                          <SelectItem key={minute} value={minute} className="text-[10px]">
-                            {minute}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
-                      {clientTaskForm.taskTime ? (Number.parseInt(clientTaskForm.taskTime.split(":")[0] || "0", 10) >= 12 ? "PM" : "AM") : "AM/PM"}
-                    </div>
+                      <SelectValue placeholder="Min" />
+                    </SelectTrigger>
+                    <SelectContent className="text-[10px]">
+                      {DIARY_TASK_TIME_MINUTE_OPTIONS.map((minute) => (
+                        <SelectItem key={minute} value={minute} className="text-[10px]">
+                          {minute}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                    {clientTaskForm.taskTime ? (Number.parseInt(clientTaskForm.taskTime.split(":")[0] || "0", 10) >= 12 ? "PM" : "AM") : "AM/PM"}
                   </div>
                 </div>
+              </div>
 
               <div className="relative space-y-1">
                 <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></span>
@@ -6330,27 +6363,14 @@ const ClientsTwo = () => {
                 </Select>
               </div>
               <div className="relative space-y-1">
-                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Task Type <span className="text-red-600">*</span></span>
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Type <span className="text-red-600">*</span></span>
                 <Select value={clientTaskForm.taskType} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskType: value as DiaryTaskType }))}>
                   <SelectTrigger id="clientTaskType" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
-                    <SelectValue placeholder="Select task type" />
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent className="text-[11px]">
                     {DIARY_TASK_TYPE_OPTIONS.map((option) => (
                       <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="relative space-y-1">
-                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Assigned To <span className="text-red-600">*</span></span>
-                <Select value={clientTaskForm.assignedToUserId || undefined} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, assignedToUserId: value }))}>
-                  <SelectTrigger id="clientTaskAssignedTo" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
-                    <SelectValue placeholder="Select assignee" />
-                  </SelectTrigger>
-                  <SelectContent className="text-[11px]">
-                    {taskAssigneeOptions.map((option) => (
-                      <SelectItem key={option.userId} value={option.userId} className={addModalSelectItemClass}>{option.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

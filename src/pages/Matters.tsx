@@ -148,8 +148,8 @@ type MatterDetailsTableProps = {
   emptyState?: React.ReactNode;
   bodyMaxHeightClassName?: string;
 };
-const MATTER_DETAILS_TABLE_GRID = "grid-cols-[110px_90px_100px_2.75fr_1fr_72px]";
-const CASE_FILES_TABLE_GRID = "grid-cols-[0.35fr_0.95fr_1.5fr_2.35fr_1.1fr_0.9fr_0.9fr_0.7fr_1fr]";
+const MATTER_DETAILS_TABLE_GRID = "grid-cols-[110px_90px_2.75fr_1fr_72px]";
+const CASE_FILES_TABLE_GRID = "grid-cols-[0.35fr_0.95fr_1.5fr_2.75fr_1fr_0.8fr_0.9fr_0.5fr_1.1fr]";
 const caseFilesTableCacheKey = "case-files:table-cache";
 const CASE_FILES_TABLE_PAGE_SIZE = 25;
 const CASE_DOCUMENTS_BUCKET = "case-documents";
@@ -446,6 +446,19 @@ const getSubtypeValueForCaseType = (caseType: string, currentSubtype = "") => {
   const options = getSubtypeOptions(caseType);
   return options.includes(currentSubtype) ? currentSubtype : "";
 };
+const getCaseTypePillClassName = (caseType: string) => {
+  const normalized = String(caseType || "").trim().toLowerCase();
+  if (normalized.includes("hearing")) {
+    return "border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100 hover:text-orange-700";
+  }
+  if (normalized.includes("ccma") || normalized.includes("bargaining council")) {
+    return "border-blue-200 bg-blue-100 text-blue-700 hover:bg-blue-100 hover:text-blue-700";
+  }
+  if (normalized.includes("consultation")) {
+    return "border-purple-200 bg-purple-100 text-purple-700 hover:bg-purple-100 hover:text-purple-700";
+  }
+  return "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+};
 const getOutcomeFlowConfig = (caseType: string, subtype: string): OutcomeFlowConfig => {
   if (caseType === "CCMA" || caseType === "Bargaining Council") return CCMA_OUTCOME_FLOW;
   if (caseType === "Hearing" && subtype === "Discipline") return HEARING_DISCIPLINE_OUTCOME_FLOW;
@@ -608,6 +621,16 @@ const formatDisplayDate = (value?: string) => {
   }
   return trimmed;
 };
+const formatShortDisplayDate = (value?: string) => {
+  if (!value) return "";
+  const trimmed = String(value).trim();
+  const isoDateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+  const parsed = isoDateMatch
+    ? new Date(Number(isoDateMatch[1]), Number(isoDateMatch[2]) - 1, Number(isoDateMatch[3]))
+    : new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+};
 const formatDisplayTime = (value: string | Date) => {
   const date = value instanceof Date ? value : new Date(String(value || "").trim());
   if (Number.isNaN(date.getTime())) return "";
@@ -709,6 +732,15 @@ const getCaseTableDisplayDate = (events: CaseDateEvent[], fallbackDate: unknown)
   if (latestScheduledEvent?.eventDate) return latestScheduledEvent.eventDate;
   const fallback = String(fallbackDate ?? "").trim();
   return fallback || "--";
+};
+const getCaseFileDateSortValue = (value: unknown) => {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "--") return Number.NEGATIVE_INFINITY;
+  const isoDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+  const parsed = isoDateMatch
+    ? new Date(Number(isoDateMatch[1]), Number(isoDateMatch[2]) - 1, Number(isoDateMatch[3]))
+    : new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? Number.NEGATIVE_INFINITY : parsed.getTime();
 };
 const normalizeCurrentStageValue = (value: unknown) => {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -2252,20 +2284,23 @@ const Matters = () => {
 
   const filteredCaseFiles = useMemo(() => {
     const today = new Date();
-    return caseFiles.filter((item) => {
-      const q = searchQuery.trim().toLowerCase();
-      const matchesSearch =
-        q.length === 0 ||
-        item.client.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-      const matchesType = caseTypeFilter === "all" || item.caseType === caseTypeFilter;
-      const matchesConsultant = consultantFilter === "all" || item.consultant === consultantFilter;
-      const next = item.nextDate ? new Date(item.nextDate) : null;
-      const diffDays = next ? Math.ceil((next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 9999;
-      const matchesDate =
-        nextDateFilter === "all" || (nextDateFilter === "next7" ? diffDays <= 7 : diffDays <= 30);
-      return matchesSearch && matchesStatus && matchesType && matchesConsultant && matchesDate;
-    });
+    return caseFiles
+      .filter((item) => {
+        if (item.status !== "Active") return false;
+        const q = searchQuery.trim().toLowerCase();
+        const matchesSearch =
+          q.length === 0 ||
+          item.client.toLowerCase().includes(q);
+        const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+        const matchesType = caseTypeFilter === "all" || item.caseType === caseTypeFilter;
+        const matchesConsultant = consultantFilter === "all" || item.consultant === consultantFilter;
+        const next = item.nextDate ? new Date(item.nextDate) : null;
+        const diffDays = next ? Math.ceil((next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 9999;
+        const matchesDate =
+          nextDateFilter === "all" || (nextDateFilter === "next7" ? diffDays <= 7 : diffDays <= 30);
+        return matchesSearch && matchesStatus && matchesType && matchesConsultant && matchesDate;
+      })
+      .sort((left, right) => getCaseFileDateSortValue(right.nextDate) - getCaseFileDateSortValue(left.nextDate));
   }, [caseFiles, caseTypeFilter, consultantFilter, nextDateFilter, searchQuery, statusFilter]);
   const totalCaseFilesTablePages = Math.max(1, Math.ceil(filteredCaseFiles.length / CASE_FILES_TABLE_PAGE_SIZE));
   const currentCaseFilesTablePage = Math.min(caseFilesTablePage, totalCaseFilesTablePages);
@@ -3092,7 +3127,7 @@ const Matters = () => {
                             className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
-                        <div>File No.</div><div>Client</div><div>Parties</div><div>Case Type</div><div>Stage</div><div>Date</div><div>Created</div><div>Assignee</div>
+                        <div className="pl-2">File No.</div><div className="pl-2">Client</div><div className="pl-2">Parties</div><div className="text-center">Case Type</div><div className="text-center">Stage</div><div className="text-center">Date</div><div className="text-center">Created</div><div className="text-center">Assigned to</div>
                       </div>
                       <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {isCaseFilesLoading ? (
@@ -3101,7 +3136,7 @@ const Matters = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No case files found.</div>
                         ) : (
                           paginatedCaseFiles.map((caseFile) => (
-                            <div key={caseFile.id} className={cn("grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5", CASE_FILES_TABLE_GRID)}>
+                            <div key={caseFile.id} className={cn("grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", CASE_FILES_TABLE_GRID)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -3114,14 +3149,18 @@ const Matters = () => {
                               <button type="button" onClick={() => setSelectedCase(caseFile)} className="font-medium text-left hover:underline">{caseFile.fileNo}</button>
                               <div>{getMatterClientDisplayName(caseFile.client)}</div>
                               <div>{caseFile.parties}</div>
-                              <div>{caseFile.caseType}</div>
-                              <div>
+                              <div className="flex justify-center">
+                                <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getCaseTypePillClassName(caseFile.caseType)}`}>
+                                  {caseFile.caseType}
+                                </Badge>
+                              </div>
+                              <div className="flex justify-center">
                                 <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getCurrentStagePillClassName(caseFile.currentStage)}`}>
                                   {caseFile.currentStage}
                                 </Badge>
                               </div>
-                              <div>{caseFile.nextDate === "--" ? "--" : formatDisplayDate(caseFile.nextDate)}</div>
-                              <div className="flex min-w-0 items-center">
+                              <div className="text-center">{caseFile.nextDate === "--" ? "--" : formatShortDisplayDate(caseFile.nextDate)}</div>
+                              <div className="flex min-w-0 items-center justify-center">
                                 <span
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-semibold text-slate-700"
                                   aria-label={caseFile.createdByName}
@@ -3130,7 +3169,7 @@ const Matters = () => {
                                   {getInitials(caseFile.createdByName)}
                                 </span>
                               </div>
-                              <div>
+                              <div className="flex justify-center">
                                 <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
                                   {caseFile.consultant}
                                 </Badge>
@@ -3687,15 +3726,14 @@ const Matters = () => {
                           </Button>
                         </div>
                         <MatterDetailsTable
-                          headerColumns={["Date", "Time", "Duration", "Description", "Created By", "Actions"]}
+                          headerColumns={["Date", "Time", "Description", "Created By", "Actions"]}
                           gridClassName={MATTER_DETAILS_TABLE_GRID}
                           emptyState={<div className="px-2 py-3 text-[11px] text-slate-500">No case dates recorded yet.</div>}
                         >
                           {sortedSelectedCaseDateEvents.map((event) => (
                             <div key={event.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
-                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(event.eventDate)}</div>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatShortDisplayDate(event.eventDate)}</div>
                               <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(event.eventTime)}</div>
-                              <div className="flex min-w-0 items-center text-slate-700">{event.duration || "--"}</div>
                               <div className="flex min-w-0 items-center font-medium text-slate-900">{resolveCaseDateEventLabel(event)}</div>
                               <div className="flex min-w-0 items-center truncate">
                                 <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
@@ -3781,7 +3819,7 @@ const Matters = () => {
                                 const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
                                 return (
                                   <div key={note.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
-                                    <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                    <div className="flex min-w-0 items-center text-slate-700">{formatShortDisplayDate(String(note.note_date || ""))}</div>
                                     <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(note.created_at)}</div>
                                     <div className="flex min-w-0 items-center pr-2">
                                       <button
@@ -3842,7 +3880,7 @@ const Matters = () => {
                         >
                           {(selectedCase.documents ?? []).map((document) => (
                             <div key={document.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
-                              <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(String(document.created_at || ""))}</div>
+                              <div className="flex min-w-0 items-center text-slate-700">{formatShortDisplayDate(String(document.created_at || ""))}</div>
                               <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(document.created_at)}</div>
                               <div className="flex min-w-0 items-center font-medium text-slate-900">{document.description || "--"}</div>
                               <div className="flex min-w-0 items-center truncate">

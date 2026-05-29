@@ -500,6 +500,7 @@ const CalendarPage = () => {
     const end = endOfWeek(endOfMonth(selectedDate), { weekStartsOn: 1 });
     return eachDayOfInterval({ start, end });
   }, [selectedDate]);
+  const monthWeekCount = Math.ceil(monthDays.length / 7);
 
   const visibleMonthYears = useMemo(
     () => Array.from(new Set(monthDays.map((day) => day.getFullYear()))),
@@ -1446,7 +1447,10 @@ const CalendarPage = () => {
                   <div
                     className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                   >
-                    <div className="grid grid-cols-7 auto-rows-max">
+                    <div
+                      className="grid h-full min-h-[520px] grid-cols-7"
+                      style={{ gridTemplateRows: `repeat(${monthWeekCount}, minmax(0, 1fr))` }}
+                    >
                       {monthDays.map((day) => {
                         const dayKey = format(day, "yyyy-MM-dd");
                         const dayTypeSummary = monthTypeSummaryByDay.get(dayKey) ?? [];
@@ -1505,7 +1509,7 @@ const CalendarPage = () => {
                           </>
                         );
                         const dayCellClassName = cn(
-                          "group relative min-h-[96px] border-b border-r border-slate-200 p-2.5 align-top",
+                          "group relative min-h-0 border-b border-r border-slate-200 p-2.5 align-top",
                           isSameDay(day, new Date()) && "border border-[#3eca44]",
                           !isSameMonth(day, selectedDate) && "bg-slate-50/80",
                           publicHolidayName && "bg-[#eef9ef]",

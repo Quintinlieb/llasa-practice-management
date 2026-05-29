@@ -12,7 +12,6 @@ import {
   ChevronDown,
   Files,
   FolderOpen,
-  Search,
   Users,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -65,13 +64,6 @@ type DashboardCaseDateRow = {
       }[]
     | null;
 };
-
-const consultantPillClassNames = [
-  "border-[#cfe7d2] bg-[#eef9ef] text-[#2f9f35]",
-  "border-[#d8e6fb] bg-[#eef5ff] text-[#3267e3]",
-  "border-[#eadcfb] bg-[#f5edff] text-[#7c3aed]",
-  "border-[#fde2c8] bg-[#fff4e8] text-[#ea580c]",
-] as const;
 
 const avatarClassNames = [
   "border-[#cfe7d2] bg-[#eef9ef] text-[#2f9f35]",
@@ -256,15 +248,6 @@ function getDashboardEventLabel(dateType: unknown, eventLabel: unknown) {
 function normalizeDashboardCaseFileRow(value: DashboardCaseDateRow["case_files"]) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value;
-}
-
-function getConsultantPillClassName(value: string) {
-  const normalized = value.trim().toLowerCase();
-  let hash = 0;
-  for (let index = 0; index < normalized.length; index += 1) {
-    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0;
-  }
-  return consultantPillClassNames[hash % consultantPillClassNames.length];
 }
 
 function getAvatarClassName(value: string) {
@@ -790,23 +773,19 @@ export default function Dashboard() {
 
                       <CardContent className="flex min-h-0 flex-1 flex-col p-0">
                         <div className="min-h-0 flex-1 overflow-x-auto">
-                          <table className="w-full min-w-[835px]">
+                          <table className="w-full min-w-[690px]">
                             <colgroup>
                               <col className="w-[76px]" />
-                              <col className="w-[26%]" />
-                              <col className="w-[22%]" />
-                              <col className="w-[18%]" />
-                              <col className="w-[18%]" />
-                              <col className="w-[16px]" />
+                              <col className="w-[34%]" />
+                              <col className="w-[32%]" />
+                              <col className="w-[120px]" />
                             </colgroup>
                             <thead>
                               <tr className="border-b border-slate-200 text-left">
-                                {["DATE", "MATTER / EVENT", "TYPE", "CLIENT", "CONSULTANT", "VIEW"].map((label) => (
+                                {["DATE", "MATTER / EVENT", "CLIENT", "ASSIGNED"].map((label) => (
                                   <th
                                     key={label}
-                                    className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500 ${
-                                      label === "VIEW" ? "text-right" : ""
-                                    }`}
+                                    className="px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500"
                                   >
                                     {label}
                                   </th>
@@ -817,36 +796,42 @@ export default function Dashboard() {
                               {eventRows.map((row) => (
                                 <tr
                                   key={row.id}
-                                  className="border-b border-slate-100 transition-colors hover:bg-[#3eca44]/5 last:border-b-0"
-                                  style={{ height: "45px" }}
+                                  className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-[#3eca44]/5 last:border-b-0"
+                                  style={{ height: "36px" }}
+                                  onClick={() => navigate("/case-files", { state: { openCaseId: row.caseId } })}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      navigate("/case-files", { state: { openCaseId: row.caseId } });
+                                    }
+                                  }}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`Open ${row.matterEvent}`}
                                 >
-                                  <td className="px-5 py-0 align-middle" style={{ height: "45px" }}>
+                                  <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
                                     <div className="text-[11px] text-slate-700">{row.dateLabel}</div>
                                   </td>
-                                  <td className="px-5 py-0 align-middle" style={{ height: "45px" }}>
+                                  <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
                                     <div className="text-[11px] text-slate-700">{row.matterEvent}</div>
                                   </td>
-                                  <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>{row.matterType}</td>
-                                  <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>{row.client}</td>
-                                  <td className="px-5 py-0 align-middle" style={{ height: "45px" }}>
-                                    <span
-                                      className={cn(
-                                        "inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none",
-                                        getConsultantPillClassName(row.consultant),
-                                      )}
-                                    >
-                                      {row.consultant}
-                                    </span>
-                                  </td>
-                                  <td className="px-5 py-0 text-right align-middle" style={{ height: "45px" }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => navigate("/case-files", { state: { openCaseId: row.caseId } })}
-                                      className="inline-flex text-slate-400 transition-colors hover:text-slate-700"
-                                      aria-label={`Open ${row.matterType}`}
-                                    >
-                                      <Search className="h-4 w-4" />
-                                    </button>
+                                  <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "36px" }}>{row.client}</td>
+                                  <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span
+                                          className={cn(
+                                            "inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold shadow-none",
+                                            getAvatarClassName(row.consultant),
+                                          )}
+                                        >
+                                          {getInitials(row.consultant)}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[10px] shadow-none">
+                                        {row.consultant}
+                                      </TooltipContent>
+                                    </Tooltip>
                                   </td>
                                 </tr>
                               ))}

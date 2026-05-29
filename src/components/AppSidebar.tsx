@@ -31,7 +31,7 @@ const primaryNavItems = [
   { title: "Clients", url: "/clients-2", icon: Building2 },
   { title: "Matters", url: "/case-files", icon: BriefcaseBusiness },
   { title: "Documents", url: "/documents", icon: FolderOpen },
-  { title: "Calendar", icon: CalendarDays },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays },
   { title: "Templates", icon: LayoutTemplate },
   { title: "Reports", icon: ChartColumn },
   { title: "Team", icon: Users },

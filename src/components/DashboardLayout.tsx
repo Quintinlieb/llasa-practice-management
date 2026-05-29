@@ -130,6 +130,7 @@ const getPageTitleFromPathname = (pathname: string) => {
   if (pathname.startsWith("/clients-2") || pathname.startsWith("/clients")) return "Clients";
   if (pathname.startsWith("/dashboard")) return "Dashboard";
   if (pathname.startsWith("/case-files")) return "Matters";
+  if (pathname.startsWith("/calendar")) return "Calendar";
   if (pathname.startsWith("/settings")) return "Settings";
   if (pathname.startsWith("/terms")) return "Terms and Conditions";
   if (pathname.startsWith("/auth")) return "Authentication";

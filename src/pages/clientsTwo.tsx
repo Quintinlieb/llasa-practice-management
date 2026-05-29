@@ -15,13 +15,13 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { read, utils } from "xlsx";
-import { CalendarDays, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
+import { CalendarDays, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Eye, FileSpreadsheet, Paperclip, Pencil, Plus, Search, Trash2, Upload, User, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
+import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
 import { supabase } from "@/integrations/supabase/client";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -38,24 +38,27 @@ const CLIENT_FILE_NOTE_TYPES = [
   "Email Sent",
   "Consultation",
 ] as const;
-const DIARY_TASK_PRIORITY_OPTIONS: readonly DiaryTaskPriority[] = ["Low", "Medium", "High"] as const;
 const DIARY_TASK_TYPE_OPTIONS = [
-  "Phone Call",
+  "Case Preparation",
+  "Check Deadline",
+  "Client Update",
+  "Consultation",
+  "Draft Document",
   "Email / Correspondence",
   "Follow-Up",
-  "Draft Document",
-  "Review Document",
-  "Request Information",
-  "Prepare Bundle",
-  "Case Preparation",
-  "Schedule Meeting",
-  "Client Update",
-  "Submit / File Document",
-  "Check Deadline",
-  "Internal Review",
-  "Invoice / Accounts",
   "General Admin",
+  "Invoice / Accounts",
+  "Internal Review",
+  "Phone Call",
+  "Prepare Bundle",
+  "Request Information",
+  "Review Document",
+  "Schedule Meeting",
+  "Submit / File Document",
 ] as const;
+const DIARY_TASK_DURATION_OPTIONS = ["15 mins", "30 mins", "1 hour", "2 hours", "Half day", "Full day"] as const;
+const DIARY_TASK_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const DIARY_TASK_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
 const getClientFileNoteTypePillClassName = (value: string) => {
   switch (String(value || "").trim()) {
     case "Incoming Call":
@@ -109,6 +112,11 @@ const formatDisplayTime = (value: string | Date) => {
   const date = parseDisplayDateValue(value);
   if (!date) return "";
   return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+};
+const formatTaskTime = (value: string | null | undefined) => {
+  const trimmed = String(value || "").trim();
+  const match = trimmed.match(/^(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : "--";
 };
 const normalizeEditedTagForDisplay = (tag: string) => {
   const value = String(tag || "").trim();
@@ -202,17 +210,17 @@ type ClientMatter = {
   nextDate: string;
   shortDescription: string;
 };
-type DiaryTaskPriority = "Low" | "Medium" | "High";
 type DiaryTaskType = (typeof DIARY_TASK_TYPE_OPTIONS)[number];
 type DiaryTask = {
   id: string;
   diaryDate: string;
+  taskTime: string;
+  duration: string;
   description: string;
   taskType: DiaryTaskType;
   createdByUserId: string;
   assignedToUserId: string;
   assignedToName: string;
-  priority: DiaryTaskPriority;
   relatedMatterId: string;
   relatedMatterLabel: string;
   createdByName: string;
@@ -745,10 +753,11 @@ const ClientsTwo = () => {
   const [taskAssigneeOptions, setTaskAssigneeOptions] = useState<DiaryTaskAssigneeOption[]>([]);
   const [clientTaskForm, setClientTaskForm] = useState({
     diaryDate: "",
+    taskTime: "",
+    duration: "30 mins",
     description: "",
     taskType: "General Admin" as DiaryTaskType,
     assignedToUserId: "",
-    priority: "Medium" as DiaryTaskPriority,
     relatedMatterId: "",
   });
   const [isClientEditMode, setIsClientEditMode] = useState(false);
@@ -1599,7 +1608,7 @@ const ClientsTwo = () => {
     try {
       const { data, error } = await (supabase as any)
         .from("diary_tasks")
-        .select("id, diary_date, description, task_type, assigned_to_user_id, assigned_to_name, priority, related_matter_id, created_by, created_by_name, created_at")
+        .select("id, diary_date, task_time, duration, description, task_type, assigned_to_user_id, assigned_to_name, related_matter_id, created_by, created_by_name, created_at")
         .eq("client_id", clientId)
         .order("diary_date", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: true, nullsFirst: false });
@@ -1615,12 +1624,13 @@ const ClientsTwo = () => {
         (Array.isArray(data) ? data : []).map((row: any) => ({
           id: String(row?.id || crypto.randomUUID()),
           diaryDate: String(row?.diary_date || "").trim(),
+          taskTime: String(row?.task_time || "").trim(),
+          duration: String(row?.duration || "").trim(),
           description: String(row?.description || "").trim(),
           taskType: (String(row?.task_type || "General Admin").trim() || "General Admin") as DiaryTaskType,
           createdByUserId: String(row?.created_by || "").trim(),
           assignedToUserId: String(row?.assigned_to_user_id || "").trim(),
           assignedToName: String(row?.assigned_to_name || "").trim() || "--",
-          priority: (String(row?.priority || "Medium").trim() || "Medium") as DiaryTaskPriority,
           relatedMatterId: String(row?.related_matter_id || "").trim(),
           relatedMatterLabel: activeMatterLabelById.get(String(row?.related_matter_id || "").trim()) || "--",
           createdByName: String(row?.created_by_name || "").trim() || "--",
@@ -1750,10 +1760,11 @@ const ClientsTwo = () => {
       taskAssigneeOptions[0];
     setClientTaskForm({
       diaryDate: dateToday(),
+      taskTime: "",
+      duration: "30 mins",
       description: "",
       taskType: "General Admin",
       assignedToUserId: defaultAssignee?.userId || "",
-      priority: "Medium",
       relatedMatterId: "",
     });
   }, [resolveCurrentUserName, taskAssigneeOptions, user?.id]);
@@ -1767,10 +1778,11 @@ const ClientsTwo = () => {
     setEditingClientTaskId(task.id);
     setClientTaskForm({
       diaryDate: task.diaryDate,
+      taskTime: task.taskTime,
+      duration: task.duration || "30 mins",
       description: task.description,
       taskType: task.taskType,
       assignedToUserId: task.assignedToUserId,
-      priority: task.priority,
       relatedMatterId: task.relatedMatterId,
     });
     setIsClientTaskDialogOpen(true);
@@ -1805,18 +1817,33 @@ const ClientsTwo = () => {
       });
     }
   }, [currentUserIsSubuser, fetchClientTasks, previewClientTask?.id, selectedClientRow, toast]);
+  const isClientTaskFormComplete = useMemo(() => {
+    const [hour = "", minute = ""] = clientTaskForm.taskTime.split(":");
+    return Boolean(
+      String(clientTaskForm.diaryDate || "").trim() &&
+        String(hour || "").trim() &&
+        String(minute || "").trim() &&
+        String(clientTaskForm.duration || "").trim() &&
+        String(clientTaskForm.taskType || "").trim() &&
+        String(clientTaskForm.assignedToUserId || "").trim() &&
+        String(clientTaskForm.description || "").trim(),
+    );
+  }, [clientTaskForm]);
   const handleSaveClientTask = useCallback(async () => {
     if (!selectedClientRow?.id || !user?.id) return;
     const diaryDate = String(clientTaskForm.diaryDate || "").trim();
+    const taskTime = String(clientTaskForm.taskTime || "").trim();
+    const duration = String(clientTaskForm.duration || "").trim();
     const description = String(clientTaskForm.description || "").trim();
     const taskType = String(clientTaskForm.taskType || "").trim();
     const assignedToUserId = String(clientTaskForm.assignedToUserId || "").trim();
     const assignee = taskAssigneeOptions.find((option) => option.userId === assignedToUserId);
     const companyId = await resolveCurrentCompanyIdForMentions(user);
-    if (!diaryDate || !description || !taskType || !assignedToUserId || !assignee?.label || !companyId) {
+    const [taskHour = "", taskMinute = ""] = taskTime.split(":");
+    if (!diaryDate || !taskHour || !taskMinute || !duration || !description || !taskType || !assignedToUserId || !assignee?.label || !companyId) {
       toast({
         title: "Missing fields",
-        description: "Diary date, task type, description and assigned to are required.",
+        description: "Diary date, time, duration, task type, description and assigned to are required.",
         variant: "destructive",
       });
       return;
@@ -1828,11 +1855,12 @@ const ClientsTwo = () => {
       const payload = {
         related_matter_id: relatedMatterId || null,
         diary_date: diaryDate,
+        task_time: taskTime || null,
+        duration: duration || null,
         description,
         task_type: taskType,
         assigned_to_user_id: assignedToUserId,
         assigned_to_name: assignee.label,
-        priority: clientTaskForm.priority,
       };
       const { error } = editingClientTaskId
         ? await (supabase as any)
@@ -5944,8 +5972,10 @@ const ClientsTwo = () => {
                           </Button>
                         </div>
                         <div className="overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[110px_170px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                          <div className="grid grid-cols-[110px_64px_86px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
                             <div>Date</div>
+                            <div>Time</div>
+                            <div>Duration</div>
                             <div>Type</div>
                             <div>Description</div>
                             <div>Assigned to</div>
@@ -5958,15 +5988,16 @@ const ClientsTwo = () => {
                               <div className="px-3 py-3 text-slate-500">No diary tasks created for this client yet.</div>
                             ) : (
                               paginatedClientTasks.map((task) => (
-                                <div key={task.id} className="grid grid-cols-[110px_170px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
+                                <div key={task.id} className="grid grid-cols-[110px_64px_86px_150px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
                                   <div className="min-w-0 text-slate-700">{formatDisplayDate(task.diaryDate) || "--"}</div>
+                                  <div className="min-w-0 text-slate-700">{formatTaskTime(task.taskTime)}</div>
+                                  <div className="min-w-0 truncate text-slate-700">{task.duration || "--"}</div>
                                   <div className="flex min-w-0 items-center truncate">
                                     <Badge className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-medium text-sky-700 shadow-none hover:bg-sky-50 hover:text-sky-700">
                                       {task.taskType || "--"}
                                     </Badge>
                                   </div>
                                   <div className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-2 text-slate-900">
-                                    {task.priority === "High" ? <span className="mr-1 font-bold text-rose-600">!</span> : null}
                                     {task.description || "--"}
                                   </div>
                                   <div className="flex min-w-0 items-center truncate">
@@ -6191,7 +6222,7 @@ const ClientsTwo = () => {
           }
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[460px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+        <DialogContent className="w-[94vw] max-w-[620px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
           <div className="flex items-center justify-between px-4 py-3">
             <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-white">
               <CalendarDays className="h-4 w-4" />
@@ -6204,10 +6235,9 @@ const ClientsTwo = () => {
             </DialogClose>
           </div>
           <div className="bg-white px-4 py-4">
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="clientTaskDiaryDate" className="text-[11px] font-medium text-slate-600">Diary Date</Label>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="relative space-y-1">
+                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Diary Date <span className="text-red-600">*</span></span>
                   <Input
                     id="clientTaskDiaryDate"
                     type="text"
@@ -6222,34 +6252,85 @@ const ClientsTwo = () => {
                         openDatePicker(clientTaskDateInputRef.current);
                       }
                     }}
-                    className="h-8 rounded !text-[11px] md:!text-[11px] font-medium"
+                    className={addModalFieldInputClass}
                   />
                   <input
                     ref={clientTaskDateInputRef}
                     type="date"
                     value={clientTaskForm.diaryDate}
-                    onChange={(e) => setClientTaskForm((prev) => ({ ...prev, diaryDate: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setClientTaskForm((prev) => ({ ...prev, diaryDate: value }));
+                      void warnIfSouthAfricanPublicHoliday(value);
+                    }}
                     className="sr-only"
                     aria-hidden="true"
                     tabIndex={-1}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="clientTaskPriority" className="text-[11px] font-medium text-slate-600">Priority</Label>
-                  <Select value={clientTaskForm.priority} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, priority: value as DiaryTaskPriority }))}>
-                    <SelectTrigger id="clientTaskPriority" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
-                      <SelectValue placeholder="Select priority" />
-                    </SelectTrigger>
-                    <SelectContent className="text-[11px]">
-                      {DIARY_TASK_PRIORITY_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="relative space-y-1">
+                  <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></span>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                    <Select
+                      value={(clientTaskForm.taskTime.split(":")[0] || "") || undefined}
+                      onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${value}:${prev.taskTime.split(":")[1] || "00"}` }))}
+                    >
+                      <SelectTrigger
+                        id="clientTaskTimeHour"
+                        className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <SelectValue placeholder="Hour" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent className="text-[10px]">
+                        {DIARY_TASK_TIME_HOUR_OPTIONS.map((hour) => (
+                          <SelectItem key={hour} value={hour} className="text-[10px]">
+                            {hour}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={(clientTaskForm.taskTime.split(":")[1] || "") || undefined}
+                      onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskTime: `${prev.taskTime.split(":")[0] || "00"}:${value}` }))}
+                    >
+                      <SelectTrigger
+                        id="clientTaskTimeMinute"
+                        className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400`}
+                      >
+                        <SelectValue placeholder="Min" />
+                      </SelectTrigger>
+                      <SelectContent className="text-[10px]">
+                        {DIARY_TASK_TIME_MINUTE_OPTIONS.map((minute) => (
+                          <SelectItem key={minute} value={minute} className="text-[10px]">
+                            {minute}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                      {clientTaskForm.taskTime ? (Number.parseInt(clientTaskForm.taskTime.split(":")[0] || "0", 10) >= 12 ? "PM" : "AM") : "AM/PM"}
+                    </div>
+                  </div>
                 </div>
+
+              <div className="relative space-y-1">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></span>
+                <Select value={clientTaskForm.duration || undefined} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, duration: value }))}>
+                  <SelectTrigger id="clientTaskDuration" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                    <SelectValue placeholder="Select duration" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[11px]">
+                    {DIARY_TASK_DURATION_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientTaskType" className="text-[11px] font-medium text-slate-600">Task Type</Label>
+              <div className="relative space-y-1">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Task Type <span className="text-red-600">*</span></span>
                 <Select value={clientTaskForm.taskType} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, taskType: value as DiaryTaskType }))}>
                   <SelectTrigger id="clientTaskType" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
                     <SelectValue placeholder="Select task type" />
@@ -6261,18 +6342,8 @@ const ClientsTwo = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientTaskDescription" className="text-[11px] font-medium text-slate-600">Task Description</Label>
-                <Textarea
-                  id="clientTaskDescription"
-                  value={clientTaskForm.description}
-                  onChange={(e) => setClientTaskForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="min-h-[88px] rounded !text-[11.67px] md:!text-[11.67px] font-medium"
-                  placeholder="Enter the task description"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientTaskAssignedTo" className="text-[11px] font-medium text-slate-600">Assigned To</Label>
+              <div className="relative space-y-1">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Assigned To <span className="text-red-600">*</span></span>
                 <Select value={clientTaskForm.assignedToUserId || undefined} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, assignedToUserId: value }))}>
                   <SelectTrigger id="clientTaskAssignedTo" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
                     <SelectValue placeholder="Select assignee" />
@@ -6284,8 +6355,8 @@ const ClientsTwo = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="clientTaskRelatedMatter" className="text-[11px] font-medium text-slate-600">Related Matter</Label>
+              <div className="relative space-y-1">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Related Matter</span>
                 <Select value={clientTaskForm.relatedMatterId || "__none__"} onValueChange={(value) => setClientTaskForm((prev) => ({ ...prev, relatedMatterId: value === "__none__" ? "" : value }))}>
                   <SelectTrigger id="clientTaskRelatedMatter" className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
                     <SelectValue placeholder="Select related matter (optional)" />
@@ -6302,14 +6373,24 @@ const ClientsTwo = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="relative space-y-1 md:col-span-2">
+                <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Description <span className="text-red-600">*</span></span>
+                <Textarea
+                  id="clientTaskDescription"
+                  value={clientTaskForm.description}
+                  onChange={(e) => setClientTaskForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className="min-h-[88px] rounded bg-white !text-[11.67px] md:!text-[11.67px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 focus-visible:ring-0 focus-visible:ring-offset-0 !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black"
+                  placeholder="Enter the task description"
+                />
+              </div>
             </div>
           </div>
           <div className="bg-white px-4 pb-4">
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-center gap-2">
               <Button type="button" variant="outline" className="h-8 w-[92px] rounded text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-white hover:border-slate-400 hover:text-slate-800" onClick={() => setIsClientTaskDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] text-[11px] text-white hover:bg-[#34b73b]" disabled={isSavingClientTask} onClick={() => void handleSaveClientTask()}>
+              <Button type="button" className="h-8 w-[92px] rounded bg-[#3eca44] text-[11px] text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-white" disabled={isSavingClientTask || !isClientTaskFormComplete} onClick={() => void handleSaveClientTask()}>
                 {isSavingClientTask ? "Saving..." : "Save"}
               </Button>
             </div>
@@ -6339,16 +6420,20 @@ const ClientsTwo = () => {
                 <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.diaryDate ? formatDisplayDate(previewClientTask.diaryDate) : "--"}</div>
               </div>
               <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Time</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{formatTaskTime(previewClientTask?.taskTime)}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-semibold text-slate-500">Duration</div>
+                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.duration || "--"}</div>
+              </div>
+              <div className="space-y-1">
                 <div className="text-[10px] font-semibold text-slate-500">Task Type</div>
                 <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.taskType || "--"}</div>
               </div>
               <div className="space-y-1">
                 <div className="text-[10px] font-semibold text-slate-500">Assigned To</div>
                 <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.assignedToName || "--"}</div>
-              </div>
-              <div className="space-y-1">
-                <div className="text-[10px] font-semibold text-slate-500">Priority</div>
-                <div className="rounded border border-slate-200 bg-[#3eca44]/5 px-3 py-2 text-slate-900">{previewClientTask?.priority || "--"}</div>
               </div>
               <div className="space-y-1 md:col-span-2">
                 <div className="text-[10px] font-semibold text-slate-500">Related Matter</div>

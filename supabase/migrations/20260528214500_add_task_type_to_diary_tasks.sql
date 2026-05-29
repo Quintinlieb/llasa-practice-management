@@ -22,21 +22,22 @@ BEGIN
     ALTER TABLE public.diary_tasks
       ADD CONSTRAINT diary_tasks_task_type_check CHECK (
         task_type IN (
-          'Phone Call',
+          'Case Preparation',
+          'Check Deadline',
+          'Client Update',
+          'Consultation',
+          'Draft Document',
           'Email / Correspondence',
           'Follow-Up',
-          'Draft Document',
-          'Review Document',
-          'Request Information',
-          'Prepare Bundle',
-          'Case Preparation',
-          'Schedule Meeting',
-          'Client Update',
-          'Submit / File Document',
-          'Check Deadline',
-          'Internal Review',
+          'General Admin',
           'Invoice / Accounts',
-          'General Admin'
+          'Internal Review',
+          'Phone Call',
+          'Prepare Bundle',
+          'Request Information',
+          'Review Document',
+          'Schedule Meeting',
+          'Submit / File Document'
         )
       );
   END IF;

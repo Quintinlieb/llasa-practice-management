@@ -84,9 +84,10 @@ export type Database = {
           created_by_name: string
           description: string
           diary_date: string
+          duration: string | null
           id: string
-          priority: string
           related_matter_id: string | null
+          task_time: string | null
           task_type: string
           updated_at: string
         }
@@ -100,9 +101,10 @@ export type Database = {
           created_by_name: string
           description: string
           diary_date: string
+          duration?: string | null
           id?: string
-          priority?: string
           related_matter_id?: string | null
+          task_time?: string | null
           task_type?: string
           updated_at?: string
         }
@@ -116,9 +118,10 @@ export type Database = {
           created_by_name?: string
           description?: string
           diary_date?: string
+          duration?: string | null
           id?: string
-          priority?: string
           related_matter_id?: string | null
+          task_time?: string | null
           task_type?: string
           updated_at?: string
         }

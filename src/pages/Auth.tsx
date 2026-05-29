@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Info, Eye, EyeOff } from "lucide-react";
@@ -10,6 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
 import { clearAuthFormDraft, readAuthFormDraft, writeAuthFormDraft } from "@/lib/authFormDraft";
+import {
+  clearRememberedUsername,
+  readRememberedUsername,
+  writeRememberedUsername,
+} from "@/lib/authRememberedUsername";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -43,6 +49,7 @@ const Auth = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [rememberUsername, setRememberUsername] = useState(() => readRememberedUsername().length > 0);
   const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -51,6 +58,7 @@ const Auth = () => {
 
   useEffect(() => {
     const draft = readAuthFormDraft();
+    const rememberedUsername = readRememberedUsername();
     if (!draft) return;
     const params = new URLSearchParams(location.search);
     const forceLogin = params.get("login") === "1";
@@ -61,7 +69,8 @@ const Auth = () => {
 
     if (forceLogin || draft.isLogin) {
       clearAuthFormDraft();
-      setEmail("");
+      setRememberUsername(rememberedUsername.length > 0);
+      setEmail(rememberedUsername);
       setPassword("");
       setConfirmPassword("");
       setName("");
@@ -73,10 +82,21 @@ const Auth = () => {
     setName(draft.name);
     setSurname(draft.surname);
     setContactNumber(draft.contactNumber);
+    setRememberUsername(rememberedUsername.length > 0);
     setEmail("");
     setPassword("");
     setConfirmPassword("");
   }, [location.search]);
+
+  useEffect(() => {
+    const draft = readAuthFormDraft();
+    if (draft) return;
+    if (!isLogin) return;
+
+    const rememberedUsername = readRememberedUsername();
+    setRememberUsername(rememberedUsername.length > 0);
+    setEmail((currentEmail) => currentEmail || rememberedUsername);
+  }, [isLogin]);
 
   useEffect(() => {
     writeAuthFormDraft({
@@ -89,6 +109,12 @@ const Auth = () => {
       confirmPassword: isLogin ? "" : confirmPassword,
     });
   }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
+
+  useEffect(() => {
+    if (!isLogin) return;
+    if (email.trim().length > 0) return;
+    setRememberUsername(false);
+  }, [email, isLogin]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -296,7 +322,8 @@ const Auth = () => {
 
     try {
       if (isLogin) {
-        const { error } = await signIn(email, password);
+        const normalizedEmail = email.trim();
+        const { error } = await signIn(normalizedEmail, password);
         if (error) {
           toast({
             title: "Error",
@@ -304,6 +331,11 @@ const Auth = () => {
             variant: "destructive",
           });
         } else {
+          if (rememberUsername) {
+            writeRememberedUsername(normalizedEmail);
+          } else {
+            clearRememberedUsername();
+          }
           navigate("/clients-2", { replace: true });
         }
       } else {
@@ -380,11 +412,12 @@ const Auth = () => {
     "h-[30px] rounded-[3px] border-[1.75px] border-slate-300 bg-white px-2 text-[8px] font-medium text-slate-900 shadow-none placeholder:text-[8px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44] ring-0 ring-offset-0 outline-none focus:ring-0 focus:ring-offset-0 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none";
   const loginFieldClass =
     "h-9 rounded-[3px] border-white/15 bg-white px-2 !text-[12px] text-slate-900 placeholder:text-[12px] placeholder:text-slate-400 hover:border-[#3eca44] focus:border-[#3eca44] focus-visible:border-[#3eca44]";
+  const canRememberUsername = isLogin && email.trim().length > 0;
   const authFormContent = (
     <div className="w-full max-w-md space-y-4">
       <div className="text-center space-y-3">
         <div className="mx-auto flex items-center justify-center">
-          <img src="/Vertical Logo (2).png" alt="LLASA vertical logo" className="h-32 w-auto" />
+          <img src="/Vertical Logo (2).png" alt="LLASA vertical logo" className="h-32 w-auto animate-pulse-slow" />
         </div>
         <div className={isLogin ? "space-y-1 translate-y-2" : "space-y-1"}>
           {!isLogin && (
@@ -512,14 +545,27 @@ const Auth = () => {
                     </button>
                   </div>
                   {isLogin && (
-                    <div className="mt-2 flex justify-start">
+                    <div className="mt-2 flex items-center justify-between gap-4">
                       <button
                         type="button"
                         onClick={() => navigate("/forgot-password")}
-                        className="text-[11px] font-normal text-white/70 underline hover:text-[#3eca44]"
+                        className="text-[11px] font-normal text-white/70 hover:text-[#3eca44] hover:underline"
                       >
                         Forgot your password?
                       </button>
+                      <label
+                        htmlFor="remember-username"
+                        className={`flex items-center justify-end gap-2 text-[11px] font-normal ${canRememberUsername ? "cursor-pointer text-white/70" : "cursor-not-allowed text-white/35"}`}
+                      >
+                        <span>Remember me</span>
+                        <Checkbox
+                          id="remember-username"
+                          checked={rememberUsername}
+                          onCheckedChange={(checked) => setRememberUsername(checked === true)}
+                          disabled={!canRememberUsername}
+                          className="h-3.5 w-3.5 rounded-[3px] border-white/40 data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44] data-[state=checked]:text-white"
+                        />
+                      </label>
                     </div>
                   )}
                   {!isLogin && passwordError && (

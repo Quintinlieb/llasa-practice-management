@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
+import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -38,9 +39,16 @@ type CaseDateEvent = {
   eventLabel: string;
   eventDate: string;
   eventTime?: string;
+  duration?: string;
   createdByName: string;
   created_at?: string | null;
   updated_at?: string | null;
+};
+type MatterDateConflictInput = {
+  id?: string;
+  eventDate: string;
+  eventTime: string;
+  duration: string;
 };
 type CaseDocument = {
   id: string;
@@ -69,6 +77,8 @@ type CaseOutcome = {
 };
 type CaseFile = {
   id: string;
+  createdById: string;
+  createdByName: string;
   clientId: string;
   fileNo: string;
   client: string;
@@ -138,7 +148,8 @@ type MatterDetailsTableProps = {
   emptyState?: React.ReactNode;
   bodyMaxHeightClassName?: string;
 };
-const MATTER_DETAILS_TABLE_GRID = "grid-cols-[120px_120px_2.75fr_1fr_72px]";
+const MATTER_DETAILS_TABLE_GRID = "grid-cols-[110px_90px_100px_2.75fr_1fr_72px]";
+const CASE_FILES_TABLE_GRID = "grid-cols-[0.35fr_0.95fr_1.5fr_2.35fr_1.1fr_0.9fr_0.9fr_0.7fr_1fr]";
 const caseFilesTableCacheKey = "case-files:table-cache";
 const CASE_FILES_TABLE_PAGE_SIZE = 25;
 const CASE_DOCUMENTS_BUCKET = "case-documents";
@@ -224,6 +235,7 @@ const PRIORITY_OPTIONS: CaseFile["priority"][] = ["Low", "Medium", "High", "Urge
 const CURRENT_STAGE_OPTIONS = ["Scheduled", "Awaiting Date", "Finalised", "In progress"] as const;
 const HEARING_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const HEARING_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
+const MATTER_DATE_DURATION_OPTIONS = ["15 mins", "30 mins", "1 hour", "2 hours", "Half day", "Full day"] as const;
 const OUTCOME_TYPE_OPTIONS = ["Dismissal Upheld", "Settlement", "Award Issued", "Case Withdrawn", "Matter Closed", "Consultation Completed", "Hearing Finalised"] as const;
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 const offenceGroupLabel: Record<OffenceCategory, string> = {
@@ -545,6 +557,7 @@ const createCaseDateEventDraft = (overrides?: Partial<CaseDateEvent>): CaseDateE
   eventLabel: String(overrides?.eventLabel || ""),
   eventDate: String(overrides?.eventDate || ""),
   eventTime: String(overrides?.eventTime || ""),
+  duration: String(overrides?.duration || "1 hour"),
   createdByName: String(overrides?.createdByName || ""),
   created_at: overrides?.created_at ?? null,
   updated_at: overrides?.updated_at ?? null,
@@ -563,6 +576,11 @@ const createBlankCaseDocumentForm = () => ({
   description: "",
   uploadedBy: "",
 });
+const getInitials = (value: unknown) => {
+  const tokens = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return "--";
+  return tokens.slice(0, 2).map((token) => token.charAt(0).toUpperCase()).join("");
+};
 const sanitizeStorageFileName = (value: string) =>
   String(value || "")
     .trim()
@@ -685,6 +703,13 @@ const getCasePrimaryNextDate = (events: CaseDateEvent[]) => {
   if (upcomingScheduledEvent) return upcomingScheduledEvent.eventDate;
   return getUpcomingNextActionDate(events);
 };
+const getCaseTableDisplayDate = (events: CaseDateEvent[], fallbackDate: unknown) => {
+  const scheduledEvents = getScheduledCaseDateEvents(events);
+  const latestScheduledEvent = scheduledEvents[scheduledEvents.length - 1];
+  if (latestScheduledEvent?.eventDate) return latestScheduledEvent.eventDate;
+  const fallback = String(fallbackDate ?? "").trim();
+  return fallback || "--";
+};
 const normalizeCurrentStageValue = (value: unknown) => {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "scheduled") return "Scheduled";
@@ -699,6 +724,39 @@ const parseCaseDateEventTime = (timeValue: unknown, descriptionValue?: unknown) 
   const description = String(descriptionValue ?? "").trim();
   const match = description.match(/^Time:\s*(\d{2}:\d{2})$/i);
   return match ? match[1] : "";
+};
+const getMatterDateDurationMs = (duration: unknown) => {
+  switch (String(duration ?? "").trim().toLowerCase()) {
+    case "15 mins":
+      return 15 * 60 * 1000;
+    case "30 mins":
+      return 30 * 60 * 1000;
+    case "1 hour":
+      return 60 * 60 * 1000;
+    case "2 hours":
+      return 2 * 60 * 60 * 1000;
+    case "half day":
+      return 4 * 60 * 60 * 1000;
+    case "full day":
+      return 8 * 60 * 60 * 1000;
+    default:
+      return 60 * 60 * 1000;
+  }
+};
+const parseMatterDateInterval = (event: MatterDateConflictInput) => {
+  const eventDate = String(event.eventDate || "").trim();
+  const eventTime = String(event.eventTime || "").trim();
+  if (!eventDate || !eventTime) return null;
+  const start = new Date(`${eventDate}T${eventTime}:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = new Date(start.getTime() + getMatterDateDurationMs(event.duration || "1 hour"));
+  return { start, end };
+};
+const doMatterDateIntervalsOverlap = (left: MatterDateConflictInput, right: MatterDateConflictInput) => {
+  const leftInterval = parseMatterDateInterval(left);
+  const rightInterval = parseMatterDateInterval(right);
+  if (!leftInterval || !rightInterval) return false;
+  return leftInterval.start.getTime() < rightInterval.end.getTime() && leftInterval.end.getTime() > rightInterval.start.getTime();
 };
 const resolveCurrentStage = (value: unknown, status: CaseFile["status"], events: CaseDateEvent[]) => {
   if (status === "Inactive") return "Finalised";
@@ -1010,6 +1068,7 @@ const Matters = () => {
     eventType: "",
     eventDate: "",
     eventTime: "",
+    duration: "1 hour",
     createdByName: "",
   });
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
@@ -1341,7 +1400,7 @@ const Matters = () => {
     if (!caseFileId) return [];
     const { data, error } = await (supabase as any)
       .from("case_dates")
-      .select("id,case_file_id,date_type,date_value,event_time,description,event_label,created_by_name,created_at,updated_at")
+      .select("id,case_file_id,date_type,date_value,event_time,duration,description,event_label,created_by_name,created_at,updated_at")
       .eq("case_file_id", caseFileId)
       .order("date_value", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false });
@@ -1355,6 +1414,7 @@ const Matters = () => {
           eventLabel: String(row?.event_label || ""),
           eventDate: String(row?.date_value || ""),
           eventTime: parseCaseDateEventTime(row?.event_time, row?.description),
+          duration: String(row?.duration || "1 hour"),
           createdByName: String(row?.created_by_name || ""),
           created_at: row?.created_at ? String(row.created_at) : null,
           updated_at: row?.updated_at ? String(row.updated_at) : null,
@@ -1369,6 +1429,81 @@ const Matters = () => {
     } : prev);
     return dateEvents;
   }, []);
+  const findMatterDateOverlap = useCallback(
+    async (consultantName: string, events: MatterDateConflictInput[], excludeEventId?: string | null) => {
+      const safeConsultant = String(consultantName || "").trim();
+      const validEvents = events
+        .map((event) => ({
+          ...event,
+          id: String(event.id || "").trim(),
+          eventDate: String(event.eventDate || "").trim(),
+          eventTime: String(event.eventTime || "").trim(),
+          duration: String(event.duration || "").trim() || "1 hour",
+        }))
+        .filter((event) => event.eventDate && event.eventTime);
+
+      if (!safeConsultant || validEvents.length === 0) return null;
+
+      for (let leftIndex = 0; leftIndex < validEvents.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < validEvents.length; rightIndex += 1) {
+          if (
+            validEvents[leftIndex].eventDate === validEvents[rightIndex].eventDate &&
+            doMatterDateIntervalsOverlap(validEvents[leftIndex], validEvents[rightIndex])
+          ) {
+            return { source: "draft" as const, date: validEvents[leftIndex].eventDate, time: validEvents[leftIndex].eventTime };
+          }
+        }
+      }
+
+      const dates = Array.from(new Set(validEvents.map((event) => event.eventDate)));
+      const { data, error } = await (supabase as any)
+        .from("case_dates")
+        .select("id,date_value,event_time,duration,date_type,event_label,case_file_id,case_files!inner(id,file_number,client_name,consultant,status)")
+        .in("date_value", dates);
+
+      if (error) throw error;
+
+      const excludedId = String(excludeEventId || "").trim();
+      const safeConsultantKey = safeConsultant.toLowerCase();
+      const existingEvents = (Array.isArray(data) ? data : [])
+        .filter((row: any) => {
+          if (excludedId && String(row?.id || "").trim() === excludedId) return false;
+          const caseFile = Array.isArray(row?.case_files) ? row.case_files[0] : row?.case_files;
+          const status = String(caseFile?.status || "").trim().toLowerCase();
+          const consultant = String(caseFile?.consultant || "").trim().toLowerCase();
+          return status === "active" && consultant === safeConsultantKey && String(row?.event_time || "").trim();
+        })
+        .map((row: any) => {
+          const caseFile = Array.isArray(row?.case_files) ? row.case_files[0] : row?.case_files;
+          return {
+            id: String(row?.id || ""),
+            eventDate: String(row?.date_value || ""),
+            eventTime: parseCaseDateEventTime(row?.event_time),
+            duration: String(row?.duration || "1 hour"),
+            label: String(row?.event_label || row?.date_type || "Matter date"),
+            fileNumber: String(caseFile?.file_number || ""),
+          };
+        });
+
+      for (const nextEvent of validEvents) {
+        const conflict = existingEvents.find((existingEvent) =>
+          existingEvent.eventDate === nextEvent.eventDate && doMatterDateIntervalsOverlap(nextEvent, existingEvent),
+        );
+        if (conflict) {
+          return {
+            source: "existing" as const,
+            date: conflict.eventDate,
+            time: conflict.eventTime,
+            label: conflict.label,
+            fileNumber: conflict.fileNumber,
+          };
+        }
+      }
+
+      return null;
+    },
+    [],
+  );
   const fetchCaseNotes = useCallback(async (caseFileId: string) => {
     if (!user?.id || !caseFileId) return [];
     setIsCaseNotesLoading(true);
@@ -1435,7 +1570,7 @@ const Matters = () => {
     }
     const { data, error } = await (supabase as any)
       .from("case_files")
-      .select("id,client_id,file_number,client_name,parties,case_type,forum,next_date,consultant,status,priority,last_updated,updated_at,created_at,case_subtype,case_number,current_stage,short_description")
+      .select("id,user_id,client_id,file_number,client_name,parties,case_type,forum,next_date,consultant,status,priority,last_updated,updated_at,created_at,case_subtype,case_number,current_stage,short_description")
       .order("created_at", { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -1445,18 +1580,84 @@ const Matters = () => {
     }
 
     const rows: any[] = Array.isArray(data) ? data : [];
+    const caseFileIds = rows.map((row) => String(row?.id || "").trim()).filter(Boolean);
+    const creatorIds = Array.from(new Set(rows.map((row) => String(row?.user_id || "").trim()).filter(Boolean)));
+    const creatorNameById = new Map<string, string>();
+    const dateEventsByCaseId = new Map<string, CaseDateEvent[]>();
+
+    if (caseFileIds.length > 0) {
+      const { data: caseDatesData, error: caseDatesError } = await (supabase as any)
+        .from("case_dates")
+        .select("id,case_file_id,date_type,date_value,event_time,duration,description,event_label,created_by_name,created_at,updated_at")
+        .in("case_file_id", caseFileIds);
+
+      if (caseDatesError) {
+        setIsCaseFilesLoading(false);
+        toast({ title: "Error", description: caseDatesError.message, variant: "destructive" });
+        return;
+      }
+
+      (Array.isArray(caseDatesData) ? caseDatesData : []).forEach((dateRow: any) => {
+        const caseFileId = String(dateRow?.case_file_id || "").trim();
+        if (!caseFileId) return;
+        const existing = dateEventsByCaseId.get(caseFileId) ?? [];
+        existing.push(createCaseDateEventDraft({
+          id: String(dateRow?.id || ""),
+          case_file_id: caseFileId,
+          eventType: String(dateRow?.date_type || ""),
+          eventLabel: String(dateRow?.event_label || ""),
+          eventDate: String(dateRow?.date_value || ""),
+          eventTime: parseCaseDateEventTime(dateRow?.event_time, dateRow?.description),
+          duration: String(dateRow?.duration || "1 hour"),
+          createdByName: String(dateRow?.created_by_name || ""),
+          created_at: dateRow?.created_at ? String(dateRow.created_at) : null,
+          updated_at: dateRow?.updated_at ? String(dateRow.updated_at) : null,
+        }));
+        dateEventsByCaseId.set(caseFileId, existing);
+      });
+    }
+
+    if (creatorIds.length > 0) {
+      const [profilesResult, subusersResult] = await Promise.all([
+        (supabase as any)
+          .from("profiles")
+          .select("id,user_name,user_surname,user_email")
+          .in("id", creatorIds),
+        (supabase as any)
+          .from("subusers")
+          .select("auth_user_id,name,surname,email")
+          .in("auth_user_id", creatorIds),
+      ]);
+
+      (Array.isArray(profilesResult.data) ? profilesResult.data : []).forEach((row: any) => {
+        const id = String(row?.id || "").trim();
+        const fullName = `${String(row?.user_name || "").trim()} ${String(row?.user_surname || "").trim()}`.trim() || String(row?.user_email || "").trim();
+        if (id && fullName) creatorNameById.set(id, fullName);
+      });
+
+      (Array.isArray(subusersResult.data) ? subusersResult.data : []).forEach((row: any) => {
+        const id = String(row?.auth_user_id || "").trim();
+        const fullName = `${String(row?.name || "").trim()} ${String(row?.surname || "").trim()}`.trim() || String(row?.email || "").trim();
+        if (id && fullName) creatorNameById.set(id, fullName);
+      });
+    }
+
     const mapped: CaseFile[] = rows.map((row) => {
       const persistedNextDate = row.next_date ?? "--";
       const normalizedStatus = normalizeStatus(row.status ?? "Active");
+      const createdById = String(row.user_id || "").trim();
+      const dateEvents = sortCaseDateEvents(dateEventsByCaseId.get(String(row.id || "").trim()) ?? []);
       return {
         id: row.id,
+        createdById,
+        createdByName: creatorNameById.get(createdById) || "Unknown User",
         clientId: row.client_id ?? "",
         fileNo: row.file_number ?? "--",
         client: row.client_name ?? "--",
         parties: row.parties ?? "--",
         caseType: row.case_type ?? "--",
         forumVenue: row.forum ?? "--",
-        nextDate: persistedNextDate,
+        nextDate: getCaseTableDisplayDate(dateEvents, persistedNextDate),
         consultant: row.consultant ?? "--",
         status: normalizedStatus,
         priority: normalizePriority(row.priority),
@@ -1467,7 +1668,7 @@ const Matters = () => {
         employerRepresentative: "--",
         currentStage: String(row.current_stage || "").trim() || resolveCurrentStage("--", normalizedStatus, []),
         shortDescription: row.short_description ?? "--",
-        dateEvents: [],
+        dateEvents,
         notes: [],
         documents: [],
         tasks: [],
@@ -1713,6 +1914,7 @@ const Matters = () => {
       eventType: "",
       eventDate: "",
       eventTime: "",
+      duration: "1 hour",
       createdByName: resolveCurrentUserName(),
     });
     setEditingCaseDateEventId(null);
@@ -1733,6 +1935,7 @@ const Matters = () => {
       eventType: event.eventType || resolveCaseDateEventLabel(event),
       eventDate: event.eventDate || "",
       eventTime: event.eventTime || "",
+      duration: event.duration || "1 hour",
       createdByName: event.createdByName || resolveCurrentUserName(),
     });
     setIsCaseDateDialogOpen(true);
@@ -1756,12 +1959,27 @@ const Matters = () => {
     const eventType = caseDateEventForm.eventType.trim();
     const eventDate = caseDateEventForm.eventDate.trim();
     const eventTime = caseDateEventForm.eventTime.trim();
+    const duration = caseDateEventForm.duration.trim();
     const createdByName = caseDateEventForm.createdByName.trim() || resolveCurrentUserName();
-    if (!eventType || !eventDate || !eventTime) {
-      toast({ title: "Error", description: "Date, time and description are required.", variant: "destructive" });
+    if (!eventType || !eventDate || !eventTime || !duration) {
+      toast({ title: "Error", description: "Date, time, duration and description are required.", variant: "destructive" });
       return;
     }
     try {
+      const conflict = await findMatterDateOverlap(
+        selectedCase.consultant,
+        [{ id: editingCaseDateEventId || "", eventDate, eventTime, duration }],
+        editingCaseDateEventId,
+      );
+      if (conflict) {
+        toast({
+          title: "Schedule conflict",
+          description: `${selectedCase.consultant} already has a matter event that overlaps this time${conflict.fileNumber ? ` (${conflict.fileNumber})` : ""}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (editingCaseDateEventId) {
         const { error } = await (supabase as any)
           .from("case_dates")
@@ -1770,6 +1988,7 @@ const Matters = () => {
             event_label: null,
             date_value: eventDate,
             event_time: eventTime,
+            duration,
             created_by_name: createdByName,
             description: null,
           })
@@ -1783,6 +2002,7 @@ const Matters = () => {
           event_label: null,
           date_value: eventDate,
           event_time: eventTime,
+          duration,
           created_by_name: createdByName,
           description: null,
         });
@@ -1797,7 +2017,7 @@ const Matters = () => {
     } catch (error: any) {
       toast({ title: "Error", description: error?.message ?? "Unable to save matter date.", variant: "destructive" });
     }
-  }, [caseDateEventForm.createdByName, caseDateEventForm.eventDate, caseDateEventForm.eventTime, caseDateEventForm.eventType, editingCaseDateEventId, fetchCaseDateEvents, fetchCaseFiles, resetCaseDateEventForm, resolveCurrentUserName, selectedCase?.currentStage, selectedCase?.id, selectedCase?.status, syncCaseFileTimelineSummary, toast]);
+  }, [caseDateEventForm.createdByName, caseDateEventForm.duration, caseDateEventForm.eventDate, caseDateEventForm.eventTime, caseDateEventForm.eventType, editingCaseDateEventId, fetchCaseDateEvents, fetchCaseFiles, findMatterDateOverlap, resetCaseDateEventForm, resolveCurrentUserName, selectedCase?.consultant, selectedCase?.currentStage, selectedCase?.id, selectedCase?.status, syncCaseFileTimelineSummary, toast]);
 
   const handleCancelCaseEdit = () => {
     if (!selectedCase) return;
@@ -1997,6 +2217,7 @@ const Matters = () => {
     newCaseForm.forumVenue.trim() &&
     primaryNewCaseDateEvent.eventDate.trim() &&
     String(primaryNewCaseDateEvent.eventTime || "").trim() &&
+    String(primaryNewCaseDateEvent.duration || "").trim() &&
     primaryNewCaseDateEvent.eventType.trim(),
   );
   const isStepThreeComplete = Boolean(
@@ -2140,8 +2361,19 @@ const Matters = () => {
         eventType: String(event.eventType || "").trim(),
         eventDate: String(event.eventDate || "").trim(),
         eventTime: String(event.eventTime || "").trim(),
+        duration: String(event.duration || "").trim() || "1 hour",
         createdByName: String(event.createdByName || "").trim() || resolveCurrentUserName(),
       }));
+      const validNewCaseDateEvents = normalizedNewCaseDateEvents
+        .filter((event) => event.eventType || event.eventDate);
+      const hasIncompleteNewCaseDateEvent = validNewCaseDateEvents.some((event) => !event.eventType || !event.eventDate || !event.eventTime || !event.duration);
+      if (hasIncompleteNewCaseDateEvent) {
+        throw new Error("Each matter date must include a date, time, duration and description.");
+      }
+      const conflict = await findMatterDateOverlap(newCaseForm.assignedConsultant.trim(), validNewCaseDateEvents);
+      if (conflict) {
+        throw new Error(`${newCaseForm.assignedConsultant.trim()} already has a matter event that overlaps this time${conflict.fileNumber ? ` (${conflict.fileNumber})` : ""}.`);
+      }
       const nextActionDateForNewCase = getCasePrimaryNextDate(normalizedNewCaseDateEvents);
       const resolvedNewCaseStage = resolveCurrentStage("Scheduled", newCaseForm.status, normalizedNewCaseDateEvents);
       const { data: insertedCase, error: caseError } = await (supabase as any)
@@ -2170,18 +2402,12 @@ const Matters = () => {
       const caseFileId = insertedCase?.id;
       if (!caseFileId) throw new Error("Case file insert did not return an id.");
 
-      const validNewCaseDateEvents = normalizedNewCaseDateEvents
-        .filter((event) => event.eventType || event.eventDate);
-      const hasIncompleteNewCaseDateEvent = validNewCaseDateEvents.some((event) => !event.eventType || !event.eventDate || !event.eventTime);
-      if (hasIncompleteNewCaseDateEvent) {
-        throw new Error("Each matter date must include a date, time and description.");
-      }
-
       const dateInserts: Array<{
         case_file_id: string;
         date_type: string;
         date_value: string;
         event_time?: string | null;
+        duration?: string | null;
         description: string | null;
         event_label: string | null;
         created_by_name: string;
@@ -2193,6 +2419,7 @@ const Matters = () => {
           date_type: event.eventType,
           date_value: event.eventDate,
           event_time: event.eventTime || null,
+          duration: event.duration || null,
           description: null,
           event_label: null,
           created_by_name: event.createdByName,
@@ -2204,6 +2431,7 @@ const Matters = () => {
             date_type: "Next Action Date",
           date_value: newCaseForm.nextDate,
           event_time: null,
+          duration: null,
           description: "Auto-created from New Case File form",
           event_label: null,
           created_by_name: actorName,
@@ -2215,6 +2443,7 @@ const Matters = () => {
           date_type: "Deadline Date",
           date_value: newCaseForm.deadlineDate,
           event_time: null,
+          duration: null,
           description: "Auto-created from New Case File form",
           event_label: null,
           created_by_name: actorName,
@@ -2847,7 +3076,7 @@ const Matters = () => {
                   </CardHeader>
                   <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
                     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.45fr_1.2fr_1.5fr_1.9fr_1.3fr_1.2fr_1.2fr_1fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                      <div className={cn("grid items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white", CASE_FILES_TABLE_GRID)}>
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -2863,7 +3092,7 @@ const Matters = () => {
                             className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
-                        <div>File No.</div><div>Client</div><div>Parties</div><div>Case Type</div><div>Stage</div><div>Next Date</div><div>Consultant</div>
+                        <div>File No.</div><div>Client</div><div>Parties</div><div>Case Type</div><div>Stage</div><div>Date</div><div>Created</div><div>Assignee</div>
                       </div>
                       <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {isCaseFilesLoading ? (
@@ -2872,7 +3101,7 @@ const Matters = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No case files found.</div>
                         ) : (
                           paginatedCaseFiles.map((caseFile) => (
-                            <div key={caseFile.id} className="grid w-full grid-cols-[0.45fr_1.2fr_1.5fr_1.9fr_1.3fr_1.2fr_1.2fr_1fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                            <div key={caseFile.id} className={cn("grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5", CASE_FILES_TABLE_GRID)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -2892,6 +3121,15 @@ const Matters = () => {
                                 </Badge>
                               </div>
                               <div>{caseFile.nextDate === "--" ? "--" : formatDisplayDate(caseFile.nextDate)}</div>
+                              <div className="flex min-w-0 items-center">
+                                <span
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-semibold text-slate-700"
+                                  aria-label={caseFile.createdByName}
+                                  title={caseFile.createdByName}
+                                >
+                                  {getInitials(caseFile.createdByName)}
+                                </span>
+                              </div>
                               <div>
                                 <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
                                   {caseFile.consultant}
@@ -3117,7 +3355,11 @@ const Matters = () => {
                           ref={(node) => setNewCaseDateEventInputRef(primaryNewCaseDateEvent.id, node)}
                           type="date"
                           value={primaryNewCaseDateEvent.eventDate}
-                          onChange={(e) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventDate: e.target.value })}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventDate: value });
+                            void warnIfSouthAfricanPublicHoliday(value);
+                          }}
                           className="sr-only"
                           aria-hidden="true"
                           tabIndex={-1}
@@ -3175,6 +3417,22 @@ const Matters = () => {
                             {primaryNewCaseEventMeridiem || "AM/PM"}
                           </div>
                         </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></p>
+                        <Select
+                          value={primaryNewCaseDateEvent.duration || undefined}
+                          onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { duration: value })}
+                        >
+                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
+                            <SelectValue placeholder="Please select duration" />
+                          </SelectTrigger>
+                          <SelectContent className="text-[11px]">
+                            {MATTER_DATE_DURATION_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-semibold text-slate-400">Event Description <span className="text-red-600">*</span></p>
@@ -3429,7 +3687,7 @@ const Matters = () => {
                           </Button>
                         </div>
                         <MatterDetailsTable
-                          headerColumns={["Date", "Time", "Description", "Created By", "Actions"]}
+                          headerColumns={["Date", "Time", "Duration", "Description", "Created By", "Actions"]}
                           gridClassName={MATTER_DETAILS_TABLE_GRID}
                           emptyState={<div className="px-2 py-3 text-[11px] text-slate-500">No case dates recorded yet.</div>}
                         >
@@ -3437,6 +3695,7 @@ const Matters = () => {
                             <div key={event.id} className={cn("grid h-10 items-center gap-2 px-2 hover:bg-[#3eca44]/5", MATTER_DETAILS_TABLE_GRID)}>
                               <div className="flex min-w-0 items-center text-slate-700">{formatDisplayDate(event.eventDate)}</div>
                               <div className="flex min-w-0 items-center text-slate-700">{formatDisplayTime24WithMeridiem(event.eventTime)}</div>
+                              <div className="flex min-w-0 items-center text-slate-700">{event.duration || "--"}</div>
                               <div className="flex min-w-0 items-center font-medium text-slate-900">{resolveCaseDateEventLabel(event)}</div>
                               <div className="flex min-w-0 items-center truncate">
                                 <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
@@ -3666,7 +3925,11 @@ const Matters = () => {
                                               ref={caseOutcomeDateInputRef}
                                               type="date"
                                               value={caseEditForm.outcome.outcomeDate}
-                                              onChange={(e) => setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeDate: e.target.value } } : prev)}
+                                              onChange={(e) => {
+                                                const value = e.target.value;
+                                                setCaseEditForm((prev) => prev ? { ...prev, outcome: { ...prev.outcome, outcomeDate: value } } : prev);
+                                                void warnIfSouthAfricanPublicHoliday(value);
+                                              }}
                                               className="sr-only"
                                               aria-hidden="true"
                                               tabIndex={-1}
@@ -3958,7 +4221,11 @@ const Matters = () => {
                 ref={caseDateEventDialogInputRef}
                 type="date"
                 value={caseDateEventForm.eventDate}
-                onChange={(e) => setCaseDateEventForm((prev) => ({ ...prev, eventDate: e.target.value }))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCaseDateEventForm((prev) => ({ ...prev, eventDate: value }));
+                  void warnIfSouthAfricanPublicHoliday(value);
+                }}
                 className="sr-only"
                 aria-hidden="true"
                 tabIndex={-1}
@@ -4016,6 +4283,22 @@ const Matters = () => {
                   {caseDateEventForm.eventTime ? (Number.parseInt(caseDateEventForm.eventTime.split(":")[0] || "0", 10) >= 12 ? "PM" : "AM") : "AM/PM"}
                 </div>
               </div>
+            </div>
+            <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Duration</span>
+              <Select
+                value={caseDateEventForm.duration || undefined}
+                onValueChange={(value) => setCaseDateEventForm((prev) => ({ ...prev, duration: value }))}
+              >
+                <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
+                  <SelectValue placeholder="Please select duration" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {MATTER_DATE_DURATION_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Created By</span>

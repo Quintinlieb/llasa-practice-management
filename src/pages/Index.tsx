@@ -167,7 +167,7 @@ const steps: HowItWorksStep[] = [
 const employerCards = [
   {
     title: "Employing someone at home?",
-    copy: "If you have a domestic worker, gardener, or nanny, you're an employer - even if it doesn't feel that way. nudoc makes it easy to do right by them, without needing a law degree.",
+    copy: "If you have a domestic worker, gardener, or nanny, you're an employer - even if it doesn't feel that way. LLASA makes it easy to do right by them, without needing a law degree.",
     bullets: [
       "Step-by-step guidance - no HR experience needed",
       "Contracts and payslips written in plain language",
@@ -176,7 +176,7 @@ const employerCards = [
   },
   {
     title: "Running a business or HR team?",
-    copy: "Growing a team means more documents, more deadlines, and more risk. nudoc helps you keep everything organised, consistent, and audit-ready - without slowing you down.",
+    copy: "Growing a team means more documents, more deadlines, and more risk. LLASA helps you keep everything organised, consistent, and audit-ready - without slowing you down.",
     bullets: [
       "Generate compliant documents in minutes, not days",
       "Cut the cost of consultants and legal delays",
@@ -269,7 +269,7 @@ const faqs = [
     a: "Yes. Templates are aligned with BCEA, LRA, and sectoral determinations.",
   },
   {
-    q: "Can I use nudoc for domestic workers?",
+    q: "Can I use LLASA for domestic workers?",
     a: "Yes. The Domestic plan is built for household employers and includes payslips and UIF support.",
   },
   {
@@ -312,7 +312,7 @@ const Index = () => {
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex flex-1 items-center gap-3">
-            <img src="/zappir_logo_black(1).png" alt="zappir logo" className="h-[30px] w-auto" />
+            <img src="/Horizontal Logo (3).png" alt="LLASA logo" className="h-[30px] w-auto" />
           </div>
           <nav className="hidden flex-1 items-center justify-center gap-8 text-sm font-medium text-slate-600 md:flex">
             {navLinks.map((item) => (
@@ -408,8 +408,8 @@ const Index = () => {
             <div className="relative mx-auto w-full max-w-2xl lg:ml-auto lg:mr-0 lg:max-w-none">
               <div className="relative z-10 mx-auto w-full max-w-[700px] translate-y-[50px] lg:translate-x-[83px] lg:translate-y-[50px] lg:scale-100">
                 <img
-                  src="/zappir_hero_image.png"
-                  alt="Zappir HR document automation illustration"
+                  src="/llasa_thumbnail.png"
+                  alt="LLASA HR document automation"
                   className="block w-full"
                 />
               </div>
@@ -557,8 +557,8 @@ const Index = () => {
                     </span>
                   </span>
                   <img
-                    src="/zappir_logo_black(1).png"
-                    alt="Zappir logo"
+                    src="/Horizontal Logo (3).png"
+                    alt="LLASA logo"
                     className="ml-4 h-10 w-auto object-contain"
                   />
                 </div>
@@ -604,7 +604,7 @@ const Index = () => {
             Everything you need to manage HR docs
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-base text-slate-300">
-            From contracts to compliance, nudoc handles the paperwork so you can focus on your people.
+            From contracts to compliance, LLASA handles the paperwork so you can focus on your people.
           </p>
 
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -653,7 +653,7 @@ const Index = () => {
             Whether it&apos;s your home or your business
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-base text-slate-600">
-            You don't need to be an HR expert. nudoc meets you where you are.
+            You don't need to be an HR expert. LLASA meets you where you are.
           </p>
 
           <div className="mt-12 grid gap-6 md:grid-cols-2">
@@ -827,7 +827,7 @@ const Index = () => {
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white">
                   <FileText className="h-5 w-5" />
                 </span>
-                <span className="text-lg font-semibold text-slate-900">nudoc</span>
+                <span className="text-lg font-semibold text-slate-900">LLASA</span>
               </div>
               <p className="text-sm text-slate-600">
                 SA HR documents made simple. Built for compliance, designed for humans.
@@ -865,7 +865,7 @@ const Index = () => {
             </div>
           </div>
           <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
-            <span>© 2026 nudoc. All rights reserved.</span>
+            <span>© 2026 LLASA. All rights reserved.</span>
             <span>Made with za in South Africa</span>
           </div>
         </div>

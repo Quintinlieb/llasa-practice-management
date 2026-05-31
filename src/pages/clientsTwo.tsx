@@ -688,6 +688,12 @@ const ClientsTwo = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [clientTablePage, setClientTablePage] = useState(1);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [clientStatusFilters, setClientStatusFilters] = useState<Set<string>>(new Set());
+  const [clientServiceFilters, setClientServiceFilters] = useState<Set<string>>(new Set());
+  const [clientGroupFilters, setClientGroupFilters] = useState<Set<string>>(new Set());
+  const [clientIndustryFilters, setClientIndustryFilters] = useState<Set<string>>(new Set());
+  const [clientProvinceFilters, setClientProvinceFilters] = useState<Set<string>>(new Set());
+  const [expandedClientFilterSection, setExpandedClientFilterSection] = useState<string | null>(null);
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
   const [isBulkClientOpen, setIsBulkClientOpen] = useState(false);
   const [newClientStep, setNewClientStep] = useState<1 | 2 | 3>(1);
@@ -1198,12 +1204,69 @@ const ClientsTwo = () => {
     if (match?.[1]) return match[1];
     return raw;
   };
+  const getFilterableValue = (value: unknown, fallback = "") => {
+    const raw = String(value ?? "").trim();
+    if (!raw || raw === "--") return fallback;
+    return raw;
+  };
+  const toggleClientFilterValue = (
+    setter: Dispatch<SetStateAction<Set<string>>>,
+    value: string,
+  ) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+  const clearClientFilters = () => {
+    setClientStatusFilters(new Set());
+    setClientServiceFilters(new Set());
+    setClientGroupFilters(new Set());
+    setClientIndustryFilters(new Set());
+    setClientProvinceFilters(new Set());
+  };
+  const clientFilterOptions = useMemo(() => {
+    const uniqueSorted = (values: string[]) =>
+      Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
+        left.localeCompare(right, undefined, { sensitivity: "base" }),
+      );
+    return {
+      statuses: uniqueSorted(clientRows.map((row) => getFilterableValue(row.status, "Active"))),
+      services: membershipTypeOptions.map((option) => ({ value: option.value, label: option.label })),
+      groups: uniqueSorted(clientRows.map((row) => getFilterableValue(row.groupName, "None"))),
+      industries: uniqueSorted(clientRows.map((row) => getFilterableValue(row.industry))),
+      provinces: uniqueSorted(clientRows.map((row) => getFilterableValue(row.physicalProvince ?? row.province))),
+    };
+  }, [clientRows, membershipTypeOptions]);
+  const activeClientFilterCount =
+    clientStatusFilters.size +
+    clientServiceFilters.size +
+    clientGroupFilters.size +
+    clientIndustryFilters.size +
+    clientProvinceFilters.size;
+  const renderClientFilterOption = (
+    label: string,
+    value: string,
+    selectedValues: Set<string>,
+    setter: Dispatch<SetStateAction<Set<string>>>,
+  ) => (
+    <button
+      key={value}
+      type="button"
+      className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
+      onClick={() => toggleClientFilterValue(setter, value)}
+    >
+      <span className="min-w-0 truncate">{label}</span>
+      {selectedValues.has(value) ? <Check className="h-3.5 w-3.5 shrink-0 text-[#2f9f35]" /> : null}
+    </button>
+  );
   const tableRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return clientRows
       .filter((row) => {
-        if (!q) return true;
-        return [
+        const matchesSearch = !q || [
           row.companyName,
           row.companyNameDisplay,
           row.tradingAs,
@@ -1211,13 +1274,31 @@ const ClientsTwo = () => {
           .join(" ")
           .toLowerCase()
           .includes(q);
+        if (!matchesSearch) return false;
+
+        const rowStatus = getFilterableValue(row.status, "Active");
+        if (clientStatusFilters.size > 0 && !clientStatusFilters.has(rowStatus)) return false;
+
+        const rowServices = Array.isArray(row.memberTypes) ? row.memberTypes.map((service: unknown) => String(service || "").trim()) : [];
+        if (clientServiceFilters.size > 0 && !rowServices.some((service) => clientServiceFilters.has(service))) return false;
+
+        const rowGroup = getFilterableValue(row.groupName, "None");
+        if (clientGroupFilters.size > 0 && !clientGroupFilters.has(rowGroup)) return false;
+
+        const rowIndustry = getFilterableValue(row.industry);
+        if (clientIndustryFilters.size > 0 && !clientIndustryFilters.has(rowIndustry)) return false;
+
+        const rowProvince = getFilterableValue(row.physicalProvince ?? row.province);
+        if (clientProvinceFilters.size > 0 && !clientProvinceFilters.has(rowProvince)) return false;
+
+        return true;
       })
       .sort((left, right) => {
         const leftClientName = String(left.tradingAs || left.companyNameDisplay || left.companyName || "").trim();
         const rightClientName = String(right.tradingAs || right.companyNameDisplay || right.companyName || "").trim();
         return leftClientName.localeCompare(rightClientName, undefined, { sensitivity: "base" });
       });
-  }, [clientRows, searchQuery]);
+  }, [clientGroupFilters, clientIndustryFilters, clientProvinceFilters, clientRows, clientServiceFilters, clientStatusFilters, searchQuery]);
   const totalClientTablePages = Math.max(1, Math.ceil(tableRows.length / CLIENTS_TABLE_PAGE_SIZE));
   const currentClientTablePage = Math.min(clientTablePage, totalClientTablePages);
   const currentClientTableOffset = (currentClientTablePage - 1) * CLIENTS_TABLE_PAGE_SIZE;
@@ -1227,6 +1308,9 @@ const ClientsTwo = () => {
   );
   const clientTableRangeStart = tableRows.length === 0 ? 0 : currentClientTableOffset + 1;
   const clientTableRangeEnd = tableRows.length === 0 ? 0 : Math.min(currentClientTableOffset + CLIENTS_TABLE_PAGE_SIZE, tableRows.length);
+  useEffect(() => {
+    setClientTablePage(1);
+  }, [clientGroupFilters, clientIndustryFilters, clientProvinceFilters, clientServiceFilters, clientStatusFilters, searchQuery]);
   const allVisibleSelected = useMemo(
     () => paginatedTableRows.length > 0 && paginatedTableRows.every((row) => selectedClientIds.has(String(row.id))),
     [paginatedTableRows, selectedClientIds],
@@ -4249,21 +4333,96 @@ const ClientsTwo = () => {
                             ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <Popover open={isFilterOpen} onOpenChange={setIsFilterOpen}>
-                          <PopoverTrigger asChild>
+                        <DropdownMenu open={isFilterOpen} onOpenChange={(open) => { setIsFilterOpen(open); if (!open) setExpandedClientFilterSection(null); }}>
+                          <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-8 w-24 justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] data-[state=open]:rounded-b-none data-[state=open]:border-[#3eca44]"
+                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
                             >
                               <span>Filter</span>
                               <ChevronDown className={`h-4 w-4 transition-transform ${isFilterOpen ? "rotate-180" : ""}`} aria-hidden="true" />
                             </Button>
-                          </PopoverTrigger>
-                          <PopoverContent side="bottom" align="end" sideOffset={0} className="w-[220px] rounded-t-none border border-slate-200 border-t-0 bg-white p-3 shadow-lg">
-                            <p className="text-[11px] text-slate-600">Filter options can be added here.</p>
-                          </PopoverContent>
-                        </Popover>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
+                            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                              <span className="text-[12px] font-semibold text-slate-800">Filter</span>
+                              <button
+                                type="button"
+                                className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
+                                onClick={() => {
+                                  clearClientFilters();
+                                  setIsFilterOpen(false);
+                                }}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                            <div className="divide-y divide-slate-200">
+                              {[
+                                {
+                                  key: "status",
+                                  label: "Status",
+                                  options: clientFilterOptions.statuses.map((value) => ({ value, label: value })),
+                                  selectedValues: clientStatusFilters,
+                                  setter: setClientStatusFilters,
+                                },
+                                {
+                                  key: "services",
+                                  label: "Services",
+                                  options: clientFilterOptions.services,
+                                  selectedValues: clientServiceFilters,
+                                  setter: setClientServiceFilters,
+                                },
+                                {
+                                  key: "group",
+                                  label: "Group",
+                                  options: clientFilterOptions.groups.map((value) => ({ value, label: value })),
+                                  selectedValues: clientGroupFilters,
+                                  setter: setClientGroupFilters,
+                                },
+                                {
+                                  key: "industry",
+                                  label: "Industry",
+                                  options: clientFilterOptions.industries.map((value) => ({ value, label: value })),
+                                  selectedValues: clientIndustryFilters,
+                                  setter: setClientIndustryFilters,
+                                },
+                                {
+                                  key: "province",
+                                  label: "Province",
+                                  options: clientFilterOptions.provinces.map((value) => ({ value, label: value })),
+                                  selectedValues: clientProvinceFilters,
+                                  setter: setClientProvinceFilters,
+                                },
+                              ].map((section) => (
+                                <div key={section.key}>
+                                  <button
+                                    type="button"
+                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedClientFilterSection === section.key ? "bg-slate-100" : ""}`}
+                                    onClick={() => setExpandedClientFilterSection((prev) => (prev === section.key ? null : section.key))}
+                                  >
+                                    <span>{section.label}</span>
+                                    <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedClientFilterSection === section.key ? "rotate-180" : ""}`} />
+                                  </button>
+                                  {expandedClientFilterSection === section.key ? (
+                                    section.options.length > 0 ? (
+                                      <div className="max-h-[190px] overflow-y-auto px-3 pb-2">
+                                        {section.options.map((option) =>
+                                          renderClientFilterOption(option.label, option.value, section.selectedValues, section.setter),
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <p className="px-3 pb-2 text-[11px] text-slate-400">No options found.</p>
+                                    )
+                                  ) : (
+                                    null
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -4302,7 +4461,7 @@ const ClientsTwo = () => {
                   </CardHeader>
                   <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
                     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                      <div className="grid grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white [&>*+*]:pl-2">
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -4323,7 +4482,7 @@ const ClientsTwo = () => {
                         {paginatedTableRows.map((row) => (
                           <div
                             key={row.id}
-                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5"
+                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                             onClick={() => openClientFile(row)}
                           >
                             <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
@@ -4944,12 +5103,12 @@ const ClientsTwo = () => {
 
                   <Tabs value={activeClientTab} onValueChange={(value) => setActiveClientTab(value as ClientDetailsTab)} className="flex min-h-0 flex-1 flex-col">
                     <TabsList className="grid w-full grid-cols-6 bg-slate-100">
-                      <TabsTrigger value="company" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
-                      <TabsTrigger value="membership" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
-                      <TabsTrigger value="notes" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
-                      <TabsTrigger value="tasks" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Tasks</TabsTrigger>
-                      <TabsTrigger value="matters" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
-                      <TabsTrigger value="documents" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
+                      <TabsTrigger value="company" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Company</TabsTrigger>
+                      <TabsTrigger value="membership" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Membership</TabsTrigger>
+                      <TabsTrigger value="notes" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Notes</TabsTrigger>
+                      <TabsTrigger value="tasks" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Tasks</TabsTrigger>
+                      <TabsTrigger value="matters" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Matters</TabsTrigger>
+                      <TabsTrigger value="documents" className="px-1 text-[10.67px] data-[state=inactive]:text-slate-500 data-[state=inactive]:hover:text-[#2f9f35] data-[state=inactive]:hover:text-[12.33px] data-[state=active]:bg-[#2D4256] data-[state=active]:text-white data-[state=active]:shadow-none focus-visible:outline-none focus-visible:ring-0">Documents</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="company" className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">

@@ -21,13 +21,15 @@ import {
   saveMinimizedDocumentTabs,
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Menu, Minus, Search, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, FileText, Menu, Minus, Search, Undo2, X } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 
 type DocumentKey =
   | "codeOfConduct"
   | "discWarningGenerator"
   | "disciplinaryHearingNotice"
+  | "abscondHearingNotice"
   | "disciplinaryHearingOutcome"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
@@ -115,6 +117,38 @@ const formatDocumentClientName = (value: string) => {
   return parts.length > 1 ? String(parts[parts.length - 1] || "").trim() || raw : raw;
 };
 
+const getDocumentTypePillClassName = (type: string) => {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("discipline") || normalized.includes("warning") || normalized.includes("hearing")) {
+    return "border-red-600 bg-red-50 text-red-700 hover:bg-red-50 hover:text-red-700";
+  }
+  if (normalized.includes("contract") || normalized.includes("addendum")) {
+    return "border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
+  }
+  if (normalized.includes("performance")) {
+    return "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+  }
+  if (normalized.includes("notice")) {
+    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+  }
+  if (normalized.includes("termination") || normalized.includes("retrenchment") || normalized.includes("abscondment")) {
+    return "border-slate-500 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+  }
+  if (normalized.includes("service") || normalized.includes("certificate")) {
+    return "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
+  }
+  if (normalized.includes("debt")) {
+    return "border-cyan-600 bg-cyan-50 text-cyan-700 hover:bg-cyan-50 hover:text-cyan-700";
+  }
+  return "border-[#2D4256] bg-slate-100 text-[#2D4256] hover:bg-slate-100 hover:text-[#2D4256]";
+};
+
+const getInitials = (value: unknown) => {
+  const tokens = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return "--";
+  return tokens.slice(0, 2).map((token) => token.charAt(0).toUpperCase()).join("");
+};
+
 const getDiscWarningBreadcrumbClientName = (draftState: unknown) => {
   if (!draftState || typeof draftState !== "object") return "";
   const clientForm = (draftState as { clientForm?: unknown }).clientForm;
@@ -139,6 +173,22 @@ const getDiscHearingBreadcrumbClientName = (draftState: unknown) => {
   const tradingAsName = String(candidate.clientTradingAsName || "").trim();
   if (tradingAsName) return tradingAsName;
   return String(candidate.clientRegisteredName || "").trim();
+};
+
+const getAbscondHearingBreadcrumbClientName = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const clientDetails = (draftState as { clientDetails?: unknown }).clientDetails;
+  if (!clientDetails || typeof clientDetails !== "object") return "";
+  const candidate = clientDetails as {
+    tradingAs?: unknown;
+    registeredName?: unknown;
+    clientName?: unknown;
+  };
+  const tradingAsName = String(candidate.tradingAs || "").trim();
+  if (tradingAsName) return tradingAsName;
+  const registeredName = String(candidate.registeredName || "").trim();
+  if (registeredName) return registeredName;
+  return String(candidate.clientName || "").trim();
 };
 
 const getDiscHearingOutcomeBreadcrumbClientName = (draftState: unknown) => {
@@ -191,6 +241,8 @@ const splitCreatedOnParts = (value: string) => {
   };
 };
 
+const documentsTableGridClassName = "grid-cols-[0.39fr_2.35fr_2.05fr_0.82fr_0.9fr_0.65fr_0.5fr]";
+
 const loadCachedDocumentRows = (): DocumentTableRow[] => {
   try {
     const raw = sessionStorage.getItem(documentsTableCacheKey);
@@ -233,6 +285,7 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
   disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DiscHearingNoticeGenerator")),
+  abscondHearingNotice: lazyDocumentComponent(() => import("./AbscondHearingNoticeGenerator")),
   disciplinaryHearingOutcome: lazyDocumentComponent(() => import("./DisciplinaryHearingOutcomeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
@@ -256,6 +309,7 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
+  abscondHearingNotice: { category: "Notices", label: "Abscondment Hearing" },
   disciplinaryHearingOutcome: { category: "Outcome", label: "Disciplinary Hearing Outcome" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
@@ -296,6 +350,7 @@ const terminationLetterDocumentKeys = [
 
 const noticeDocumentKeys = [
   "disciplinaryHearingNotice",
+  "abscondHearingNotice",
   "precautionarySuspensionNotice",
   "contemplatedRetrenchmentNotice",
   "incapacityPerformanceHearingNotice",
@@ -336,6 +391,7 @@ const documentCreateFlyoutItems: Record<
   ],
   Notices: [
     { title: "Disciplinary Hearing", selectedDocument: "disciplinaryHearingNotice" },
+    { title: "Abscondment Hearing", selectedDocument: "abscondHearingNotice" },
     { title: "Incapacity Hearing (Performance)", selectedDocument: "incapacityPerformanceHearingNotice" },
     { title: "Incapacity Hearing (Ill Health)", selectedDocument: "incapacityIllHealthHearingNotice" },
     { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
@@ -357,6 +413,16 @@ const documentCreateFlyoutItems: Record<
   ],
 };
 
+const activeNewDocumentKeys = new Set<DocumentKey>([
+  "codeOfConduct",
+  "discWarningGenerator",
+  "permContract",
+  "noticeTermination",
+  "disciplinaryHearingNotice",
+  "abscondHearingNotice",
+  "disciplinaryHearingOutcome",
+]);
+
 type DocumentCreateCategory = (typeof documentCreateMenuItems)[number]["title"];
 
 const wizardDocumentKeys = [
@@ -374,6 +440,7 @@ const wizardDocumentKeys = [
 const darkStepperDocumentKeys = [
   "discWarningGenerator",
   "disciplinaryHearingNotice",
+  "abscondHearingNotice",
   "disciplinaryHearingOutcome",
   "permContract",
   ...terminationDocumentKeys,
@@ -382,6 +449,7 @@ const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const chevronTrackerDocumentSet = new Set<DocumentKey>([
   "discWarningGenerator",
   "disciplinaryHearingNotice",
+  "abscondHearingNotice",
   "disciplinaryHearingOutcome",
   "noticeTermination",
   "permContract",
@@ -401,6 +469,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
   discWarningGenerator: "Warning",
   disciplinaryHearingNotice: "Disciplinary Hearing",
+  abscondHearingNotice: "Abscondment Hearing",
   disciplinaryHearingOutcome: "Disciplinary Hearing Outcome",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
@@ -430,6 +499,7 @@ const getMinimizedTabLabel = (documentKey: DocumentKey) =>
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
   disciplinaryHearingNotice: "Notice Details",
+  abscondHearingNotice: "Hearing Details",
   disciplinaryHearingOutcome: "Hearing Details",
   precautionarySuspensionNotice: "Notice Details",
   contemplatedRetrenchmentNotice: "Notice Details",
@@ -510,6 +580,12 @@ const Documents = () => {
       }),
     );
   }, [activeSession, isDocumentsRoute]);
+
+  useEffect(() => {
+    if (!isFilterOpen) {
+      setExpandedFilterSection(null);
+    }
+  }, [isFilterOpen]);
 
   const closeModal = () => {
     setActiveSession(null);
@@ -762,6 +838,8 @@ const Documents = () => {
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
   const discHearingBreadcrumbClientName =
     modalDocument === "disciplinaryHearingNotice" ? getDiscHearingBreadcrumbClientName(activeSession?.draftState) : "";
+  const abscondHearingBreadcrumbClientName =
+    modalDocument === "abscondHearingNotice" ? getAbscondHearingBreadcrumbClientName(activeSession?.draftState) : "";
   const discHearingOutcomeBreadcrumbClientName =
     modalDocument === "disciplinaryHearingOutcome" ? getDiscHearingOutcomeBreadcrumbClientName(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
@@ -773,6 +851,8 @@ const Documents = () => {
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
       : modalDocument === "disciplinaryHearingNotice" && discHearingBreadcrumbClientName
         ? `${modalTitle} (${discHearingBreadcrumbClientName})`
+        : modalDocument === "abscondHearingNotice" && abscondHearingBreadcrumbClientName
+          ? `${modalTitle} (${abscondHearingBreadcrumbClientName})`
         : modalDocument === "disciplinaryHearingOutcome" && discHearingOutcomeBreadcrumbClientName
           ? `Disciplinary Hearing (${discHearingOutcomeBreadcrumbClientName})`
           : modalDocument === "disciplinaryHearingOutcome"
@@ -1529,26 +1609,33 @@ const Documents = () => {
                                   </DropdownMenuItem>
                                   {isOpen ? (
                                     <div className="pb-1">
-                                      {flyoutItems.map((item) => (
-                                        <DropdownMenuItem
-                                          key={`${category.title}-${item.title}`}
-                                          onSelect={(event) => {
-                                            event.preventDefault();
-                                            if (item.disabled || !item.selectedDocument) return;
-                                            openDocumentGenerator(item.selectedDocument);
-                                          }}
-                                          disabled={item.disabled || !item.selectedDocument}
-                                          className={cn(
-                                            newDocumentSubItemStyle,
-                                            item.disabled || !item.selectedDocument ? "cursor-not-allowed opacity-50" : "",
-                                          )}
-                                        >
-                                          <span className="flex items-center gap-2">
-                                            <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden="true" />
-                                            <span>{item.title}</span>
-                                          </span>
-                                        </DropdownMenuItem>
-                                      ))}
+                                      {flyoutItems.map((item) => {
+                                        const itemDisabled =
+                                          item.disabled ||
+                                          !item.selectedDocument ||
+                                          !activeNewDocumentKeys.has(item.selectedDocument);
+
+                                        return (
+                                          <DropdownMenuItem
+                                            key={`${category.title}-${item.title}`}
+                                            onSelect={(event) => {
+                                              event.preventDefault();
+                                              if (itemDisabled || !item.selectedDocument) return;
+                                              openDocumentGenerator(item.selectedDocument);
+                                            }}
+                                            disabled={itemDisabled}
+                                            className={cn(
+                                              newDocumentSubItemStyle,
+                                              itemDisabled ? "cursor-not-allowed opacity-50" : "",
+                                            )}
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden="true" />
+                                              <span>{item.title}</span>
+                                            </span>
+                                          </DropdownMenuItem>
+                                        );
+                                      })}
                                     </div>
                                   ) : null}
                                 </div>
@@ -1561,7 +1648,7 @@ const Documents = () => {
                   </CardHeader>
                   <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
                     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white">
+                      <div className={cn("grid items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white [&>*+*]:pl-2", documentsTableGridClassName)}>
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -1572,10 +1659,11 @@ const Documents = () => {
                           />
                         </div>
                         <div>Document Name</div>
-                        <div>Type</div>
                         <div>Client Name</div>
-                        <div>Created On</div>
-                        <div>Created By</div>
+                        <div className="text-center">Type</div>
+                        <div className="text-center">Created On</div>
+                        <div className="text-center">Created By</div>
+                        <div className="text-center">View</div>
                       </div>
                       <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {isDocumentsLoading ? (
@@ -1584,7 +1672,7 @@ const Documents = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
                           paginatedDocumentRows.map((row) => (
-                            <div key={row.id} className="group grid w-full grid-cols-[0.39fr_2.55fr_1.25fr_2.2fr_1.3fr_1.6fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5">
+                            <div key={row.id} className={cn("group grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", documentsTableGridClassName)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -1595,31 +1683,62 @@ const Documents = () => {
                                 />
                               </div>
                               <div>
-                                {row.fileUrl ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openDocumentRowFile(row.fileUrl)}
-                                    className="text-left transition-colors group-hover:font-semibold group-hover:underline group-hover:underline-offset-2 hover:text-[#2f9f35]"
-                                  >
-                                    {row.documentName}
-                                  </button>
-                                ) : (
-                                  <span className="transition-colors group-hover:font-semibold group-hover:underline group-hover:underline-offset-2">
-                                    {row.documentName}
-                                  </span>
-                                )}
+                                <span className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
+                                  {row.documentName}
+                                </span>
                               </div>
-                              <div>{row.documentType}</div>
-                              <div>{formatDocumentClientName(row.clientName)}</div>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span>{splitCreatedOnParts(row.createdOn).date}</span>
-                                {splitCreatedOnParts(row.createdOn).time ? (
-                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                                    {splitCreatedOnParts(row.createdOn).time}
+                              <div className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">{formatDocumentClientName(row.clientName)}</div>
+                              <div className="flex justify-center">
+                                {row.documentType ? (
+                                  <span
+                                    className={cn(
+                                      "inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium leading-5 shadow-none",
+                                      getDocumentTypePillClassName(row.documentType),
+                                    )}
+                                  >
+                                    <span className="truncate">{row.documentType}</span>
                                   </span>
                                 ) : null}
                               </div>
-                              <div>{row.createdBy}</div>
+                              <div className="flex justify-center">
+                                {splitCreatedOnParts(row.createdOn).date ? (
+                                  <Tooltip disableHoverableContent>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-block cursor-default transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
+                                        {splitCreatedOnParts(row.createdOn).date}
+                                      </span>
+                                    </TooltipTrigger>
+                                    {splitCreatedOnParts(row.createdOn).time ? (
+                                      <TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[9.84px] shadow-none">
+                                        {`@ ${splitCreatedOnParts(row.createdOn).time}`}
+                                      </TooltipContent>
+                                    ) : null}
+                                  </Tooltip>
+                                ) : (
+                                  "--"
+                                )}
+                              </div>
+                              <div className="flex min-w-0 items-center justify-center">
+                                <span
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-semibold text-slate-700"
+                                  aria-label={row.createdBy || "Unknown user"}
+                                  title={row.createdBy || "Unknown user"}
+                                >
+                                  {getInitials(row.createdBy)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 w-7 items-center justify-center bg-transparent text-black transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-40"
+                                  onClick={() => openDocumentRowFile(row.fileUrl)}
+                                  disabled={!row.fileUrl}
+                                  aria-label={`View ${row.documentName || "document"}`}
+                                  title="View PDF"
+                                >
+                                  <FileText className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
                           ))
                         )}
@@ -1729,7 +1848,7 @@ const Documents = () => {
                       <span className="text-white/60">
                       {modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
-                        : modalDocument === "disciplinaryHearingNotice"
+                        : modalDocument === "disciplinaryHearingNotice" || modalDocument === "abscondHearingNotice"
                           ? "Documents / Notices / "
                           : modalDocument === "disciplinaryHearingOutcome"
                             ? "Documents / Outcome / "

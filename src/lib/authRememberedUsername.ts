@@ -1,4 +1,4 @@
-const REMEMBERED_USERNAME_KEY = "nudoc.rememberedUsername";
+const REMEMBERED_USERNAME_KEY = "llasa.rememberedUsername";
 
 export const readRememberedUsername = (): string => {
   if (typeof window === "undefined") return "";

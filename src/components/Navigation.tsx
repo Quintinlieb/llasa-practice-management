@@ -30,8 +30,8 @@ const Navigation = () => {
       <div className="container mx-auto px-6 py-4">
         <div className="flex justify-between items-center">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <img src="/logo.svg" alt="nudoc logo" className="h-6 w-6" />
-            <span className="font-bold text-xl">nudoc</span>
+            <img src="/llasa_thumbnail.png" alt="LLASA logo" className="h-6 w-6" />
+            <span className="font-bold text-xl">LLASA</span>
           </Link>
 
           <nav className="flex items-center gap-1">

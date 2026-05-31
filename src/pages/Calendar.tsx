@@ -786,16 +786,8 @@ const CalendarPage = () => {
       options.set(value.toLowerCase(), { value, label: member.label });
     });
 
-    calendarEntries.forEach((entry) => {
-      const ownerId = normalizeText(entry.ownerId);
-      const ownerLabel = normalizeText(entry.ownerLabel);
-      const value = ownerId || ownerLabel;
-      if (!value || options.has(value.toLowerCase())) return;
-      options.set(value.toLowerCase(), { value, label: ownerLabel || value });
-    });
-
     return [...options.values()].sort((left, right) => left.label.localeCompare(right.label));
-  }, [calendarEntries, teamFilterOptions]);
+  }, [teamFilterOptions]);
   const summaryEntries = useMemo(() => {
     const rangeStart =
       view === "month"
@@ -843,6 +835,12 @@ const CalendarPage = () => {
     }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isSummaryFilterOpen) {
+      setExpandedSummaryFilterSection(null);
+    }
+  }, [isSummaryFilterOpen]);
 
   useEffect(() => {
     const [hour = "", minute = ""] = newEntryForm.time.split(":");
@@ -1612,7 +1610,22 @@ const CalendarPage = () => {
                                     >
                                       <AccordionItem value={event.id} className="relative border-b-0">
                                         <span className={cn("absolute inset-y-3 left-0 z-10 w-1 rounded-full", event.palette.accent)} />
-                                        <AccordionTrigger className="gap-2 px-2.5 py-1.5 pl-4 text-left hover:no-underline [&>svg]:hidden">
+                                        {event.kind === "matter" && event.matterId ? (
+                                          <button
+                                            type="button"
+                                            className={cn(
+                                              "absolute right-2.5 top-2 z-20 text-[10px] font-semibold leading-none text-black transition-colors hover:underline",
+                                              event.palette.hoverText,
+                                            )}
+                                            onClick={(clickEvent) => {
+                                              clickEvent.stopPropagation();
+                                              navigate("/case-files", { state: { openCaseId: event.matterId } });
+                                            }}
+                                          >
+                                            View
+                                          </button>
+                                        ) : null}
+                                        <AccordionTrigger className="gap-2 px-2.5 py-1.5 pl-4 pr-12 text-left hover:no-underline [&>svg]:hidden">
                                           <div className="flex min-w-0 items-center gap-1.5">
                                             <p className="truncate text-[11px] font-semibold text-slate-800">{event.title}</p>
                                             {event.clientLabel ? (
@@ -1645,21 +1658,6 @@ const CalendarPage = () => {
                                                 {getInitials(event.ownerLabel)}
                                               </span>
                                             </div>
-                                            {event.kind === "matter" && event.matterId ? (
-                                              <button
-                                                type="button"
-                                                className={cn(
-                                                  "shrink-0 text-[10px] font-semibold leading-none text-black transition-colors hover:underline",
-                                                  event.palette.hoverText,
-                                                )}
-                                                onClick={(clickEvent) => {
-                                                  clickEvent.stopPropagation();
-                                                  navigate("/case-files", { state: { openCaseId: event.matterId } });
-                                                }}
-                                              >
-                                                View
-                                              </button>
-                                            ) : null}
                                           </div>
                                         </AccordionContent>
                                       </AccordionItem>

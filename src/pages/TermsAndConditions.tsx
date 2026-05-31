@@ -12,7 +12,7 @@ const sections = [
         intro:
           "In these Terms and Conditions, unless the context indicates otherwise, the following words and expressions shall bear the meanings assigned to them below:",
         items: [
-          "1.1.1 \"Application\" means the Nudoc web-based software application operated by the Provider.",
+          "1.1.1 \"Application\" means the LLASA web-based software application operated by the Provider.",
           "1.1.2 \"Business Plan\" means the subscription plan intended for businesses and employers, allowing for multiple Users under a single Account.",
           "1.1.3 \"Domestic Plan\" means the subscription plan intended for private households employing domestic workers, limited to a single User.",
           "1.1.4 \"Documents\" means employment-related documents generated through the Application, including but not limited to contracts of employment, disciplinary notices, warnings, and related HR documentation.",
@@ -796,7 +796,7 @@ const sections = [
         items: [
           "23.1.1 The Provider's details for purposes of legal notices and correspondence are as follows:",
           "The Labour Law Association South Africa CC",
-          "support@nudoc.co.za",
+          "support@llasa.co.za",
         ],
       },
     ],
@@ -921,7 +921,7 @@ const TermsAndConditions = () => {
               Terms & Conditions
             </p>
             <p className="mt-3 text-xs text-slate-900 sm:text-sm">
-              This page summarises the terms and conditions for using the Nudoc platform.
+              This page summarises the terms and conditions for using the LLASA platform.
             </p>
           </section>
 

@@ -99,6 +99,7 @@ type EmployeeStepState = {
 
 type TerminationStepState = {
   hearingDate: string;
+  letterDate: string;
   misconductTypes: string[];
   progressiveDisciplinaryAction: "" | "Yes" | "No PDA applied";
   terminationNotice: "None" | "One week" | "Two weeks" | "One month";
@@ -176,6 +177,7 @@ const emptyEmployeeState: EmployeeStepState = {
 
 const emptyTerminationState: TerminationStepState = {
   hearingDate: "",
+  letterDate: "",
   misconductTypes: [],
   progressiveDisciplinaryAction: "",
   terminationNotice: "None",
@@ -675,7 +677,7 @@ const MiscTermPreview = ({
   onAddParagraphCancel: () => void;
   onDeleteCustomParagraph: (id: string) => void;
 }) => {
-  const currentDateDisplay = formatLongDate(new Date().toISOString()) || formatLongDate(String(new Date()));
+  const currentDateDisplay = formatLongDate(termination.letterDate) || "[letter date]";
   const employeeFullName = [employee.name, employee.surname].map((value) => value.trim()).filter(Boolean).join(" ");
   const employeeLocationLine = [employee.city.trim(), employee.province.trim()].filter(Boolean).join(", ");
   const employeeAddressLines = [employee.addressLine1.trim(), employeeLocationLine, employee.areaCode.trim()].filter(Boolean);
@@ -753,7 +755,7 @@ const MiscTermPreview = ({
         </div>
 
         <div className="mt-14">
-          <p>{`Dear ${employeeFullName || "[employee name]"}`}</p>
+          <p>Dear Sir / Madam</p>
         </div>
 
         <div className="mt-8">
@@ -946,12 +948,14 @@ const MiscTermLetterGenerator = ({
   const [addingAfterId, setAddingAfterId] = useState<string | null | undefined>(undefined);
   const [newParagraphDraft, setNewParagraphDraft] = useState("");
   const [misconductSearchOpen, setMisconductSearchOpen] = useState(false);
+  const [misconductSearchValue, setMisconductSearchValue] = useState("");
   const [issuingMethodSearchOpen, setIssuingMethodSearchOpen] = useState(false);
   const [bargainingCouncilSearchOpen, setBargainingCouncilSearchOpen] = useState(false);
   const [bargainingCouncilSearchValue, setBargainingCouncilSearchValue] = useState("");
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const letterDatePickerRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     onStepChange?.(steps[activeStep] ?? steps[0]);
@@ -1171,12 +1175,14 @@ const MiscTermLetterGenerator = ({
     employee.areaCode.trim().length > 0;
   const isTerminationStepComplete =
     termination.hearingDate.trim().length > 0 &&
+    termination.letterDate.trim().length > 0 &&
     termination.misconductTypes.length > 0 &&
     termination.progressiveDisciplinaryAction.trim().length > 0 &&
     termination.appealNotice.trim().length > 0 &&
     termination.issuingMethods.length > 0 &&
     termination.bargainingCouncil.trim().length > 0;
   const selectedClientLabel = client.companyName || "Select client";
+  const normalizedMisconductSearchValue = misconductSearchValue.trim().toLowerCase();
   const filteredClients = useMemo(() => {
     const searchValue = clientSearchValue.trim().toLowerCase();
     if (!searchValue) return clients;
@@ -1190,6 +1196,10 @@ const MiscTermLetterGenerator = ({
     termination.misconductTypes.length === 0
       ? "Select misconduct type(s)"
       : `${termination.misconductTypes.length} misconduct type(s) selected`;
+  const filteredConductOffences = useMemo(() => {
+    if (!normalizedMisconductSearchValue) return conductOffences;
+    return conductOffences.filter((offence) => offence.name.toLowerCase().includes(normalizedMisconductSearchValue));
+  }, [conductOffences, normalizedMisconductSearchValue]);
   const issuingMethodSelectionLabel =
     termination.issuingMethods.length === 0
       ? "Select method(s) of issuing"
@@ -1414,7 +1424,7 @@ const MiscTermLetterGenerator = ({
       pdf.line(margin, y, pageWidth - margin, y);
       y += 6;
 
-      const currentDateDisplay = formatLongDate(new Date().toISOString()) || "";
+      const currentDateDisplay = formatLongDate(termination.letterDate) || "[letter date]";
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
       pdf.text(currentDateDisplay, pageWidth - margin, y, { align: "right" });
@@ -1448,7 +1458,7 @@ const MiscTermLetterGenerator = ({
       y = Math.max(recipientY, methodY) + 6;
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
-      pdf.text(`Dear ${employeeFullName || "[employee name]"}`, margin, y);
+      pdf.text("Dear Sir / Madam", margin, y);
       y += 12;
 
       pdf.setFont("helvetica", "bold");
@@ -1930,10 +1940,6 @@ const MiscTermLetterGenerator = ({
   const stepThreeBody = (
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
-        <div className="rounded-sm border border-[#d6e8d7] bg-[#f4fbf5] px-3 py-2 text-[10px] text-slate-600">
-          Capture the hearing and issuing details for the misconduct termination letter. All fields in this step are required.
-        </div>
-
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="miscTermHearingDate" className="text-[10px] font-semibold text-slate-600">
@@ -1972,7 +1978,13 @@ const MiscTermLetterGenerator = ({
             <Label htmlFor="miscTermMisconductTypes" className="text-[10px] font-semibold text-slate-600">
               Misconduct Type(s) <span className="text-red-500">*</span>
             </Label>
-            <Popover open={misconductSearchOpen} onOpenChange={setMisconductSearchOpen}>
+            <Popover
+              open={misconductSearchOpen}
+              onOpenChange={(open) => {
+                if (!open) setMisconductSearchValue("");
+                setMisconductSearchOpen(open);
+              }}
+            >
               <PopoverTrigger asChild>
                 <Button
                   id="miscTermMisconductTypes"
@@ -1995,15 +2007,17 @@ const MiscTermLetterGenerator = ({
                 className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
                 onWheel={(event) => event.stopPropagation()}
               >
-                <Command shouldFilter>
+                <Command shouldFilter={false}>
                   <CommandInput
+                    value={misconductSearchValue}
+                    onValueChange={setMisconductSearchValue}
                     placeholder="Search misconduct types..."
                     className="h-8 text-[11px] placeholder:text-[10px]"
                   />
                   <CommandList className="max-h-[248px] overscroll-contain">
                     <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
                     {offenceCategoryOrder.map((category) => {
-                      const offences = conductOffences.filter((offence) => offence.category === category);
+                      const offences = filteredConductOffences.filter((offence) => offence.category === category);
                       if (offences.length === 0) return null;
                       return (
                         <CommandGroup
@@ -2202,6 +2216,39 @@ const MiscTermLetterGenerator = ({
             </Popover>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="miscTermLetterDate" className="text-[10px] font-semibold text-slate-600">
+              Letter Date <span className="text-red-500">*</span>
+            </Label>
+            <div className="flex items-start gap-2">
+              <Input
+                id="miscTermLetterDate"
+                type="text"
+                readOnly
+                value={termination.letterDate ? formatDateForDisplay(termination.letterDate) : ""}
+                placeholder="Please select a date"
+                onClick={() => openHiddenDatePicker(letterDatePickerRef)}
+                onFocus={() => openHiddenDatePicker(letterDatePickerRef)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openHiddenDatePicker(letterDatePickerRef);
+                  }
+                }}
+                className={`${fieldClassName} cursor-pointer placeholder:!font-normal`}
+              />
+              <input
+                ref={letterDatePickerRef}
+                type="date"
+                value={termination.letterDate}
+                onChange={(event) => updateTermination("letterDate", event.target.value)}
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            </div>
+          </div>
+
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="miscTermBargainingCouncil" className="text-[10px] font-semibold text-slate-600">
               Bargaining Council <span className="text-red-500">*</span>
@@ -2276,11 +2323,6 @@ const MiscTermLetterGenerator = ({
           </div>
         </div>
 
-        {!isTerminationStepComplete ? (
-          <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
-            Hearing date, misconduct type, PDA, appeal notice, bargaining council, and at least one issuing method must be completed.
-          </div>
-        ) : null}
       </div>
 
     </div>

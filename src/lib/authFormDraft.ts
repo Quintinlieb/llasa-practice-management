@@ -8,7 +8,7 @@ export type AuthFormDraft = {
   confirmPassword: string;
 };
 
-const AUTH_FORM_DRAFT_KEY = "nudoc.authFormDraft";
+const AUTH_FORM_DRAFT_KEY = "llasa.authFormDraft";
 
 export const readAuthFormDraft = (): AuthFormDraft | null => {
   if (typeof window === "undefined") return null;

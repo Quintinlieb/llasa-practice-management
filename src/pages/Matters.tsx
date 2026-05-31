@@ -224,15 +224,16 @@ const NEW_MATTER_OPTIONS: Array<{ label: string; caseType: (typeof CASE_TYPE_OPT
   { label: "Labour Court", caseType: "Labour Court" },
 ];
 const SUBTYPE_NONE = "None";
+const REFERRAL_SUBTYPE = "Referral";
 const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[number], readonly string[]>> = {
   Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance", "Abscondment"],
   Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
-  CCMA: ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
-  "Bargaining Council": ["Conciliation", "In Limine", "Con/Arb", "Arbitration"],
+  CCMA: [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
+  "Bargaining Council": [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
 };
 const STATUS_OPTIONS: CaseFile["status"][] = ["Active", "Inactive"];
 const PRIORITY_OPTIONS: CaseFile["priority"][] = ["Low", "Medium", "High", "Urgent"];
-const CURRENT_STAGE_OPTIONS = ["Scheduled", "Awaiting Date", "Finalised", "In progress"] as const;
+const CURRENT_STAGE_OPTIONS = ["Referred", "Scheduled", "Awaiting Date", "Finalised", "In progress"] as const;
 const HEARING_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const HEARING_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
 const MATTER_DATE_DURATION_OPTIONS = ["15 mins", "30 mins", "1 hour", "2 hours", "Half day", "Full day"] as const;
@@ -441,6 +442,8 @@ const NON_STAGE_TRIGGER_EVENT_TYPES = new Set([
 
 const getSubtypeOptions = (caseType: string) => CASE_TYPE_SUBTYPE_OPTIONS[caseType as (typeof CASE_TYPE_OPTIONS)[number]] ?? [];
 const shouldHideSubtype = (caseType: string) => caseType === "Labour Court";
+const isReferralSubtype = (caseType: string, subtype: string) =>
+  (caseType === "CCMA" || caseType === "Bargaining Council") && subtype === REFERRAL_SUBTYPE;
 const getSubtypeValueForCaseType = (caseType: string, currentSubtype = "") => {
   if (shouldHideSubtype(caseType)) return SUBTYPE_NONE;
   const options = getSubtypeOptions(caseType);
@@ -745,6 +748,7 @@ const getCaseFileDateSortValue = (value: unknown) => {
 const normalizeCurrentStageValue = (value: unknown) => {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "scheduled") return "Scheduled";
+  if (normalized === "referred") return "Referred";
   if (normalized === "awaiting date") return "Awaiting Date";
   if (normalized === "finalised" || normalized === "finalized") return "Finalised";
   if (normalized === "in progress") return "In progress";
@@ -790,9 +794,15 @@ const doMatterDateIntervalsOverlap = (left: MatterDateConflictInput, right: Matt
   if (!leftInterval || !rightInterval) return false;
   return leftInterval.start.getTime() < rightInterval.end.getTime() && leftInterval.end.getTime() > rightInterval.start.getTime();
 };
-const resolveCurrentStage = (value: unknown, status: CaseFile["status"], events: CaseDateEvent[]) => {
+const resolveCurrentStage = (
+  value: unknown,
+  status: CaseFile["status"],
+  events: CaseDateEvent[],
+  options?: { preserveExplicitStage?: boolean },
+) => {
   if (status === "Inactive") return "Finalised";
   const normalizedStage = normalizeCurrentStageValue(value) || "Awaiting Date";
+  if (options?.preserveExplicitStage && normalizedStage) return normalizedStage;
   const firstScheduledEvent = getFirstScheduledEventDateTime(events);
   if (firstScheduledEvent) {
     const scheduledAt = new Date(`${firstScheduledEvent.eventDate}T${firstScheduledEvent.eventTime || "00:00"}:00`);
@@ -809,6 +819,9 @@ const getCurrentStagePillClassName = (value: unknown) => {
   const stage = normalizeCurrentStageValue(value);
   if (stage === "Scheduled") {
     return "border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50 hover:text-sky-700";
+  }
+  if (stage === "Referred") {
+    return "border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
   }
   if (stage === "Awaiting Date") {
     return "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
@@ -1079,6 +1092,7 @@ const Matters = () => {
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
   const [caseOutcomeMisconductOpen, setCaseOutcomeMisconductOpen] = useState(false);
+  const [caseOutcomeMisconductSearchValue, setCaseOutcomeMisconductSearchValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [caseFilesTablePage, setCaseFilesTablePage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<"all" | CaseFile["status"]>("all");
@@ -1102,6 +1116,12 @@ const Matters = () => {
     eventTime: "",
     duration: "1 hour",
     createdByName: "",
+  });
+  const [caseEditScheduleForm, setCaseEditScheduleForm] = useState({
+    eventType: "",
+    eventDate: "",
+    eventTime: "",
+    duration: "1 hour",
   });
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState("");
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
@@ -1139,6 +1159,7 @@ const Matters = () => {
   const [isSavingCase, setIsSavingCase] = useState(false);
   const caseDateEventDialogInputRef = useRef<HTMLInputElement | null>(null);
   const caseDateEventTimeDialogInputRef = useRef<HTMLInputElement | null>(null);
+  const caseEditScheduleDateInputRef = useRef<HTMLInputElement | null>(null);
   const caseOutcomeDateInputRef = useRef<HTMLInputElement | null>(null);
   const newCaseDateEventInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const caseNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1160,6 +1181,15 @@ const Matters = () => {
     () => getOutcomeFlowConfig(activeOutcomeCaseType, activeOutcomeSubtype),
     [activeOutcomeCaseType, activeOutcomeSubtype],
   );
+  const caseEditNeedsScheduleDate = Boolean(
+    selectedCase &&
+    caseEditForm &&
+    activeCaseTab === "overview" &&
+    caseEditForm.currentStage === "Scheduled" &&
+    !getFirstScheduledEventDateTime(selectedCase.dateEvents ?? []),
+  );
+  const [caseEditScheduleHour = "", caseEditScheduleMinute = ""] = String(caseEditScheduleForm.eventTime || "").split(":");
+  const caseEditScheduleMeridiem = caseEditScheduleHour ? (Number.parseInt(caseEditScheduleHour, 10) >= 12 ? "PM" : "AM") : "";
   const activeOutcomeType = caseEditForm?.outcome.outcomeType || selectedCase?.outcome.outcomeType || "";
   const showOutcomeAmountSettled = shouldShowAmountSettled(caseEditForm?.outcome.outcomeType || selectedCase?.outcome.outcomeType || "");
   const showOutcomeAmountAwarded = shouldShowAmountAwarded(activeOutcomeType);
@@ -1170,6 +1200,11 @@ const Matters = () => {
     activeOutcomeType,
   );
   const activeOutcomeMisconductTypes = caseEditForm?.outcome.misconductTypes || selectedCase?.outcome.misconductTypes || [];
+  const normalizedOutcomeMisconductSearchValue = caseOutcomeMisconductSearchValue.trim().toLowerCase();
+  const filteredOutcomeConductOffences = useMemo(() => {
+    if (!normalizedOutcomeMisconductSearchValue) return conductOffences;
+    return conductOffences.filter((offence) => offence.name.toLowerCase().includes(normalizedOutcomeMisconductSearchValue));
+  }, [conductOffences, normalizedOutcomeMisconductSearchValue]);
   const outcomeMisconductSelectionLabel =
     activeOutcomeMisconductTypes.length === 0
       ? "Select misconduct type(s)"
@@ -1413,8 +1448,14 @@ const Matters = () => {
     setEditingCaseNoteId(null);
   }, [resolveCurrentUserName]);
   const syncCaseFileTimelineSummary = useCallback(
-    async (caseFileId: string, status: CaseFile["status"], currentStage: string, dateEvents: CaseDateEvent[]) => {
-      const resolvedStage = resolveCurrentStage(currentStage, status, dateEvents);
+    async (
+      caseFileId: string,
+      status: CaseFile["status"],
+      currentStage: string,
+      dateEvents: CaseDateEvent[],
+      options?: { preserveExplicitStage?: boolean },
+    ) => {
+      const resolvedStage = resolveCurrentStage(currentStage, status, dateEvents, options);
       const nextDate = getCasePrimaryNextDate(dateEvents);
       const { error } = await (supabase as any)
         .from("case_files")
@@ -1457,7 +1498,9 @@ const Matters = () => {
       ...prev,
       dateEvents,
       nextDate: getCasePrimaryNextDate(dateEvents),
-      currentStage: resolveCurrentStage(prev.currentStage, prev.status, dateEvents),
+      currentStage: resolveCurrentStage(prev.currentStage, prev.status, dateEvents, {
+        preserveExplicitStage: isReferralSubtype(prev.caseType, prev.subtype),
+      }),
     } : prev);
     return dateEvents;
   }, []);
@@ -1829,6 +1872,12 @@ const Matters = () => {
   }, [isNewCaseDialogOpen, loadClientOptions, loadConsultantOptions, loadMentionOptions]);
 
   useEffect(() => {
+    if (!isFiltersPanelOpen) {
+      setExpandedFilterSection(null);
+    }
+  }, [isFiltersPanelOpen]);
+
+  useEffect(() => {
     if (!isCaseEditMode && expandedFilterSection !== "consultant") return;
     void loadConsultantOptions();
   }, [expandedFilterSection, isCaseEditMode, loadConsultantOptions]);
@@ -1896,7 +1945,9 @@ const Matters = () => {
       const mergedCase: CaseFile = {
         ...selectedCase,
         nextDate: getCasePrimaryNextDate(dateEvents),
-        currentStage: resolveCurrentStage(selectedCase.currentStage, selectedCase.status, dateEvents),
+        currentStage: resolveCurrentStage(selectedCase.currentStage, selectedCase.status, dateEvents, {
+          preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
+        }),
         dateEvents,
         notes,
         documents,
@@ -1979,7 +2030,9 @@ const Matters = () => {
       const { error } = await (supabase as any).from("case_dates").delete().eq("id", eventId).eq("case_file_id", selectedCase.id);
       if (error) throw error;
       const dateEvents = await fetchCaseDateEvents(selectedCase.id);
-      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents);
+      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents, {
+        preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
+      });
       await fetchCaseFiles();
       toast({ title: "Success", description: "Matter date deleted." });
     } catch (error: any) {
@@ -2041,7 +2094,9 @@ const Matters = () => {
         if (error) throw error;
       }
       const dateEvents = await fetchCaseDateEvents(selectedCase.id);
-      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents);
+      await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents, {
+        preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
+      });
       await fetchCaseFiles();
       toast({ title: "Success", description: editingCaseDateEventId ? "Matter date updated." : "Matter date added." });
       setIsCaseDateDialogOpen(false);
@@ -2054,6 +2109,12 @@ const Matters = () => {
   const handleCancelCaseEdit = () => {
     if (!selectedCase) return;
     setCaseEditForm(createCaseEditForm(selectedCase));
+    setCaseEditScheduleForm({
+      eventType: "",
+      eventDate: "",
+      eventTime: "",
+      duration: "1 hour",
+    });
     setIsCaseEditMode(false);
   };
   const handleCloseCase = async () => {
@@ -2087,8 +2148,40 @@ const Matters = () => {
     if (!selectedCase || !caseEditForm) return;
     setIsSavingCaseEdit(true);
     try {
+      let overviewDateEvents = selectedCase.dateEvents;
+      let overviewNextDate = selectedCase.nextDate;
       if (activeCaseTab === "overview") {
-        const resolvedStage = resolveCurrentStage(caseEditForm.currentStage, caseEditForm.status, selectedCase.dateEvents);
+        const scheduleEventType = caseEditScheduleForm.eventType.trim();
+        const scheduleEventDate = caseEditScheduleForm.eventDate.trim();
+        const scheduleEventTime = caseEditScheduleForm.eventTime.trim();
+        const scheduleDuration = caseEditScheduleForm.duration.trim();
+        if (caseEditNeedsScheduleDate && (!scheduleEventType || !scheduleEventDate || !scheduleEventTime || !scheduleDuration)) {
+          throw new Error("Date, time, duration and event description are required when changing a matter to Scheduled.");
+        }
+        if (caseEditNeedsScheduleDate) {
+          const conflict = await findMatterDateOverlap(
+            caseEditForm.assignedConsultant.trim() || selectedCase.consultant,
+            [{ id: "", eventDate: scheduleEventDate, eventTime: scheduleEventTime, duration: scheduleDuration }],
+          );
+          if (conflict) {
+            throw new Error(`${caseEditForm.assignedConsultant.trim() || selectedCase.consultant} already has a matter event that overlaps this time${conflict.fileNumber ? ` (${conflict.fileNumber})` : ""}.`);
+          }
+        }
+        const scheduleDraftEvent = caseEditNeedsScheduleDate
+          ? createCaseDateEventDraft({
+              eventType: scheduleEventType,
+              eventDate: scheduleEventDate,
+              eventTime: scheduleEventTime,
+              duration: scheduleDuration,
+              createdByName: resolveCurrentUserName(),
+            })
+          : null;
+        const resolvedStage = resolveCurrentStage(
+          caseEditForm.currentStage,
+          caseEditForm.status,
+          scheduleDraftEvent ? [...selectedCase.dateEvents, scheduleDraftEvent] : selectedCase.dateEvents,
+          { preserveExplicitStage: isReferralSubtype(caseEditForm.caseType, caseEditForm.subtype) },
+        );
         const payload = {
           parties: caseEditForm.parties.trim() || null,
           case_type: caseEditForm.caseType.trim() || null,
@@ -2103,6 +2196,25 @@ const Matters = () => {
         };
         const { error } = await (supabase as any).from("case_files").update(payload).eq("id", selectedCase.id);
         if (error) throw error;
+        if (caseEditNeedsScheduleDate) {
+          const { error: scheduleInsertError } = await (supabase as any).from("case_dates").insert({
+            case_file_id: selectedCase.id,
+            date_type: scheduleEventType,
+            event_label: null,
+            date_value: scheduleEventDate,
+            event_time: scheduleEventTime,
+            duration: scheduleDuration,
+            created_by_name: resolveCurrentUserName(),
+            description: null,
+          });
+          if (scheduleInsertError) throw scheduleInsertError;
+          const dateEvents = await fetchCaseDateEvents(selectedCase.id);
+          overviewDateEvents = dateEvents;
+          overviewNextDate = getCasePrimaryNextDate(dateEvents);
+          await syncCaseFileTimelineSummary(selectedCase.id, caseEditForm.status, resolvedStage, dateEvents, {
+            preserveExplicitStage: isReferralSubtype(caseEditForm.caseType, caseEditForm.subtype),
+          });
+        }
       }
 
       if (activeCaseTab === "outcome") {
@@ -2154,11 +2266,14 @@ const Matters = () => {
         }
       }
 
-      const nextActionDate = selectedCase.nextDate;
       const resolvedOverviewStatus = activeCaseTab === "overview" ? caseEditForm.status : selectedCase.status;
       const resolvedOverviewStage = activeCaseTab === "overview"
-        ? resolveCurrentStage(caseEditForm.currentStage, resolvedOverviewStatus, selectedCase.dateEvents)
-        : resolveCurrentStage(selectedCase.currentStage, selectedCase.status, selectedCase.dateEvents);
+        ? resolveCurrentStage(caseEditForm.currentStage, resolvedOverviewStatus, overviewDateEvents, {
+            preserveExplicitStage: isReferralSubtype(caseEditForm.caseType, caseEditForm.subtype),
+          })
+        : resolveCurrentStage(selectedCase.currentStage, selectedCase.status, overviewDateEvents, {
+            preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
+          });
       const refreshedCase = {
         ...selectedCase,
         parties: activeCaseTab === "overview" ? (caseEditForm.parties.trim() || "--") : selectedCase.parties,
@@ -2171,8 +2286,8 @@ const Matters = () => {
         status: resolvedOverviewStatus,
         priority: activeCaseTab === "overview" ? caseEditForm.priority : selectedCase.priority,
         shortDescription: activeCaseTab === "overview" ? (caseEditForm.shortDescription.trim() || "--") : selectedCase.shortDescription,
-        nextDate: nextActionDate,
-        dateEvents: selectedCase.dateEvents,
+        nextDate: overviewNextDate,
+        dateEvents: overviewDateEvents,
         documents: selectedCase.documents,
         outcome: activeCaseTab === "outcome"
           ? {
@@ -2194,6 +2309,12 @@ const Matters = () => {
       await fetchCaseFiles();
       setSelectedCase({ ...refreshedCase });
       setCaseEditForm(createCaseEditForm({ ...refreshedCase }));
+      setCaseEditScheduleForm({
+        eventType: "",
+        eventDate: "",
+        eventTime: "",
+        duration: "1 hour",
+      });
       setIsCaseEditMode(false);
       toast({ title: "Success", description: "Case updated successfully." });
     } catch (error: any) {
@@ -2235,6 +2356,7 @@ const Matters = () => {
 
   const isSubtypeHidden = shouldHideSubtype(newCaseForm.caseType.trim());
   const subtypeOptions = getSubtypeOptions(newCaseForm.caseType.trim());
+  const isNewCaseReferral = isReferralSubtype(newCaseForm.caseType.trim(), newCaseForm.subtype.trim());
   const isStepOneComplete = Boolean(
     newCaseForm.clientId.trim() &&
     newCaseForm.parties.trim() &&
@@ -2247,10 +2369,15 @@ const Matters = () => {
   const primaryNewCaseEventMeridiem = primaryNewCaseEventHour ? (Number.parseInt(primaryNewCaseEventHour, 10) >= 12 ? "PM" : "AM") : "";
   const isStepTwoComplete = Boolean(
     newCaseForm.forumVenue.trim() &&
-    primaryNewCaseDateEvent.eventDate.trim() &&
-    String(primaryNewCaseDateEvent.eventTime || "").trim() &&
-    String(primaryNewCaseDateEvent.duration || "").trim() &&
-    primaryNewCaseDateEvent.eventType.trim(),
+    (
+      isNewCaseReferral ||
+      (
+        primaryNewCaseDateEvent.eventDate.trim() &&
+        String(primaryNewCaseDateEvent.eventTime || "").trim() &&
+        String(primaryNewCaseDateEvent.duration || "").trim() &&
+        primaryNewCaseDateEvent.eventType.trim()
+      )
+    ),
   );
   const isStepThreeComplete = Boolean(
     newCaseForm.assignedConsultant.trim() &&
@@ -2391,14 +2518,17 @@ const Matters = () => {
     setIsSavingCase(true);
     try {
       const fileNumber = getNextFileNumber(newCaseForm.caseType.trim());
-      const normalizedNewCaseDateEvents = newCaseForm.dateEvents.map((event) => ({
-        ...event,
-        eventType: String(event.eventType || "").trim(),
-        eventDate: String(event.eventDate || "").trim(),
-        eventTime: String(event.eventTime || "").trim(),
-        duration: String(event.duration || "").trim() || "1 hour",
-        createdByName: String(event.createdByName || "").trim() || resolveCurrentUserName(),
-      }));
+      const newCaseIsReferral = isReferralSubtype(newCaseForm.caseType.trim(), newCaseForm.subtype.trim());
+      const normalizedNewCaseDateEvents = newCaseIsReferral
+        ? []
+        : newCaseForm.dateEvents.map((event) => ({
+            ...event,
+            eventType: String(event.eventType || "").trim(),
+            eventDate: String(event.eventDate || "").trim(),
+            eventTime: String(event.eventTime || "").trim(),
+            duration: String(event.duration || "").trim() || "1 hour",
+            createdByName: String(event.createdByName || "").trim() || resolveCurrentUserName(),
+          }));
       const validNewCaseDateEvents = normalizedNewCaseDateEvents
         .filter((event) => event.eventType || event.eventDate);
       const hasIncompleteNewCaseDateEvent = validNewCaseDateEvents.some((event) => !event.eventType || !event.eventDate || !event.eventTime || !event.duration);
@@ -2410,7 +2540,9 @@ const Matters = () => {
         throw new Error(`${newCaseForm.assignedConsultant.trim()} already has a matter event that overlaps this time${conflict.fileNumber ? ` (${conflict.fileNumber})` : ""}.`);
       }
       const nextActionDateForNewCase = getCasePrimaryNextDate(normalizedNewCaseDateEvents);
-      const resolvedNewCaseStage = resolveCurrentStage("Scheduled", newCaseForm.status, normalizedNewCaseDateEvents);
+      const resolvedNewCaseStage = newCaseIsReferral
+        ? "Referred"
+        : resolveCurrentStage("Scheduled", newCaseForm.status, normalizedNewCaseDateEvents);
       const { data: insertedCase, error: caseError } = await (supabase as any)
         .from("case_files")
         .insert({
@@ -3294,8 +3426,14 @@ const Matters = () => {
                         <div className="space-y-1">
                           <p className="text-[10px] font-semibold text-slate-400">Subtype <span className="text-red-600">*</span></p>
                           <Select
-                            value={newCaseForm.subtype || undefined}
-                            onValueChange={(value) => setNewCaseForm((p) => ({ ...p, subtype: value }))}
+                          value={newCaseForm.subtype || undefined}
+                            onValueChange={(value) => setNewCaseForm((p) => ({
+                              ...p,
+                              subtype: value,
+                              dateEvents: isReferralSubtype(p.caseType, value)
+                                ? [createNewCasePrimaryDateEvent(resolveCurrentUserName())]
+                                : p.dateEvents,
+                            }))}
                           >
                             <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Please select subtype" /></SelectTrigger>
                             <SelectContent className="text-[11px]">
@@ -3373,115 +3511,119 @@ const Matters = () => {
                         <p className="text-[10px] font-semibold text-slate-400">Forum / Venue <span className="text-red-600">*</span></p>
                         <Input className={modalInputClass} value={newCaseForm.forumVenue} onChange={(e) => setNewCaseForm((p) => ({ ...p, forumVenue: e.target.value }))} placeholder="CCMA Johannesburg, MIBCO, Teams..." />
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></p>
-                        <Input
-                          className={modalInputClass}
-                          type="text"
-                          readOnly
-                          placeholder="Please select a date"
-                          value={primaryNewCaseDateEvent.eventDate ? formatDisplayDate(primaryNewCaseDateEvent.eventDate) : ""}
-                          onClick={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
-                          onFocus={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null);
-                            }
-                          }}
-                        />
-                        <input
-                          ref={(node) => setNewCaseDateEventInputRef(primaryNewCaseDateEvent.id, node)}
-                          type="date"
-                          value={primaryNewCaseDateEvent.eventDate}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventDate: value });
-                            void warnIfSouthAfricanPublicHoliday(value);
-                          }}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></p>
-                        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
-                          <Select
-                            value={primaryNewCaseEventHour || undefined}
-                            onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${value}:${primaryNewCaseEventMinute || "00"}` })}
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                modalSelectClass,
-                                addModalDropdownToneClass,
-                                "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
-                              )}
-                            >
-                              <div className="flex min-w-0 items-center gap-2">
-                                <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                <SelectValue placeholder="Hour" />
-                              </div>
-                            </SelectTrigger>
-                            <SelectContent className="text-[10px]">
-                              {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
-                                <SelectItem key={hour} value={hour} className="text-[10px]">
-                                  {hour}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Select
-                            value={primaryNewCaseEventMinute || undefined}
-                            onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${primaryNewCaseEventHour || "00"}:${value}` })}
-                          >
-                            <SelectTrigger
-                              className={cn(
-                                modalSelectClass,
-                                addModalDropdownToneClass,
-                                "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
-                              )}
-                            >
-                              <SelectValue placeholder="Min" />
-                            </SelectTrigger>
-                            <SelectContent className="text-[10px]">
-                              {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
-                                <SelectItem key={minute} value={minute} className="text-[10px]">
-                                  {minute}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
-                            {primaryNewCaseEventMeridiem || "AM/PM"}
+                      {!isNewCaseReferral ? (
+                        <>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></p>
+                            <Input
+                              className={modalInputClass}
+                              type="text"
+                              readOnly
+                              placeholder="Please select a date"
+                              value={primaryNewCaseDateEvent.eventDate ? formatDisplayDate(primaryNewCaseDateEvent.eventDate) : ""}
+                              onClick={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
+                              onFocus={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null);
+                                }
+                              }}
+                            />
+                            <input
+                              ref={(node) => setNewCaseDateEventInputRef(primaryNewCaseDateEvent.id, node)}
+                              type="date"
+                              value={primaryNewCaseDateEvent.eventDate}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventDate: value });
+                                void warnIfSouthAfricanPublicHoliday(value);
+                              }}
+                              className="sr-only"
+                              aria-hidden="true"
+                              tabIndex={-1}
+                            />
                           </div>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></p>
-                        <Select
-                          value={primaryNewCaseDateEvent.duration || undefined}
-                          onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { duration: value })}
-                        >
-                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
-                            <SelectValue placeholder="Please select duration" />
-                          </SelectTrigger>
-                          <SelectContent className="text-[11px]">
-                            {MATTER_DATE_DURATION_OPTIONS.map((option) => (
-                              <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Event Description <span className="text-red-600">*</span></p>
-                        <Input
-                          className={modalInputClass}
-                          placeholder="Type event description"
-                          value={primaryNewCaseDateEvent.eventType}
-                          onChange={(e) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventType: e.target.value, createdByName: primaryNewCaseDateEvent.createdByName || resolveCurrentUserName() })}
-                        />
-                      </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></p>
+                            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                              <Select
+                                value={primaryNewCaseEventHour || undefined}
+                                onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${value}:${primaryNewCaseEventMinute || "00"}` })}
+                              >
+                                <SelectTrigger
+                                  className={cn(
+                                    modalSelectClass,
+                                    addModalDropdownToneClass,
+                                    "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                                  )}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                    <SelectValue placeholder="Hour" />
+                                  </div>
+                                </SelectTrigger>
+                                <SelectContent className="text-[10px]">
+                                  {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
+                                    <SelectItem key={hour} value={hour} className="text-[10px]">
+                                      {hour}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Select
+                                value={primaryNewCaseEventMinute || undefined}
+                                onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${primaryNewCaseEventHour || "00"}:${value}` })}
+                              >
+                                <SelectTrigger
+                                  className={cn(
+                                    modalSelectClass,
+                                    addModalDropdownToneClass,
+                                    "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                                  )}
+                                >
+                                  <SelectValue placeholder="Min" />
+                                </SelectTrigger>
+                                <SelectContent className="text-[10px]">
+                                  {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
+                                    <SelectItem key={minute} value={minute} className="text-[10px]">
+                                      {minute}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                                {primaryNewCaseEventMeridiem || "AM/PM"}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></p>
+                            <Select
+                              value={primaryNewCaseDateEvent.duration || undefined}
+                              onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { duration: value })}
+                            >
+                              <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
+                                <SelectValue placeholder="Please select duration" />
+                              </SelectTrigger>
+                              <SelectContent className="text-[11px]">
+                                {MATTER_DATE_DURATION_OPTIONS.map((option) => (
+                                  <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-semibold text-slate-400">Event Description <span className="text-red-600">*</span></p>
+                            <Input
+                              className={modalInputClass}
+                              placeholder="Type event description"
+                              value={primaryNewCaseDateEvent.eventType}
+                              onChange={(e) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventType: e.target.value, createdByName: primaryNewCaseDateEvent.createdByName || resolveCurrentUserName() })}
+                            />
+                          </div>
+                        </>
+                      ) : null}
                     </>
                   )}
 
@@ -3709,6 +3851,107 @@ const Matters = () => {
                                   ))}
                                 </div>
                               ))}
+                              {caseEditNeedsScheduleDate ? (
+                                <div className="space-y-2 border-t border-slate-200 pt-3">
+                                  <p className="text-[10px] font-semibold text-slate-500">Schedule Matter Date</p>
+                                  <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
+                                    <span className="contents">
+                                      <p className="text-[10px] font-medium text-slate-500">Event Description <span className="text-red-600">*</span></p>
+                                      <Input
+                                        className={modalInputClass}
+                                        value={caseEditScheduleForm.eventType}
+                                        onChange={(e) => setCaseEditScheduleForm((prev) => ({ ...prev, eventType: e.target.value }))}
+                                        placeholder="Type event description"
+                                      />
+                                    </span>
+                                    <span className="contents">
+                                      <p className="text-[10px] font-medium text-slate-500">Date <span className="text-red-600">*</span></p>
+                                      <div>
+                                        <Input
+                                          className={modalInputClass}
+                                          type="text"
+                                          readOnly
+                                          placeholder="Please select a date"
+                                          value={caseEditScheduleForm.eventDate ? formatDisplayDate(caseEditScheduleForm.eventDate) : ""}
+                                          onClick={() => openDatePicker(caseEditScheduleDateInputRef.current)}
+                                          onFocus={() => openDatePicker(caseEditScheduleDateInputRef.current)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                              e.preventDefault();
+                                              openDatePicker(caseEditScheduleDateInputRef.current);
+                                            }
+                                          }}
+                                        />
+                                        <input
+                                          ref={caseEditScheduleDateInputRef}
+                                          type="date"
+                                          value={caseEditScheduleForm.eventDate}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            setCaseEditScheduleForm((prev) => ({ ...prev, eventDate: value }));
+                                            void warnIfSouthAfricanPublicHoliday(value);
+                                          }}
+                                          className="sr-only"
+                                          aria-hidden="true"
+                                          tabIndex={-1}
+                                        />
+                                      </div>
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
+                                    <span className="contents">
+                                      <p className="text-[10px] font-medium text-slate-500">Time <span className="text-red-600">*</span></p>
+                                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                                        <Select
+                                          value={caseEditScheduleHour || undefined}
+                                          onValueChange={(value) => setCaseEditScheduleForm((prev) => ({ ...prev, eventTime: `${value}:${caseEditScheduleMinute || "00"}` }))}
+                                        >
+                                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px]`}>
+                                            <SelectValue placeholder="Hour" />
+                                          </SelectTrigger>
+                                          <SelectContent className="text-[10px]">
+                                            {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
+                                              <SelectItem key={hour} value={hour} className="text-[10px]">{hour}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <Select
+                                          value={caseEditScheduleMinute || undefined}
+                                          onValueChange={(value) => setCaseEditScheduleForm((prev) => ({ ...prev, eventTime: `${caseEditScheduleHour || "00"}:${value}` }))}
+                                        >
+                                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass} !h-8 !border-slate-300 !text-[10px]`}>
+                                            <SelectValue placeholder="Min" />
+                                          </SelectTrigger>
+                                          <SelectContent className="text-[10px]">
+                                            {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
+                                              <SelectItem key={minute} value={minute} className="text-[10px]">{minute}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                                          {caseEditScheduleMeridiem || "AM/PM"}
+                                        </div>
+                                      </div>
+                                    </span>
+                                    <span className="contents">
+                                      <p className="text-[10px] font-medium text-slate-500">Duration <span className="text-red-600">*</span></p>
+                                      <Select
+                                        value={caseEditScheduleForm.duration || undefined}
+                                        onValueChange={(value) => setCaseEditScheduleForm((prev) => ({ ...prev, duration: value }))}
+                                      >
+                                        <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
+                                          <SelectValue placeholder="Please select duration" />
+                                        </SelectTrigger>
+                                        <SelectContent className="text-[11px]">
+                                          {MATTER_DATE_DURATION_OPTIONS.map((option) => (
+                                            <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -3975,7 +4218,13 @@ const Matters = () => {
                                           </div>
                                         ) : field === "misconductTypes" ? (
                                           <div className="space-y-2">
-                                            <Popover open={caseOutcomeMisconductOpen} onOpenChange={setCaseOutcomeMisconductOpen}>
+                                            <Popover
+                                              open={caseOutcomeMisconductOpen}
+                                              onOpenChange={(open) => {
+                                                if (!open) setCaseOutcomeMisconductSearchValue("");
+                                                setCaseOutcomeMisconductOpen(open);
+                                              }}
+                                            >
                                               <PopoverTrigger asChild>
                                                 <Button
                                                   type="button"
@@ -3997,12 +4246,17 @@ const Matters = () => {
                                                 className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
                                                 onWheel={(event) => event.stopPropagation()}
                                               >
-                                                <Command shouldFilter>
-                                                  <CommandInput placeholder="Search misconduct types..." className="h-8 text-[11px] placeholder:text-[10px]" />
+                                                <Command shouldFilter={false}>
+                                                  <CommandInput
+                                                    value={caseOutcomeMisconductSearchValue}
+                                                    onValueChange={setCaseOutcomeMisconductSearchValue}
+                                                    placeholder="Search misconduct types..."
+                                                    className="h-8 text-[11px] placeholder:text-[10px]"
+                                                  />
                                                   <CommandList className="max-h-[248px] overscroll-contain">
                                                     <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
                                                     {offenceCategoryOrder.map((category) => {
-                                                      const offences = conductOffences.filter((offence) => offence.category === category);
+                                                      const offences = filteredOutcomeConductOffences.filter((offence) => offence.category === category);
                                                       if (offences.length === 0) return null;
                                                       return (
                                                         <CommandGroup

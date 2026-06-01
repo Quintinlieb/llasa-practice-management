@@ -27,7 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { jsPDF } from "jspdf";
 import { AlertTriangle, Building2, CalendarDays, Check, ChevronDown, Clock3, FileText, MapPinned, User2, X } from "lucide-react";
 
-type DiscHearingNoticeGeneratorProps = {
+type HearingNoticeGeneratorProps = {
   embedded?: boolean;
   externalNavigation?: boolean;
   onRequestClose?: () => void;
@@ -93,6 +93,7 @@ type LogoOrientation = "portrait" | "landscape";
 type HearingFormat = "in_person" | "virtual";
 type VirtualPlatform = "Microsoft Teams" | "Zoom" | "Google Meet" | "Skype";
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
+type HearingType = "Disciplinary" | "Poor Performance" | "Ill Health";
 
 type ConductOffence = {
   name: string;
@@ -125,6 +126,7 @@ type EmployeeFormState = {
 };
 
 type NoticeFormState = {
+  hearingType: HearingType | "";
   hearingDate: string;
   hearingTime: string;
   hearingFormat: HearingFormat | "";
@@ -132,6 +134,10 @@ type NoticeFormState = {
   hearingPlatform: VirtualPlatform | "";
   misconductTypes: string[];
   misconductDescriptions: Record<string, string[]>;
+  performanceConcernTypes: string[];
+  performanceConcernDescriptions: Record<string, string[]>;
+  illHealthConcernTypes: string[];
+  illHealthConcernDescriptions: Record<string, string[]>;
 };
 
 type DiscHearingNoticeDraftState = {
@@ -167,6 +173,7 @@ const emptyEmployeeFormState: EmployeeFormState = {
 };
 
 const emptyNoticeFormState: NoticeFormState = {
+  hearingType: "",
   hearingDate: "",
   hearingTime: "",
   hearingFormat: "in_person",
@@ -174,6 +181,10 @@ const emptyNoticeFormState: NoticeFormState = {
   hearingPlatform: "",
   misconductTypes: [],
   misconductDescriptions: {},
+  performanceConcernTypes: [],
+  performanceConcernDescriptions: {},
+  illHealthConcernTypes: [],
+  illHealthConcernDescriptions: {},
 };
 
 const inputClassName =
@@ -190,6 +201,35 @@ const hearingFormatOptions: Array<{ value: HearingFormat; label: string }> = [
   { value: "virtual", label: "Virtual" },
 ];
 
+const hearingTypeOptions: readonly HearingType[] = [
+  "Disciplinary",
+  "Poor Performance",
+  "Ill Health",
+] as const;
+
+const performanceConcernTypeOptions = [
+  "Not meeting required productivity levels",
+  "Not achieving expected work output",
+  "Work not meeting required quality standards",
+  "Inability to meet deadlines or required turnaround times",
+  "Not achieving agreed performance targets or KPIs",
+  "Inconsistent work performance",
+  "Errors affecting accuracy of work output",
+  "Difficulty performing key duties of the position",
+] as const;
+
+const illHealthConcernTypeOptions = [
+  "Prolonged or repeated absence from work due to ill health",
+  "Medical condition affecting ability to perform core duties",
+  "Medical report of permanent incapacity",
+  "Medical report of temporary incapacity",
+  "Reduced physical capacity affecting required tasks",
+  "Reduced ability to perform duties effectively due to ill health",
+  "Inability to perform duties safely due to health condition",
+  "Ongoing medical restrictions limiting role requirements",
+  "Limited capacity despite reasonable support provided",
+] as const;
+
 const virtualPlatformOptions: readonly VirtualPlatform[] = [
   "Microsoft Teams",
   "Zoom",
@@ -200,34 +240,57 @@ const virtualPlatformOptions: readonly VirtualPlatform[] = [
 const hearingHourOptions = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
 const hearingMinuteOptions = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
 
-const hearingRights = [
-  "The right to be given time to prepare your case.",
-  "The right to be given advance warning of the charges.",
-  "The right to be represented by a fellow employee / shop steward which must be an employee of the company. It is your responsibility to ensure the availability of your representative at the hearing. No external representation is permitted.",
-  "The right to ask questions of any evidence produced or of statements by witnesses.",
-  "The right to a fair and proper hearing.",
-  "The right to call witnesses. It is your responsibility to ensure the availability of your witness/es at the hearing.",
-  "The right to an interpreter. You may request another employee to perform this function.",
-  "The right to appeal against any disciplinary action in terms of the company appeal procedures.",
-  "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalization thereof it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to inform your employer that you cannot attend with valid reasons. If absence is due to invalid reasons, the hearing will continue in your absence.",
-] as const;
+const getHearingRights = (hearingType: HearingType | "") =>
+  [
+    "The right to be given time to prepare your case.",
+    hearingType === "Poor Performance"
+      ? "The right to be given advance warning of the performance concerns."
+      : hearingType === "Ill Health"
+        ? "The right to be given advance warning of the health concerns."
+        : "The right to be given advance warning of the charges.",
+    "The right to be represented by a fellow employee / shop steward which must be an employee of the company. It is your responsibility to ensure the availability of your representative at the hearing. No external representation is permitted.",
+    "The right to ask questions of any evidence produced or of statements by witnesses.",
+    "The right to a fair and proper hearing.",
+    "The right to call witnesses. It is your responsibility to ensure the availability of your witness/es at the hearing.",
+    "The right to an interpreter. You may request another employee to perform this function.",
+    hearingType === "Poor Performance" || hearingType === "Ill Health"
+      ? "The right to appeal against the decision taken by the company in terms of the appeal procedures."
+      : "The right to appeal against any disciplinary action in terms of the company appeal procedures.",
+    "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalization thereof it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to inform your employer that you cannot attend with valid reasons. If absence is due to invalid reasons, the hearing will continue in your absence.",
+  ] as const;
 
-const preliminaryIssuesRows = [
-  { number: "1.", label: "The Complainant is present." },
-  { number: "2.", label: "The Employee is present." },
-  { number: "3.", label: "Representation:" },
-  { number: "3.1", label: "A Shop Steward will represent the Employee." },
-  { number: "3.2", label: "An employee will represent the Employee." },
-  { number: "3.3", label: "The Employee will represent him / herself." },
-  { number: "4.", label: "The Employee requests an interpreter." },
-  { number: "5.", label: "The employee received the notice on ________________________." },
-  { number: "6.", label: "The Employee understands charge(s)." },
-  { number: "7.", label: "The Employee understands all his/her rights." },
-  { number: "8.", label: "The hearing process has been explained to the Employee." },
-  { number: "9.", label: "The Employee has witnesses." },
-  { number: "", label: "PLEA TO CHARGE(S)" },
-] as const;
-const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
+const getPreliminaryIssuesRows = (hearingType: HearingType | "") =>
+  [
+    { number: "1.", label: "The Complainant is present." },
+    { number: "2.", label: "The Employee is present." },
+    { number: "3.", label: "Representation:" },
+    { number: "3.1", label: "A Shop Steward will represent the Employee." },
+    { number: "3.2", label: "An employee will represent the Employee." },
+    { number: "3.3", label: "The Employee will represent him / herself." },
+    { number: "4.", label: "The Employee requests an interpreter." },
+    { number: "5.", label: "The employee received the notice on ________________________." },
+    {
+      number: "6.",
+      label:
+        hearingType === "Poor Performance"
+          ? "The Employee understands performance concern(s)."
+          : hearingType === "Ill Health"
+            ? "The Employee understands health concern(s)."
+            : "The Employee understands charge(s).",
+    },
+    { number: "7.", label: "The Employee understands all his/her rights." },
+    { number: "8.", label: "The hearing process has been explained to the Employee." },
+    { number: "9.", label: "The Employee has witnesses." },
+    {
+      number: "",
+      label:
+        hearingType === "Poor Performance"
+          ? "PLEA TO PERFORMANCE CONCERN(S)"
+          : hearingType === "Ill Health"
+            ? "PLEA TO HEALTH CONCERN(S)"
+            : "PLEA TO CHARGE(S)",
+    },
+  ] as const;
 
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 
@@ -404,6 +467,7 @@ const normalizeNoticeFormState = (value: unknown): NoticeFormState => {
   return {
     ...emptyNoticeFormState,
     ...candidate,
+    hearingType: typeof candidate.hearingType === "string" ? (candidate.hearingType as HearingType | "") : "",
     hearingPlatform:
       typeof candidate.hearingPlatform === "string" ? (candidate.hearingPlatform as VirtualPlatform | "") : "",
     misconductTypes: Array.isArray(candidate.misconductTypes)
@@ -413,6 +477,38 @@ const normalizeNoticeFormState = (value: unknown): NoticeFormState => {
       candidate.misconductDescriptions && typeof candidate.misconductDescriptions === "object"
         ? Object.fromEntries(
             Object.entries(candidate.misconductDescriptions)
+              .filter(
+                ([key, entryValue]) =>
+                  typeof key === "string" &&
+                  (typeof entryValue === "string" ||
+                    (Array.isArray(entryValue) && entryValue.every((item) => typeof item === "string"))),
+              )
+              .map(([key, entryValue]) => [key, Array.isArray(entryValue) ? entryValue : [entryValue]]),
+          )
+        : {},
+    performanceConcernTypes: Array.isArray(candidate.performanceConcernTypes)
+      ? candidate.performanceConcernTypes.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    performanceConcernDescriptions:
+      candidate.performanceConcernDescriptions && typeof candidate.performanceConcernDescriptions === "object"
+        ? Object.fromEntries(
+            Object.entries(candidate.performanceConcernDescriptions)
+              .filter(
+                ([key, entryValue]) =>
+                  typeof key === "string" &&
+                  (typeof entryValue === "string" ||
+                    (Array.isArray(entryValue) && entryValue.every((item) => typeof item === "string"))),
+              )
+              .map(([key, entryValue]) => [key, Array.isArray(entryValue) ? entryValue : [entryValue]]),
+          )
+        : {},
+    illHealthConcernTypes: Array.isArray(candidate.illHealthConcernTypes)
+      ? candidate.illHealthConcernTypes.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    illHealthConcernDescriptions:
+      candidate.illHealthConcernDescriptions && typeof candidate.illHealthConcernDescriptions === "object"
+        ? Object.fromEntries(
+            Object.entries(candidate.illHealthConcernDescriptions)
               .filter(
                 ([key, entryValue]) =>
                   typeof key === "string" &&
@@ -517,8 +613,7 @@ const formatTimeLabel = (value: string) => {
   const minutes = Number.parseInt(minutesRaw || "", 10);
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return value;
   const meridiem = hours >= 12 ? "PM" : "AM";
-  const hour12 = hours % 12 || 12;
-  return `${String(hour12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${meridiem}`;
 };
 
 const formatHearingVenue = (hearingFormat: HearingFormat | "", hearingLocation: string, hearingPlatform: string) => {
@@ -579,23 +674,53 @@ const buildDefaultHearingLocation = (clientForm: ClientFormState) => {
   return companyName ? `${companyName} (Company Premises)` : "";
 };
 
+const getActiveConcernConfig = (noticeForm: NoticeFormState) => {
+  if (noticeForm.hearingType === "Poor Performance") {
+    return {
+      sectionTitle: "C. PERFORMANCE CONCERN(S)",
+      itemLabel: "Concern",
+      itemLabelPlural: "concern type(s)",
+      types: noticeForm.performanceConcernTypes,
+      descriptions: noticeForm.performanceConcernDescriptions,
+    };
+  }
+  if (noticeForm.hearingType === "Ill Health") {
+    return {
+      sectionTitle: "C. ILL-HEALTH CONCERN(S)",
+      itemLabel: "Concern",
+      itemLabelPlural: "ill-health concern type(s)",
+      types: noticeForm.illHealthConcernTypes,
+      descriptions: noticeForm.illHealthConcernDescriptions,
+    };
+  }
+
+  return {
+    sectionTitle: "C. TRANSGRESSION(S) / CHARGE(S)",
+    itemLabel: "Charge",
+    itemLabelPlural: "misconduct type(s)",
+    types: noticeForm.misconductTypes,
+    descriptions: noticeForm.misconductDescriptions,
+  };
+};
+
 const buildPreliminaryChargeRows = (noticeForm: NoticeFormState) => {
-  const rows = noticeForm.misconductTypes.flatMap((type, chargeIndex) => {
-    const label = String(type || "").trim() || `Charge ${chargeIndex + 1}`;
-    const counts = noticeForm.misconductDescriptions[type] || [""];
+  const activeConcernConfig = getActiveConcernConfig(noticeForm);
+  const rows = activeConcernConfig.types.flatMap((type, chargeIndex) => {
+    const label = String(type || "").trim() || `${activeConcernConfig.itemLabel} ${chargeIndex + 1}`;
+    const counts = activeConcernConfig.descriptions[type] || [""];
     if (counts.length <= 1) {
       return [{ number: `${chargeIndex + 1}`, label }];
     }
     return counts.map((_, countIndex) => ({
       number: `${chargeIndex + 1}.${countIndex + 1}`,
-      label: `${label} - Charge ${countIndex + 1}`,
+      label: `${label} - ${activeConcernConfig.itemLabel} ${countIndex + 1}`,
     }));
   });
 
   if (rows.length > 0) return rows;
   return Array.from({ length: 6 }, (_, index) => ({
     number: `${index + 1}`,
-    label: `Charge ${index + 1}`,
+    label: `${activeConcernConfig.itemLabel} ${index + 1}`,
   }));
 };
 
@@ -631,7 +756,7 @@ const openHiddenDatePicker = (ref: RefObject<HTMLInputElement | null>) => {
   input.click();
 };
 
-const DiscHearingNoticeGeneratorContent = ({
+const HearingNoticeGeneratorContent = ({
   activeStep,
   isFinished,
   clientRows,
@@ -649,11 +774,23 @@ const DiscHearingNoticeGeneratorContent = ({
   onMisconductDescriptionChange,
   onAddMisconductCount,
   onRemoveMisconductCount,
+  onPerformanceConcernDescriptionChange,
+  onAddPerformanceConcernCount,
+  onRemovePerformanceConcernCount,
+  onIllHealthConcernDescriptionChange,
+  onAddIllHealthConcernCount,
+  onRemoveIllHealthConcernCount,
   misconductPickerOpen,
   setMisconductPickerOpen,
+  performanceConcernPickerOpen,
+  setPerformanceConcernPickerOpen,
+  illHealthConcernPickerOpen,
+  setIllHealthConcernPickerOpen,
   conductOffences,
   misconductLoadMessage,
   onToggleMisconductType,
+  onTogglePerformanceConcernType,
+  onToggleIllHealthConcernType,
 }: {
   activeStep: number;
   isFinished: boolean;
@@ -675,11 +812,23 @@ const DiscHearingNoticeGeneratorContent = ({
   onMisconductDescriptionChange: (type: string, countIndex: number, value: string) => void;
   onAddMisconductCount: (type: string) => void;
   onRemoveMisconductCount: (type: string, countIndex: number) => void;
+  onPerformanceConcernDescriptionChange: (type: string, countIndex: number, value: string) => void;
+  onAddPerformanceConcernCount: (type: string) => void;
+  onRemovePerformanceConcernCount: (type: string, countIndex: number) => void;
+  onIllHealthConcernDescriptionChange: (type: string, countIndex: number, value: string) => void;
+  onAddIllHealthConcernCount: (type: string) => void;
+  onRemoveIllHealthConcernCount: (type: string, countIndex: number) => void;
   misconductPickerOpen: boolean;
   setMisconductPickerOpen: (open: boolean) => void;
+  performanceConcernPickerOpen: boolean;
+  setPerformanceConcernPickerOpen: (open: boolean) => void;
+  illHealthConcernPickerOpen: boolean;
+  setIllHealthConcernPickerOpen: (open: boolean) => void;
   conductOffences: ConductOffence[];
   misconductLoadMessage: string;
   onToggleMisconductType: (value: string) => void;
+  onTogglePerformanceConcernType: (value: string) => void;
+  onToggleIllHealthConcernType: (value: string) => void;
 }) => {
   const isClientStep = !isFinished && activeStep === 0;
   const isEmployeeStep = !isFinished && activeStep === 1;
@@ -706,10 +855,29 @@ const DiscHearingNoticeGeneratorContent = ({
       : noticeForm.misconductTypes.length === 1
         ? noticeForm.misconductTypes[0]
         : `${noticeForm.misconductTypes.length} misconduct type(s) selected`;
+  const selectedPerformanceConcernLabel =
+    noticeForm.performanceConcernTypes.length === 0
+      ? "Select performance concern(s)"
+      : noticeForm.performanceConcernTypes.length === 1
+        ? noticeForm.performanceConcernTypes[0]
+        : `${noticeForm.performanceConcernTypes.length} performance concern(s) selected`;
+  const selectedIllHealthConcernLabel =
+    noticeForm.illHealthConcernTypes.length === 0
+      ? "Select ill-health concern(s)"
+      : noticeForm.illHealthConcernTypes.length === 1
+        ? noticeForm.illHealthConcernTypes[0]
+        : `${noticeForm.illHealthConcernTypes.length} ill-health concern(s) selected`;
+  const requiresMisconductDetails = noticeForm.hearingType === "Disciplinary";
+  const requiresPerformanceConcernDetails = noticeForm.hearingType === "Poor Performance";
+  const requiresIllHealthConcernDetails = noticeForm.hearingType === "Ill Health";
   const employeeFullName = buildEmployeeFullName(employeeForm) || "______________________________";
   const previewLine = "______________________________";
   const employeeDetailRows = buildEmployeeDetailRows(employeeForm, previewLine);
   const preliminaryChargeRows = buildPreliminaryChargeRows(noticeForm);
+  const activeConcernConfig = getActiveConcernConfig(noticeForm);
+  const hearingRights = getHearingRights(noticeForm.hearingType);
+  const preliminaryIssuesRows = getPreliminaryIssuesRows(noticeForm.hearingType);
+  const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
   const currentYear = new Date().getFullYear();
   const issuedAndSignedLine = `Issued and signed at __________________ on this _____ day of _____________________ ${currentYear}.`;
   const [selectedHour = "", selectedMinute = ""] = noticeForm.hearingTime.split(":");
@@ -777,6 +945,119 @@ const DiscHearingNoticeGeneratorContent = ({
               }
               rows={1}
               className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const renderPerformanceConcernCountFields = (type: string, options?: { showChargeHeader?: boolean; showAddCountButton?: boolean }) => {
+    const counts = noticeForm.performanceConcernDescriptions[type] || [""];
+    const hasMultipleCounts = counts.length > 1;
+    const showChargeHeader = options?.showChargeHeader ?? true;
+    const showAddCountButton = options?.showAddCountButton ?? true;
+    const countLabel = `${counts.length} count${counts.length === 1 ? "" : "s"}`;
+
+    return (
+      <div className="space-y-3">
+        {showChargeHeader ? (
+          <div className="flex items-center gap-3">
+            <p className="text-[10px] font-semibold text-[#2f9f35]">{`${type} (${countLabel})`}</p>
+            {showAddCountButton ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onAddPerformanceConcernCount(type)}
+                className="h-6 rounded-[5px] px-2 text-[10px] text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+              >
+                Add Count
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {counts.map((description, countIndex) => (
+          <div key={`${type}-count-${countIndex}`} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label
+                htmlFor={`discHearingPerformanceConcernDescription-${type}-${countIndex}`}
+                className="text-[10px] font-semibold text-slate-600"
+              >
+                {hasMultipleCounts ? `Count ${countIndex + 1} Description` : "Concern Description"}{" "}
+                <span className="text-red-500">*</span>
+              </Label>
+              {hasMultipleCounts ? (
+                <button
+                  type="button"
+                  onClick={() => onRemovePerformanceConcernCount(type, countIndex)}
+                  className="text-[10px] font-medium text-slate-500 hover:text-red-600 hover:underline"
+                >
+                  Remove Count
+                </button>
+              ) : null}
+            </div>
+            <Textarea
+              id={`discHearingPerformanceConcernDescription-${type}-${countIndex}`}
+              value={description}
+              onChange={(event) => onPerformanceConcernDescriptionChange(type, countIndex, event.target.value)}
+              placeholder={hasMultipleCounts ? "Describe this count" : "Describe the performance concern"}
+              className="min-h-[88px] rounded-sm border-slate-300 bg-white text-[10px] text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const renderIllHealthConcernCountFields = (type: string, options?: { showChargeHeader?: boolean; showAddCountButton?: boolean }) => {
+    const counts = noticeForm.illHealthConcernDescriptions[type] || [""];
+    const hasMultipleCounts = counts.length > 1;
+    const showChargeHeader = options?.showChargeHeader ?? true;
+    const showAddCountButton = options?.showAddCountButton ?? true;
+    const countLabel = `${counts.length} count${counts.length === 1 ? "" : "s"}`;
+
+    return (
+      <div className="space-y-3">
+        {showChargeHeader ? (
+          <div className="flex items-center gap-3">
+            <p className="text-[10px] font-semibold text-[#2f9f35]">{`${type} (${countLabel})`}</p>
+            {showAddCountButton ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onAddIllHealthConcernCount(type)}
+                className="h-6 rounded-[5px] px-2 text-[10px] text-slate-500 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+              >
+                Add Count
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {counts.map((description, countIndex) => (
+          <div key={`${type}-count-${countIndex}`} className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label
+                htmlFor={`discHearingIllHealthConcernDescription-${type}-${countIndex}`}
+                className="text-[10px] font-semibold text-slate-600"
+              >
+                {hasMultipleCounts ? `Count ${countIndex + 1} Description` : "Concern Description"} <span className="text-red-500">*</span>
+              </Label>
+              {hasMultipleCounts ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveIllHealthConcernCount(type, countIndex)}
+                  className="text-[10px] font-medium text-slate-500 hover:text-red-600 hover:underline"
+                >
+                  Remove Count
+                </button>
+              ) : null}
+            </div>
+            <Textarea
+              id={`discHearingIllHealthConcernDescription-${type}-${countIndex}`}
+              value={description}
+              onChange={(event) => onIllHealthConcernDescriptionChange(type, countIndex, event.target.value)}
+              placeholder={hasMultipleCounts ? "Describe this count" : "Describe the ill-health concern"}
+              className="min-h-[88px] rounded-sm border-slate-300 bg-white text-[10px] text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0"
             />
           </div>
         ))}
@@ -981,6 +1262,33 @@ const DiscHearingNoticeGeneratorContent = ({
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
+                <Label htmlFor="discHearingType" className="text-[10px] font-semibold text-slate-600">
+                  Hearing Type <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={noticeForm.hearingType || undefined}
+                  onValueChange={(value) => onNoticeFormChange("hearingType", value)}
+                >
+                  <SelectTrigger
+                    id="discHearingType"
+                    className={cn(
+                      inputClassName,
+                      "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:!text-slate-400",
+                    )}
+                  >
+                    <SelectValue placeholder="Select hearing type" />
+                  </SelectTrigger>
+                  <SelectContent className="text-[10px]">
+                    {hearingTypeOptions.map((option) => (
+                      <SelectItem key={option} value={option} className="text-[10px]">
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="discHearingDate" className="text-[10px] font-semibold text-slate-600">
                   Hearing Date <span className="text-red-500">*</span>
                 </Label>
@@ -1147,127 +1455,348 @@ const DiscHearingNoticeGeneratorContent = ({
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="discHearingMisconductTypes" className="text-[10px] font-semibold text-slate-600">
-                Misconduct Type(s) <span className="text-red-500">*</span>
-              </Label>
-              <Popover open={misconductPickerOpen} onOpenChange={setMisconductPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="discHearingMisconductTypes"
-                    type="button"
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={misconductPickerOpen}
-                    className={cn(
-                      inputClassName,
-                      "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                      noticeForm.misconductTypes.length === 0 && "text-[10px] text-slate-400",
-                    )}
+            {requiresMisconductDetails ? (
+              <div className="space-y-2">
+                <Label htmlFor="discHearingMisconductTypes" className="text-[10px] font-semibold text-slate-600">
+                  Misconduct Type(s) <span className="text-red-500">*</span>
+                </Label>
+                <Popover open={misconductPickerOpen} onOpenChange={setMisconductPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="discHearingMisconductTypes"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={misconductPickerOpen}
+                      className={cn(
+                        inputClassName,
+                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        noticeForm.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                      )}
+                    >
+                      <span className="truncate text-left">{selectedMisconductLabel}</span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                    onWheel={(event) => event.stopPropagation()}
                   >
-                    <span className="truncate text-left">{selectedMisconductLabel}</span>
-                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
-                  onWheel={(event) => event.stopPropagation()}
-                >
-                  <Command shouldFilter>
-                    <CommandInput
-                      placeholder="Search misconduct types..."
-                      className="h-8 text-[11px] placeholder:text-[10px]"
-                    />
-                    <CommandList className="max-h-[248px] overscroll-contain">
-                      <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
-                      {offenceCategoryOrder.map((category) => {
-                        const offences = conductOffences.filter((offence) => offence.category === category);
-                        if (offences.length === 0) return null;
-                        return (
-                          <CommandGroup
-                            key={category}
-                            heading={offenceGroupLabel[category]}
-                            className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
-                          >
-                            {offences.map((offence) => {
-                              const isSelected = noticeForm.misconductTypes.includes(offence.name);
-                              return (
-                                <CommandItem
-                                  key={`${category}-${offence.name}`}
-                                  value={`${offenceGroupLabel[category]} ${offence.name}`}
-                                  onSelect={() => onToggleMisconductType(offence.name)}
-                                  className={cn(
-                                    "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
-                                    isSelected ? "text-[#2f9f35]" : "text-slate-600",
-                                  )}
-                                >
-                                  <p
+                    <Command shouldFilter>
+                      <CommandInput
+                        placeholder="Search misconduct types..."
+                        className="h-8 text-[11px] placeholder:text-[10px]"
+                      />
+                      <CommandList className="max-h-[248px] overscroll-contain">
+                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
+                        {offenceCategoryOrder.map((category) => {
+                          const offences = conductOffences.filter((offence) => offence.category === category);
+                          if (offences.length === 0) return null;
+                          return (
+                            <CommandGroup
+                              key={category}
+                              heading={offenceGroupLabel[category]}
+                              className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
+                            >
+                              {offences.map((offence) => {
+                                const isSelected = noticeForm.misconductTypes.includes(offence.name);
+                                return (
+                                  <CommandItem
+                                    key={`${category}-${offence.name}`}
+                                    value={`${offenceGroupLabel[category]} ${offence.name}`}
+                                    onSelect={() => onToggleMisconductType(offence.name)}
                                     className={cn(
-                                      "min-w-0 truncate text-[10px] font-medium",
+                                      "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
                                       isSelected ? "text-[#2f9f35]" : "text-slate-600",
                                     )}
                                   >
-                                    {offence.name}
-                                  </p>
-                                  {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        );
-                      })}
-                    </CommandList>
-                  </Command>
-                  <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
-                    {noticeForm.misconductTypes.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {noticeForm.misconductTypes.map((type) => (
-                          <div
-                            key={type}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
-                          >
-                            <span className="truncate">{type}</span>
-                            <button
-                              type="button"
-                              aria-label={`Remove ${type}`}
-                              onClick={() => onToggleMisconductType(type)}
-                              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                                    <p
+                                      className={cn(
+                                        "min-w-0 truncate text-[10px] font-medium",
+                                        isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                      )}
+                                    >
+                                      {offence.name}
+                                    </p>
+                                    {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          );
+                        })}
+                      </CommandList>
+                    </Command>
+                    <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                      {noticeForm.misconductTypes.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {noticeForm.misconductTypes.map((type) => (
+                            <div
+                              key={type}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
                             >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              {noticeForm.misconductTypes.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {noticeForm.misconductTypes.map((type) => (
-                    <div
-                      key={type}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
-                    >
-                      <span className="truncate">{type}</span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${type}`}
-                        onClick={() => onToggleMisconductType(type)}
-                        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                              <span className="truncate">{type}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${type}`}
+                                onClick={() => onToggleMisconductType(type)}
+                                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+                  </PopoverContent>
+                </Popover>
+                {noticeForm.misconductTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {noticeForm.misconductTypes.map((type) => (
+                      <div
+                        key={type}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                      >
+                        <span className="truncate">{type}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${type}`}
+                          onClick={() => onToggleMisconductType(type)}
+                          className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-            {noticeForm.misconductTypes.length > 0 ? (
+            {noticeForm.hearingType === "Poor Performance" ? (
+              <div className="space-y-2">
+                <Label htmlFor="discHearingPerformanceConcerns" className="text-[10px] font-semibold text-slate-600">
+                  Performance Concerns <span className="text-red-500">*</span>
+                </Label>
+                <Popover open={performanceConcernPickerOpen} onOpenChange={setPerformanceConcernPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="discHearingPerformanceConcerns"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={performanceConcernPickerOpen}
+                      className={cn(
+                        inputClassName,
+                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        noticeForm.performanceConcernTypes.length === 0 && "text-[10px] text-slate-400",
+                      )}
+                    >
+                      <span className="truncate text-left">{selectedPerformanceConcernLabel}</span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    <Command shouldFilter>
+                      <CommandInput
+                        placeholder="Search performance concerns..."
+                        className="h-8 text-[11px] placeholder:text-[10px]"
+                      />
+                      <CommandList className="max-h-[248px] overscroll-contain">
+                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">No matching performance concerns found.</CommandEmpty>
+                        <CommandGroup className="px-1">
+                          {performanceConcernTypeOptions.map((concern) => {
+                            const isSelected = noticeForm.performanceConcernTypes.includes(concern);
+                            return (
+                              <CommandItem
+                                key={concern}
+                                value={concern}
+                                onSelect={() => onTogglePerformanceConcernType(concern)}
+                                className={cn(
+                                  "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                  isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                )}
+                              >
+                                <p
+                                  className={cn(
+                                    "min-w-0 truncate text-[10px] font-medium",
+                                    isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                  )}
+                                >
+                                  {concern}
+                                </p>
+                                {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                    <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                      {noticeForm.performanceConcernTypes.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {noticeForm.performanceConcernTypes.map((type) => (
+                            <div
+                              key={type}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                            >
+                              <span className="truncate">{type}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${type}`}
+                                onClick={() => onTogglePerformanceConcernType(type)}
+                                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">No performance concerns selected.</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {noticeForm.performanceConcernTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {noticeForm.performanceConcernTypes.map((type) => (
+                      <div
+                        key={type}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                      >
+                        <span className="truncate">{type}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${type}`}
+                          onClick={() => onTogglePerformanceConcernType(type)}
+                          className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {noticeForm.hearingType === "Ill Health" ? (
+              <div className="space-y-2">
+                <Label htmlFor="discHearingIllHealthConcerns" className="text-[10px] font-semibold text-slate-600">
+                  Ill-health Concerns <span className="text-red-500">*</span>
+                </Label>
+                <Popover open={illHealthConcernPickerOpen} onOpenChange={setIllHealthConcernPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="discHearingIllHealthConcerns"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={illHealthConcernPickerOpen}
+                      className={cn(
+                        inputClassName,
+                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        noticeForm.illHealthConcernTypes.length === 0 && "text-[10px] text-slate-400",
+                      )}
+                    >
+                      <span className="truncate text-left">{selectedIllHealthConcernLabel}</span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                    onWheel={(event) => event.stopPropagation()}
+                  >
+                    <Command shouldFilter>
+                      <CommandInput
+                        placeholder="Search ill-health concerns..."
+                        className="h-8 text-[11px] placeholder:text-[10px]"
+                      />
+                      <CommandList className="max-h-[248px] overscroll-contain">
+                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">No matching ill-health concerns found.</CommandEmpty>
+                        <CommandGroup className="px-1">
+                          {illHealthConcernTypeOptions.map((concern) => {
+                            const isSelected = noticeForm.illHealthConcernTypes.includes(concern);
+                            return (
+                              <CommandItem
+                                key={concern}
+                                value={concern}
+                                onSelect={() => onToggleIllHealthConcernType(concern)}
+                                className={cn(
+                                  "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                  isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                )}
+                              >
+                                <p className={cn("min-w-0 truncate text-[10px] font-medium", isSelected ? "text-[#2f9f35]" : "text-slate-600")}>
+                                  {concern}
+                                </p>
+                                {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                    <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                      {noticeForm.illHealthConcernTypes.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {noticeForm.illHealthConcernTypes.map((type) => (
+                            <div
+                              key={type}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                            >
+                              <span className="truncate">{type}</span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${type}`}
+                                onClick={() => onToggleIllHealthConcernType(type)}
+                                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-500">No ill-health concerns selected.</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {noticeForm.illHealthConcernTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {noticeForm.illHealthConcernTypes.map((type) => (
+                      <div
+                        key={type}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                      >
+                        <span className="truncate">{type}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${type}`}
+                          onClick={() => onToggleIllHealthConcernType(type)}
+                          className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-[#2f9f35] transition-colors hover:text-[#237a28]"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {requiresMisconductDetails && noticeForm.misconductTypes.length > 0 ? (
               <div className="space-y-4">
                 {noticeForm.misconductTypes.length === 1 ? (
                   <Accordion type="single" defaultValue={noticeForm.misconductTypes[0]} collapsible className="space-y-3">
@@ -1336,13 +1865,149 @@ const DiscHearingNoticeGeneratorContent = ({
                 )}
               </div>
             ) : null}
+
+            {noticeForm.hearingType === "Poor Performance" && noticeForm.performanceConcernTypes.length > 0 ? (
+              <div className="space-y-4">
+                {noticeForm.performanceConcernTypes.length === 1 ? (
+                  <Accordion type="single" defaultValue={noticeForm.performanceConcernTypes[0]} collapsible className="space-y-3">
+                    {noticeForm.performanceConcernTypes.map((type) => (
+                      <AccordionItem
+                        key={type}
+                        value={type}
+                        className="overflow-hidden rounded-sm border border-slate-300 bg-white"
+                      >
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.performanceConcernDescriptions[type] || [""]).length} count${(noticeForm.performanceConcernDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddPerformanceConcernCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderPerformanceConcernCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                ) : (
+                  <Accordion type="multiple" className="space-y-3">
+                    {noticeForm.performanceConcernTypes.map((type) => (
+                      <AccordionItem
+                        key={type}
+                        value={type}
+                        className="overflow-hidden rounded-sm border border-slate-300 bg-white"
+                      >
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.performanceConcernDescriptions[type] || [""]).length} count${(noticeForm.performanceConcernDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddPerformanceConcernCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderPerformanceConcernCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                )}
+              </div>
+            ) : null}
+
+            {noticeForm.hearingType === "Ill Health" && noticeForm.illHealthConcernTypes.length > 0 ? (
+              <div className="space-y-4">
+                {noticeForm.illHealthConcernTypes.length === 1 ? (
+                  <Accordion type="single" defaultValue={noticeForm.illHealthConcernTypes[0]} collapsible className="space-y-3">
+                    {noticeForm.illHealthConcernTypes.map((type) => (
+                      <AccordionItem key={type} value={type} className="overflow-hidden rounded-sm border border-slate-300 bg-white">
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.illHealthConcernDescriptions[type] || [""]).length} count${(noticeForm.illHealthConcernDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddIllHealthConcernCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderIllHealthConcernCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                ) : (
+                  <Accordion type="multiple" className="space-y-3">
+                    {noticeForm.illHealthConcernTypes.map((type) => (
+                      <AccordionItem key={type} value={type} className="overflow-hidden rounded-sm border border-slate-300 bg-white">
+                        <AccordionTrigger className="bg-[#2D4256] px-3 py-2 text-left text-[10px] font-semibold text-white hover:no-underline">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="truncate">{`${type} (${(noticeForm.illHealthConcernDescriptions[type] || [""]).length} count${(noticeForm.illHealthConcernDescriptions[type] || [""]).length === 1 ? "" : "s"})`}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                onAddIllHealthConcernCount(type);
+                              }}
+                              className="h-6 rounded-full border border-slate-300/80 bg-slate-200 px-2.5 text-[10px] text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              Add Count
+                            </Button>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          {renderIllHealthConcernCountFields(type, { showChargeHeader: false, showAddCountButton: false })}
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : isPreviewStep ? (
           <div className="mx-auto max-w-[860px]">
             <div className="space-y-8">
             <div className="bg-white px-8 pt-4 pb-6 text-black">
               <h2 className="text-center text-[24px] font-bold uppercase tracking-tight text-black">
-                Notice of Disciplinary Hearing
+                {noticeForm.hearingType === "Poor Performance"
+                  ? "Notice of Poor Performance Hearing"
+                  : noticeForm.hearingType === "Ill Health"
+                    ? "Notice of Incapacity Hearing (Ill Health)"
+                    : "Notice of Disciplinary Hearing"}
               </h2>
 
               <section className="mt-[32px] overflow-hidden rounded-[4px] border border-[#5f6872]">
@@ -1381,21 +2046,21 @@ const DiscHearingNoticeGeneratorContent = ({
 
               <section className="mt-[14px] overflow-hidden rounded-[4px] border border-[#5f6872]">
                 <div className="bg-[#d7dde4] px-4 py-2.5">
-                  <p className="text-[16px] font-bold uppercase tracking-wide text-black">C. Transgression(s) / Charge(s)</p>
+                  <p className="text-[16px] font-bold uppercase tracking-wide text-black">{activeConcernConfig.sectionTitle}</p>
                 </div>
                 <div className="space-y-4 px-4 pt-4 pb-1 text-[14px] leading-6 text-black">
-                  {noticeForm.misconductTypes.length > 0 ? (
-                    noticeForm.misconductTypes.map((type, index) => (
+                  {activeConcernConfig.types.length > 0 ? (
+                    activeConcernConfig.types.map((type, index) => (
                       <div
                         key={type}
-                        className={cn("space-y-1.5", index < noticeForm.misconductTypes.length - 1 && "pb-2")}
+                        className={cn("space-y-1.5", index < activeConcernConfig.types.length - 1 && "pb-2")}
                       >
                         <div className="grid grid-cols-[18px_minmax(0,1fr)] gap-2">
                           <p className="font-bold">{`${index + 1}.`}</p>
                           <p className="font-bold">{type}</p>
                         </div>
                         <div className="space-y-1.5 pl-[26px]">
-                          {(noticeForm.misconductDescriptions[type] || [previewLine]).map((description, countIndex, descriptions) => {
+                          {(activeConcernConfig.descriptions[type] || [previewLine]).map((description, countIndex, descriptions) => {
                             const hasMultipleCounts = descriptions.length > 1;
                             return hasMultipleCounts ? (
                               <div key={`${type}-preview-count-${countIndex}`} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2">
@@ -1476,7 +2141,13 @@ const DiscHearingNoticeGeneratorContent = ({
             <div className="bg-white px-8 pt-6 pb-6 text-black">
               <div className="mb-[14px] space-y-1 text-center text-black">
                 <h2 className="text-[20px] font-bold uppercase tracking-tight">Preliminary Issues Form</h2>
-                <p className="text-[16px] font-bold tracking-wide">Disciplinary Hearing</p>
+                <p className="text-[16px] font-bold tracking-wide">
+                  {noticeForm.hearingType === "Poor Performance"
+                    ? "Incapacity Hearing (Performance)"
+                    : noticeForm.hearingType === "Ill Health"
+                      ? "Incapacity Hearing (Ill Health)"
+                      : "Disciplinary Hearing"}
+                </p>
               </div>
               <section className="mt-[16px] overflow-hidden rounded-[4px] border border-[#5f6872]">
                 <div className="bg-[#d7dde4] px-4 py-2.5">
@@ -1583,14 +2254,14 @@ const DiscHearingNoticeGeneratorContent = ({
   );
 };
 
-const DiscHearingNoticeGenerator = ({
+const HearingNoticeGenerator = ({
   embedded = false,
   onRequestClose,
   draftState,
   onDraftStateChange,
   onStepChange,
   onStepMetaChange,
-}: DiscHearingNoticeGeneratorProps) => {
+}: HearingNoticeGeneratorProps) => {
   const { user } = useAuth();
   const resolvedDraftState = isDiscHearingNoticeDraftState(draftState) ? draftState : null;
   const [activeStep, setActiveStep] = useState(resolvedDraftState?.activeStep ?? 0);
@@ -1610,6 +2281,8 @@ const DiscHearingNoticeGenerator = ({
     normalizeNoticeFormState(resolvedDraftState?.noticeForm),
   );
   const [misconductPickerOpen, setMisconductPickerOpen] = useState(false);
+  const [performanceConcernPickerOpen, setPerformanceConcernPickerOpen] = useState(false);
+  const [illHealthConcernPickerOpen, setIllHealthConcernPickerOpen] = useState(false);
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
 
@@ -1772,6 +2445,8 @@ const DiscHearingNoticeGenerator = ({
       hearingLocation: buildDefaultHearingLocation(nextClientForm),
     });
     setMisconductPickerOpen(false);
+    setPerformanceConcernPickerOpen(false);
+    setIllHealthConcernPickerOpen(false);
     void loadClientLogo(clientId);
   };
 
@@ -1799,7 +2474,57 @@ const DiscHearingNoticeGenerator = ({
       setShortNoticeDialogOpen(Boolean(nextDate) && isHearingDateWithin48Hours(nextDate));
     }
 
+    if (field === "hearingType") {
+      if (value !== "Disciplinary") setMisconductPickerOpen(false);
+      if (value !== "Poor Performance") setPerformanceConcernPickerOpen(false);
+      if (value !== "Ill Health") setIllHealthConcernPickerOpen(false);
+    }
+
     setNoticeForm((current) => {
+      if (field === "hearingType") {
+        const nextType = value as HearingType | "";
+        if (nextType === "Disciplinary") {
+          return {
+            ...current,
+            hearingType: nextType,
+            performanceConcernTypes: [],
+            performanceConcernDescriptions: {},
+            illHealthConcernTypes: [],
+            illHealthConcernDescriptions: {},
+          };
+        }
+        if (nextType === "Poor Performance") {
+          return {
+            ...current,
+            hearingType: nextType,
+            misconductTypes: [],
+            misconductDescriptions: {},
+            illHealthConcernTypes: [],
+            illHealthConcernDescriptions: {},
+          };
+        }
+        if (nextType === "Ill Health") {
+          return {
+            ...current,
+            hearingType: nextType,
+            misconductTypes: [],
+            misconductDescriptions: {},
+            performanceConcernTypes: [],
+            performanceConcernDescriptions: {},
+          };
+        }
+        return {
+          ...current,
+          hearingType: nextType,
+          misconductTypes: [],
+          misconductDescriptions: {},
+          performanceConcernTypes: [],
+          performanceConcernDescriptions: {},
+          illHealthConcernTypes: [],
+          illHealthConcernDescriptions: {},
+        };
+      }
+
       if (field === "hearingFormat") {
         const nextFormat = value as HearingFormat | "";
         return {
@@ -1826,6 +2551,19 @@ const DiscHearingNoticeGenerator = ({
         };
       }
 
+      if (field === "performanceConcernDescriptions") {
+        return {
+          ...current,
+          performanceConcernDescriptions: value as Record<string, string[]>,
+        };
+      }
+      if (field === "illHealthConcernDescriptions") {
+        return {
+          ...current,
+          illHealthConcernDescriptions: value as Record<string, string[]>,
+        };
+      }
+
       return {
         ...current,
         [field]: value,
@@ -1844,6 +2582,35 @@ const DiscHearingNoticeGenerator = ({
         : {
             ...current.misconductDescriptions,
             [value]: current.misconductDescriptions[value] || [""],
+          },
+    }));
+  };
+
+  const handleTogglePerformanceConcernType = (value: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      performanceConcernTypes: current.performanceConcernTypes.includes(value)
+        ? current.performanceConcernTypes.filter((entry) => entry !== value)
+        : [...current.performanceConcernTypes, value],
+      performanceConcernDescriptions: current.performanceConcernTypes.includes(value)
+        ? Object.fromEntries(Object.entries(current.performanceConcernDescriptions).filter(([key]) => key !== value))
+        : {
+            ...current.performanceConcernDescriptions,
+            [value]: current.performanceConcernDescriptions[value] || [""],
+          },
+    }));
+  };
+  const handleToggleIllHealthConcernType = (value: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      illHealthConcernTypes: current.illHealthConcernTypes.includes(value)
+        ? current.illHealthConcernTypes.filter((entry) => entry !== value)
+        : [...current.illHealthConcernTypes, value],
+      illHealthConcernDescriptions: current.illHealthConcernTypes.includes(value)
+        ? Object.fromEntries(Object.entries(current.illHealthConcernDescriptions).filter(([key]) => key !== value))
+        : {
+            ...current.illHealthConcernDescriptions,
+            [value]: current.illHealthConcernDescriptions[value] || [""],
           },
     }));
   };
@@ -1868,6 +2635,63 @@ const DiscHearingNoticeGenerator = ({
     }));
   }, []);
 
+  const handlePerformanceConcernDescriptionChange = useCallback((type: string, countIndex: number, value: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      performanceConcernDescriptions: {
+        ...current.performanceConcernDescriptions,
+        [type]: (current.performanceConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+      },
+    }));
+  }, []);
+
+  const handleAddPerformanceConcernCount = useCallback((type: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      performanceConcernDescriptions: {
+        ...current.performanceConcernDescriptions,
+        [type]: [...(current.performanceConcernDescriptions[type] || [""]), ""],
+      },
+    }));
+  }, []);
+
+  const handleRemovePerformanceConcernCount = useCallback((type: string, countIndex: number) => {
+    setNoticeForm((current) => ({
+      ...current,
+      performanceConcernDescriptions: {
+        ...current.performanceConcernDescriptions,
+        [type]: (current.performanceConcernDescriptions[type] || [""]).filter((_, index) => index !== countIndex),
+      },
+    }));
+  }, []);
+  const handleIllHealthConcernDescriptionChange = useCallback((type: string, countIndex: number, value: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      illHealthConcernDescriptions: {
+        ...current.illHealthConcernDescriptions,
+        [type]: (current.illHealthConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+      },
+    }));
+  }, []);
+  const handleAddIllHealthConcernCount = useCallback((type: string) => {
+    setNoticeForm((current) => ({
+      ...current,
+      illHealthConcernDescriptions: {
+        ...current.illHealthConcernDescriptions,
+        [type]: [...(current.illHealthConcernDescriptions[type] || [""]), ""],
+      },
+    }));
+  }, []);
+  const handleRemoveIllHealthConcernCount = useCallback((type: string, countIndex: number) => {
+    setNoticeForm((current) => ({
+      ...current,
+      illHealthConcernDescriptions: {
+        ...current.illHealthConcernDescriptions,
+        [type]: (current.illHealthConcernDescriptions[type] || [""]).filter((_, index) => index !== countIndex),
+      },
+    }));
+  }, []);
+
   const handleRemoveMisconductCount = useCallback((type: string, countIndex: number) => {
     setNoticeForm((current) => ({
       ...current,
@@ -1882,22 +2706,40 @@ const DiscHearingNoticeGenerator = ({
     employeeForm.employeeName.trim().length > 0 &&
     employeeForm.employeeSurname.trim().length > 0 &&
     employeeForm.employeeIdOrPassportNumber.trim().length > 0;
+  const requiresMisconductDetails = noticeForm.hearingType === "Disciplinary";
+  const requiresPerformanceConcernDetails = noticeForm.hearingType === "Poor Performance";
+  const requiresIllHealthConcernDetails = noticeForm.hearingType === "Ill Health";
 
   const areMisconductDescriptionsComplete = noticeForm.misconductTypes.every(
     (type) =>
       (noticeForm.misconductDescriptions[type] || [""]).length > 0 &&
       (noticeForm.misconductDescriptions[type] || [""]).every((entry) => String(entry || "").trim().length > 0),
   );
+  const arePerformanceConcernDescriptionsComplete = noticeForm.performanceConcernTypes.every(
+    (type) =>
+      (noticeForm.performanceConcernDescriptions[type] || [""]).length > 0 &&
+      (noticeForm.performanceConcernDescriptions[type] || [""]).every((entry) => String(entry || "").trim().length > 0),
+  );
+  const areIllHealthConcernDescriptionsComplete = noticeForm.illHealthConcernTypes.every(
+    (type) =>
+      (noticeForm.illHealthConcernDescriptions[type] || [""]).length > 0 &&
+      (noticeForm.illHealthConcernDescriptions[type] || [""]).every((entry) => String(entry || "").trim().length > 0),
+  );
   const hearingTimeComplete = /^\d{2}:\d{2}$/.test(noticeForm.hearingTime);
   const noticeStepComplete =
+    Boolean(noticeForm.hearingType) &&
     noticeForm.hearingDate.trim().length > 0 &&
     hearingTimeComplete &&
     Boolean(noticeForm.hearingFormat) &&
     (noticeForm.hearingFormat === "virtual"
       ? Boolean(noticeForm.hearingPlatform)
       : noticeForm.hearingLocation.trim().length > 0) &&
-    noticeForm.misconductTypes.length > 0 &&
-    areMisconductDescriptionsComplete;
+    (!requiresMisconductDetails ||
+      (noticeForm.misconductTypes.length > 0 && areMisconductDescriptionsComplete)) &&
+    (!requiresPerformanceConcernDetails ||
+      (noticeForm.performanceConcernTypes.length > 0 && arePerformanceConcernDescriptionsComplete)) &&
+    (!requiresIllHealthConcernDetails ||
+      (noticeForm.illHealthConcernTypes.length > 0 && areIllHealthConcernDescriptionsComplete));
 
   const proceedShortNoticeDialog = useCallback(() => {
     setShortNoticeDialogOpen(false);
@@ -1926,6 +2768,10 @@ const DiscHearingNoticeGenerator = ({
     const lineFallback = "______________________________";
     const employeeDetailRows = buildEmployeeDetailRows(employeeForm, lineFallback);
     const preliminaryChargeRows = buildPreliminaryChargeRows(noticeForm);
+    const activeConcernConfig = getActiveConcernConfig(noticeForm);
+    const hearingRights = getHearingRights(noticeForm.hearingType);
+    const preliminaryIssuesRows = getPreliminaryIssuesRows(noticeForm.hearingType);
+    const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
     const placeValue = formatHearingVenue(noticeForm.hearingFormat, noticeForm.hearingLocation, noticeForm.hearingPlatform) || lineFallback;
     const footerAddressLines = buildFooterAddressLines(clientForm);
     const currentYear = new Date().getFullYear();
@@ -2044,7 +2890,7 @@ const DiscHearingNoticeGenerator = ({
       const generatedByUrl = "www.llasa.co.za";
       const generatedByY = pageHeight - 5.5;
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.2);
+      doc.setFontSize(6.5);
       doc.setTextColor(63, 63, 70);
       const generatedByPrefixWidth = doc.getTextWidth(generatedByPrefix);
       const generatedByUrlWidth = doc.getTextWidth(generatedByUrl);
@@ -2112,7 +2958,16 @@ const DiscHearingNoticeGenerator = ({
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("NOTICE OF DISCIPLINARY HEARING", pageWidth / 2, y, { align: "center" });
+    doc.text(
+      noticeForm.hearingType === "Poor Performance"
+        ? "NOTICE OF POOR PERFORMANCE HEARING"
+        : noticeForm.hearingType === "Ill Health"
+          ? "NOTICE OF INCAPACITY HEARING (ILL HEALTH)"
+          : "NOTICE OF DISCIPLINARY HEARING",
+      pageWidth / 2,
+      y,
+      { align: "center" },
+    );
     y += 11;
 
     drawSectionBox("A. EMPLOYEE DETAILS", () => {
@@ -2137,10 +2992,10 @@ const DiscHearingNoticeGenerator = ({
       drawWideValueRow("Place:", placeValue);
     }, 28);
 
-    const misconductHeight =
+    const concernHeight =
       18 +
-      noticeForm.misconductTypes.reduce((total, type, index) => {
-        const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
+      activeConcernConfig.types.reduce((total, type, index) => {
+        const descriptions = activeConcernConfig.descriptions[type] || [lineFallback];
         const countHeight = descriptions.reduce((countTotal, description) => {
           const hasMultipleCounts = descriptions.length > 1;
           const lines = doc.splitTextToSize(
@@ -2149,18 +3004,18 @@ const DiscHearingNoticeGenerator = ({
           );
           return countTotal + lines.length * 4.2 + 2.2;
         }, 0);
-        return total + 8 + countHeight + (index < noticeForm.misconductTypes.length - 1 ? 1.4 : 0);
+        return total + 8 + countHeight + (index < activeConcernConfig.types.length - 1 ? 1.4 : 0);
       }, 0);
 
-    drawSectionBox("C. TRANSGRESSION(S) / CHARGE(S)", () => {
-      noticeForm.misconductTypes.forEach((type, index) => {
+    drawSectionBox(activeConcernConfig.sectionTitle, () => {
+      activeConcernConfig.types.forEach((type, index) => {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.text(`${index + 1}.`, margin + 3, y);
         doc.text(type, margin + 12, y);
         y += 4.2;
 
-        const descriptions = noticeForm.misconductDescriptions[type] || [lineFallback];
+        const descriptions = activeConcernConfig.descriptions[type] || [lineFallback];
         doc.setFont("helvetica", "normal");
         descriptions.forEach((description, countIndex) => {
           const hasMultipleCounts = descriptions.length > 1;
@@ -2174,9 +3029,9 @@ const DiscHearingNoticeGenerator = ({
           drawJustifiedLines(lines, textX, textWidth, 3.5);
           y += 1.2;
         });
-        y += index < noticeForm.misconductTypes.length - 1 ? 2.6 : 0.8;
+        y += index < activeConcernConfig.types.length - 1 ? 2.6 : 0.8;
       });
-    }, misconductHeight);
+    }, concernHeight);
 
     y += 2.2;
     ensureSpace(hearingRights.length * 5 + 16);
@@ -2292,7 +3147,16 @@ const DiscHearingNoticeGenerator = ({
     doc.text("PRELIMINARY ISSUES FORM", pageWidth / 2, y, { align: "center" });
     y += 6.5;
     doc.setFontSize(11);
-    doc.text("Disciplinary Hearing", pageWidth / 2, y, { align: "center" });
+    doc.text(
+      noticeForm.hearingType === "Poor Performance"
+        ? "Incapacity Hearing (Performance)"
+        : noticeForm.hearingType === "Ill Health"
+          ? "Incapacity Hearing (Ill Health)"
+          : "Disciplinary Hearing",
+      pageWidth / 2,
+      y,
+      { align: "center" },
+    );
     y += 10;
 
     drawSectionBox("HEARING DETAILS", () => {
@@ -2600,6 +3464,8 @@ const DiscHearingNoticeGenerator = ({
             hearingLocation: buildDefaultHearingLocation(clientForm),
           });
           setMisconductPickerOpen(false);
+          setPerformanceConcernPickerOpen(false);
+          setIllHealthConcernPickerOpen(false);
         }
       },
       isFinished,
@@ -2631,7 +3497,7 @@ const DiscHearingNoticeGenerator = ({
 
   const content = (
     <>
-      <DiscHearingNoticeGeneratorContent
+      <HearingNoticeGeneratorContent
         activeStep={activeStep}
         isFinished={isFinished}
         clientRows={clientRows}
@@ -2655,11 +3521,23 @@ const DiscHearingNoticeGenerator = ({
         onMisconductDescriptionChange={handleMisconductDescriptionChange}
         onAddMisconductCount={handleAddMisconductCount}
         onRemoveMisconductCount={handleRemoveMisconductCount}
+        onPerformanceConcernDescriptionChange={handlePerformanceConcernDescriptionChange}
+        onAddPerformanceConcernCount={handleAddPerformanceConcernCount}
+        onRemovePerformanceConcernCount={handleRemovePerformanceConcernCount}
+        onIllHealthConcernDescriptionChange={handleIllHealthConcernDescriptionChange}
+        onAddIllHealthConcernCount={handleAddIllHealthConcernCount}
+        onRemoveIllHealthConcernCount={handleRemoveIllHealthConcernCount}
         misconductPickerOpen={misconductPickerOpen}
         setMisconductPickerOpen={setMisconductPickerOpen}
+        performanceConcernPickerOpen={performanceConcernPickerOpen}
+        setPerformanceConcernPickerOpen={setPerformanceConcernPickerOpen}
+        illHealthConcernPickerOpen={illHealthConcernPickerOpen}
+        setIllHealthConcernPickerOpen={setIllHealthConcernPickerOpen}
         conductOffences={conductOffences}
         misconductLoadMessage={misconductLoadMessage}
         onToggleMisconductType={handleToggleMisconductType}
+        onTogglePerformanceConcernType={handleTogglePerformanceConcernType}
+        onToggleIllHealthConcernType={handleToggleIllHealthConcernType}
       />
       <AlertDialog open={shortNoticeDialogOpen} onOpenChange={setShortNoticeDialogOpen}>
         <AlertDialogContent>
@@ -2688,4 +3566,4 @@ const DiscHearingNoticeGenerator = ({
   return <DashboardLayout profileSubtitleMode="company">{content}</DashboardLayout>;
 };
 
-export default DiscHearingNoticeGenerator;
+export default HearingNoticeGenerator;

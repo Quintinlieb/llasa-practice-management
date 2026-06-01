@@ -11,6 +11,7 @@ import { detectLogoLayout, getPdfLogoTargetHeight, type LogoLayout } from "@/lib
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { Briefcase, Building2, Check, ChevronDown, Clock3, FileText, Mail, MapPin, Pencil, Phone, Plus, User2, X } from "lucide-react";
+import { EnvelopeIcon, PhoneIcon as HeroPhoneIcon } from "@heroicons/react/24/outline";
 import { jsPDF } from "jspdf";
 
 type AbscondHearingNoticeGeneratorProps = {
@@ -170,7 +171,7 @@ const emptyHearingDetails: HearingDetails = {
   hearingDate: "",
   hearingTime: "",
   hearingPlace: "",
-  issuingMethods: ["By Hand"],
+  issuingMethods: [],
 };
 
 const provinceOptions = [
@@ -398,6 +399,62 @@ const formatTimeLabel = (value: string) => {
 
 const previewLine = "________________________";
 
+const createAbscondPdfIconDataUrl = (
+  draw: (ctx: CanvasRenderingContext2D) => void,
+  options?: { size?: number; strokeColor?: string },
+): string | null => {
+  if (typeof document === "undefined" || typeof Path2D === "undefined") return null;
+  const size = options?.size ?? 24;
+  const strokeColor = options?.strokeColor ?? "#000000";
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  draw(ctx);
+
+  return canvas.toDataURL("image/png");
+};
+
+const createAbscondPdfPhoneIconDataUrl = (strokeColor = "#000000") =>
+  createAbscondPdfIconDataUrl((ctx) => {
+    const path = new Path2D(
+      "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z",
+    );
+    ctx.stroke(path);
+  }, { strokeColor });
+
+const createAbscondPdfMailIconDataUrl = (strokeColor = "#000000") =>
+  createAbscondPdfIconDataUrl((ctx) => {
+    const x = 2;
+    const y = 4;
+    const width = 20;
+    const height = 16;
+    const radius = 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.stroke();
+
+    const flap = new Path2D("m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7");
+    ctx.stroke(flap);
+  }, { strokeColor });
+
 const sanitizeAbscondPdfSegment = (value: string, fallback: string) =>
   normalizeText(value)
     .replace(/[^a-z0-9]+/gi, "-")
@@ -415,6 +472,11 @@ const getAbscondHeaderAddressLines = (clientDetails: ClientDetails) =>
     [clientDetails.addressLine1, clientDetails.addressLine2].map(normalizeText).filter(Boolean).join(", "),
     [clientDetails.city, clientDetails.province, clientDetails.areaCode].map(normalizeText).filter(Boolean).join(", "),
   ].filter(Boolean);
+
+const getAbscondDefaultHearingPlace = (clientDetails: Pick<ClientDetails, "city" | "province">) => {
+  const clientLocation = [clientDetails.city, clientDetails.province].map(normalizeText).filter(Boolean).join(", ");
+  return clientLocation ? `${clientLocation} (Company Premises)` : "";
+};
 
 const getAbscondNoticeParagraphs = (
   hearingDetails: HearingDetails,
@@ -463,16 +525,7 @@ const getAbscondHearingRights = (previewEdits: NoticePreviewEdits) =>
     "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalisation thereof, it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to contact your superiors prior to commencement of the hearing. Failure to do so will result in the hearing proceeding in your absence.",
   ].map((right, index) => previewEdits[`right-${index}`] ?? right);
 
-const getAbscondFooterLogoDimensions = (layout: LogoLayout | null) =>
-  layout === "vertical"
-    ? {
-        previewMaxHeight: 76,
-        previewMaxWidth: 92,
-      }
-    : {
-        previewMaxHeight: 74,
-        previewMaxWidth: 184,
-      };
+const abscondFirstPageRightsCount = 8;
 
 const AbscondNoticePage = ({
   clientDetails,
@@ -490,19 +543,25 @@ const AbscondNoticePage = ({
   const tradingNameDisplay = normalizeText(clientDetails.tradingAs);
   const registrationNumberDisplay = normalizeText(clientDetails.registrationNumber);
   const hasUploadedLogo = Boolean(clientDetails.logoDataUrl);
-  const useLeftLogoLayout = hasUploadedLogo;
-  const useCenteredLogoLayout = hasUploadedLogo && !useLeftLogoLayout;
   const companyIdentityDisplay = tradingNameDisplay
     ? `${companyNameDisplay} t/a ${tradingNameDisplay}`
     : companyNameDisplay;
-  const headerAddressLineOne = [clientDetails.addressLine1, clientDetails.addressLine2].map(normalizeText).filter(Boolean).join(", ");
-  const headerAddressLineTwo = [clientDetails.city, clientDetails.province, clientDetails.areaCode].map(normalizeText).filter(Boolean).join(", ");
+  const clientLocationLine = [clientDetails.city, clientDetails.province].map(normalizeText).filter(Boolean).join(", ");
+  const companyInfoRows = [
+    { key: "registered", icon: null, text: companyNameDisplay, bold: true },
+    { key: "trading", icon: null, text: tradingNameDisplay ? `t/a ${tradingNameDisplay}` : "" },
+    { key: "address1", icon: null, text: normalizeText(clientDetails.addressLine1) },
+    { key: "address2", icon: null, text: normalizeText(clientDetails.addressLine2) },
+    { key: "location", icon: null, text: clientLocationLine },
+    { key: "areaCode", icon: null, text: normalizeText(clientDetails.areaCode) },
+    { key: "phone", icon: HeroPhoneIcon, text: normalizeText(clientDetails.contactNumber) },
+    { key: "email", icon: EnvelopeIcon, text: normalizeText(clientDetails.email) },
+  ].filter((item) => item.text);
   const footerAddressLines = [
     [clientDetails.addressLine1, clientDetails.addressLine2].map(normalizeText).filter(Boolean).join(", "),
     [clientDetails.city, clientDetails.province, clientDetails.areaCode].map(normalizeText).filter(Boolean).join(", "),
   ].filter(Boolean);
   const companyAddressDisplay = footerAddressLines.length > 0 ? footerAddressLines.join(", ") : "Address";
-  const footerLogoDimensions = getAbscondFooterLogoDimensions(clientDetails.logoLayout);
 
   return (
     <div
@@ -515,115 +574,74 @@ const AbscondNoticePage = ({
       <div className="flex flex-1 flex-col text-[12px] leading-relaxed text-black">
         {showHeader ? (
           <>
-            {useCenteredLogoLayout ? (
-              <div className="flex justify-center">
-              <img
-                src={clientDetails.logoDataUrl}
-                alt="Company logo"
-                className="max-h-[25mm] w-auto max-w-[220px] object-contain"
-              />
-              </div>
-            ) : (
-              <div className={cn("flex", useLeftLogoLayout ? "items-start justify-between gap-4" : "justify-end")}>
-                {useLeftLogoLayout ? (
-                  <img
-                    src={clientDetails.logoDataUrl}
-                    alt="Company logo"
-                    className="max-h-[25mm] w-auto max-w-[220px] object-contain"
-                  />
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-h-[72px] min-w-[180px]">
+                {hasUploadedLogo ? (
+                  <img src={clientDetails.logoDataUrl} alt="Client logo" className="max-h-20 max-w-[220px] object-contain" />
                 ) : null}
-                <div className="text-right leading-[1.1] text-[10px]">
-                  <p className="font-semibold">{companyNameDisplay}</p>
-                  {tradingNameDisplay ? <p>t/a {tradingNameDisplay}</p> : null}
-                  {headerAddressLineOne || headerAddressLineTwo ? (
-                    <>
-                      {headerAddressLineOne ? <p className="whitespace-nowrap">{headerAddressLineOne}</p> : null}
-                      {headerAddressLineTwo ? <p className="whitespace-nowrap">{headerAddressLineTwo}</p> : null}
-                    </>
-                  ) : (
-                    <p>Address</p>
-                  )}
-                  {useLeftLogoLayout ? (
-                    <>
-                      <p className="inline-flex w-full items-center justify-end gap-1">
-                        <Mail className="h-2.5 w-2.5" />
-                        {displayValue(clientDetails.email)}
-                      </p>
-                      <p className="inline-flex w-full items-center justify-end gap-1">
-                        <Phone className="h-2.5 w-2.5" />
-                        {displayValue(clientDetails.contactNumber)}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="inline-flex w-full items-center justify-end gap-1">
-                        <Mail className="h-2.5 w-2.5" />
-                        {displayValue(clientDetails.email)}
-                      </p>
-                      <p className="inline-flex w-full items-center justify-end gap-1">
-                        <Phone className="h-2.5 w-2.5" />
-                        {displayValue(clientDetails.contactNumber)}
-                      </p>
-                    </>
-                  )}
-                </div>
               </div>
-            )}
-            <div className={cn("border-t border-slate-300", useCenteredLogoLayout ? "mt-6" : "mt-4")} aria-hidden="true" />
+              <div className="max-w-[320px] space-y-0.5 text-right text-[10px] leading-[1.1] text-slate-700">
+                {companyInfoRows.map((row) => {
+                  const Icon = row.icon;
+                  return (
+                    <div
+                      key={row.key}
+                      className={cn(
+                        "flex items-center justify-end gap-1.5",
+                        row.key === "trading" && "pb-1",
+                      )}
+                    >
+                      {Icon ? <Icon className="h-3 w-3 shrink-0 text-slate-900" /> : null}
+                      <span className="min-w-0 text-right">
+                        <span className={row.bold ? "font-semibold text-slate-900" : ""}>{row.text}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-5 border-t border-slate-300" aria-hidden="true" />
           </>
         ) : null}
         <div className="flex-1">{children}</div>
         {showFooter && hasUploadedLogo ? (
           <footer className="mt-7 border-t border-slate-300 pt-4">
-            <div className="grid grid-cols-[minmax(0,1fr)_136px] items-start gap-5">
-              <div className="space-y-1 text-left text-[9px] leading-4 text-slate-700">
-                <p className="font-semibold text-slate-900">{companyIdentityDisplay}</p>
-                {registrationNumberDisplay ? (
-                  <div className="flex items-start gap-2">
-                    <Briefcase className="mt-0.5 h-3 w-3 shrink-0 text-black" />
-                    <span>{registrationNumberDisplay}</span>
+            <div className="space-y-1 text-left text-[9px] leading-4 text-slate-700">
+              <p className="font-semibold text-slate-900">{companyIdentityDisplay}</p>
+              {registrationNumberDisplay ? (
+                <div className="flex items-start gap-2">
+                  <Briefcase className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                  <span>{registrationNumberDisplay}</span>
+                </div>
+              ) : null}
+              {clientDetails.contactNumber ? (
+                <div className="flex items-start gap-2">
+                  <Phone className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                  <span>{clientDetails.contactNumber}</span>
+                </div>
+              ) : null}
+              {clientDetails.email ? (
+                <div className="flex items-start gap-2">
+                  <Mail className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                  <span>{clientDetails.email}</span>
+                </div>
+              ) : null}
+              {footerAddressLines.length > 0 ? (
+                <div className="flex items-start gap-2">
+                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                  <div>
+                    {footerAddressLines.map((line) => (
+                      <p key={`footer-${line}`}>{line}</p>
+                    ))}
                   </div>
-                ) : null}
-                {clientDetails.contactNumber ? (
-                  <div className="flex items-start gap-2">
-                    <Phone className="mt-0.5 h-3 w-3 shrink-0 text-black" />
-                    <span>{clientDetails.contactNumber}</span>
-                  </div>
-                ) : null}
-                {clientDetails.email ? (
-                  <div className="flex items-start gap-2">
-                    <Mail className="mt-0.5 h-3 w-3 shrink-0 text-black" />
-                    <span>{clientDetails.email}</span>
-                  </div>
-                ) : null}
-                {footerAddressLines.length > 0 ? (
-                  <div className="flex items-start gap-2">
-                    <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-black" />
-                    <div>
-                      {footerAddressLines.map((line) => (
-                        <p key={`footer-${line}`}>{line}</p>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {footerAddressLines.length === 0 ? (
-                  <div className="flex items-start gap-2">
-                    <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-black" />
-                    <span>{companyAddressDisplay}</span>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex min-h-[72px] items-end justify-end">
-                <img
-                  src={clientDetails.logoDataUrl}
-                  alt="Client logo"
-                  className="h-auto w-auto object-contain"
-                  style={{
-                    maxHeight: `${footerLogoDimensions.previewMaxHeight}px`,
-                    maxWidth: `${footerLogoDimensions.previewMaxWidth}px`,
-                  }}
-                />
-              </div>
+                </div>
+              ) : null}
+              {footerAddressLines.length === 0 ? (
+                <div className="flex items-start gap-2">
+                  <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-black" />
+                  <span>{companyAddressDisplay}</span>
+                </div>
+              ) : null}
             </div>
           </footer>
         ) : null}
@@ -708,7 +726,7 @@ const AbscondHearingNoticeContent = ({
     const hearingPlaceDisplay = normalizeText(hearingDetails.hearingPlace) || "[hearing venue]";
     const issuingMethodsDisplay = hearingDetails.issuingMethods.length > 0
       ? hearingDetails.issuingMethods.map((method) => method.toUpperCase()).join(" / ")
-      : "BY HAND";
+      : previewLine;
     const getEditableValue = (id: string, fallback: string) => previewEdits[id] ?? fallback;
     const beginPreviewItemEdit = (id: string, fallback: string) => {
       setEditingPreviewItem(id);
@@ -843,7 +861,7 @@ const AbscondHearingNoticeContent = ({
             <div className="mt-2 text-right">{formatLetterDate(getTodayDateValue())}</div>
             <div className="mt-5">
               <p className="flex items-baseline gap-4">
-                <span>To:</span>
+                <span>TO:</span>
                 <span className="font-semibold uppercase">{employeeFullName || previewLine}</span>
               </p>
               <div className="pl-9">
@@ -871,7 +889,7 @@ const AbscondHearingNoticeContent = ({
               ))}
               <p>Your rights in respect of the hearing are as follows:</p>
               <ul className="ml-6 list-disc space-y-2">
-                {hearingRights.slice(0, 5).map((right, index) => (
+                {hearingRights.slice(0, abscondFirstPageRightsCount).map((right, index) => (
                   <li key={`right-${index}`}>
                     <EditableText id={`right-${index}`} value={right} className="text-justify" />
                     {renderAddParagraphControl(`right-${index}`)}
@@ -884,8 +902,8 @@ const AbscondHearingNoticeContent = ({
           <AbscondNoticePage clientDetails={clientDetails} showFooter>
             <div className="mt-10">
               <ul className="ml-6 list-disc space-y-2">
-                {hearingRights.slice(5).map((right, index) => {
-                  const rightIndex = index + 5;
+                {hearingRights.slice(abscondFirstPageRightsCount).map((right, index) => {
+                  const rightIndex = index + abscondFirstPageRightsCount;
                   return (
                     <li key={`right-${rightIndex}`}>
                       <EditableText id={`right-${rightIndex}`} value={right} className="text-justify" />
@@ -909,8 +927,17 @@ const AbscondHearingNoticeContent = ({
           </AbscondNoticePage>
         </div>
         {isPreviewEditable && (editingPreviewItem || addingAfterPreviewItem !== undefined) ? (
-          <div className="fixed inset-x-0 -top-16 bottom-0 z-[999] flex items-center justify-center bg-slate-900/35 px-4">
-            <div className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl" role="dialog" aria-modal="true" aria-label="Edit paragraph">
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/35 px-4"
+            onClick={editingPreviewItem ? cancelPreviewItemEdit : cancelAddParagraph}
+          >
+            <div
+              className="w-full max-w-3xl rounded border border-slate-200 bg-white p-4 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Edit paragraph"
+              onClick={(event) => event.stopPropagation()}
+            >
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-black">{editingPreviewItem ? "Edit Paragraph" : "Add Paragraph"}</h3>
@@ -1477,6 +1504,14 @@ const AbscondHearingNoticeGenerator = ({
     );
   }, [clientDetails.clientId, clientDetails.companyType, clientRows]);
 
+  useEffect(() => {
+    const defaultHearingPlace = getAbscondDefaultHearingPlace(clientDetails);
+    if (!defaultHearingPlace) return;
+    setHearingDetails((current) =>
+      current.hearingPlace.trim() ? current : { ...current, hearingPlace: defaultHearingPlace },
+    );
+  }, [clientDetails.city, clientDetails.province]);
+
   const loadClientLogo = useCallback(async (clientId: string) => {
     const { data } = await supabaseReader
       .from("client_logos")
@@ -1492,6 +1527,9 @@ const AbscondHearingNoticeGenerator = ({
   const handleClientSelect = useCallback(async (clientId: string) => {
     const selected = clientRows.find((client) => client.id === clientId);
     if (!selected) return;
+    const isClientChanged = selected.id !== clientDetails.clientId;
+    const previousDefaultHearingPlace = getAbscondDefaultHearingPlace(clientDetails);
+    const nextDefaultHearingPlace = getAbscondDefaultHearingPlace(selected);
     setClientDetails({
       clientId: selected.id,
       clientName: formatCompanyName(selected),
@@ -1509,6 +1547,21 @@ const AbscondHearingNoticeGenerator = ({
       logoDataUrl: "",
       logoLayout: null,
     });
+    if (isClientChanged) {
+      setEmployeeDetails(emptyEmployeeDetails);
+      setHearingDetails({ ...emptyHearingDetails, hearingPlace: nextDefaultHearingPlace });
+      setPreviewEdits({});
+      setIsFinished(false);
+      setIsPreviewEditable(false);
+    } else {
+      setHearingDetails((current) => {
+        const currentHearingPlace = normalizeText(current.hearingPlace);
+        if (!nextDefaultHearingPlace || (currentHearingPlace && currentHearingPlace !== previousDefaultHearingPlace)) {
+          return current;
+        }
+        return { ...current, hearingPlace: nextDefaultHearingPlace };
+      });
+    }
 
     const logo = await loadClientLogo(selected.id);
     setClientDetails((current) =>
@@ -1520,7 +1573,7 @@ const AbscondHearingNoticeGenerator = ({
           }
         : current,
     );
-  }, [clientRows, loadClientLogo]);
+  }, [clientDetails, clientRows, loadClientLogo]);
 
   const updateEmployee = useCallback((field: keyof EmployeeDetails, value: string) => {
     setEmployeeDetails((current) => ({ ...current, [field]: value }));
@@ -1565,12 +1618,25 @@ const AbscondHearingNoticeGenerator = ({
     const margin = 20;
     const contentWidth = pageWidth - margin * 2;
     const rightX = pageWidth - margin;
-    const bodyFontSize = 9;
+    const bodyFontSize = 10;
     const bodyLineHeight = 5.2;
     const companyNameDisplay = getAbscondClientDisplayName(clientDetails);
     const tradingNameDisplay = normalizeText(clientDetails.tradingAs);
-    const companyIdentityDisplay = tradingNameDisplay ? `${companyNameDisplay} t/a ${tradingNameDisplay}` : companyNameDisplay;
-    const headerAddressLines = getAbscondHeaderAddressLines(clientDetails);
+    const clientLocationLine = [clientDetails.city, clientDetails.province].map(normalizeText).filter(Boolean).join(", ");
+    const pdfPhoneIconDataUrl = createAbscondPdfPhoneIconDataUrl();
+    const pdfMailIconDataUrl = createAbscondPdfMailIconDataUrl();
+    const companyInfoRows = [
+      { text: companyNameDisplay, icon: null },
+      { text: tradingNameDisplay ? `t/a ${tradingNameDisplay}` : "", icon: null },
+      { text: normalizeText(clientDetails.addressLine1), icon: null },
+      { text: normalizeText(clientDetails.addressLine2), icon: null },
+      { text: clientLocationLine, icon: null },
+      { text: normalizeText(clientDetails.areaCode), icon: null },
+      { text: normalizeText(clientDetails.contactNumber), icon: "phone" as const },
+      { text: normalizeText(clientDetails.email), icon: "email" as const },
+    ].filter(
+      (row): row is { text: string; icon: "phone" | "email" | null } => Boolean(row.text),
+    );
     const employeeFullName = getAbscondEmployeeFullName(employeeDetails) || previewLine;
     const employeeCityProvince = [employeeDetails.city, employeeDetails.province].map(normalizeText).filter(Boolean).join(", ");
     const employeeAddressLines = [
@@ -1582,15 +1648,66 @@ const AbscondHearingNoticeGenerator = ({
     const issueDateDisplay = formatLetterDate(getTodayDateValue());
     const issuingMethodsDisplay = hearingDetails.issuingMethods.length > 0
       ? hearingDetails.issuingMethods.map((method) => method.toUpperCase()).join(" / ")
-      : "BY HAND";
+      : previewLine;
+    const footerCompanyLine = tradingNameDisplay ? `${companyNameDisplay} t/a ${tradingNameDisplay}` : companyNameDisplay;
+    const footerLocationLine = [clientDetails.city, clientDetails.province, clientDetails.areaCode].map(normalizeText).filter(Boolean).join(", ");
+    const footerContactLine = [clientDetails.contactNumber, clientDetails.email].map(normalizeText).filter(Boolean).join(" | ");
+    const secondPageFooterLines = [footerCompanyLine, footerLocationLine, footerContactLine].filter(Boolean);
+    const employeeInitialSurname = [
+      normalizeText(employeeDetails.employeeName).charAt(0),
+      normalizeText(employeeDetails.employeeSurname),
+    ].filter(Boolean).join(" ");
+    const footerDocumentLabel = employeeInitialSurname
+      ? `Abscondment - ${employeeInitialSurname}`
+      : "Abscondment";
     const paragraphs = getAbscondNoticeParagraphs(hearingDetails, previewEdits);
     const hearingRights = getAbscondHearingRights(previewEdits);
+
+    type PdfTextToken = { text: string; bold: boolean };
+
+    const drawJustifiedTextLine = (line: string, x: number, y: number, maxWidth: number) => {
+      const words = line.trim().split(/\s+/).filter(Boolean);
+      if (words.length <= 1) {
+        doc.text(line, x, y);
+        return;
+      }
+      const wordsWidth = words.reduce((total, word) => total + doc.getTextWidth(word), 0);
+      const gapWidth = (maxWidth - wordsWidth) / (words.length - 1);
+      let cursorX = x;
+      words.forEach((word, index) => {
+        doc.text(word, cursorX, y);
+        cursorX += doc.getTextWidth(word) + (index < words.length - 1 ? gapWidth : 0);
+      });
+    };
+
+    const getTokenWidth = (token: PdfTextToken) => {
+      doc.setFont("helvetica", token.bold ? "bold" : "normal");
+      return doc.getTextWidth(token.text);
+    };
+
+    const drawTokenLine = (tokens: PdfTextToken[], x: number, y: number, maxWidth: number, justify: boolean) => {
+      if (tokens.length === 0) return;
+      const spaceWidth = doc.getTextWidth(" ");
+      const wordsWidth = tokens.reduce((total, token) => total + getTokenWidth(token), 0);
+      const gapWidth = justify && tokens.length > 1 ? (maxWidth - wordsWidth) / (tokens.length - 1) : spaceWidth;
+      let cursorX = x;
+      tokens.forEach((token, index) => {
+        doc.setFont("helvetica", token.bold ? "bold" : "normal");
+        doc.text(token.text, cursorX, y);
+        cursorX += doc.getTextWidth(token.text) + (index < tokens.length - 1 ? gapWidth : 0);
+      });
+    };
 
     const drawWrappedText = (text: string, x: number, y: number, maxWidth: number, options?: { bold?: boolean; align?: "left" | "right" | "center" | "justify" }) => {
       doc.setFont("helvetica", options?.bold ? "bold" : "normal");
       const lines = doc.splitTextToSize(text, maxWidth) as string[];
       lines.forEach((line, index) => {
-        doc.text(line, x, y + index * bodyLineHeight, { align: options?.align === "justify" ? "justify" : options?.align });
+        const lineY = y + index * bodyLineHeight;
+        if (options?.align === "justify" && index < lines.length - 1) {
+          drawJustifiedTextLine(line, x, lineY, maxWidth);
+          return;
+        }
+        doc.text(line, x, lineY, { align: options?.align === "justify" ? "left" : options?.align });
       });
       return y + lines.length * bodyLineHeight;
     };
@@ -1600,131 +1717,148 @@ const AbscondHearingNoticeGenerator = ({
       if (targets.length === 0) return drawWrappedText(text, x, y, maxWidth, { align: "justify" });
       const escaped = targets.map((target) => target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
       const pattern = new RegExp(`(${escaped.join("|")})`, "g");
-      const parts = text.split(pattern).filter((part) => part.length > 0);
-      let cursorX = x;
-      let cursorY = y;
-      parts.forEach((part) => {
+      const tokens: PdfTextToken[] = [];
+      text.split(pattern).filter((part) => part.length > 0).forEach((part) => {
         const isBold = targets.includes(part);
-        doc.setFont("helvetica", isBold ? "bold" : "normal");
-        const words = part.split(/(\s+)/).filter((word) => word.length > 0);
-        words.forEach((word) => {
-          const width = doc.getTextWidth(word);
-          if (cursorX > x && cursorX + width > x + maxWidth) {
-            cursorX = x;
-            cursorY += bodyLineHeight;
-          }
-          doc.text(word, cursorX, cursorY);
-          cursorX += width;
+        part.split(/\s+/).filter(Boolean).forEach((word) => {
+          tokens.push({ text: word, bold: isBold });
         });
       });
-      return cursorY + bodyLineHeight;
+      const lines: PdfTextToken[][] = [];
+      let currentLine: PdfTextToken[] = [];
+      let currentWidth = 0;
+      const spaceWidth = doc.getTextWidth(" ");
+      tokens.forEach((token) => {
+        const tokenWidth = getTokenWidth(token);
+        const nextWidth = currentLine.length === 0 ? tokenWidth : currentWidth + spaceWidth + tokenWidth;
+        if (currentLine.length > 0 && nextWidth > maxWidth) {
+          lines.push(currentLine);
+          currentLine = [token];
+          currentWidth = tokenWidth;
+          return;
+        }
+        currentLine.push(token);
+        currentWidth = nextWidth;
+      });
+      if (currentLine.length > 0) lines.push(currentLine);
+      lines.forEach((line, index) => {
+        drawTokenLine(line, x, y + index * bodyLineHeight, maxWidth, index < lines.length - 1);
+      });
+      return y + lines.length * bodyLineHeight;
     };
 
     const drawFirstPageHeader = () => {
-      let y = 14;
+      const y = 12;
       const headerTop = y;
-      const headerLineHeight = 3.5;
-      let logoBottomY = headerTop;
+      const drawRightAlignedText = (text: string, x: number, top: number, opts?: { bold?: boolean; size?: number }) => {
+        doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
+        doc.setFontSize(opts?.size ?? 8.5);
+        doc.text(text, x, top, { align: "right" });
+      };
+      const drawHeaderIcon = (kind: "phone" | "email", xRight: number, baselineY: number) => {
+        const dataUrl = kind === "phone" ? pdfPhoneIconDataUrl : pdfMailIconDataUrl;
+        if (!dataUrl) return;
+        try {
+          doc.addImage(dataUrl, "PNG", xRight - 3.6, baselineY - 2.35, 2.6, 2.6);
+        } catch {
+          // Keep generating if a header icon cannot be embedded.
+        }
+      };
+
       if (clientDetails.logoDataUrl) {
         try {
           const imageType = clientDetails.logoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
           const imageProps = doc.getImageProperties(clientDetails.logoDataUrl);
-          const imageRatio = imageProps.width / imageProps.height;
-          const targetLogoHeight = getPdfLogoTargetHeight(clientDetails.logoLayout);
-          const maxLogoWidth = 60;
+          const ratio = imageProps.width / imageProps.height;
+          const baseTargetHeight = getPdfLogoTargetHeight(clientDetails.logoLayout);
+          const isCompactStackedLogo = ratio <= 1.2;
+          const useStackedLogoSizing = clientDetails.logoLayout === "vertical" || isCompactStackedLogo;
+          const targetLogoHeight = useStackedLogoSizing ? Math.max(baseTargetHeight, 25.5) : Math.max(baseTargetHeight, 18);
+          const maxLogoWidth = useStackedLogoSizing ? 38 : 72;
           let logoHeight = targetLogoHeight;
-          let logoWidth = logoHeight * imageRatio;
+          let logoWidth = logoHeight * ratio;
           if (logoWidth > maxLogoWidth) {
             const scale = maxLogoWidth / logoWidth;
             logoWidth = maxLogoWidth;
             logoHeight *= scale;
           }
-          doc.addImage(clientDetails.logoDataUrl, imageType, margin, headerTop, logoWidth, logoHeight, undefined, "FAST");
-          logoBottomY = headerTop + logoHeight;
+          doc.addImage(clientDetails.logoDataUrl, imageType, margin, y, logoWidth, logoHeight, undefined, "FAST");
         } catch {
-          logoBottomY = headerTop;
+          // Keep generating even if logo rendering fails.
         }
       }
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(7);
-      doc.text(companyNameDisplay, rightX, headerTop, { align: "right" });
-      y = headerTop + headerLineHeight;
-      doc.setFont("helvetica", "normal");
-      const detailLines = [
-        ...(tradingNameDisplay ? [`t/a ${tradingNameDisplay}`] : []),
-        ...(headerAddressLines.length > 0 ? headerAddressLines : ["Address"]),
-      ];
-      detailLines.forEach((line) => {
-        doc.text(line, rightX, y, { align: "right" });
-        y += headerLineHeight;
+      let headerY = headerTop + 3;
+      companyInfoRows.forEach((row) => {
+        const isRegistered = row.text === companyNameDisplay;
+        drawRightAlignedText(row.text, rightX, headerY, { bold: isRegistered, size: isRegistered ? 8.5 : 8 });
+        if (row.icon) {
+          const textWidth = doc.getTextWidth(row.text);
+          drawHeaderIcon(row.icon, rightX - textWidth - 0.6, headerY);
+        }
+        headerY += row.text === (tradingNameDisplay ? `t/a ${tradingNameDisplay}` : "") ? 4.2 : 3.5;
       });
-      doc.text(`Email: ${clientDetails.email || previewLine}`, rightX, y, { align: "right" });
-      y += headerLineHeight;
-      doc.text(`Tel: ${clientDetails.contactNumber || previewLine}`, rightX, y, { align: "right" });
-      y += headerLineHeight;
-      const dividerY = Math.max(logoBottomY + 6, y + 2);
+
+      const dividerY = Math.max(y + 20, headerY + 1);
       doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.2);
+      doc.setLineWidth(0.25);
       doc.line(margin, dividerY, rightX, dividerY);
       doc.setDrawColor(0, 0, 0);
       return dividerY + 6;
     };
 
-    const drawSecondPageFooter = () => {
-      const footerTop = pageHeight - 36;
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.2);
-      doc.line(margin, footerTop - 3, rightX, footerTop - 3);
-      doc.setDrawColor(0, 0, 0);
-      doc.setFontSize(7);
-      doc.setFont("helvetica", "bold");
-      doc.text(companyIdentityDisplay, margin, footerTop);
-      doc.setFont("helvetica", "normal");
-      let footerY = footerTop + 3.6;
-      if (clientDetails.registrationNumber) {
-        doc.text(clientDetails.registrationNumber, margin, footerY);
-        footerY += 3.6;
-      }
-      if (clientDetails.contactNumber) {
-        doc.text(clientDetails.contactNumber, margin, footerY);
-        footerY += 3.6;
-      }
-      if (clientDetails.email) {
-        doc.text(clientDetails.email, margin, footerY);
-        footerY += 3.6;
-      }
-      headerAddressLines.forEach((line) => {
-        doc.text(line, margin, footerY);
-        footerY += 3.6;
-      });
+    const drawFooter = () => {
+      const totalPages = doc.getNumberOfPages();
+      const dividerY = pageHeight - 23;
+      const footerTextY = dividerY + 4.5;
+      const footerLineGap = 3.7;
+      const generatedByPrefix = "Document generated by ";
+      const generatedByUrl = "www.llasa.co.za";
+      const generatedByY = pageHeight - 5.5;
 
-      if (clientDetails.logoDataUrl) {
-        try {
-          const imageType = clientDetails.logoDataUrl.includes("image/jpeg") ? "JPEG" : "PNG";
-          const imageProps = doc.getImageProperties(clientDetails.logoDataUrl);
-          const imageRatio = imageProps.width / imageProps.height;
-          const box = getAbscondFooterLogoDimensions(clientDetails.logoLayout);
-          let logoWidth = box.previewMaxWidth / 3.1;
-          let logoHeight = logoWidth / imageRatio;
-          const maxLogoHeight = box.previewMaxHeight / 3.1;
-          if (logoHeight > maxLogoHeight) {
-            logoHeight = maxLogoHeight;
-            logoWidth = logoHeight * imageRatio;
-          }
-          doc.addImage(clientDetails.logoDataUrl, imageType, rightX - logoWidth, footerTop, logoWidth, logoHeight, undefined, "FAST");
-        } catch {
-          // Continue without the footer logo if the image cannot be embedded.
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        doc.setPage(pageNumber);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.line(margin, dividerY, rightX, dividerY);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(71, 85, 105);
+        doc.text(footerDocumentLabel, margin, footerTextY);
+        doc.text(`Page ${pageNumber} of ${totalPages}`, rightX, footerTextY, { align: "right" });
+        if (pageNumber === 2) {
+          secondPageFooterLines.forEach((line, index) => {
+            doc.setFont("helvetica", index === 0 ? "bold" : "normal");
+            doc.text(line, pageWidth / 2, footerTextY + index * footerLineGap, { align: "center" });
+          });
+          doc.setFont("helvetica", "normal");
         }
+
+        doc.setFontSize(6.5);
+        doc.setTextColor(63, 63, 70);
+        const generatedByPrefixWidth = doc.getTextWidth(generatedByPrefix);
+        const generatedByUrlWidth = doc.getTextWidth(generatedByUrl);
+        const generatedByStartX = (pageWidth - (generatedByPrefixWidth + generatedByUrlWidth)) / 2;
+        const generatedByUrlX = generatedByStartX + generatedByPrefixWidth;
+        doc.text(generatedByPrefix, generatedByStartX, generatedByY);
+        doc.setTextColor(62, 202, 68);
+        doc.text(generatedByUrl, generatedByUrlX, generatedByY);
+        doc.setDrawColor(62, 202, 68);
+        doc.setLineWidth(0.15);
+        doc.line(generatedByUrlX, generatedByY + 0.35, generatedByUrlX + generatedByUrlWidth, generatedByY + 0.35);
+        doc.setTextColor(0, 0, 0);
       }
     };
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(bodyFontSize);
     let y = drawFirstPageHeader();
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(bodyFontSize);
     doc.text(issueDateDisplay, rightX, y, { align: "right" });
     y += 12;
-    doc.text("To:", margin, y);
+    doc.text("TO:", margin, y);
     doc.setFont("helvetica", "bold");
     doc.text(employeeFullName.toUpperCase(), margin + 12, y);
     y += bodyLineHeight;
@@ -1751,7 +1885,7 @@ const AbscondHearingNoticeGenerator = ({
     y += 2;
     y = drawWrappedText("Your rights in respect of the hearing are as follows:", margin, y, contentWidth);
     y += 4;
-    hearingRights.slice(0, 5).forEach((right) => {
+    hearingRights.slice(0, abscondFirstPageRightsCount).forEach((right) => {
       doc.text("-", margin + 4, y);
       y = drawWrappedText(right, margin + 10, y, contentWidth - 10, { align: "justify" });
       y += 1.5;
@@ -1761,7 +1895,7 @@ const AbscondHearingNoticeGenerator = ({
     doc.setFont("helvetica", "normal");
     doc.setFontSize(bodyFontSize);
     y = 24;
-    hearingRights.slice(5).forEach((right) => {
+    hearingRights.slice(abscondFirstPageRightsCount).forEach((right) => {
       doc.text("-", margin + 4, y);
       y = drawWrappedText(right, margin + 10, y, contentWidth - 10, { align: "justify" });
       y += 1.5;
@@ -1775,9 +1909,11 @@ const AbscondHearingNoticeGenerator = ({
     y += 5;
     doc.setFont("helvetica", "bold");
     doc.text("MANAGEMENT", margin, y);
-    drawSecondPageFooter();
+    drawFooter();
 
-    void sanitizeAbscondPdfSegment(employeeFullName, "employee");
+    const safeEmployeeName = sanitizeAbscondPdfSegment(employeeFullName, "employee");
+    const safeClientName = sanitizeAbscondPdfSegment(companyNameDisplay, "client");
+    doc.save(`abscondment-hearing-notice-${safeClientName}-${safeEmployeeName}.pdf`);
   }, [clientDetails, employeeDetails, hearingDetails, previewEdits]);
 
   const stepMeta = useMemo(
@@ -1849,7 +1985,7 @@ const AbscondHearingNoticeGenerator = ({
           return;
         }
         if (activeStep === 2) {
-          setHearingDetails(emptyHearingDetails);
+          setHearingDetails({ ...emptyHearingDetails, hearingPlace: getAbscondDefaultHearingPlace(clientDetails) });
         }
       },
       isFinished,

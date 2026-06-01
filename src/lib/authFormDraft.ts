@@ -1,5 +1,6 @@
 export type AuthFormDraft = {
   isLogin: boolean;
+  rememberUsername: boolean;
   name: string;
   surname: string;
   contactNumber: string;

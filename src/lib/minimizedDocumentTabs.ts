@@ -9,16 +9,21 @@ export type StoredMinimizedDocumentTab = {
 
 export const minimizedDocumentTabsStorageKey = "documents:minimized-tabs";
 export const minimizedDocumentTabsChangedEvent = "documents-minimized-tabs-changed";
+const documentKeyAliases: Record<string, string> = {
+  disciplinaryHearingNotice: "hearingNotice",
+};
 
 const normalizeMinimizedDocumentTabs = (tabs: StoredMinimizedDocumentTab[]) => {
   const seenByDocumentKey = new Map<string, number>();
 
   return tabs.map((tab, index) => {
-    const seenCount = seenByDocumentKey.get(tab.documentKey) ?? 0;
-    seenByDocumentKey.set(tab.documentKey, seenCount + 1);
+    const normalizedDocumentKey = documentKeyAliases[tab.documentKey] || tab.documentKey;
+    const seenCount = seenByDocumentKey.get(normalizedDocumentKey) ?? 0;
+    seenByDocumentKey.set(normalizedDocumentKey, seenCount + 1);
 
     return {
       ...tab,
+      documentKey: normalizedDocumentKey,
       minimizedOrder:
         typeof tab.minimizedOrder === "number" && Number.isFinite(tab.minimizedOrder) ? tab.minimizedOrder : index,
       instanceNumber:

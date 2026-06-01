@@ -1537,7 +1537,7 @@ const MiscTermLetterGenerator = ({
       const generatedByUrl = "www.llasa.co.za";
       const generatedByY = pageHeight - 5.5;
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(6.2);
+      pdf.setFontSize(6.5);
       pdf.setTextColor(63, 63, 70);
       const generatedByPrefixWidth = pdf.getTextWidth(generatedByPrefix);
       const generatedByUrlWidth = pdf.getTextWidth(generatedByUrl);

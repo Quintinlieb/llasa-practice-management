@@ -28,7 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 type DocumentKey =
   | "codeOfConduct"
   | "discWarningGenerator"
-  | "disciplinaryHearingNotice"
+  | "hearingNotice"
   | "abscondHearingNotice"
   | "disciplinaryHearingOutcome"
   | "precautionarySuspensionNotice"
@@ -107,6 +107,13 @@ type MinimizedGeneratorTab = {
   draftState?: unknown;
 };
 
+const normalizeLegacyDocumentKey = (value: string | null | undefined): DocumentKey | null =>
+  value === "disciplinaryHearingNotice"
+    ? "hearingNotice"
+    : value && value in documentComponents
+      ? (value as DocumentKey)
+      : null;
+
 const documentsTableCacheKey = "documents:table-cache";
 const DOCUMENTS_TABLE_PAGE_SIZE = 25;
 
@@ -173,6 +180,33 @@ const getDiscHearingBreadcrumbClientName = (draftState: unknown) => {
   const tradingAsName = String(candidate.clientTradingAsName || "").trim();
   if (tradingAsName) return tradingAsName;
   return String(candidate.clientRegisteredName || "").trim();
+};
+
+const getHearingNoticeBreadcrumbType = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const candidate = draftState as {
+    hearingType?: unknown;
+    hearingNoticeType?: unknown;
+    noticeForm?: unknown;
+  };
+  const directType = String(candidate.hearingType || candidate.hearingNoticeType || "").trim();
+  if (directType) return directType;
+  const noticeForm = candidate.noticeForm;
+  if (!noticeForm || typeof noticeForm !== "object") return "";
+  const noticeCandidate = noticeForm as {
+    hearingType?: unknown;
+    hearingNoticeType?: unknown;
+  };
+  return String(noticeCandidate.hearingType || noticeCandidate.hearingNoticeType || "").trim();
+};
+
+const formatHearingNoticeBreadcrumbTitle = (draftState: unknown) => {
+  const hearingType = getHearingNoticeBreadcrumbType(draftState);
+  const clientName = getDiscHearingBreadcrumbClientName(draftState);
+  const parts = ["Hearing Notice"];
+  if (hearingType) parts.push(hearingType);
+  const base = parts.join(" / ");
+  return clientName ? `${base} (${clientName})` : base;
 };
 
 const getAbscondHearingBreadcrumbClientName = (draftState: unknown) => {
@@ -284,7 +318,7 @@ const lazyDocumentComponent = (loader: () => Promise<any>) =>
 const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentProps>> = {
   codeOfConduct: lazyDocumentComponent(() => import("./documents/discipline/CodeOfConductPreview")),
   discWarningGenerator: lazyDocumentComponent(() => import("./DiscWarningGenerator")),
-  disciplinaryHearingNotice: lazyDocumentComponent(() => import("./DiscHearingNoticeGenerator")),
+  hearingNotice: lazyDocumentComponent(() => import("./HearingNoticeGenerator")),
   abscondHearingNotice: lazyDocumentComponent(() => import("./AbscondHearingNoticeGenerator")),
   disciplinaryHearingOutcome: lazyDocumentComponent(() => import("./DisciplinaryHearingOutcomeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
@@ -308,8 +342,8 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
 const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   codeOfConduct: { category: "Discipline", label: "Code of Conduct" },
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
-  disciplinaryHearingNotice: { category: "Notices", label: "Disciplinary Hearing" },
-  abscondHearingNotice: { category: "Notices", label: "Abscondment Hearing" },
+  hearingNotice: { category: "Notices", label: "Hearing Notice" },
+  abscondHearingNotice: { category: "Notices", label: "Abscondment Letter" },
   disciplinaryHearingOutcome: { category: "Outcome", label: "Disciplinary Hearing Outcome" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
@@ -349,7 +383,7 @@ const terminationLetterDocumentKeys = [
 ] as const satisfies readonly DocumentKey[];
 
 const noticeDocumentKeys = [
-  "disciplinaryHearingNotice",
+  "hearingNotice",
   "abscondHearingNotice",
   "precautionarySuspensionNotice",
   "contemplatedRetrenchmentNotice",
@@ -390,8 +424,8 @@ const documentCreateFlyoutItems: Record<
     { title: "Mutual Separation", selectedDocument: "mutualTermination" },
   ],
   Notices: [
-    { title: "Disciplinary Hearing", selectedDocument: "disciplinaryHearingNotice" },
-    { title: "Abscondment Hearing", selectedDocument: "abscondHearingNotice" },
+    { title: "Hearing Notice", selectedDocument: "hearingNotice" },
+    { title: "Abscondment Letter", selectedDocument: "abscondHearingNotice" },
     { title: "Incapacity Hearing (Performance)", selectedDocument: "incapacityPerformanceHearingNotice" },
     { title: "Incapacity Hearing (Ill Health)", selectedDocument: "incapacityIllHealthHearingNotice" },
     { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
@@ -418,7 +452,7 @@ const activeNewDocumentKeys = new Set<DocumentKey>([
   "discWarningGenerator",
   "permContract",
   "noticeTermination",
-  "disciplinaryHearingNotice",
+  "hearingNotice",
   "abscondHearingNotice",
   "disciplinaryHearingOutcome",
 ]);
@@ -439,7 +473,7 @@ const wizardDocumentKeys = [
 
 const darkStepperDocumentKeys = [
   "discWarningGenerator",
-  "disciplinaryHearingNotice",
+  "hearingNotice",
   "abscondHearingNotice",
   "disciplinaryHearingOutcome",
   "permContract",
@@ -448,7 +482,7 @@ const darkStepperDocumentKeys = [
 const darkStepperDocumentSet = new Set<DocumentKey>(darkStepperDocumentKeys);
 const chevronTrackerDocumentSet = new Set<DocumentKey>([
   "discWarningGenerator",
-  "disciplinaryHearingNotice",
+  "hearingNotice",
   "abscondHearingNotice",
   "disciplinaryHearingOutcome",
   "noticeTermination",
@@ -468,8 +502,8 @@ const modalOnlyDocumentSet = new Set<DocumentKey>(modalOnlyDocumentKeys);
 const modalTitleByDocument: Record<DocumentKey, string> = {
   codeOfConduct: "Code of Conduct",
   discWarningGenerator: "Warning",
-  disciplinaryHearingNotice: "Disciplinary Hearing",
-  abscondHearingNotice: "Abscondment Hearing",
+  hearingNotice: "Hearing Notice",
+  abscondHearingNotice: "Abscondment Letter",
   disciplinaryHearingOutcome: "Disciplinary Hearing Outcome",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
@@ -498,7 +532,7 @@ const getMinimizedTabLabel = (documentKey: DocumentKey) =>
 
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
-  disciplinaryHearingNotice: "Notice Details",
+  hearingNotice: "Notice Details",
   abscondHearingNotice: "Hearing Details",
   disciplinaryHearingOutcome: "Hearing Details",
   precautionarySuspensionNotice: "Notice Details",
@@ -643,17 +677,18 @@ const Documents = () => {
   };
 
   useEffect(() => {
-    const routeState = (location.state as { selectedDocument?: DocumentKey; restoreMinimizedTabId?: string } | null) ?? null;
-    const nextSelected = routeState?.selectedDocument;
+    const routeState = (location.state as { selectedDocument?: string; restoreMinimizedTabId?: string } | null) ?? null;
+    const nextSelected = normalizeLegacyDocumentKey(routeState?.selectedDocument);
     const restoreMinimizedTabId = routeState?.restoreMinimizedTabId;
 
     if (restoreMinimizedTabId) {
       const minimizedTab = minimizedTabs.find((item) => item.id === restoreMinimizedTabId);
-      if (minimizedTab && documentComponents[minimizedTab.documentKey]) {
-        setSelectedDocument(minimizedTab.documentKey);
+      const normalizedMinimizedDocumentKey = normalizeLegacyDocumentKey(minimizedTab?.documentKey);
+      if (minimizedTab && normalizedMinimizedDocumentKey && documentComponents[normalizedMinimizedDocumentKey]) {
+        setSelectedDocument(normalizedMinimizedDocumentKey);
         setStepMeta(null);
         setBreadcrumbStep(null);
-        setActiveSession(minimizedTab);
+        setActiveSession({ ...minimizedTab, documentKey: normalizedMinimizedDocumentKey });
         setMinimizedTabs((prev) => prev.filter((item) => item.id !== restoreMinimizedTabId));
       }
       const nextState = { ...(routeState as Record<string, unknown>) };
@@ -836,8 +871,6 @@ const Documents = () => {
   const modalTitle = modalDocument ? modalTitleByDocument[modalDocument] : "";
   const discWarningBreadcrumbClientName =
     modalDocument === "discWarningGenerator" ? getDiscWarningBreadcrumbClientName(activeSession?.draftState) : "";
-  const discHearingBreadcrumbClientName =
-    modalDocument === "disciplinaryHearingNotice" ? getDiscHearingBreadcrumbClientName(activeSession?.draftState) : "";
   const abscondHearingBreadcrumbClientName =
     modalDocument === "abscondHearingNotice" ? getAbscondHearingBreadcrumbClientName(activeSession?.draftState) : "";
   const discHearingOutcomeBreadcrumbClientName =
@@ -849,8 +882,8 @@ const Documents = () => {
   const modalBreadcrumbTitle =
     modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
-      : modalDocument === "disciplinaryHearingNotice" && discHearingBreadcrumbClientName
-        ? `${modalTitle} (${discHearingBreadcrumbClientName})`
+      : modalDocument === "hearingNotice"
+        ? formatHearingNoticeBreadcrumbTitle(activeSession?.draftState)
         : modalDocument === "abscondHearingNotice" && abscondHearingBreadcrumbClientName
           ? `${modalTitle} (${abscondHearingBreadcrumbClientName})`
         : modalDocument === "disciplinaryHearingOutcome" && discHearingOutcomeBreadcrumbClientName
@@ -1198,7 +1231,7 @@ const Documents = () => {
       ? warningActiveNotes
       : modalDocument === "permContract"
         ? permContractActiveNotes
-      : modalDocument === "disciplinaryHearingNotice"
+      : modalDocument === "hearingNotice"
         ? disciplinaryHearingActiveNotes
       : modalDocument === "precautionarySuspensionNotice"
         ? precautionarySuspensionActiveNotes
@@ -1848,7 +1881,9 @@ const Documents = () => {
                       <span className="text-white/60">
                       {modalDocument === "discWarningGenerator"
                         ? "Documents / Discipline / "
-                        : modalDocument === "disciplinaryHearingNotice" || modalDocument === "abscondHearingNotice"
+                        : modalDocument === "hearingNotice"
+                          ? "Documents / "
+                          : modalDocument === "abscondHearingNotice"
                           ? "Documents / Notices / "
                           : modalDocument === "disciplinaryHearingOutcome"
                             ? "Documents / Outcome / "

@@ -2058,7 +2058,7 @@ const DiscWarningGenerator = ({
     const generatedByUrl = "www.llasa.co.za";
     const generatedByY = pageHeight - 5.5;
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.2);
+    doc.setFontSize(6.5);
     doc.setTextColor(63, 63, 70);
     const generatedByPrefixWidth = doc.getTextWidth(generatedByPrefix);
     const generatedByUrlWidth = doc.getTextWidth(generatedByUrl);

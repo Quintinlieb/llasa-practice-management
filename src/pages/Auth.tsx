@@ -14,7 +14,9 @@ import { clearAuthFormDraft, readAuthFormDraft, writeAuthFormDraft } from "@/lib
 import {
   clearRememberedUsername,
   readRememberedUsername,
+  readRememberedUsernameEnabled,
   writeRememberedUsername,
+  writeRememberedUsernameEnabled,
 } from "@/lib/authRememberedUsername";
 
 type BeforeInstallPromptEvent = Event & {
@@ -49,7 +51,7 @@ const Auth = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [rememberUsername, setRememberUsername] = useState(() => readRememberedUsername().length > 0);
+  const [rememberUsername, setRememberUsername] = useState(() => readRememberedUsernameEnabled());
   const { signUp, signIn, signOut, user, loading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -59,6 +61,7 @@ const Auth = () => {
   useEffect(() => {
     const draft = readAuthFormDraft();
     const rememberedUsername = readRememberedUsername();
+    const rememberedUsernameEnabled = readRememberedUsernameEnabled();
     if (!draft) return;
     const params = new URLSearchParams(location.search);
     const forceLogin = params.get("login") === "1";
@@ -69,8 +72,8 @@ const Auth = () => {
 
     if (forceLogin || draft.isLogin) {
       clearAuthFormDraft();
-      setRememberUsername(rememberedUsername.length > 0);
-      setEmail(rememberedUsername);
+      setRememberUsername(draft.rememberUsername || rememberedUsernameEnabled);
+      setEmail(draft.rememberUsername || rememberedUsernameEnabled ? rememberedUsername : "");
       setPassword("");
       setConfirmPassword("");
       setName("");
@@ -82,7 +85,7 @@ const Auth = () => {
     setName(draft.name);
     setSurname(draft.surname);
     setContactNumber(draft.contactNumber);
-    setRememberUsername(rememberedUsername.length > 0);
+    setRememberUsername(draft.rememberUsername || rememberedUsernameEnabled);
     setEmail("");
     setPassword("");
     setConfirmPassword("");
@@ -94,13 +97,15 @@ const Auth = () => {
     if (!isLogin) return;
 
     const rememberedUsername = readRememberedUsername();
-    setRememberUsername(rememberedUsername.length > 0);
-    setEmail((currentEmail) => currentEmail || rememberedUsername);
+    const rememberedUsernameEnabled = readRememberedUsernameEnabled();
+    setRememberUsername(rememberedUsernameEnabled);
+    setEmail((currentEmail) => currentEmail || (rememberedUsernameEnabled ? rememberedUsername : ""));
   }, [isLogin]);
 
   useEffect(() => {
     writeAuthFormDraft({
       isLogin,
+      rememberUsername,
       name,
       surname,
       contactNumber,
@@ -108,13 +113,7 @@ const Auth = () => {
       password: isLogin ? "" : password,
       confirmPassword: isLogin ? "" : confirmPassword,
     });
-  }, [isLogin, name, surname, contactNumber, email, password, confirmPassword]);
-
-  useEffect(() => {
-    if (!isLogin) return;
-    if (email.trim().length > 0) return;
-    setRememberUsername(false);
-  }, [email, isLogin]);
+  }, [isLogin, rememberUsername, name, surname, contactNumber, email, password, confirmPassword]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -331,6 +330,7 @@ const Auth = () => {
             variant: "destructive",
           });
         } else {
+          writeRememberedUsernameEnabled(rememberUsername);
           if (rememberUsername) {
             writeRememberedUsername(normalizedEmail);
           } else {
@@ -561,7 +561,16 @@ const Auth = () => {
                         <Checkbox
                           id="remember-username"
                           checked={rememberUsername}
-                          onCheckedChange={(checked) => setRememberUsername(checked === true)}
+                          onCheckedChange={(checked) => {
+                            const nextChecked = checked === true;
+                            setRememberUsername(nextChecked);
+                            writeRememberedUsernameEnabled(nextChecked);
+                            if (!nextChecked) {
+                              clearRememberedUsername();
+                            } else if (email.trim()) {
+                              writeRememberedUsername(email.trim());
+                            }
+                          }}
                           disabled={!canRememberUsername}
                           className="h-3.5 w-3.5 rounded-[3px] border-white/40 data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44] data-[state=checked]:text-white"
                         />

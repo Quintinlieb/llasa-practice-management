@@ -41,6 +41,7 @@ const passwordSchema = z.string()
   .regex(/[a-z]/, "Must contain at least one lowercase letter")
   .regex(/[0-9]/, "Must contain at least one number")
   .regex(/[^A-Za-z0-9]/, "Must contain at least one special character");
+const authUsernameSchema = z.string().trim().email("Username must be a valid email address");
 
 type SettingsProps = {
   embedded?: boolean;
@@ -105,7 +106,7 @@ type SubuserListItem = {
   created_at: string | null;
 };
 
-type SubuserEditForm = Pick<SubuserInviteForm, "name" | "surname" | "contact_number" | "email" | "role">;
+type SubuserEditForm = Pick<SubuserInviteForm, "name" | "surname" | "contact_number" | "email" | "role" | "username">;
 
 type MembershipListItem = {
   id: string;
@@ -188,6 +189,7 @@ const emptySubuserEditForm: SubuserEditForm = {
   contact_number: "",
   email: "",
   role: "",
+  username: "",
 };
 
 const emptyMembershipForm = (): MembershipForm => ({
@@ -361,6 +363,9 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     confirmPassword: "",
   });
 
+  const [authUsername, setAuthUsername] = useState("");
+  const [initialAuthUsername, setInitialAuthUsername] = useState("");
+  const [authUsernameError, setAuthUsernameError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("user");
   const [isInviteSubuserOpen, setIsInviteSubuserOpen] = useState(false);
@@ -410,13 +415,14 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   ];
   const canEditSettings = !isPermissionsLoading && isMasterUser;
   const visibleSettingsTabs = settingsTabs;
-  const authUsernameDisplay = useMemo(
-    () =>
+  useEffect(() => {
+    const nextAuthUsername =
       String(user?.email || "").trim() ||
-      String((user as any)?.user_metadata?.username || "").trim() ||
-      "--",
-    [user],
-  );
+      String((user as any)?.user_metadata?.username || "").trim();
+    setAuthUsername(nextAuthUsername);
+    setInitialAuthUsername(nextAuthUsername);
+    setAuthUsernameError("");
+  }, [user?.id, user?.email]);
   const popupActionButtonClass =
     "h-8 min-w-[108px] rounded px-3 text-[11px] inline-flex items-center justify-center border border-[#3eca44] bg-white text-[#2f9f35] hover:bg-[#34b73b] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-[#2f9f35]";
   const settingsTabScrollPaneClass =
@@ -452,7 +458,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     subuserEditForm.surname.trim().length > 0 &&
     subuserEditForm.contact_number.trim().length > 0 &&
     subuserEditForm.email.trim().length > 0 &&
-    subuserEditForm.role.trim().length > 0;
+    subuserEditForm.username.trim().length > 0 &&
+    (editingSubuser?.user_type === "main_user" || subuserEditForm.role.trim().length > 0);
   const isMembershipFormValid =
     membershipForm.description.trim().length > 0 &&
     membershipForm.owner.trim().length > 0 &&
@@ -996,6 +1003,69 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     setSaving(false);
   };
 
+  const handleAuthUsernameUpdate = async () => {
+    if (!user || !canEditSettings) return;
+    setAuthUsernameError("");
+
+    let validatedUsername = "";
+    try {
+      validatedUsername = authUsernameSchema.parse(authUsername).toLowerCase();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setAuthUsernameError(error.errors[0]?.message ?? "Enter a valid username.");
+        return;
+      }
+    }
+
+    if (validatedUsername === initialAuthUsername.toLowerCase()) return;
+
+    setSaving(true);
+    try {
+      const { error: authError } = await supabase.auth.updateUser({
+        email: validatedUsername,
+        data: {
+          username: validatedUsername,
+        },
+      });
+      if (authError) throw authError;
+
+      const { error: profileError } = await (supabase as any)
+        .from("profiles")
+        .update({ user_email: validatedUsername })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+
+      setAuthUsername(validatedUsername);
+      setInitialAuthUsername(validatedUsername);
+      setUserDetails((prev) => ({ ...prev, user_email: validatedUsername }));
+      setInitialUserDetails((prev) => ({ ...prev, user_email: validatedUsername }));
+      const cached = settingsProfileCacheByUser.get(user.id) ?? { loadedGroups: new Set<ProfileDataGroup>() };
+      if (cached.userDetails) {
+        cached.userDetails = { ...cached.userDetails, user_email: validatedUsername };
+      }
+      settingsProfileCacheByUser.set(user.id, cached);
+      cacheHeaderProfile(user.id, {
+        user_name: userDetails.user_name,
+        user_surname: userDetails.user_surname,
+        user_email: validatedUsername,
+        profile_picture: userProfilePicture,
+      });
+
+      toast({
+        title: "Success",
+        description: "Username updated successfully. If email confirmation is enabled, confirm the new address before using it to sign in.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: getSafeErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const companyProfileKeys: Array<keyof CompanyDetailsForm> = [
     "company_name",
     "company_type",
@@ -1024,6 +1094,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     JSON.stringify(userDetails) !== JSON.stringify(initialUserDetails) ||
     userProfilePicture !== initialUserProfilePicture ||
     userSignature !== initialUserSignature;
+  const isAuthUsernameDirty = authUsername.trim().toLowerCase() !== initialAuthUsername.trim().toLowerCase();
   const isCompanyProfileDirty = companyProfileKeys.some(
     (key) => companyDetails[key] !== initialCompanyDetails[key],
   );
@@ -1154,6 +1225,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       contact_number: subuser.contact_number || "",
       email: subuser.email || "",
       role: (subuser.role || "") as SubuserEditForm["role"],
+      username: subuser.email || "",
     });
     setSubuserEditSignature(resolveUserSignatureUrl(subuser.signature_storage_path));
     setSubuserEditSignatureStoredValue(String(subuser.signature_storage_path || "").trim());
@@ -1497,6 +1569,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         contact_number: subuserEditForm.contact_number.trim(),
         email: subuserEditForm.email.trim().toLowerCase(),
         role: subuserEditForm.role.trim(),
+        username: subuserEditForm.username.trim().toLowerCase(),
       } as Record<string, unknown>;
 
       const previousSignatureStoredValue = subuserEditSignatureStoredValue;
@@ -1526,13 +1599,24 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                 surname: payload.surname,
                 contact_number: payload.contact_number,
                 email: payload.email,
+                username: payload.username,
                 signature_storage_path: payload.signature_storage_path,
               },
             })
-          : await (supabase as any)
-              .from("subusers")
-              .update(payload)
-              .eq("id", editingSubuser.id);
+          : await supabase.functions.invoke("update-company-user-manual", {
+              body: {
+                user_type: "subuser",
+                subuser_id: editingSubuser.id,
+                auth_user_id: editingSubuser.auth_user_id ?? undefined,
+                name: payload.name,
+                surname: payload.surname,
+                contact_number: payload.contact_number,
+                email: payload.email,
+                username: payload.username,
+                role: payload.role,
+                signature_storage_path: payload.signature_storage_path,
+              },
+            });
 
       if (error) throw error;
 
@@ -2149,8 +2233,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                           <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
                           <div className="truncate text-slate-700">{item.role || "--"}</div>
                           <div className="flex items-center gap-1.5">
-                            <span className={cn("h-2 w-2 rounded-full", item.is_online ? "bg-[#3eca44]" : "bg-slate-300")} />
-                            <span className={cn("truncate text-[10px] font-medium", item.is_online ? "text-[#2f9f35]" : "text-slate-500")}>
+                            <span className={cn("h-2 w-2 rounded-full", item.is_online ? "bg-[#3eca44]" : "bg-red-500")} />
+                            <span className="truncate text-[10px] font-medium text-slate-900">
                               {item.is_online ? "Online" : "Offline"}
                             </span>
                           </div>
@@ -2570,13 +2654,27 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     <span className={floatingLabelClass}>Username</span>
                     <Input
                       id="auth_username"
-                      value={authUsernameDisplay}
-                      readOnly
-                      tabIndex={-1}
-                      className={companyProfileReadOnlyInputClass}
+                      type="email"
+                      value={authUsername}
+                      readOnly={!canEditSettings}
+                      tabIndex={canEditSettings ? 0 : -1}
+                      className={canEditSettings ? "" : companyProfileReadOnlyInputClass}
+                      onChange={(e) => {
+                        setAuthUsername(e.target.value);
+                        if (authUsernameError) setAuthUsernameError("");
+                      }}
                     />
+                    {authUsernameError ? <p className="mt-1 text-[10px] text-red-600">{authUsernameError}</p> : null}
                   </div>
                 </div>
+                {canEditSettings && isAuthUsernameDirty ? (
+                  <div className={settingsActionRowClass.replace("mt-auto ", "")}>
+                    <Button onClick={handleAuthUsernameUpdate} disabled={saving} className={popupActionButtonClass}>
+                      {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Save Username
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="space-y-1 pt-3">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wide text-slate-900">Reset Password</h4>
                   <div className="h-[0.5px] w-full bg-[#3eca44]" />
@@ -2823,21 +2921,26 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <Input type="email" value={subuserEditForm.email} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, email: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert email" required />
                       </div>
                       <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
-                        <Select value={subuserEditForm.role} onValueChange={(value) => setSubuserEditForm((prev) => ({ ...prev, role: value as SubuserEditForm["role"] }))}>
-                          <SelectTrigger
-                            className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
-                          >
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded text-[11px]">
-                            <SelectItem value="Main" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main</SelectItem>
-                            <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
-                            <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
-                            <SelectItem value="IT Support" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">IT Support</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <span className={floatingLabelClass}>Username <span className="text-red-600">*</span></span>
+                        <Input type="email" value={subuserEditForm.username} onChange={(event) => setSubuserEditForm((prev) => ({ ...prev, username: event.target.value }))} className={subuserModalInputClass} placeholder="Please insert username" required />
                       </div>
+                      {editingSubuser?.user_type === "subuser" ? (
+                        <div className="relative w-full max-w-none">
+                          <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
+                          <Select value={subuserEditForm.role} onValueChange={(value) => setSubuserEditForm((prev) => ({ ...prev, role: value as SubuserEditForm["role"] }))}>
+                            <SelectTrigger
+                              className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                            >
+                              <SelectValue placeholder="Select role" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded text-[11px]">
+                              <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
+                              <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
+                              <SelectItem value="IT Support" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">IT Support</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : null}
                       <div className="flex items-center justify-center gap-2 pt-4">
                         <Button
                           type="button"

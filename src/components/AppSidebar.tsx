@@ -191,10 +191,8 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                   )}
                   data-collapsed={isCollapsed}
                   onClick={async () => {
-                    const { error } = await signOut();
-                    if (!error) {
-                      navigate("/auth?login=1", { replace: true });
-                    }
+                    await signOut();
+                    navigate("/auth?login=1", { replace: true });
                   }}
                 >
                   <LogOut className="h-5 w-5 text-white" />

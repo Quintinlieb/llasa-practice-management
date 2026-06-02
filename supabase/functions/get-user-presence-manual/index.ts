@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
 
   const { data, error } = await adminClient
     .from("user_presence")
-    .select("auth_user_id,last_seen_at")
+    .select("auth_user_id,user_type,profile_id,subuser_id,display_name,email,last_seen_at")
 
   if (error) return json({ error: error.message || "Unable to load presence" }, 400)
   return json({ ok: true, presence: data ?? [] })

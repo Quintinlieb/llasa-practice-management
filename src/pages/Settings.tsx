@@ -91,6 +91,7 @@ type SubuserListItem = {
   id: string;
   user_type: "main_user" | "subuser";
   auth_user_id?: string | null;
+  is_presence_only?: boolean;
   name: string;
   surname: string;
   contact_number: string | null;
@@ -1294,21 +1295,38 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       }
       if (subusersError) throw subusersError;
 
+      if (presenceResult.error) {
+        console.error("Unable to load user presence", presenceResult.error);
+      }
+
       const presenceResponse = (presenceResult.data ?? null) as {
         ok?: boolean;
-        presence?: Array<{ auth_user_id?: string | null; last_seen_at?: string | null }>;
+        presence?: Array<{
+          auth_user_id?: string | null;
+          user_type?: string | null;
+          profile_id?: string | null;
+          subuser_id?: string | null;
+          display_name?: string | null;
+          email?: string | null;
+          last_seen_at?: string | null;
+        }>;
         error?: string;
       } | null;
+      if (presenceResponse?.error) {
+        console.error("Unable to load user presence", presenceResponse.error);
+      }
 
-      const onlineCutoff = Date.now() - 90_000;
+      const onlineCutoff = Date.now() - 5 * 60_000;
+      const presenceRows = (presenceResponse?.presence ?? []) as any[];
       const presenceByAuthUserId = new Map(
-        ((presenceResponse?.presence ?? []) as any[]).map((row) => {
+        presenceRows.map((row) => {
           const lastSeenAt = String(row.last_seen_at ?? "").trim();
           return [
             String(row.auth_user_id ?? "").trim(),
             {
               last_seen_at: lastSeenAt || null,
               is_online: Boolean(lastSeenAt && new Date(lastSeenAt).getTime() >= onlineCutoff),
+              row,
             },
           ] as const;
         }),
@@ -1347,7 +1365,46 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         created_at: row.created_at ?? row.invited_at ?? null,
       })) satisfies SubuserListItem[];
 
-      const normalized = [...mainUsers, ...subusers].sort((left, right) => {
+      const knownAuthUserIds = new Set(
+        [...mainUsers, ...subusers]
+          .map((item) => String(item.auth_user_id ?? item.id ?? "").trim())
+          .filter(Boolean),
+      );
+
+      const presenceOnlyUsers = presenceRows
+        .map((row): SubuserListItem | null => {
+          const authUserId = String(row.auth_user_id ?? "").trim();
+          if (!authUserId || knownAuthUserIds.has(authUserId)) return null;
+
+          const presence = presenceByAuthUserId.get(authUserId);
+          if (!presence?.is_online) return null;
+
+          const displayName = String(row.display_name ?? "").trim();
+          const email = String(row.email ?? "").trim();
+          const rawUserType = String(row.user_type ?? "").trim();
+          const userType = rawUserType === "subuser" ? "subuser" : "main_user";
+
+          return {
+            id: `presence-${authUserId}`,
+            user_type: userType,
+            auth_user_id: authUserId,
+            is_presence_only: true,
+            name: displayName || email || "Signed in user",
+            surname: "",
+            contact_number: null,
+            email,
+            role: userType === "subuser" ? "Subuser" : "Signed in",
+            last_seen_at: presence.last_seen_at,
+            is_online: true,
+            profile_picture: null,
+            signature_storage_path: null,
+            status: "active",
+            created_at: presence.last_seen_at,
+          };
+        })
+        .filter((item): item is SubuserListItem => Boolean(item));
+
+      const normalized = [...mainUsers, ...subusers, ...presenceOnlyUsers].sort((left, right) => {
         const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
         const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
         return rightTime - leftTime;
@@ -2083,7 +2140,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         item.user_type === "main_user" &&
                         (String(item.auth_user_id || "").trim() === String(user?.id || "").trim() ||
                           String(item.id || "").trim() === String(user?.id || "").trim());
-                      const deleteDisabled = deletingSubuserId === item.id || isOwnMainUser;
+                      const actionDisabled = Boolean(item.is_presence_only);
+                      const deleteDisabled = deletingSubuserId === item.id || isOwnMainUser || actionDisabled;
                       return (
                         <div key={item.id} className={`grid ${canEditSettings ? "grid-cols-[1.1fr_1.25fr_0.95fr_0.75fr_0.65fr_0.65fr]" : "grid-cols-[1.2fr_1.25fr_1fr_0.8fr_0.7fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
                           <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
@@ -2101,7 +2159,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                               <button
                                 type="button"
                                 onClick={() => openSubuserEditDialog(item)}
-                                disabled={subuserEditSubmitting}
+                                disabled={subuserEditSubmitting || actionDisabled}
+                                title={actionDisabled ? "This active session is not linked to a managed user record." : undefined}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-600 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
                                 aria-label={`Edit user ${item.email || item.name || item.id}`}
                               >
@@ -2111,7 +2170,13 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                                 type="button"
                                 onClick={() => void handleDeleteSubuser(item)}
                                 disabled={deleteDisabled}
-                                title={isOwnMainUser ? "You cannot delete your own active main user account." : undefined}
+                                title={
+                                  actionDisabled
+                                    ? "This active session is not linked to a managed user record."
+                                    : isOwnMainUser
+                                      ? "You cannot delete your own active main user account."
+                                      : undefined
+                                }
                                 className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-rose-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                                 aria-label={`Delete user ${item.email || item.name || item.id}`}
                               >

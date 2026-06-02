@@ -24,6 +24,23 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const clearPersistedSupabaseSessions = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const storages = [window.sessionStorage, window.localStorage];
+    for (const storage of storages) {
+      for (let index = storage.length - 1; index >= 0; index -= 1) {
+        const key = storage.key(index);
+        if (key?.startsWith("sb-") && key.endsWith("-auth-token")) {
+          storage.removeItem(key);
+        }
+      }
+    }
+  } catch {
+    // Storage cleanup is best-effort; Supabase signOut still runs below.
+  }
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const persistedSession = readPersistedSupabaseSession() as Session | null;
   const [user, setUser] = useState<User | null>(persistedSession?.user ?? null);
@@ -175,7 +192,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
+    let error: unknown = null;
+    try {
+      const result = await supabase.auth.signOut();
+      error = result.error;
+    } catch (caughtError) {
+      error = caughtError;
+    } finally {
+      explicitSignInInProgressRef.current = false;
+      clearPersistedSupabaseSessions();
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+    }
     return { error };
   };
 

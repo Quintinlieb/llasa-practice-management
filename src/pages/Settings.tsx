@@ -1381,6 +1381,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
           display_name?: string | null;
           email?: string | null;
           last_seen_at?: string | null;
+          is_online?: boolean | null;
+          signed_out_at?: string | null;
         }>;
         error?: string;
       } | null;
@@ -1393,11 +1395,22 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       const presenceByAuthUserId = new Map(
         presenceRows.map((row) => {
           const lastSeenAt = String(row.last_seen_at ?? "").trim();
+          const signedOutAt = String(row.signed_out_at ?? "").trim();
+          const lastSeenTime = lastSeenAt ? new Date(lastSeenAt).getTime() : 0;
+          const signedOutTime = signedOutAt ? new Date(signedOutAt).getTime() : 0;
+          const hasExplicitOnlineState = typeof row.is_online === "boolean";
+          const heartbeatIsRecent = Boolean(lastSeenTime && lastSeenTime >= onlineCutoff);
+          const isSignedOutAfterHeartbeat = Boolean(signedOutTime && signedOutTime >= lastSeenTime);
+          const isOnline = hasExplicitOnlineState
+            ? Boolean(row.is_online && heartbeatIsRecent && !isSignedOutAfterHeartbeat)
+            : heartbeatIsRecent;
+
           return [
             String(row.auth_user_id ?? "").trim(),
             {
               last_seen_at: lastSeenAt || null,
-              is_online: Boolean(lastSeenAt && new Date(lastSeenAt).getTime() >= onlineCutoff),
+              signed_out_at: signedOutAt || null,
+              is_online: isOnline,
               row,
             },
           ] as const;

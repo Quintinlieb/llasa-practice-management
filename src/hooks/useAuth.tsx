@@ -194,6 +194,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     let error: unknown = null;
     try {
+      try {
+        const { error: presenceError } = await supabase.functions.invoke("update-user-presence-manual", {
+          body: { is_online: false },
+        });
+        if (presenceError) {
+          console.error("Failed to mark user offline", presenceError);
+        }
+      } catch (presenceError) {
+        console.error("Failed to mark user offline", presenceError);
+      }
       const result = await supabase.auth.signOut();
       error = result.error;
     } catch (caughtError) {

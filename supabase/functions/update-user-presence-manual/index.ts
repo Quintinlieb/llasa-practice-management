@@ -40,6 +40,17 @@ Deno.serve(async (req: Request) => {
   } = await authClient.auth.getUser()
   if (authError || !user?.id) return json({ error: "Unauthorized" }, 401)
 
+  let body: Record<string, unknown> = {}
+  try {
+    body = await req.json()
+  } catch {
+    body = {}
+  }
+  const isExplicitOffline =
+    body.is_online === false ||
+    body.online === false ||
+    String(body.status ?? "").trim().toLowerCase() === "offline"
+
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -57,6 +68,8 @@ Deno.serve(async (req: Request) => {
     display_name: `${metadataName} ${metadataSurname}`.trim() || metadataEmail || "User",
     email: metadataEmail,
     last_seen_at: now,
+    is_online: !isExplicitOffline,
+    signed_out_at: isExplicitOffline ? now : null,
     updated_at: now,
   }
 
@@ -96,10 +109,29 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  const { error } = await adminClient
+  let { error } = await adminClient
     .from("user_presence")
     .upsert(payload, { onConflict: "auth_user_id" })
 
+  if (error) {
+    const message = String(error.message ?? "").toLowerCase()
+    const isMissingOnlineColumn =
+      message.includes("is_online") ||
+      message.includes("signed_out_at") ||
+      message.includes("schema cache") ||
+      message.includes("column")
+
+    if (isMissingOnlineColumn) {
+      const fallbackPayload = { ...payload }
+      delete fallbackPayload.is_online
+      delete fallbackPayload.signed_out_at
+      const fallbackResult = await adminClient
+        .from("user_presence")
+        .upsert(fallbackPayload, { onConflict: "auth_user_id" })
+      error = fallbackResult.error
+    }
+  }
+
   if (error) return json({ error: error.message || "Unable to update presence" }, 400)
-  return json({ ok: true, last_seen_at: now })
+  return json({ ok: true, is_online: !isExplicitOffline, last_seen_at: now })
 })

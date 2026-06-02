@@ -63,9 +63,26 @@ Deno.serve(async (req: Request) => {
   }
   if (!masterProfile?.id && !subuserRow?.id) return json({ error: "Forbidden" }, 403)
 
-  const { data, error } = await adminClient
+  let { data, error } = await adminClient
     .from("user_presence")
-    .select("auth_user_id,user_type,profile_id,subuser_id,display_name,email,last_seen_at")
+    .select("auth_user_id,user_type,profile_id,subuser_id,display_name,email,last_seen_at,is_online,signed_out_at")
+
+  if (error) {
+    const message = String(error.message ?? "").toLowerCase()
+    const isMissingOnlineColumn =
+      message.includes("is_online") ||
+      message.includes("signed_out_at") ||
+      message.includes("schema cache") ||
+      message.includes("column")
+
+    if (isMissingOnlineColumn) {
+      const fallbackResult = await adminClient
+        .from("user_presence")
+        .select("auth_user_id,user_type,profile_id,subuser_id,display_name,email,last_seen_at")
+      data = fallbackResult.data
+      error = fallbackResult.error
+    }
+  }
 
   if (error) return json({ error: error.message || "Unable to load presence" }, 400)
   return json({ ok: true, presence: data ?? [] })

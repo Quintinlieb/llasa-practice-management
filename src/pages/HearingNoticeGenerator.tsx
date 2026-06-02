@@ -72,7 +72,7 @@ type ClientRow = {
   client_number: string | null;
   owner_number: string | null;
   primary_number: string | null;
-  main_office_number: string | null;
+  office_number: string | null;
   owner_email: string | null;
   primary_email: string | null;
   physical_address_line1: string | null;
@@ -440,7 +440,7 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientRegisteredName: String(client.registered_name || "").trim(),
   clientTradingAsName: String(client.trading_as || "").trim(),
   registrationNumber: String(client.registration_number || "").trim(),
-  clientContactNumber: String(client.main_office_number || client.primary_number || client.owner_number || client.client_number || "").trim(),
+  clientContactNumber: String(client.office_number || client.primary_number || client.owner_number || client.client_number || "").trim(),
   clientEmail: String(client.primary_email || client.owner_email || "").trim(),
   clientAddress: formatClientAddress(client),
   clientAddressLine1: String(client.physical_address_line1 || "").trim(),
@@ -2299,7 +2299,7 @@ const HearingNoticeGenerator = ({
       const { data, error } = await supabaseUntyped
         .from("clients")
         .select(
-          "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,main_office_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
+          "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,office_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
         )
         .order("registered_name", { ascending: true, nullsFirst: false });
 

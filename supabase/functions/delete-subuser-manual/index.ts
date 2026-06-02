@@ -13,6 +13,8 @@ const corsHeaders = {
 }
 
 type DeleteSubuserPayload = {
+  user_type?: "main_user" | "subuser"
+  profile_id?: string
   subuser_id?: string
   auth_user_id?: string
   email?: string
@@ -62,10 +64,18 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid JSON body" }, 400)
   }
 
+  const userType = String(payload.user_type ?? "subuser").trim()
+  const profileId = String(payload.profile_id ?? "").trim()
   const subuserId = String(payload.subuser_id ?? "").trim()
   const authUserId = String(payload.auth_user_id ?? "").trim()
   const email = String(payload.email ?? "").trim().toLowerCase()
-  if (!subuserId && !authUserId && !email) {
+  if (!["main_user", "subuser"].includes(userType)) {
+    return json({ error: "Invalid user type" }, 400)
+  }
+  if (userType === "main_user" && !profileId && !authUserId && !email) {
+    return json({ error: "Provide profile_id, auth_user_id, or email" }, 400)
+  }
+  if (userType === "subuser" && !subuserId && !authUserId && !email) {
     return json({ error: "Provide subuser_id, auth_user_id, or email" }, 400)
   }
 
@@ -83,13 +93,95 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
-  // Only master users (profiles row exists) can delete subusers.
+  // Only master users (profiles row exists) can delete company users.
   const { data: masterProfile, error: profileError } = await adminClient
     .from("profiles")
     .select("id")
     .eq("id", user.id)
     .maybeSingle()
   if (profileError || !masterProfile?.id) return json({ error: "Forbidden" }, 403)
+
+  if (userType === "main_user") {
+    let profileRow: Record<string, unknown> | undefined
+    let profileLookupError: { message?: string } | null = null
+    if (profileId) {
+      const { data, error } = await adminClient
+        .from("profiles")
+        .select("*")
+        .eq("id", profileId)
+        .limit(1)
+      profileRow = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : undefined
+      profileLookupError = error
+    } else if (email) {
+      const { data, error } = await adminClient
+        .from("profiles")
+        .select("*")
+        .eq("user_email", email)
+        .limit(1)
+      profileRow = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : undefined
+      profileLookupError = error
+    } else if (authUserId) {
+      const { data, error } = await adminClient
+        .from("profiles")
+        .select("*")
+        .eq("id", authUserId)
+        .limit(1)
+      profileRow = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : undefined
+      profileLookupError = error
+    }
+
+    if (profileLookupError) return json({ error: profileLookupError.message || "Unable to load main user" }, 400)
+    if (!profileRow) return json({ error: "Main user not found" }, 404)
+
+    const resolvedProfileId = String(profileRow.id ?? "").trim()
+    const resolvedAuthUserId = String(profileRow.auth_user_id ?? resolvedProfileId).trim()
+    if (resolvedAuthUserId === user.id || resolvedProfileId === user.id) {
+      return json({ error: "You cannot delete your own active main user account" }, 400)
+    }
+
+    const profilePicturePath = String(profileRow.profile_picture ?? "").trim()
+    const signatureStoragePath = String(profileRow.signature_storage_path ?? "").trim()
+
+    const { error: deleteProfileError } = await adminClient
+      .from("profiles")
+      .delete()
+      .eq("id", resolvedProfileId)
+    if (deleteProfileError) {
+      return json({ error: deleteProfileError.message || "Unable to delete main user row" }, 400)
+    }
+
+    if (resolvedAuthUserId) {
+      const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(resolvedAuthUserId)
+      if (deleteAuthError && !isAuthUserMissingError(deleteAuthError)) {
+        return json(
+          {
+            error: deleteAuthError.message || "Main user row deleted, but auth user delete failed",
+            partial: true,
+            profile_deleted: true,
+            auth_deleted: false,
+          },
+          400,
+        )
+      }
+    }
+
+    if (profilePicturePath && !/^(?:data:|blob:|https?:\/\/)/i.test(profilePicturePath)) {
+      const normalizedProfilePicturePath = profilePicturePath.replace(/^profile-pictures\//, "")
+      await adminClient.storage.from("profile-pictures").remove([normalizedProfilePicturePath])
+    }
+    if (signatureStoragePath && !/^(?:data:|blob:|https?:\/\/)/i.test(signatureStoragePath)) {
+      const normalizedSignaturePath = signatureStoragePath.replace(/^user-signatures\//, "")
+      await adminClient.storage.from("user-signatures").remove([normalizedSignaturePath])
+    }
+
+    return json({
+      ok: true,
+      profile_deleted: true,
+      auth_deleted: Boolean(resolvedAuthUserId),
+      deleted_profile_id: resolvedProfileId,
+      deleted_auth_user_id: resolvedAuthUserId || null,
+    })
+  }
 
   const tryLookup = async (column: "id" | "auth_user_id" | "email", value: string) => {
     const { data, error } = await adminClient

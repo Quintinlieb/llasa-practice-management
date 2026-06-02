@@ -1453,7 +1453,7 @@ const AbscondHearingNoticeGenerator = ({
     const loadClients = async () => {
       const { data, error } = await supabaseReader
         .from("clients")
-        .select("id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,main_office_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code")
+        .select("id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,office_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code")
         .order("registered_name", { ascending: true, nullsFirst: false });
 
       if (!isMounted) return;
@@ -1471,7 +1471,7 @@ const AbscondHearingNoticeGenerator = ({
           companyType: normalizeText(readRecordValue(row, "company_type")),
           registrationNumber: normalizeText(readRecordValue(row, "registration_number")),
           clientNumber: normalizeText(readRecordValue(row, "client_number")),
-          contactNumber: normalizeText(readRecordValue(row, "primary_number") || readRecordValue(row, "owner_number") || readRecordValue(row, "main_office_number")),
+          contactNumber: normalizeText(readRecordValue(row, "primary_number") || readRecordValue(row, "owner_number") || readRecordValue(row, "office_number")),
           email: normalizeText(readRecordValue(row, "primary_email") || readRecordValue(row, "owner_email")),
           addressLine1: normalizeText(readRecordValue(row, "physical_address_line1")),
           addressLine2: normalizeText(readRecordValue(row, "physical_address_line2")),

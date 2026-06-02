@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Eye, EyeOff, Plus, X, User, UserPlus, Users, Building2, Lock, MapPin, Settings as SettingsIcon, Trash2, Camera, Pencil, FileBadge2, FileText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { PageDateStamp } from "@/components/DashboardLayout";
+import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { companySetupBaseSchema } from "@/lib/validation";
 import { getSafeErrorMessage } from "@/lib/errorHandling";
@@ -75,11 +76,12 @@ type CompanyDetailsForm = {
 };
 
 type SubuserInviteForm = {
+  user_type: "main_user" | "subuser" | "";
   name: string;
   surname: string;
   contact_number: string;
   email: string;
-  role: "Main" | "Consultant" | "Administrator" | "";
+  role: "Main" | "Consultant" | "Administrator" | "IT Support" | "";
   profile_picture: string;
   username: string;
   password: string;
@@ -87,12 +89,16 @@ type SubuserInviteForm = {
 };
 type SubuserListItem = {
   id: string;
+  user_type: "main_user" | "subuser";
   auth_user_id?: string | null;
   name: string;
   surname: string;
   contact_number: string | null;
   email: string;
   role: string | null;
+  status?: string | null;
+  last_seen_at?: string | null;
+  is_online?: boolean;
   profile_picture?: string | null;
   signature_storage_path?: string | null;
   created_at: string | null;
@@ -163,6 +169,7 @@ const emptyCompanyDetails: CompanyDetailsForm = {
 };
 
 const emptySubuserInviteForm: SubuserInviteForm = {
+  user_type: "",
   name: "",
   surname: "",
   contact_number: "",
@@ -227,7 +234,7 @@ const emptyTabLoadingState: Record<SettingsTab, boolean> = {
   auth: false,
 };
 
-const allSettingsTabs: SettingsTab[] = ["user", "subusers", "memberships", "company", "companyAddress", "auth"];
+const allSettingsTabs: SettingsTab[] = ["user", "auth", "subusers", "memberships", "company", "companyAddress"];
 
 const parseAddressParts = (address: string) => {
   const addressParts = (address || "")
@@ -394,11 +401,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
   const settingsTabs: Array<{ value: SettingsTab; label: string; icon: LucideIcon }> = [
     { value: "user", label: "User Details", icon: User },
-    { value: "subusers", label: "Subusers", icon: Users },
-    { value: "memberships", label: "Memberships", icon: FileBadge2 },
-    { value: "company", label: "Company Profile", icon: Building2 },
-    { value: "companyAddress", label: "Company Address", icon: MapPin },
     { value: "auth", label: "Authentication", icon: Lock },
+    { value: "subusers", label: "LLASA Users", icon: Users },
+    { value: "memberships", label: "Memberships", icon: FileBadge2 },
+    { value: "company", label: "LLASA Profile", icon: Building2 },
+    { value: "companyAddress", label: "LLASA Address", icon: MapPin },
   ];
   const canEditSettings = !isPermissionsLoading && isMasterUser;
   const visibleSettingsTabs = settingsTabs;
@@ -426,11 +433,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     "pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold leading-none text-slate-400";
   const settingsActionRowClass = "mt-auto flex justify-center border-t border-slate-100 bg-white pt-3 pb-1";
   const isSubuserStepOneComplete =
+    subuserInviteForm.user_type.trim().length > 0 &&
     subuserInviteForm.name.trim().length > 0 &&
     subuserInviteForm.surname.trim().length > 0 &&
     subuserInviteForm.contact_number.trim().length > 0 &&
     subuserInviteForm.email.trim().length > 0 &&
-    subuserInviteForm.role.trim().length > 0;
+    (subuserInviteForm.user_type === "main_user" || subuserInviteForm.role.trim().length > 0);
   const isSubuserStepTwoComplete =
     true;
   const isSubuserStepThreeComplete =
@@ -1214,79 +1222,188 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
       setMembershipsLoading(false);
     }
   }, [toast]);
-  const fetchSubusersList = useCallback(async (options?: { force?: boolean }) => {
+  const fetchSubusersList = useCallback(async (options?: { force?: boolean; silent?: boolean }) => {
     if (!user?.id) return;
+    const markCurrentUserOnline = (items: SubuserListItem[]) => {
+      const now = new Date().toISOString();
+      return items.map((item) => {
+        const isCurrentUser =
+          String(item.auth_user_id || "").trim() === String(user.id).trim() ||
+          String(item.id || "").trim() === String(user.id).trim();
+        return isCurrentUser
+          ? {
+              ...item,
+              last_seen_at: item.last_seen_at || now,
+              is_online: true,
+            }
+          : item;
+      });
+    };
     if (!options?.force) {
       const cachedSubusers = settingsSubusersCacheByUser.get(user.id);
       if (cachedSubusers) {
-        setSubusersList(cachedSubusers);
+        setSubusersList(markCurrentUserOnline(cachedSubusers));
         return;
       }
     }
-    setSubusersLoading(true);
+    if (!options?.silent) setSubusersLoading(true);
     try {
-      let { data, error } = await (supabase as any)
-        .from("subusers")
-        .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,status,created_at,profile_picture,signature_storage_path")
-        .order("created_at", { ascending: false, nullsFirst: false });
-      if (error) {
-        const code = String((error as any)?.code || "");
-        const message = String((error as any)?.message || "").toLowerCase();
+      const [profilesResult, subusersResult, presenceResult] = await Promise.all([
+        (supabase as any)
+          .from("profiles")
+          .select("id,user_name,user_surname,user_contact,user_email,created_at,profile_picture,signature_storage_path")
+          .order("created_at", { ascending: false, nullsFirst: false }),
+        (supabase as any)
+          .from("subusers")
+          .select("id,auth_user_id,invited_by,name,surname,contact_number,email,role,status,created_at,profile_picture,signature_storage_path")
+          .order("created_at", { ascending: false, nullsFirst: false }),
+        supabase.functions.invoke("get-user-presence-manual", { body: {} }),
+      ]);
+
+      let profilesData = profilesResult.data;
+      let profilesError = profilesResult.error;
+      if (profilesError) {
+        const code = String((profilesError as any)?.code || "");
+        const message = String((profilesError as any)?.message || "").toLowerCase();
+        const missingColumn = code === "42703" || message.includes("column");
+        if (missingColumn) {
+          const fallback = await (supabase as any)
+            .from("profiles")
+            .select("*")
+            .order("created_at", { ascending: false, nullsFirst: false });
+          profilesData = fallback.data;
+          profilesError = fallback.error;
+        }
+      }
+      if (profilesError) throw profilesError;
+
+      let subusersData = subusersResult.data;
+      let subusersError = subusersResult.error;
+      if (subusersError) {
+        const code = String((subusersError as any)?.code || "");
+        const message = String((subusersError as any)?.message || "").toLowerCase();
         const missingColumn = code === "42703" || message.includes("column");
         if (missingColumn) {
           const fallback = await (supabase as any)
             .from("subusers")
             .select("*")
             .order("created_at", { ascending: false, nullsFirst: false });
-          data = fallback.data;
-          error = fallback.error;
+          subusersData = fallback.data;
+          subusersError = fallback.error;
         }
       }
-      if (error) throw error;
-      const rawRows = (data ?? []) as any[];
-      const normalized = rawRows.map((row) => ({
+      if (subusersError) throw subusersError;
+
+      const presenceResponse = (presenceResult.data ?? null) as {
+        ok?: boolean;
+        presence?: Array<{ auth_user_id?: string | null; last_seen_at?: string | null }>;
+        error?: string;
+      } | null;
+
+      const onlineCutoff = Date.now() - 90_000;
+      const presenceByAuthUserId = new Map(
+        ((presenceResponse?.presence ?? []) as any[]).map((row) => {
+          const lastSeenAt = String(row.last_seen_at ?? "").trim();
+          return [
+            String(row.auth_user_id ?? "").trim(),
+            {
+              last_seen_at: lastSeenAt || null,
+              is_online: Boolean(lastSeenAt && new Date(lastSeenAt).getTime() >= onlineCutoff),
+            },
+          ] as const;
+        }),
+      );
+
+      const mainUsers = ((profilesData ?? []) as any[]).map((row) => ({
+        id: String(row.id ?? row.auth_user_id ?? `${row.user_email ?? "main-user"}-${row.created_at ?? ""}`),
+        user_type: "main_user" as const,
+        auth_user_id: String(row.auth_user_id ?? row.id ?? "").trim() || null,
+        name: String(row.user_name ?? row.name ?? "").trim(),
+        surname: String(row.user_surname ?? row.surname ?? row.last_name ?? "").trim(),
+        contact_number: String(row.user_contact ?? row.contact_number ?? row.contact ?? row.phone_number ?? "").trim(),
+        email: String(row.user_email ?? row.email ?? "").trim(),
+        role: "Main",
+        last_seen_at: presenceByAuthUserId.get(String(row.auth_user_id ?? row.id ?? "").trim())?.last_seen_at ?? null,
+        is_online: presenceByAuthUserId.get(String(row.auth_user_id ?? row.id ?? "").trim())?.is_online ?? false,
+        profile_picture: String(row.profile_picture ?? "").trim() || null,
+        signature_storage_path: String(row.signature_storage_path ?? "").trim() || null,
+        created_at: row.created_at ?? null,
+      })) satisfies SubuserListItem[];
+
+      const subusers = ((subusersData ?? []) as any[]).map((row) => ({
         id: String(row.id ?? row.auth_user_id ?? `${row.email ?? "subuser"}-${row.created_at ?? ""}`),
+        user_type: "subuser" as const,
         auth_user_id: String(row.auth_user_id ?? "").trim() || null,
         name: String(row.name ?? row.user_name ?? "").trim(),
         surname: String(row.surname ?? row.user_surname ?? row.last_name ?? "").trim(),
         contact_number: String(row.contact_number ?? row.contact ?? row.phone_number ?? "").trim(),
         email: String(row.email ?? "").trim(),
         role: String(row.role ?? row.user_role ?? "").trim(),
+        last_seen_at: presenceByAuthUserId.get(String(row.auth_user_id ?? "").trim())?.last_seen_at ?? null,
+        is_online: presenceByAuthUserId.get(String(row.auth_user_id ?? "").trim())?.is_online ?? false,
         profile_picture: String(row.profile_picture ?? "").trim() || null,
         signature_storage_path: String(row.signature_storage_path ?? "").trim() || null,
         status: String(row.status ?? "active").trim(),
         created_at: row.created_at ?? row.invited_at ?? null,
-      })) as SubuserListItem[];
-      settingsSubusersCacheByUser.set(user.id, normalized);
-      setSubusersList(normalized);
+      })) satisfies SubuserListItem[];
+
+      const normalized = [...mainUsers, ...subusers].sort((left, right) => {
+        const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
+        const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
+        return rightTime - leftTime;
+      });
+      const normalizedWithCurrentUser = markCurrentUserOnline(normalized);
+      settingsSubusersCacheByUser.set(user.id, normalizedWithCurrentUser);
+      setSubusersList(normalizedWithCurrentUser);
     } catch (error: any) {
       toast({
-        title: "Unable to load subusers",
+        title: "Unable to load users",
         description: getSafeErrorMessage(error),
         variant: "destructive",
       });
       setSubusersList([]);
     } finally {
-      setSubusersLoading(false);
+      if (!options?.silent) setSubusersLoading(false);
     }
   }, [toast, user?.id]);
   const handleDeleteSubuser = useCallback(
     async (subuser: SubuserListItem) => {
       if (!canEditSettings) return;
-      const fullName = `${subuser.name || ""} ${subuser.surname || ""}`.trim() || subuser.email || "this subuser";
+      const isOwnMainUser =
+        subuser.user_type === "main_user" &&
+        (String(subuser.auth_user_id || "").trim() === String(user?.id || "").trim() ||
+          String(subuser.id || "").trim() === String(user?.id || "").trim());
+      if (isOwnMainUser) {
+        toast({
+          title: "Delete blocked",
+          description: "You cannot delete your own active main user account.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const fullName = `${subuser.name || ""} ${subuser.surname || ""}`.trim() || subuser.email || "this user";
       const confirmed = window.confirm(
-        `Are you sure you want to delete ${fullName}? This will remove the account from subusers and auth users.`,
+        `Are you sure you want to delete ${fullName}? This will remove the account and auth user.`,
       );
       if (!confirmed) return;
 
       setDeletingSubuserId(subuser.id);
       try {
         const { data, error } = await supabase.functions.invoke("delete-subuser-manual", {
-          body: {
-            subuser_id: subuser.id,
-            auth_user_id: subuser.auth_user_id ?? undefined,
-            email: subuser.email ?? undefined,
-          },
+          body:
+            subuser.user_type === "main_user"
+              ? {
+                  user_type: "main_user",
+                  profile_id: subuser.id,
+                  auth_user_id: subuser.auth_user_id ?? undefined,
+                  email: subuser.email ?? undefined,
+                }
+              : {
+                  user_type: "subuser",
+                  subuser_id: subuser.id,
+                  auth_user_id: subuser.auth_user_id ?? undefined,
+                  email: subuser.email ?? undefined,
+                },
         });
         const response = (data ?? null) as { ok?: boolean; error?: string; partial?: boolean; auth_deleted?: boolean } | null;
         if (error) throw error;
@@ -1294,8 +1411,8 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
           throw new Error(response?.error || "Delete failed.");
         }
         toast({
-          title: "Subuser deleted",
-          description: response.auth_deleted === false ? "Subuser row deleted. Auth user was not linked." : "Subuser removed successfully.",
+          title: "User deleted",
+          description: response.auth_deleted === false ? "User row deleted. Auth user was not linked." : "User removed successfully.",
         });
         await fetchSubusersList({ force: true });
       } catch (error: any) {
@@ -1308,7 +1425,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         setDeletingSubuserId(null);
       }
     },
-    [canEditSettings, fetchSubusersList, toast],
+    [canEditSettings, fetchSubusersList, toast, user?.id],
   );
   const handleSubuserEditSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1330,7 +1447,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
       if (subuserEditSignatureFile) {
         uploadedSignaturePath = buildUserSignatureStoragePath(
-          "subusers",
+          editingSubuser.user_type === "main_user" ? "users" : "subusers",
           editingSubuser.auth_user_id || editingSubuser.id,
           subuserEditSignatureFile,
         );
@@ -1341,16 +1458,30 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
 
       payload.signature_storage_path = nextSignatureStoredValue || null;
 
-      const { error } = await (supabase as any)
-        .from("subusers")
-        .update(payload)
-        .eq("id", editingSubuser.id);
+      const { error } =
+        editingSubuser.user_type === "main_user"
+          ? await supabase.functions.invoke("update-company-user-manual", {
+              body: {
+                user_type: "main_user",
+                profile_id: editingSubuser.id,
+                auth_user_id: editingSubuser.auth_user_id ?? undefined,
+                name: payload.name,
+                surname: payload.surname,
+                contact_number: payload.contact_number,
+                email: payload.email,
+                signature_storage_path: payload.signature_storage_path,
+              },
+            })
+          : await (supabase as any)
+              .from("subusers")
+              .update(payload)
+              .eq("id", editingSubuser.id);
 
       if (error) throw error;
 
       toast({
-        title: "Subuser updated",
-        description: `${payload.name} ${payload.surname}`.trim() || "Subuser details updated successfully.",
+        title: "User updated",
+        description: `${payload.name} ${payload.surname}`.trim() || "User details updated successfully.",
       });
       const previousSignaturePath = getUserSignatureStoragePath(previousSignatureStoredValue);
       const nextSignaturePath = getUserSignatureStoragePath(nextSignatureStoredValue);
@@ -1572,13 +1703,19 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
     setSubuserInviteSubmitting(true);
 
+    const selectedUserType = subuserInviteForm.user_type;
+    if (!selectedUserType) return;
     let uploadedProfilePicturePath = "";
     if (subuserProfilePictureFile && user?.id) {
-      uploadedProfilePicturePath = buildProfilePictureStoragePath("subusers", user.id, subuserProfilePictureFile);
+      uploadedProfilePicturePath = buildProfilePictureStoragePath(
+        selectedUserType === "main_user" ? "users" : "subusers",
+        user.id,
+        subuserProfilePictureFile,
+      );
       const { error: uploadError } = await uploadProfilePicture(uploadedProfilePicturePath, subuserProfilePictureFile);
       if (uploadError) {
         toast({
-          title: "Invite failed",
+          title: "User creation failed",
           description: getSafeErrorMessage(uploadError),
           variant: "destructive",
         });
@@ -1588,11 +1725,12 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
 
     const payload = {
+      user_type: selectedUserType,
       name: subuserInviteForm.name.trim(),
       surname: subuserInviteForm.surname.trim(),
       contact_number: subuserInviteForm.contact_number.trim(),
       email: subuserInviteForm.email.trim().toLowerCase(),
-      role: subuserInviteForm.role,
+      role: selectedUserType === "subuser" ? subuserInviteForm.role : undefined,
       profile_picture: uploadedProfilePicturePath,
       username: subuserInviteForm.username.trim(),
       password: subuserInviteForm.password,
@@ -1623,7 +1761,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         }
       }
       toast({
-        title: "Invite failed",
+        title: "User creation failed",
         description: errorMessage,
         variant: "destructive",
       });
@@ -1636,7 +1774,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
         await removeProfilePicture(uploadedProfilePicturePath);
       }
       toast({
-        title: "Invite failed",
+        title: "User creation failed",
         description: response?.error || "Unable to send invite right now.",
         variant: "destructive",
       });
@@ -1645,7 +1783,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
     }
 
     toast({
-      title: "Subuser created",
+      title: "User created",
       description:
         response?.message ||
         `${payload.name} ${payload.surname} has been created successfully.`,
@@ -1667,7 +1805,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   useEffect(() => {
     if (!user) return;
     if (settingsTab !== "subusers") return;
-    void fetchSubusersList();
+    void fetchSubusersList({ force: true });
+    const timer = window.setInterval(() => {
+      void fetchSubusersList({ force: true, silent: true });
+    }, 15_000);
+    return () => window.clearInterval(timer);
   }, [fetchSubusersList, settingsTab, user?.id]);
   useEffect(() => {
     if (!user) return;
@@ -1707,60 +1849,47 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
   }, [user?.id]);
   const content = (
       <div className={embedded ? "h-full w-full p-0" : "h-[calc(100dvh-var(--app-header-height,5rem)-2rem)] px-4 py-4"}>
-        <div className={`mx-auto flex h-full w-full ${embedded ? "rounded-sm border-0 bg-white !shadow-none" : "max-w-[980px] rounded-sm border border-slate-300 bg-white shadow-sm"} flex-col overflow-hidden`}>
-          <header className="flex items-center justify-between bg-[#2D4256] px-6 py-3">
-            <div className="flex items-center gap-2 pl-2">
-              <SettingsIcon className="h-4 w-4 text-white" />
-              <h2 className="text-sm font-semibold text-white">Settings</h2>
-            </div>
-            {embedded ? (
-              <DialogClose asChild>
-                <button type="button" className="rounded-sm p-1 text-white hover:text-white/80" aria-label="Close settings">
-                  <X className="h-4 w-4" />
-                </button>
-              </DialogClose>
-            ) : null}
-          </header>
-
-          <div className="min-h-0 flex-1 bg-white px-6 pb-4 pt-4">
-            <div className="flex h-full min-h-0 items-stretch gap-4">
-            <aside className="h-full w-[165px] overflow-hidden rounded-sm bg-white">
-              <div className="space-y-0">
-                {visibleSettingsTabs.map((tab) => {
-                  const isActive = settingsTab === tab.value;
-                  const Icon = tab.icon;
-                  return (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      onClick={() => handleSettingsTabChange(tab.value)}
-                      className={`group mx-1 my-0.5 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded px-4 py-3 text-left text-[10px] font-semibold transition-colors ${
-                        isActive
-                          ? "bg-[#e9f9eb] text-[#2f9f36]"
-                          : "text-slate-500 hover:text-black"
-                      }`}
-                    >
-                      <span
-                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center ${
-                          isActive ? "" : "group-hover:translate-x-[2px]"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span
-                        className={`text-[10px] font-semibold leading-4 ${
-                          isActive ? "" : "group-hover:translate-x-[2px]"
-                        }`}
-                      >
-                        {tab.label}
-                      </span>
-                    </button>
-                  );
-                })}
+        <div className={`mx-auto flex h-full w-full ${embedded ? "rounded-sm border-0 bg-white !shadow-none" : "max-w-[980px] rounded-sm border-0 bg-white shadow-sm"} flex-col overflow-hidden`}>
+            <header className="flex h-[52px] shrink-0 items-center justify-between bg-[#2D4256] px-5">
+              <div className="flex items-center gap-2 pl-1">
+                <SettingsIcon className="h-4 w-4 text-white" />
+                <h2 className="text-sm font-semibold text-white">Settings</h2>
               </div>
-            </aside>
-
-            <div className="min-w-0 flex-1 min-h-0 flex flex-col">
+              {embedded ? (
+                <DialogClose asChild>
+                  <button type="button" className="rounded-sm p-1 text-white hover:text-white/80" aria-label="Close settings">
+                    <X className="h-4 w-4" />
+                  </button>
+                </DialogClose>
+              ) : null}
+            </header>
+            <div className="flex min-h-0 flex-1 bg-white">
+              <nav className="h-full w-[180px] shrink-0 border-r border-slate-200 bg-white px-3 py-4">
+                <div className="flex min-h-0 flex-col gap-1">
+                  {visibleSettingsTabs.map((tab) => {
+                    const isActive = settingsTab === tab.value;
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        onClick={() => handleSettingsTabChange(tab.value)}
+                        className={cn(
+                          "inline-flex h-9 w-full items-center gap-2 rounded-sm px-3 text-left text-[11px] font-semibold transition-colors",
+                          isActive
+                            ? "bg-[#e9f9eb] text-[#2f9f36]"
+                            : "text-slate-500 hover:bg-slate-50 hover:text-[#2D4256]",
+                        )}
+                      >
+                        <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-[#3eca44]" : "text-slate-400")} />
+                        <span className="truncate">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </nav>
+              <div className="min-h-0 flex-1 px-6 pb-4 pt-4">
+              <div className="min-w-0 flex-1 min-h-0 flex flex-col">
             <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm bg-white px-4 py-3 text-[11px] text-slate-700 [&_.text-muted-foreground]:!text-slate-500 [&_input]:h-[34px] [&_input]:w-full [&_input]:rounded [&_input]:border-[0.5px] [&_input]:border-slate-400 [&_input]:bg-white [&_input]:px-3 [&_input]:text-[11px] [&_input]:font-medium [&_input]:text-slate-900 [&_input]:shadow-none [&_input]:placeholder:text-[10px] [&_input]:placeholder:text-slate-400 [&_input:hover]:border-[#3eca44] [&_input]:focus-visible:border-slate-300 [&_input]:focus-visible:ring-0 [&_input]:focus-visible:ring-offset-0 [&_[role=combobox]]:h-[34px] [&_[role=combobox]]:w-full [&_[role=combobox]]:rounded [&_[role=combobox]]:border-[0.5px] [&_[role=combobox]]:border-slate-400 [&_[role=combobox]]:bg-white [&_[role=combobox]]:px-3 [&_[role=combobox]]:text-[11px] [&_[role=combobox]]:font-medium [&_[role=combobox]]:text-slate-900 [&_[role=combobox]]:shadow-none [&_[role=combobox]:hover]:border-[#3eca44] [&_[role=combobox]]:focus:border-[#3eca44] [&_[role=combobox]]:focus-visible:border-[#3eca44] [&_[role=combobox]]:focus-visible:ring-0 [&_[role=combobox]]:focus-visible:ring-offset-0 [&_[role=combobox]]:data-[state=open]:border-[#3eca44]">
               {shouldShowTabLoader ? (
                 <div className="flex h-full items-center justify-center">
@@ -1916,11 +2045,11 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "subusers" && (
             <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-4`}>
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-[#2D4256]">Subusers</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">LLASA Users</h3>
                 <p className="mb-2 text-[11px] text-slate-500">
                   {isMasterUser
-                    ? "Here, the main user can create and manage active subusers."
-                    : "You can view active subusers. Only the main user can create subusers."}
+                    ? "Here, the main user can create and manage active LLASA users."
+                    : "You can view active LLASA users. Only the main user can create users."}
                 </p>
               </div>
               {canEditSettings ? (
@@ -1930,54 +2059,69 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                     onClick={() => setIsInviteSubuserOpen(true)}
                     className={popupActionButtonClass}
                   >
-                    Add Subuser
+                    Add User
                   </Button>
                 </div>
               ) : null}
                 <div className="overflow-hidden rounded border border-slate-200">
-                <div className={`grid ${canEditSettings ? "grid-cols-[1.2fr_1.3fr_1.05fr_0.85fr_0.75fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white`}>
+                <div className={`grid ${canEditSettings ? "grid-cols-[1.1fr_1.25fr_0.95fr_0.75fr_0.65fr_0.65fr]" : "grid-cols-[1.2fr_1.25fr_1fr_0.8fr_0.7fr]"} items-center gap-2 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white`}>
                   <div>Name</div>
                   <div>Email</div>
                   <div>Contact Number</div>
                   <div>Role</div>
+                  <div>Status</div>
                   {canEditSettings ? <div className="text-center">Actions</div> : null}
                 </div>
                 <div className="max-h-[330px] divide-y overflow-y-auto bg-white text-[11px]">
                   {subusersLoading ? (
-                    <div className="px-3 py-3 text-slate-500">Loading subusers...</div>
+                    <div className="px-3 py-3 text-slate-500">Loading users...</div>
                   ) : subusersList.length === 0 ? (
-                    <div className="px-3 py-3 text-slate-500">No active subusers found.</div>
+                    <div className="px-3 py-3 text-slate-500">No active users found.</div>
                   ) : (
-                    subusersList.map((item) => (
-                      <div key={item.id} className={`grid ${canEditSettings ? "grid-cols-[1.2fr_1.3fr_1.05fr_0.85fr_0.75fr]" : "grid-cols-[1.4fr_1.4fr_1.2fr_1fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
-                        <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
-                        <div className="truncate text-slate-700">{item.email || "--"}</div>
-                        <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
-                        <div className="truncate text-slate-700">{item.role || "--"}</div>
-                        {canEditSettings ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openSubuserEditDialog(item)}
-                              disabled={subuserEditSubmitting}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-600 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`Edit subuser ${item.email || item.name || item.id}`}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleDeleteSubuser(item)}
-                              disabled={deletingSubuserId === item.id}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-rose-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                              aria-label={`Delete subuser ${item.email || item.name || item.id}`}
-                            >
-                              {deletingSubuserId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                            </button>
+                    subusersList.map((item) => {
+                      const isOwnMainUser =
+                        item.user_type === "main_user" &&
+                        (String(item.auth_user_id || "").trim() === String(user?.id || "").trim() ||
+                          String(item.id || "").trim() === String(user?.id || "").trim());
+                      const deleteDisabled = deletingSubuserId === item.id || isOwnMainUser;
+                      return (
+                        <div key={item.id} className={`grid ${canEditSettings ? "grid-cols-[1.1fr_1.25fr_0.95fr_0.75fr_0.65fr_0.65fr]" : "grid-cols-[1.2fr_1.25fr_1fr_0.8fr_0.7fr]"} items-center gap-2 px-3 py-2 hover:bg-[#3eca44]/5`}>
+                          <div className="truncate text-slate-900">{`${item.name || ""} ${item.surname || ""}`.trim() || "--"}</div>
+                          <div className="truncate text-slate-700">{item.email || "--"}</div>
+                          <div className="truncate text-slate-700">{item.contact_number || "--"}</div>
+                          <div className="truncate text-slate-700">{item.role || "--"}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn("h-2 w-2 rounded-full", item.is_online ? "bg-[#3eca44]" : "bg-slate-300")} />
+                            <span className={cn("truncate text-[10px] font-medium", item.is_online ? "text-[#2f9f35]" : "text-slate-500")}>
+                              {item.is_online ? "Online" : "Offline"}
+                            </span>
                           </div>
-                        ) : null}
-                      </div>
-                    ))
+                          {canEditSettings ? (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openSubuserEditDialog(item)}
+                                disabled={subuserEditSubmitting}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-slate-600 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label={`Edit user ${item.email || item.name || item.id}`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteSubuser(item)}
+                                disabled={deleteDisabled}
+                                title={isOwnMainUser ? "You cannot delete your own active main user account." : undefined}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded bg-transparent text-rose-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label={`Delete user ${item.email || item.name || item.id}`}
+                              >
+                                {deletingSubuserId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2072,7 +2216,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "company" && (
             <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Profile</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">LLASA Profile</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Update your company details</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2200,7 +2344,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
               {settingsTab === "companyAddress" && (
             <div className={`flex ${settingsTabScrollPaneClass} flex-col space-y-5`}>
               <div className="space-y-1">
-                <h3 className="text-[20px] font-semibold text-[#2D4256]">Company Address</h3>
+                <h3 className="text-[20px] font-semibold text-[#2D4256]">LLASA Address</h3>
                 <p className="mb-2 text-[11px] text-slate-500">Physical and postal address details.</p>
               </div>
               <div className="flex flex-1 flex-col gap-7">
@@ -2539,10 +2683,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
                     <div className="flex items-center gap-2 pl-2">
                       <Pencil className="h-4 w-4 text-white" />
-                      <DialogTitle className="text-sm font-semibold text-white">Edit Subuser</DialogTitle>
+                      <DialogTitle className="text-sm font-semibold text-white">Edit User</DialogTitle>
                     </div>
                     <DialogClose asChild>
-                      <button type="button" className="text-white hover:text-white/80" aria-label="Close edit subuser popup">
+                      <button type="button" className="text-white hover:text-white/80" aria-label="Close edit user popup">
                         <X className="h-4 w-4" />
                       </button>
                     </DialogClose>
@@ -2562,7 +2706,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <div className="rounded border border-slate-200 bg-slate-50 px-4 py-4">
                           <div className="flex min-h-[96px] items-center justify-center rounded border border-slate-200 bg-white px-4">
                             {subuserEditSignature ? (
-                              <img src={subuserEditSignature} alt="Subuser signature" className="max-h-[72px] w-auto object-contain" />
+                              <img src={subuserEditSignature} alt="User signature" className="max-h-[72px] w-auto object-contain" />
                             ) : (
                               <span className="text-[11px] text-slate-400">No signature uploaded.</span>
                             )}
@@ -2625,6 +2769,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                             <SelectItem value="Main" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main</SelectItem>
                             <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
                             <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
+                            <SelectItem value="IT Support" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">IT Support</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -2663,10 +2808,10 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
                     <div className="flex items-center gap-2 pl-2">
                       <UserPlus className="h-4 w-4 text-white" />
-                      <DialogTitle className="text-sm font-semibold text-white">Add Subuser</DialogTitle>
+                      <DialogTitle className="text-sm font-semibold text-white">Add User</DialogTitle>
                     </div>
                     <DialogClose asChild>
-                      <button type="button" className="text-white hover:text-white/80" aria-label="Close invite popup">
+                      <button type="button" className="text-white hover:text-white/80" aria-label="Close add user popup">
                         <X className="h-4 w-4" />
                       </button>
                     </DialogClose>
@@ -2696,6 +2841,46 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                   {subuserInviteStep === 1 ? (
                     <div className="w-full space-y-4">
                       <div className="relative w-full max-w-none">
+                        <span className={floatingLabelClass}>User Type <span className="text-red-600">*</span></span>
+                        <Select
+                          value={subuserInviteForm.user_type}
+                          onValueChange={(value) =>
+                            setSubuserInviteForm((prev) => ({
+                              ...prev,
+                              user_type: value as SubuserInviteForm["user_type"],
+                              role: value === "main_user" ? "" : prev.role === "Main" ? "" : prev.role,
+                            }))
+                          }
+                        >
+                          <SelectTrigger
+                            className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                          >
+                            <SelectValue placeholder="Select user type" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded text-[11px]">
+                            <SelectItem value="main_user" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main User</SelectItem>
+                            <SelectItem value="subuser" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Sub User</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {subuserInviteForm.user_type === "subuser" ? (
+                        <div className="relative w-full max-w-none">
+                          <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
+                          <Select value={subuserInviteForm.role} onValueChange={(value) => setSubuserInviteForm((prev) => ({ ...prev, role: value as SubuserInviteForm["role"] }))}>
+                            <SelectTrigger
+                              className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
+                            >
+                              <SelectValue placeholder="Select role" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded text-[11px]">
+                              <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
+                              <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
+                              <SelectItem value="IT Support" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">IT Support</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : null}
+                      <div className="relative w-full max-w-none">
                         <span className={floatingLabelClass}>Name <span className="text-red-600">*</span></span>
                         <Input value={subuserInviteForm.name} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, name: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert name" required />
                       </div>
@@ -2711,21 +2896,6 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                         <span className={floatingLabelClass}>Email <span className="text-red-600">*</span></span>
                         <Input type="email" value={subuserInviteForm.email} onChange={(e) => setSubuserInviteForm((prev) => ({ ...prev, email: e.target.value }))} className={subuserModalInputClass} placeholder="Please insert email" required />
                       </div>
-                      <div className="relative w-full max-w-none">
-                        <span className={floatingLabelClass}>Role <span className="text-red-600">*</span></span>
-                        <Select value={subuserInviteForm.role} onValueChange={(value) => setSubuserInviteForm((prev) => ({ ...prev, role: value as SubuserInviteForm["role"] }))}>
-                          <SelectTrigger
-                            className="h-8 w-full justify-between rounded px-3 text-[11px] inline-flex items-center border border-slate-300 bg-white text-slate-900 hover:border-slate-500 data-[state=open]:rounded-b-none data-[state=open]:border-black data-[state=open]:bg-white data-[state=open]:text-slate-900 !ring-0 !ring-offset-0 focus:!border-black focus:!ring-0 focus:!ring-offset-0 focus-visible:!border-black focus-visible:!ring-0 focus-visible:!ring-offset-0"
-                          >
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded text-[11px]">
-                            <SelectItem value="Main" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Main</SelectItem>
-                            <SelectItem value="Consultant" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Consultant</SelectItem>
-                            <SelectItem value="Administrator" className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]">Administrator</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
                     </div>
                   ) : subuserInviteStep === 2 ? (
                     <div className="w-full space-y-4">
@@ -2738,7 +2908,7 @@ const Settings = ({ embedded = false, onClose }: SettingsProps) => {
                       />
                       <div className="flex flex-col items-center gap-3 rounded border border-slate-200 bg-slate-50 px-4 py-5">
                         <Avatar className="h-24 w-24 border border-slate-200">
-                          <AvatarImage src={subuserInviteForm.profile_picture || undefined} alt="Subuser profile picture preview" />
+                          <AvatarImage src={subuserInviteForm.profile_picture || undefined} alt="User profile picture preview" />
                           <AvatarFallback className="bg-[#eef9ef] text-[20px] font-semibold text-[#2f9f35]">
                             {getInitials(subuserInviteForm.name, subuserInviteForm.surname)}
                           </AvatarFallback>

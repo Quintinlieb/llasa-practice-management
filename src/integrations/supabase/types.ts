@@ -229,7 +229,8 @@ export type Database = {
           id_number: string | null
           lr_billing_cycle: string | null
           logo_storage_path: string | null
-          main_office_number: string | null
+          office_email: string | null
+          office_number: string | null
           pr_billing_cycle: string | null
           race: string | null
           status: string | null
@@ -250,7 +251,8 @@ export type Database = {
           id_number?: string | null
           lr_billing_cycle?: string | null
           logo_storage_path?: string | null
-          main_office_number?: string | null
+          office_email?: string | null
+          office_number?: string | null
           pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null
@@ -271,7 +273,8 @@ export type Database = {
           id_number?: string | null
           lr_billing_cycle?: string | null
           logo_storage_path?: string | null
-          main_office_number?: string | null
+          office_email?: string | null
+          office_number?: string | null
           pr_billing_cycle?: string | null
           race?: string | null
           status?: string | null

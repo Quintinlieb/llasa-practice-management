@@ -13,11 +13,12 @@ const corsHeaders = {
 }
 
 type CreateSubuserPayload = {
+  user_type?: "main_user" | "subuser"
   name?: string
   surname?: string
   contact_number?: string
   email?: string
-  role?: "Main" | "Consultant" | "Administrator"
+  role?: "Consultant" | "Administrator" | "IT Support"
   profile_picture?: string
   username?: string
   password?: string
@@ -104,16 +105,25 @@ Deno.serve(async (req: Request) => {
   const surname = (payload.surname ?? "").trim()
   const contactNumber = (payload.contact_number ?? "").trim()
   const email = (payload.email ?? "").trim().toLowerCase()
+  const userType = (payload.user_type ?? "subuser").trim()
   const role = (payload.role ?? "").trim()
   const profilePicture = (payload.profile_picture ?? "").trim()
   const username = (payload.username ?? "").trim()
   const password = (payload.password ?? "").trim()
 
-  if (!name || !surname || !contactNumber || !email || !role || !username || !password) {
+  if (!["main_user", "subuser"].includes(userType)) {
+    return badRequest("Invalid user type")
+  }
+
+  if (!name || !surname || !contactNumber || !email || !username || !password) {
     return badRequest("All fields are required")
   }
 
-  if (!["Main", "Consultant", "Administrator"].includes(role)) {
+  if (userType === "subuser" && !role) {
+    return badRequest("Role is required for subusers")
+  }
+
+  if (userType === "subuser" && !["Consultant", "Administrator", "IT Support"].includes(role)) {
     return badRequest("Invalid role")
   }
 
@@ -141,14 +151,137 @@ Deno.serve(async (req: Request) => {
       user_name: name,
       user_surname: surname,
       contact_number: contactNumber,
-      role,
+      user_type: userType,
+      role: userType === "subuser" ? role : "Main",
       username,
-      company_id: user.id,
+      ...(userType === "subuser" ? { company_id: user.id } : {}),
     },
   })
 
   if (createUserError || !createdUser.user?.id) {
     return badRequest(createUserError?.message ?? "Unable to create auth user", 400)
+  }
+
+  if (userType === "main_user") {
+    const { data: sourceProfile, error: sourceProfileError } = await adminClient
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle()
+
+    if (sourceProfileError) {
+      await adminClient.auth.admin.deleteUser(createdUser.user.id)
+      return badRequest(sourceProfileError.message ?? "Unable to read source profile", 400)
+    }
+
+    const profileBaseRow = {
+      id: createdUser.user.id,
+      branches: Array.isArray(sourceProfile?.branches) ? sourceProfile.branches : [],
+      branches_enabled: Boolean(sourceProfile?.branches_enabled ?? false),
+      company_contact: sourceProfile?.company_contact ?? contactNumber,
+      company_email: sourceProfile?.company_email ?? email,
+      company_name: sourceProfile?.company_name ?? `${name} ${surname}`.trim(),
+      company_type: sourceProfile?.company_type ?? "(Pty) Ltd",
+      physical_address: sourceProfile?.physical_address ?? "N/A",
+      postal_address: sourceProfile?.postal_address ?? "N/A",
+      registration_number: sourceProfile?.registration_number ?? "N/A",
+      representative_name: sourceProfile?.representative_name ?? name,
+      representative_surname: sourceProfile?.representative_surname ?? surname,
+      user_contact: contactNumber,
+      user_email: email,
+      user_name: name,
+      user_surname: surname,
+      vat_number: sourceProfile?.vat_number ?? null,
+    }
+
+    const profileRows = [
+      { ...profileBaseRow, account_type: sourceProfile?.account_type ?? "business" },
+      profileBaseRow,
+      {
+        id: createdUser.user.id,
+        company_name: sourceProfile?.company_name ?? `${name} ${surname}`.trim(),
+        registration_number: sourceProfile?.registration_number ?? "N/A",
+        physical_address: sourceProfile?.physical_address ?? "N/A",
+        postal_address: sourceProfile?.postal_address ?? "N/A",
+        representative_name: sourceProfile?.representative_name ?? name,
+        representative_surname: sourceProfile?.representative_surname ?? surname,
+        company_contact: sourceProfile?.company_contact ?? contactNumber,
+        company_email: sourceProfile?.company_email ?? email,
+        user_name: name,
+        user_surname: surname,
+        user_contact: contactNumber,
+        user_email: email,
+      },
+      {
+        id: createdUser.user.id,
+        user_name: name,
+        user_surname: surname,
+        user_contact: contactNumber,
+        user_email: email,
+      },
+    ]
+
+    let profileWriteError: { message?: string } | null = null
+    let profileWritten = false
+    for (const row of profileRows) {
+      const { error } = await adminClient
+        .from("profiles")
+        .upsert(row, { onConflict: "id" })
+      if (!error) {
+        profileWritten = true
+        profileWriteError = null
+        break
+      }
+      const message = String(error.message ?? "").toLowerCase()
+      if (message.includes("schema cache") || message.includes("column")) {
+        profileWriteError = error
+        continue
+      }
+      profileWriteError = error
+      break
+    }
+
+    if (!profileWritten) {
+      await adminClient.auth.admin.deleteUser(createdUser.user.id)
+      return badRequest(profileWriteError.message ?? "Unable to write profile row", 400)
+    }
+
+    if (profilePicture) {
+      const { error: profilePictureUpdateError } = await adminClient
+        .from("profiles")
+        .update({ profile_picture: profilePicture })
+        .eq("id", createdUser.user.id)
+
+      if (profilePictureUpdateError) {
+        const message = String(profilePictureUpdateError.message ?? "")
+        if (!(message.includes("profile_picture") && message.includes("column"))) {
+          return badRequest(message || "Unable to save profile picture", 400)
+        }
+      }
+    }
+
+    const appUrl = (Deno.env.get("APP_URL") ?? req.headers.get("origin") ?? "").replace(/\/$/, "")
+    const loginUrl = appUrl ? `${appUrl}/auth` : "https://app.llasa.co.za/auth"
+    const emailResult = await sendAccountCreatedEmail({
+      to: email,
+      name: `${name} ${surname}`.trim(),
+      loginUrl,
+      companyName: sourceProfile?.company_name,
+    })
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        message: emailResult.sent
+          ? "Main user created and email notification sent."
+          : "Main user created. Email notification not sent.",
+        auth_user_id: createdUser.user.id,
+        email,
+        email_notification_sent: emailResult.sent,
+        email_notification_error: emailResult.sent ? null : emailResult.reason,
+      }),
+      { headers: { "Content-Type": "application/json", ...corsHeaders } },
+    )
   }
 
   const subuserBaseRow = {

@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ComponentTyp
 import { PageDateStamp } from "@/components/DashboardLayout";
 import { cn } from "@/lib/utils";
 import { useLocation, useNavigate } from "react-router-dom";
+import { DocumentMagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -21,7 +22,7 @@ import {
   saveMinimizedDocumentTabs,
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, FileText, Menu, Minus, Search, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Menu, Minus, Search, Undo2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -1705,7 +1706,7 @@ const Documents = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
                           paginatedDocumentRows.map((row) => (
-                            <div key={row.id} className={cn("group grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", documentsTableGridClassName)}>
+                            <div key={row.id} className={cn("group grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs leading-4 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", documentsTableGridClassName)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -1725,7 +1726,7 @@ const Documents = () => {
                                 {row.documentType ? (
                                   <span
                                     className={cn(
-                                      "inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium leading-5 shadow-none",
+                                      "inline-flex max-w-full items-center rounded-full border px-2 py-0 text-[10px] font-medium leading-4 shadow-none",
                                       getDocumentTypePillClassName(row.documentType),
                                     )}
                                   >
@@ -1753,7 +1754,7 @@ const Documents = () => {
                               </div>
                               <div className="flex min-w-0 items-center justify-center">
                                 <span
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[9px] font-semibold text-slate-700"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[8px] font-semibold text-slate-700"
                                   aria-label={row.createdBy || "Unknown user"}
                                   title={row.createdBy || "Unknown user"}
                                 >
@@ -1763,13 +1764,12 @@ const Documents = () => {
                               <div className="flex items-center justify-center">
                                 <button
                                   type="button"
-                                  className="inline-flex h-7 w-7 items-center justify-center bg-transparent text-black transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="inline-flex h-5 w-5 items-center justify-center bg-transparent text-black transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-40"
                                   onClick={() => openDocumentRowFile(row.fileUrl)}
                                   disabled={!row.fileUrl}
                                   aria-label={`View ${row.documentName || "document"}`}
-                                  title="View PDF"
                                 >
-                                  <FileText className="h-3.5 w-3.5" />
+                                  <DocumentMagnifyingGlassIcon className="h-5 w-5 stroke-[1.5]" />
                                 </button>
                               </div>
                             </div>

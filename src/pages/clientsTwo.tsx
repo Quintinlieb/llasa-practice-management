@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { BuildingOffice2Icon, BuildingOfficeIcon } from "@heroicons/react/24/outline";
+import { BuildingOffice2Icon, BuildingOfficeIcon, DocumentMagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import { PageDateStamp } from "@/components/DashboardLayout";
@@ -457,6 +457,25 @@ const getClientMatterStagePillClassName = (value: unknown) => {
   }
   return "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-50 hover:text-slate-600";
 };
+const getClientDocumentTypePillClassName = (type: string) => {
+  const normalized = type.toLowerCase();
+  if (normalized.includes("discipline") || normalized.includes("warning") || normalized.includes("hearing")) {
+    return "border-red-600 bg-red-50 text-red-700 hover:bg-red-50 hover:text-red-700";
+  }
+  if (normalized.includes("contract") || normalized.includes("addendum")) {
+    return "border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
+  }
+  if (normalized.includes("performance")) {
+    return "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+  }
+  if (normalized.includes("notice")) {
+    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+  }
+  if (normalized.includes("termination") || normalized.includes("retrenchment") || normalized.includes("abscondment")) {
+    return "border-slate-500 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+  }
+  return "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
+};
 const getActiveMentionMatch = (value: string, caretIndex: number) => {
   const safeValue = String(value || "");
   const beforeCaret = safeValue.slice(0, caretIndex);
@@ -596,8 +615,9 @@ const clientBulkTemplateColumns = [
   "Registration Number",
   "VAT Number",
   "Industry",
-  "Group",
   "Bargaining Council",
+  "Office Email",
+  "Office Number",
   "Primary Contact",
   "Primary Number",
   "Primary Email",
@@ -620,8 +640,9 @@ type BulkClientImportRow = {
   registrationNumber: string;
   vatNumber: string;
   industry: string;
-  groupName: string;
   bargainingCouncil: string;
+  officeEmail: string;
+  officeNumber: string;
   primaryContact: string;
   primaryNumber: string;
   primaryEmail: string;
@@ -838,10 +859,11 @@ const ClientsTwo = () => {
     contactPerson: "",
     contactNumber: "",
     ownerEmail: "",
+    officeEmail: "",
     primaryName: "",
     primaryJobTitle: "",
     primaryNumber: "",
-    mainOfficeNumber: "",
+    officeNumber: "",
     primaryEmail: "",
     secondaryName: "",
     secondaryJobTitle: "",
@@ -1516,10 +1538,11 @@ const ClientsTwo = () => {
     ownerContactPerson: row.owner_name || "--",
     ownerContactNumber: row.owner_number || "--",
     ownerContactEmail: row.owner_email || "--",
+    officeEmail: row.office_email || "--",
     primaryName: row.primary_name || "--",
     primaryJobTitle: row.primary_job_title || "--",
     primaryNumber: row.primary_number || "--",
-    mainOfficeNumber: row.main_office_number || "--",
+    officeNumber: row.office_number || "--",
     primaryEmail: row.primary_email || "--",
     secondaryName: row.secondary_name || "--",
     secondaryJobTitle: row.secondary_job_title || "--",
@@ -2287,8 +2310,9 @@ const ClientsTwo = () => {
         registrationNumber: valueAt(row, "Registration Number"),
         vatNumber: valueAt(row, "VAT Number"),
         industry: valueAt(row, "Industry"),
-        groupName: valueAt(row, "Group"),
         bargainingCouncil: normalizeImportedBargainingCouncil(valueAt(row, "Bargaining Council")),
+        officeEmail: valueAt(row, "Office Email").toLowerCase(),
+        officeNumber: valueAt(row, "Office Number").replace(/\D/g, "").slice(0, 10),
         primaryContact: valueAt(row, "Primary Contact", "Contact Person"),
         primaryNumber: valueAt(row, "Primary Number", "Contact Number").replace(/\D/g, "").slice(0, 10),
         primaryEmail: valueAt(row, "Primary Email", "Email").toLowerCase(),
@@ -2310,8 +2334,9 @@ const ClientsTwo = () => {
           row.registrationNumber,
           row.vatNumber,
           row.industry,
-          row.groupName,
           row.bargainingCouncil === "None" ? "" : row.bargainingCouncil,
+          row.officeEmail,
+          row.officeNumber,
           row.primaryContact,
           row.primaryNumber,
           row.primaryEmail,
@@ -2382,8 +2407,9 @@ const ClientsTwo = () => {
         { header: "Registration Number", key: "registrationNumber", width: 22 },
         { header: "VAT Number", key: "vatNumber", width: 20 },
         { header: "Industry", key: "industry", width: 28 },
-        { header: "Group", key: "groupName", width: 24 },
         { header: "Bargaining Council", key: "bargainingCouncil", width: 28 },
+        { header: "Office Email", key: "officeEmail", width: 28 },
+        { header: "Office Number", key: "officeNumber", width: 18 },
         { header: "Primary Contact", key: "primaryContact", width: 22 },
         { header: "Primary Number", key: "primaryNumber", width: 18 },
         { header: "Primary Email", key: "primaryEmail", width: 28 },
@@ -2398,7 +2424,7 @@ const ClientsTwo = () => {
         { header: "Occupational Health and Safety (OHS)", key: "occupationalHealthAndSafety", width: 34 },
       ];
 
-      worksheet.mergeCells("A1:T1");
+      worksheet.mergeCells("A1:U1");
       worksheet.getCell("A1").value = "LLASA - Multiple Client Upload";
       worksheet.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF17324D" } };
       worksheet.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
@@ -2428,9 +2454,8 @@ const ClientsTwo = () => {
       listTitleRow.getCell(1).value = "Company Type";
       listTitleRow.getCell(2).value = "Province";
       listTitleRow.getCell(3).value = "Industry";
-      listTitleRow.getCell(4).value = "Group";
-      listTitleRow.getCell(5).value = "Bargaining Council";
-      listTitleRow.getCell(6).value = "YesNo";
+      listTitleRow.getCell(4).value = "Bargaining Council";
+      listTitleRow.getCell(5).value = "YesNo";
       listTitleRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3ECA44" } };
@@ -2444,14 +2469,11 @@ const ClientsTwo = () => {
       industryOptions.forEach((value, index) => {
         listSheet.getCell(index + 2, 3).value = value;
       });
-      ["None", ...groupOptions.map((group) => group.group_name).filter(Boolean)].forEach((value, index) => {
-        listSheet.getCell(index + 2, 4).value = value;
-      });
       bargainingCouncilOptions.forEach((option, index) => {
-        listSheet.getCell(index + 2, 5).value = option.label;
+        listSheet.getCell(index + 2, 4).value = option.label;
       });
       ["Yes", "No"].forEach((value, index) => {
-        listSheet.getCell(index + 2, 6).value = value;
+        listSheet.getCell(index + 2, 5).value = value;
       });
       listSheet.state = "hidden";
 
@@ -2459,8 +2481,9 @@ const ClientsTwo = () => {
         const row = worksheet.getRow(rowIndex);
         row.getCell(4).numFmt = "@";
         row.getCell(5).numFmt = "@";
-        row.getCell(10).numFmt = "@";
-        row.getCell(16).numFmt = "@";
+        row.getCell(9).numFmt = "@";
+        row.getCell(11).numFmt = "@";
+        row.getCell(17).numFmt = "@";
         row.eachCell((cell) => {
           cell.border = {
             top: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -2484,43 +2507,37 @@ const ClientsTwo = () => {
         row.getCell(7).dataValidation = {
           type: "list",
           allowBlank: true,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$D$2:$D$${groupOptions.length + 2}`],
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$D$2:$D$${bargainingCouncilOptions.length + 1}`],
           showErrorMessage: true,
         };
-        row.getCell(8).dataValidation = {
-          type: "list",
-          allowBlank: true,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$${bargainingCouncilOptions.length + 1}`],
-          showErrorMessage: true,
-        };
-        row.getCell(15).dataValidation = {
+        row.getCell(16).dataValidation = {
           type: "list",
           allowBlank: true,
           formulae: [`'${clientBulkTemplateListsSheetName}'!$B$2:$B$${provinceOptions.length + 1}`],
           showErrorMessage: true,
         };
-        row.getCell(17).dataValidation = {
-          type: "list",
-          allowBlank: false,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
-          showErrorMessage: true,
-        };
         row.getCell(18).dataValidation = {
           type: "list",
           allowBlank: false,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$3`],
           showErrorMessage: true,
         };
         row.getCell(19).dataValidation = {
           type: "list",
           allowBlank: false,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$3`],
           showErrorMessage: true,
         };
         row.getCell(20).dataValidation = {
           type: "list",
           allowBlank: false,
-          formulae: [`'${clientBulkTemplateListsSheetName}'!$F$2:$F$3`],
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$3`],
+          showErrorMessage: true,
+        };
+        row.getCell(21).dataValidation = {
+          type: "list",
+          allowBlank: false,
+          formulae: [`'${clientBulkTemplateListsSheetName}'!$E$2:$E$3`],
           showErrorMessage: true,
         };
       }
@@ -2533,19 +2550,20 @@ const ClientsTwo = () => {
       sampleRow.getCell(5).value = "";
       sampleRow.getCell(6).value = industryOptions[0];
       sampleRow.getCell(7).value = "None";
-      sampleRow.getCell(8).value = "None";
-      sampleRow.getCell(9).value = "Jane Doe";
-      sampleRow.getCell(10).value = "0821234567";
-      sampleRow.getCell(11).value = "jane@example.co.za";
-      sampleRow.getCell(12).value = "123 Main Street";
-      sampleRow.getCell(13).value = "Unit 4";
-      sampleRow.getCell(14).value = "Johannesburg";
-      sampleRow.getCell(15).value = "Gauteng";
-      sampleRow.getCell(16).value = "2001";
-      sampleRow.getCell(17).value = "Yes";
-      sampleRow.getCell(18).value = "No";
+      sampleRow.getCell(8).value = "office@example.co.za";
+      sampleRow.getCell(9).value = "0111234567";
+      sampleRow.getCell(10).value = "Jane Doe";
+      sampleRow.getCell(11).value = "0821234567";
+      sampleRow.getCell(12).value = "jane@example.co.za";
+      sampleRow.getCell(13).value = "123 Main Street";
+      sampleRow.getCell(14).value = "Unit 4";
+      sampleRow.getCell(15).value = "Johannesburg";
+      sampleRow.getCell(16).value = "Gauteng";
+      sampleRow.getCell(17).value = "2001";
+      sampleRow.getCell(18).value = "Yes";
       sampleRow.getCell(19).value = "No";
       sampleRow.getCell(20).value = "No";
+      sampleRow.getCell(21).value = "No";
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
@@ -2564,7 +2582,7 @@ const ClientsTwo = () => {
         variant: "destructive",
       });
     }
-  }, [bargainingCouncilOptions, groupOptions, industryOptions, provinceOptions, toast]);
+  }, [bargainingCouncilOptions, industryOptions, provinceOptions, toast]);
 
   const handleImportBulkClients = useCallback(async () => {
     if (!bulkClientParsedRows.length) return;
@@ -2575,9 +2593,6 @@ const ClientsTwo = () => {
         clientRows
           .map((row) => String(row?.clientNumber ?? "").trim().toUpperCase())
           .filter(Boolean),
-      );
-      const knownGroups = new Map(
-        groupOptions.map((group) => [group.group_name.trim().toLowerCase(), { id: group.id, group_name: group.group_name }] as const),
       );
       const failures: string[] = [];
       let successCount = 0;
@@ -2643,36 +2658,6 @@ const ClientsTwo = () => {
           continue;
         }
 
-        let resolvedGroupId: string | null = null;
-        let resolvedGroupName: string | null = null;
-        const requestedGroupName = row.groupName.trim();
-        if (requestedGroupName && requestedGroupName.toLowerCase() !== "none") {
-          const existingGroup = knownGroups.get(requestedGroupName.toLowerCase());
-          if (existingGroup) {
-            resolvedGroupId = existingGroup.id;
-            resolvedGroupName = existingGroup.group_name;
-          } else {
-            try {
-              const { data: createdGroup, error: createGroupError } = await (supabase as any)
-                .from("client_groups")
-                .insert({ group_name: requestedGroupName })
-                .select("id, group_name")
-                .single();
-              if (createGroupError) throw createGroupError;
-              resolvedGroupId = createdGroup?.id ?? null;
-              resolvedGroupName = createdGroup?.group_name ?? requestedGroupName;
-              knownGroups.set(requestedGroupName.toLowerCase(), {
-                id: resolvedGroupId || "",
-                group_name: resolvedGroupName,
-              });
-              await fetchClientGroups();
-            } catch (error: any) {
-              failures.push(`Row ${rowLabel}: ${error?.message || "group could not be created"}`);
-              continue;
-            }
-          }
-        }
-
         let clientNumber = "";
         do {
           nextSequence += 1;
@@ -2690,8 +2675,8 @@ const ClientsTwo = () => {
           registration_number: row.registrationNumber.trim(),
           vat_number: row.vatNumber.trim() || null,
           industry: row.industry.trim() || null,
-          group_name: resolvedGroupName,
-          group_id: resolvedGroupId,
+          office_email: row.officeEmail.trim().toLowerCase() || null,
+          office_number: row.officeNumber.trim() || null,
           primary_name: row.primaryContact.trim(),
           primary_number: row.primaryNumber.trim(),
           primary_email: row.primaryEmail.trim().toLowerCase(),
@@ -2802,11 +2787,9 @@ const ClientsTwo = () => {
     bulkClientParsedRows,
     clientRows,
     companyTypeOptions,
-    fetchClientGroups,
     fetchClients,
     findExistingClientByTradingName,
     getHighestClientNumberSequence,
-    groupOptions,
     industryOptions,
     normalizeImportedBargainingCouncil,
     normalizeImportedCompanyType,
@@ -3650,10 +3633,11 @@ const ClientsTwo = () => {
       contactPerson: row.ownerContactPerson === "--" ? "" : row.ownerContactPerson || "",
       contactNumber: row.ownerContactNumber === "--" ? "" : row.ownerContactNumber || "",
       ownerEmail: row.ownerContactEmail === "--" ? "" : row.ownerContactEmail || "",
+      officeEmail: row.officeEmail === "--" ? "" : row.officeEmail || "",
       primaryName: row.primaryName === "--" ? "" : row.primaryName || "",
       primaryJobTitle: row.primaryJobTitle === "--" ? "" : row.primaryJobTitle || "",
       primaryNumber: row.primaryNumber === "--" ? "" : row.primaryNumber || "",
-      mainOfficeNumber: row.mainOfficeNumber === "--" ? "" : row.mainOfficeNumber || "",
+      officeNumber: row.officeNumber === "--" ? "" : row.officeNumber || "",
       primaryEmail: row.primaryEmail === "--" ? "" : row.primaryEmail || "",
       secondaryName: row.secondaryName === "--" ? "" : row.secondaryName || "",
       secondaryJobTitle: row.secondaryJobTitle === "--" ? "" : row.secondaryJobTitle || "",
@@ -4040,10 +4024,11 @@ const ClientsTwo = () => {
         owner_name: clientEditForm.contactPerson.trim() || null,
         owner_number: clientEditForm.contactNumber.trim() || null,
         owner_email: clientEditForm.ownerEmail.trim() || null,
+        office_email: clientEditForm.officeEmail.trim() || null,
         primary_name: clientEditForm.primaryName.trim() || null,
         primary_job_title: clientEditForm.primaryJobTitle.trim() || null,
         primary_number: clientEditForm.primaryNumber.trim() || null,
-        main_office_number: clientEditForm.mainOfficeNumber.trim() || null,
+        office_number: clientEditForm.officeNumber.trim() || null,
         primary_email: clientEditForm.primaryEmail.trim() || null,
         secondary_name: clientEditForm.secondaryName.trim() || null,
         secondary_job_title: clientEditForm.secondaryJobTitle.trim() || null,
@@ -4117,10 +4102,11 @@ const ClientsTwo = () => {
               ownerContactPerson: clientEditForm.contactPerson || "--",
               ownerContactNumber: clientEditForm.contactNumber || "--",
               ownerContactEmail: clientEditForm.ownerEmail || "--",
+              officeEmail: clientEditForm.officeEmail || "--",
               primaryName: clientEditForm.primaryName || "--",
               primaryJobTitle: clientEditForm.primaryJobTitle || "--",
               primaryNumber: clientEditForm.primaryNumber || "--",
-              mainOfficeNumber: clientEditForm.mainOfficeNumber || "--",
+              officeNumber: clientEditForm.officeNumber || "--",
               primaryEmail: clientEditForm.primaryEmail || "--",
               secondaryName: clientEditForm.secondaryName || "--",
               secondaryJobTitle: clientEditForm.secondaryJobTitle || "--",
@@ -5420,6 +5406,10 @@ const ClientsTwo = () => {
                           <div className="mt-2 space-y-2">
                             {[
                               [
+                                ["Office Email", "officeEmail", selectedClientRow.officeEmail],
+                                ["Office Number", "officeNumber", selectedClientRow.officeNumber],
+                              ],
+                              [
                                 ["Primary Name", "primaryName", selectedClientRow.primaryName],
                                 ["Secondary Name", "secondaryName", selectedClientRow.secondaryName],
                               ],
@@ -5434,10 +5424,6 @@ const ClientsTwo = () => {
                               [
                                 ["Primary Email", "primaryEmail", selectedClientRow.primaryEmail],
                                 ["Secondary Email", "secondaryEmail", selectedClientRow.secondaryEmail],
-                              ],
-                              [
-                                ["Main Office Number", "mainOfficeNumber", selectedClientRow.mainOfficeNumber],
-                                ["", "", ""],
                               ],
                             ].map((row, rowIndex) => (
                               <div key={rowIndex} className="grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(130px,0.7fr)_minmax(220px,1.3fr)_minmax(130px,0.7fr)_minmax(220px,1.3fr)] md:items-center md:gap-x-6">
@@ -5917,12 +5903,12 @@ const ClientsTwo = () => {
                           </Button>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[110px_170px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                          <div className="grid grid-cols-[110px_130px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>Date</div>
-                            <div>Type</div>
+                            <div className="text-center">Type</div>
                             <div>Description</div>
-                            <div>Created By</div>
-                            <div>Actions</div>
+                            <div className="text-center">Created By</div>
+                            <div className="text-center">Actions</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isNotesLoading ? (
@@ -5933,13 +5919,13 @@ const ClientsTwo = () => {
                               <div className="px-3 py-3 text-slate-500">No file notes found.</div>
                             ) : (
                               paginatedClientFileNotes.map((note) => (
-                                <div key={note.id} className="grid grid-cols-[110px_170px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
+                                <div key={note.id} className="grid grid-cols-[110px_130px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
                                   {(() => {
                                     const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
                                     return (
                                       <>
                                         <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
-                                        <div className="flex min-w-0 items-center truncate">
+                                        <div className="flex min-w-0 items-center justify-center truncate">
                                           <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientFileNoteTypePillClassName(String(note.note_type || ""))}`}>
                                             {String(note.note_type || "--")}
                                           </Badge>
@@ -5948,12 +5934,12 @@ const ClientsTwo = () => {
                                           className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-2 text-slate-900"
                                           dangerouslySetInnerHTML={{ __html: content ? renderInlineMentionHighlights(content) : "--" }}
                                         />
-                                        <div className="flex min-w-0 items-center truncate">
+                                        <div className="flex min-w-0 items-center justify-center truncate">
                                           <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
                                             {String(note.note_user_name || "--")}
                                           </Badge>
                                         </div>
-                                        <div className="min-w-0 flex items-center gap-2">
+                                        <div className="min-w-0 flex items-center justify-center gap-2">
                                           <button
                                             type="button"
                                             className="text-slate-500 hover:text-[#2f9f35]"
@@ -6056,12 +6042,12 @@ const ClientsTwo = () => {
                           )}
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                          <div className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>File No</div>
                             <div>Parties</div>
                             <div>Type</div>
-                            <div>Stage</div>
-                            <div>Next Date</div>
+                            <div className="text-center">Stage</div>
+                            <div className="text-center">Next Date</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientMattersLoading ? (
@@ -6072,7 +6058,7 @@ const ClientsTwo = () => {
                               paginatedClientMatters.map((matter) => (
                                 <div
                                   key={matter.id}
-                                  className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
+                                  className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                                 >
                                   <button
                                     type="button"
@@ -6083,12 +6069,12 @@ const ClientsTwo = () => {
                                   </button>
                                   <div className="min-w-0 truncate text-slate-700">{matter.parties || "--"}</div>
                                   <div className="min-w-0 truncate text-slate-700">{formatClientMatterType(matter) || "--"}</div>
-                                  <div className="min-w-0 flex items-center truncate">
+                                  <div className="min-w-0 flex items-center justify-center truncate">
                                     <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientMatterStagePillClassName(matter.currentStage)}`}>
                                       {normalizeClientMatterStageValue(matter.currentStage) || matter.currentStage || "--"}
                                     </Badge>
                                   </div>
-                                  <div className="min-w-0 text-slate-700">{matter.nextDate ? formatDisplayDate(matter.nextDate) : "--"}</div>
+                                  <div className="min-w-0 text-center text-slate-700">{matter.nextDate ? formatDisplayDate(matter.nextDate) : "--"}</div>
                                 </div>
                               ))
                             )}
@@ -6150,14 +6136,13 @@ const ClientsTwo = () => {
                           </Button>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[110px_64px_86px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white">
+                          <div className="grid grid-cols-[110px_64px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>Date</div>
                             <div>Time</div>
-                            <div>Duration</div>
-                            <div>Type</div>
+                            <div className="text-center">Type</div>
                             <div>Description</div>
-                            <div>Assigned to</div>
-                            <div>Actions</div>
+                            <div className="text-center">Assigned to</div>
+                            <div className="text-center">Actions</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientTasksLoading ? (
@@ -6166,11 +6151,10 @@ const ClientsTwo = () => {
                               <div className="px-3 py-3 text-slate-500">No diary tasks created for this client yet.</div>
                             ) : (
                               paginatedClientTasks.map((task) => (
-                                <div key={task.id} className="grid grid-cols-[110px_64px_86px_150px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5">
+                                <div key={task.id} className="grid grid-cols-[110px_64px_150px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
                                   <div className="min-w-0 text-slate-700">{formatDisplayDate(task.diaryDate) || "--"}</div>
                                   <div className="min-w-0 text-slate-700">{formatTaskTime(task.taskTime)}</div>
-                                  <div className="min-w-0 truncate text-slate-700">{task.duration || "--"}</div>
-                                  <div className="flex min-w-0 items-center truncate">
+                                  <div className="flex min-w-0 items-center justify-center truncate">
                                     <Badge className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-medium text-sky-700 shadow-none hover:bg-sky-50 hover:text-sky-700">
                                       {task.taskType || "--"}
                                     </Badge>
@@ -6178,12 +6162,12 @@ const ClientsTwo = () => {
                                   <div className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap pr-2 text-slate-900">
                                     {task.description || "--"}
                                   </div>
-                                  <div className="flex min-w-0 items-center truncate">
+                                  <div className="flex min-w-0 items-center justify-center truncate">
                                     <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
                                       {task.assignedToName || "--"}
                                     </Badge>
                                   </div>
-                                  <div className="min-w-0 flex items-center gap-2">
+                                  <div className="min-w-0 flex items-center justify-center gap-2">
                                     <button
                                       type="button"
                                       className="text-slate-500 hover:text-[#2f9f35]"
@@ -6283,12 +6267,12 @@ const ClientsTwo = () => {
                           )}
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white">
+                          <div className="grid grid-cols-[3.4fr_0.9fr_0.9fr_1fr_72px] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>Description</div>
-                            <div>Type</div>
-                            <div>Drafted On</div>
-                            <div>Drafted By</div>
-                            <div>Actions</div>
+                            <div className="text-center">Type</div>
+                            <div className="text-center">Drafted On</div>
+                            <div className="text-center">Drafted By</div>
+                            <div className="text-center">View</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientGeneratedDocumentsLoading ? (
@@ -6299,13 +6283,21 @@ const ClientsTwo = () => {
                               paginatedClientGeneratedDocuments.map((document) => (
                                 <div
                                   key={document.id}
-                                  className="grid grid-cols-[2.8fr_1.1fr_1.3fr_1fr_72px] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5"
+                                  className="grid grid-cols-[3.4fr_0.9fr_0.9fr_1fr_72px] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                                 >
                                   <div className="min-w-0 truncate font-medium text-slate-900">
                                     {document.documentName || "--"}
                                   </div>
-                                  <div className="min-w-0 text-slate-700">{document.documentType || "--"}</div>
-                                  <div className="min-w-0 text-slate-700">
+                                  <div className="flex min-w-0 items-center justify-center">
+                                    {document.documentType ? (
+                                      <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientDocumentTypePillClassName(document.documentType)}`}>
+                                        {document.documentType}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-slate-700">--</span>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 text-center text-slate-700">
                                     {document.createdAt ? (
                                       <Tooltip disableHoverableContent>
                                         <TooltipTrigger asChild>
@@ -6321,19 +6313,19 @@ const ClientsTwo = () => {
                                       "--"
                                     )}
                                   </div>
-                                  <div className="min-w-0 flex items-center truncate">
+                                  <div className="min-w-0 flex items-center justify-center truncate">
                                     <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
                                       {document.createdBy || "--"}
                                     </Badge>
                                   </div>
-                                  <div className="min-w-0 flex items-center gap-2">
+                                  <div className="min-w-0 flex items-center justify-center gap-2">
                                     <button
                                       type="button"
                                       className="text-slate-500 hover:text-[#2f9f35]"
                                       onClick={() => handleViewClientGeneratedDocument(document)}
                                       aria-label="View document"
                                     >
-                                      <Eye className="h-3.5 w-3.5" />
+                                      <DocumentMagnifyingGlassIcon className="h-5 w-5 stroke-[1.5]" />
                                     </button>
                                   </div>
                                 </div>

@@ -127,28 +127,25 @@ const formatDocumentClientName = (value: string) => {
 
 const getDocumentTypePillClassName = (type: string) => {
   const normalized = type.toLowerCase();
-  if (normalized.includes("discipline") || normalized.includes("warning") || normalized.includes("hearing")) {
-    return "border-red-600 bg-red-50 text-red-700 hover:bg-red-50 hover:text-red-700";
-  }
-  if (normalized.includes("contract") || normalized.includes("addendum")) {
-    return "border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
-  }
-  if (normalized.includes("performance")) {
-    return "border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+  if (normalized.includes("warning")) {
+    return "border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-50 hover:text-orange-600";
   }
   if (normalized.includes("notice")) {
-    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+    return "border-red-600 bg-red-50 text-red-700 hover:bg-red-50 hover:text-red-700";
   }
   if (normalized.includes("termination") || normalized.includes("retrenchment") || normalized.includes("abscondment")) {
+    return "border-rose-600 bg-rose-50 text-rose-700 hover:bg-rose-50 hover:text-rose-700";
+  }
+  if (normalized.includes("outcome")) {
+    return "border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
+  }
+  if (normalized.includes("contract") || normalized.includes("addendum")) {
+    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+  }
+  if (normalized.includes("other") || normalized.includes("service") || normalized.includes("certificate") || normalized.includes("debt")) {
     return "border-slate-500 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
   }
-  if (normalized.includes("service") || normalized.includes("certificate")) {
-    return "border-emerald-600 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
-  }
-  if (normalized.includes("debt")) {
-    return "border-cyan-600 bg-cyan-50 text-cyan-700 hover:bg-cyan-50 hover:text-cyan-700";
-  }
-  return "border-[#2D4256] bg-slate-100 text-[#2D4256] hover:bg-slate-100 hover:text-[#2D4256]";
+  return "border-slate-500 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
 };
 
 const getInitials = (value: unknown) => {
@@ -1753,23 +1750,29 @@ const Documents = () => {
                                 )}
                               </div>
                               <div className="flex min-w-0 items-center justify-center">
-                                <span
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[8px] font-semibold text-slate-700"
-                                  aria-label={row.createdBy || "Unknown user"}
-                                  title={row.createdBy || "Unknown user"}
-                                >
-                                  {getInitials(row.createdBy)}
-                                </span>
+                                <Tooltip disableHoverableContent>
+                                  <TooltipTrigger asChild>
+                                    <span
+                                      className="inline-flex h-5 w-5 cursor-default items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[8px] font-semibold text-slate-700"
+                                      aria-label={row.createdBy || "Unknown user"}
+                                    >
+                                      {getInitials(row.createdBy)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" sideOffset={6} className="rounded border border-[#3eca44]/35 bg-white px-2 py-1 text-[10.67px] font-semibold text-slate-700 shadow-none">
+                                    {row.createdBy || "Unknown user"}
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                               <div className="flex items-center justify-center">
                                 <button
                                   type="button"
-                                  className="inline-flex h-5 w-5 items-center justify-center bg-transparent text-black transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-40"
+                                  className="inline-flex h-5 w-5 items-center justify-center bg-transparent text-slate-500 transition-colors hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:opacity-40"
                                   onClick={() => openDocumentRowFile(row.fileUrl)}
                                   disabled={!row.fileUrl}
                                   aria-label={`View ${row.documentName || "document"}`}
                                 >
-                                  <DocumentMagnifyingGlassIcon className="h-5 w-5 stroke-[1.5]" />
+                                  <DocumentMagnifyingGlassIcon className="h-5 w-5 stroke-[1.25] transition-transform duration-150 hover:scale-110" />
                                 </button>
                               </div>
                             </div>

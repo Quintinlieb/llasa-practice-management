@@ -37,6 +37,17 @@ const CLIENT_FILE_NOTE_TYPES = [
   "Email Received",
   "Email Sent",
   "Consultation",
+  "Chairing",
+  "Representation",
+  "Facilitation",
+  "Draft (Contract)",
+  "Draft (SLA)",
+  "Draft (Warning)",
+  "Draft (Letter)",
+  "Draft (Notice)",
+  "Draft (Outcome)",
+  "Draft (Affidavit)",
+  "Draft (Other)",
 ] as const;
 const DIARY_TASK_TYPE_OPTIONS = [
   "Case Preparation",
@@ -60,21 +71,31 @@ const DIARY_TASK_DURATION_OPTIONS = ["15 mins", "30 mins", "1 hour", "2 hours", 
 const DIARY_TASK_TIME_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
 const DIARY_TASK_TIME_MINUTE_OPTIONS = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"] as const;
 const getClientFileNoteTypePillClassName = (value: string) => {
-  switch (String(value || "").trim()) {
+  const normalized = String(value || "").trim();
+  if (normalized.startsWith("Draft (")) {
+    return "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
+  }
+  switch (normalized) {
     case "Incoming Call":
-      return "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-50 hover:text-sky-700";
+      return "border-blue-200 bg-transparent text-blue-700 hover:bg-transparent hover:text-blue-700";
     case "Outgoing Call":
-      return "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700";
+      return "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
     case "WhatsApp In":
-      return "border-lime-200 bg-lime-50 text-lime-700 hover:bg-lime-50 hover:text-lime-700";
+      return "border-green-200 bg-transparent text-green-700 hover:bg-transparent hover:text-green-700";
     case "WhatsApp Out":
       return "border-green-200 bg-green-50 text-green-700 hover:bg-green-50 hover:text-green-700";
     case "Email Received":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700";
+      return "border-orange-200 bg-transparent text-orange-700 hover:bg-transparent hover:text-orange-700";
     case "Email Sent":
-      return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50 hover:text-amber-700";
+      return "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50 hover:text-orange-700";
     case "Consultation":
       return "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50 hover:text-rose-700";
+    case "Chairing":
+      return "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+    case "Representation":
+      return "border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-50 hover:text-cyan-700";
+    case "Facilitation":
+      return "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-50 hover:text-teal-700";
     default:
       return "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
   }
@@ -6538,7 +6559,16 @@ const ClientsTwo = () => {
                       .filter((matter) => String(matter.status || "").trim().toLowerCase() === "active")
                       .map((matter) => (
                         <SelectItem key={matter.id} value={matter.id} className={addModalSelectItemClass}>
-                          {buildClientTaskRelatedMatterLabel(matter)}
+                          <Tooltip disableHoverableContent>
+                            <TooltipTrigger asChild>
+                              <span className="block w-[calc(var(--radix-select-trigger-width)-2.5rem)] max-w-[calc(var(--radix-select-trigger-width)-2.5rem)] truncate pr-2">
+                                {buildClientTaskRelatedMatterLabel(matter)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" align="center" sideOffset={10} avoidCollisions={false} className="max-w-[320px] rounded border border-[#3eca44]/35 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-none">
+                              {matter.parties || "--"}
+                            </TooltipContent>
+                          </Tooltip>
                         </SelectItem>
                       ))}
                   </SelectContent>

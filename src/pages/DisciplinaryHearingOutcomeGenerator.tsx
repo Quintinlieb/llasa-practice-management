@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type RefObject, type SVGProps, type SyntheticEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { logGeneratedDocument } from "@/lib/documentsLog";
-import { resolveUserSignatureUrl } from "@/lib/userSignatures";
+import { fetchCurrentUserSignatureUrl } from "@/lib/userSignatures";
 import { supabase } from "@/integrations/supabase/client";
 import { Building2, Check, ChevronDown, ChevronsUpDown, FileText, Info, Pencil, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -134,6 +135,9 @@ type PreviewFormState = {
   aggravatingFactors: string;
   mitigatingFactors: string;
   recommendation: string;
+  signingPlace: string;
+  signingDay: string;
+  signingMonth: string;
 };
 
 type EditorTarget = keyof PreviewFormState | "preliminarySection" | "issueSection" | "analysisSection" | "employeeStatementGroup";
@@ -153,9 +157,39 @@ type OutcomeDraftState = {
 const steps = ["Parties", "Hearing Details", "Preview / Edit"] as const;
 const stepIcons = [Building2, FileText, Check] as const;
 const inputClassName =
-  "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+  "h-8 rounded-sm border-slate-300 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[11px] md:placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 const editablePlaceholderText = "Please start typing here...";
 const generatedDocumentsBucket = "documents";
+const monthOptions = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const getOrdinalSuffix = (value: string) => {
+  const day = Number.parseInt(value, 10);
+  if (!Number.isFinite(day)) return "";
+  const remainder100 = day % 100;
+  if (remainder100 >= 11 && remainder100 <= 13) return "th";
+  switch (day % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+};
 const quintinLiebenbergSignatureDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHkAAACiCAMAAABS3ZKXAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAK1UExURQAAAP///wAAAA8PDxERERISEhMTExUVFRkZGRoaGhsbGxwcHB0dHR8fHyQkJCUlJSYmJicnJygoKCkpKSoqKiwsLC0tLS4uLjAwMDExMTIyMjQ0NDU1NTY2Njc3Nzg4ODk5OTo6Ojs7Ozw8PD09PT4+Pj8/P0BAQEFBQUJCQkNDQ0REREVFRUZGRkdHR0hISElJSUpKSktLS0xMTE1NTU5OTk9PT1BQUFFRUVJSUlNTU1RUVFVVVVZWVldXV1hYWFlZWVpaWltbW1xcXF1dXV5eXl9fX2BgYGFhYWJiYmNjY2RkZGVlZWZmZmdnZ2hoaGlpaWpqamtra2xsbG1tbW5ubm9vb3BwcHFxcXJycnNzc3R0dHV1dXZ2dnd3d3h4eHl5eXp6ent7e3x8fH19fX5+fn9/f4CAgIGBgYKCgoODg4SEhIWFhYaGhoeHh4iIiImJiYqKiouLi4yMjI2NjY6Ojo+Pj5CQkJGRkZKSkpOTk5SUlJWVlZaWlpeXl5iYmJmZmZqampubm5ycnJ2dnZ6enp+fn6CgoKGhoaKioqOjo6SkpKWlpaampqenp6ioqKmpqaqqqqurq6ysrK2tra6urq+vr7CwsLGxsbKysrOzs7S0tLW1tba2tre3t7i4uLm5ubq6uru7u7y8vL29vb6+vr+/v8DAwMHBwcLCwsPDw8TExMXFxcbGxsfHx8jIyMnJycrKysvLy8zMzM3Nzc7Ozs/Pz9DQ0NHR0dLS0tPT09TU1NXV1dbW1tfX19jY2NnZ2dra2tvb29zc3N3d3d7e3t/f3+Dg4OHh4eLi4uPj4+Tk5OXl5ebm5ufn5+jo6Onp6erq6uvr6+zs7O3t7e7u7u/v7/Dw8PHx8fLy8vPz8/T09PX19fb29vf39/j4+Pn5+fr6+vv7+/z8/P39/f7+/v///0MXzbkAAAACdFJOUwC/LU1jJQAAAAlwSFlzAAAOxAAADsMB2mqY3AAADUtJREFUeF7tm/lDE1cewLd7dLftbtfudre69aaKZxWRQ6AiooIccliMgkApgoBarBdn5aqiqFxyKBJERCKKoqAtCFRAboEgcpqQBJKZv2PfTN6EyWTeJCET+oufH/Q7Afwwb97xfd83/uH3A/+9eG+eT96b55P3ZjOiaJHDCDJf5t4zPm9gCJkn88zeP9/CYAyZJ3P7mqMyGFLMj7nBO45xx/NjHhPbruqE8SzzYB4KF+zqhTEN85snEz/531MY0zG7WRK1fF0VjLUwt3km7Y/LSmCsjbnN+X//9A4MGZjZXPvPf5UpYExAG1vmNTev/U8xDEk6++4NwdC85oGtXzyEIQHWFlaxNnsGXpnT3OezpAiGBFh/fk5TQs4wvDSjeergl3UwJJmufwv+fEI1t/nM8oRVT2CoBhuHgRqzmUfOLi+EITvmMksiF1XAEIGZzH2RX92AIQrzmNs8PuZuaoBZzI27PkqdgjESM5hltWc2hTFzH134N88UBFwI1R5ArPBufpNyPH7bb/CCC77NnT/alfn/Ci844dlcf+h0V0CQ7kNW6qSePJuv+2dIim374NUsoipqhZqFT/NYiU06PmhxVQWvNdStSJ+G4Sw8mjuiBOABn3YZhdcaWm1P6N4yf2ZVs7cvuLEnG1rgBxr69h3WvWMezUL/4+9wfNz+CD3tIpAf2KL74AG8mNtnZi75/US0aLF1l/ojDbIE++cw1MYAMyZuAXfDQb1zc8Hqx0TU6VBN/EVDmbHgHgwZGGBW3Vl5ldmEdJpsDyWGtxGRPMR+kvxoltvLsxi1AgpDWlvqF/9adyagaP0moPCMugu1rSxmjKi+TftZujWJYc95WKwzRin6Qu2qsibIUH7me8b9iY/Y/wJDHUztYT0C15RnMBaubYcRhcefKmGki4lmccKS8BcwntgWrd0dpoWfOI3BWBfTzFPRLrsewViVZy2GoRpVjr0Ty46dwiTzROLOBfkwxgc3ZCphqKbU++phCYxZMMX8LnHz5W2D8AK/7K7dsg17Svc8QA8Jk8yxFoMJN6lB02VRDiM1rQHZmaHUHoqNuZsVJevONwVL4ZXqhLPWGtXlF/PEm9hHIZm7OXtpyVu/TOqWWzbT96t4v3/ESNgpzgR0zuaHdhGyRksq1ZP6BtAnkWHB/pEHrj3wip25ml+4JOPKuHQ4gLHbC+hz1cRxh9GxjaXwCsEczY22Me/wKocReCndHUlbKiRROzrxwm+4b3luZqxindcEPuVxAeYaqmpXqqcBFJfsGvA2tzJyqu+/g1iq5mZ++JENuNu7btT2v9shjZbv5HuKcYn/ftI46SsAk8lYP1hOmEN7LuYaa2eQeXTbaCrWV61ewwgg9KgCo9myjPiiPHYdkE4EXxu8orPtMN4sa7dYBe5Qdfoo1Y69O27OLqJ1jmVgrTi7j9hLygtW3gJ/5dk9TbCq7GSMMaPNM/eiPCuBqMcF3A0J9oOmp4H22JEzjWOiL4muLi/zAynY2MugaxGOWSmXTTxNkNRcdowBtywJDiHuStUrxzs23Vd/DdC4miihy91CQI8buZF+AceHqu9UfvGXxDN5tJ5AYqR5Iv9Cjj8xKT5c2Qz+lBU4tU1956dpx/7DCcQIb1oKUv7RCwk1NdLW28O4aI1Pj25OY5xZnnIsL4xYncYO5oIlcSrLc2HH/U9r1V8EeUJEDCGe2HtAgQ/nZPZuij8b96wrcdVZttzVYPMQyADG849c2knOz1nbwFOTZIZWXBgNtKOWitHv95Nz2sNPHmC/iYretS5b5Nj80ufDY9qpCsQAs4QYH70hLvWS1KhnAYXEVZeDCDRt/IFnWeNCp/YS+AhTvyHzMFm4q/x1MthXqF686jrr73qUmQmr0W8WJ0hwrDnIKS4049i4IJL4/acEoQq89bB/c2ndiHPi+eieDtD0ioKIbvIH3tkUlIvUychTL/vErY1kCL6hcZCaAAj0mqWhWyfxds+wK9fSQrqK/cgCyP1//4IP+IRKWh6qqnwLDtedSJPhqnxrOFm8sj3uTG5oFKJNjv2Xv4SrdJsoTETvZ/rMU6kWQrwjJqMm7+LJvic25Ir01isBf/VD8lv8Vu9ru0vn+5Nch8FGJBimvFjFegGZCk6eXvqTROJSSmRnyo6ixOuzo55Aj1mRbCXE2wKDGwruRvdJDxcRv/RMor28ISxmGnueMZWwoBSvTbo+jv8aPbuVU/fktphlV3H80QrwIyO15fEHmeUibvNoms0NrNbzYq+wNuLx9PUT5E/3ri5v9UifwUd2lnZbunW88hXGjz4oYmY+lVu21YN7zbPIvlcWsyOhh/6ISTjN4iPuJYongtja249Ka7ur970iPsTOCd5WgsUCawqYDLU6Isy0dmvuTGJMysoiez9yFZkJWWzvEqGVKUG4zKMnPV421h+6Jo2seC76+d45Efl7tyx+Qd6fIv3gTwtFBQPPFt/vzGSM2OmrnybCEAmHWfzdke6i0uDC8Ru5LX2Ho5/XkIm8MjpyhFykZrKd/noSzN2t32ZnVmvn+DOpa87SUgV20ObhI3atGUX5j/B6i9yu6os9XeQdYzUbc6m+8igA5PbYg+2uHfADyEDC15qdBxqkuS/cZ6h5h1CGv3Fxb1TcqbqsbtDxLeupw4nhjSeJzxQDjGcsDlyqmck5QJnF4X79csckMCtlLMnD8ZJgoTqzfhNK9RYsm73y0h28R+vgBAXCPHAmToYXr78Dpmh/sFSMCNx06tXDS9O0n66aF4c89CSdEHbzRErsNN639mcMH/3uHFgPOoJ0t/4li5n7dIIGh0DtvSwSVnNbYdEkjv2W9w6fSglUVyJ0GNuZzMwyAOXOkWwNwQaLWdkSfQ2Oz+mLvqga+ZU1OlVGHH9gFYcqyOjAYpZna47Ir+xtgBGToaXxuo5bW7NhZACIHqam2pYqRTDBri5jDGLQVnet9R7Y0OAyv9xTpDPPQ0adGKUJsJD/TE+79cNh7g9MR/1LWI4FlW1TjB5bZURTA9Bm+ckgZLHh7bpvGRNX/1FLRH0TBdKsLA5CDkzsjpOmMKPm2T5PKt3SAvW0AEjzXX+qwqbLoFuSdscW7vRgGWO4pH4crUaYsda9HJNvxT+0lgRp3voTjMZXI9zP2EvRQZgVB5LQB4vKqG30TYM0xU4IQ23KklqMbu2p8oNoMd65jCyjQ7pjvV7CUJuOVZwn0OzmPB/dd5s0zCTvphUVX/m4sq0coClColgfAQWruS6I/S7UvLWenTGwWq9wxBJRvJXjtwewmUcDyVIDAuVNS02GqyjYEoFIuHo3EeUCDljMqvNJLOufBunmK9RdTp2zTUR8qyrCRc86zWK+78TM2umoni+kzsJ6zqxA9qEXlshjBIiuuWtfFUdb43IBVWV96efIfhIFGN2VwNVuBDrm4b0pnFnFoB3UVbmHotvz4mKOar4aplmZZqmz8NJR5W4lt4TSuu0c7xJ0rc3najcSplnkzZ05TjrHEc0o/tFf6/UrbaajdnF1FTUM85DHNe4MruMjYrA8Dd7Olcw3b0UfFmnQNkvjwxCpJgQr+7wdl5VtFLAtTRRj/kf1dS+AtrnCln0m1CA/HoYPnffL4ZwXCz+mzs640DKPCPK42xqf8L5dF7Gbsw/iMg8B5y8GoZunT3no+5Fxm9DdPzBTMG1UBQ60yi8auvnm6gcwQjLp5M72viqdoSUn9TScGpq5e73+XS+GqtBrUBZsNOhFFppZGejOXqwzjnYrsBk0hFnzzQ2GvO2jl7OaMqgeNObuhXpOeQyjZ1253nlTDWWWxvpwHSIaiixkttitB2iWFwSgtqtGUf+59puWHEBz40ZDiip6kR84obfzU0BzrWWTOjCNJ59pXhjWCzSP13CcjhuM1CuUI01nQPUwXnhsY1hZiIRP8xufXCO27nyabywi3+ExEB7N777/0eCODeDPrMpxHIChQfBn7llEviFmMPyZM5cbt9TxZhbbXDcoIdDAl1mVus3A1ZGCL/Nr62xjynAAnsxTyb5GdWwAT+bHq42sw/FlVhzfzb03YYEf8wv7SgNzoFl4McsimWVQA+DDjNV9JTT6lnkxKw/sNTwh0MCDGWv+rwiGxsCDeTp4PWfCLGGfYngwD9uwvzwB6W1lX8J4MD+0JF5qQaBsKkUsYaabZ045ol+yVj5KReUpppvFlugCmqohC9nrTTdXf4guY1eWobMFk82qjM9QZRN5JXEmj8Jks9TbB1FnHs4N4jjGMN08siKL/TGPF8dy7phMNo9asm/iunLruFNRk83dFmwTmOrZ+Ww9b1eYbK6y0n4diESS74MsfVOYbL6/Wdfcm+Kl/yUHk833dM1V7ocMSAdNNtdtYsydQ3XuB1g6nc7/7TLZPGbdpPVv1gki2d5PwmTMsWeyWertShu2r7NtfVl6HBsmm5WX/qbpTZOP/DcUGLq7MtmMD292Uz9puejgxnC9RzYaTDfjTxedaugfaKs5/fVq9tNgdngw49UOVns9t1s5lxiVdPNhxicz/H1jDatqz8KLeU68N88nf/jg9+GDD/4P4JFn6rxAyAAAAAAASUVORK5CYII=";
 
@@ -216,6 +250,7 @@ const createTransparentSignatureDataUrl = async (sourceDataUrl: string) => {
   }
   return new Promise<string>((resolve) => {
     const image = new Image();
+    image.crossOrigin = "anonymous";
     image.onload = () => {
       try {
         const canvas = document.createElement("canvas");
@@ -270,6 +305,9 @@ const emptyPreviewFormState: PreviewFormState = {
   aggravatingFactors: "",
   mitigatingFactors: "",
   recommendation: "",
+  signingPlace: "",
+  signingDay: "",
+  signingMonth: "",
 };
 
 const AddSectionDivider = ({
@@ -648,18 +686,18 @@ const parseEmployeeStatementOverrides = (value: string) => {
   }
 };
 
-const sanitizeFileSegment = (value: string, fallback: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || fallback;
-
 const stripParagraphNumberPrefix = (value: string) => String(value || "").replace(/^\s*\d+(?:\.\d+)?\.?\s*/, "").trim();
 
 const splitEditorDraftLines = (value: string) =>
   String(value || "")
     .split(/\r?\n/)
     .map((line) => stripParagraphNumberPrefix(line));
+
+const sanitizeFileSegment = (value: string, fallback: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || fallback;
 
 const parseDraftState = (value: unknown): OutcomeDraftState => {
   if (!value || typeof value !== "object") {
@@ -738,7 +776,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
   onStepMetaChange,
 }: DisciplinaryHearingOutcomeGeneratorProps) => {
   const { user } = useAuth();
-  const [chairpersonSignatureDataUrl, setChairpersonSignatureDataUrl] = useState(quintinLiebenbergSignatureDataUrl);
+  const [chairpersonSignatureDataUrl, setChairpersonSignatureDataUrl] = useState("");
   const initialDraft = useMemo(() => parseDraftState(draftState), [draftState]);
   const [activeStep, setActiveStep] = useState(initialDraft.activeStep);
   const [isFinished, setIsFinished] = useState(initialDraft.isFinished);
@@ -778,28 +816,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const defaultClientVenue = getDefaultVenueForClientForm(clientForm);
 
   useEffect(() => {
+    if (!editingParagraphId) return;
+    requestAnimationFrame(() => {
+      editingTextareaRef.current?.focus({ preventScroll: true });
+    });
+  }, [editingParagraphId]);
+
+  useEffect(() => {
     let isMounted = true;
     const loadTransparentSignature = async () => {
-      let sourceSignature = quintinLiebenbergSignatureDataUrl;
-      if (user?.id) {
-        const { data: profileData } = await (supabase as any)
-          .from("profiles")
-          .select("signature_storage_path")
-          .eq("id", user.id)
-          .maybeSingle();
-        const profileSignature = resolveUserSignatureUrl((profileData as any)?.signature_storage_path);
-        if (profileSignature) {
-          sourceSignature = profileSignature;
-        } else {
-          const { data: subuserData } = await (supabase as any)
-            .from("subusers")
-            .select("signature_storage_path")
-            .eq("auth_user_id", user.id)
-            .maybeSingle();
-          const subuserSignature = resolveUserSignatureUrl((subuserData as any)?.signature_storage_path);
-          if (subuserSignature) sourceSignature = subuserSignature;
-        }
-      }
+      const sourceSignature = user?.id ? await fetchCurrentUserSignatureUrl(user.id) : "";
       const nextSignature = await createTransparentSignatureDataUrl(sourceSignature);
       if (isMounted) {
         setChairpersonSignatureDataUrl(nextSignature);
@@ -1515,8 +1541,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
     const lines = textarea.value.split(/\r?\n/);
     const lineIndex = textarea.value.slice(0, textarea.selectionStart).split(/\r?\n/).length - 1;
     const lineStart = textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1;
-    const prefix = `${getEditorParagraphNumber(editingParagraphId, lineIndex)} `;
-    const minPosition = lineStart + prefix.length;
+    const currentLine = lines[lineIndex] || "";
+    const fallbackPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex);
+    const actualPrefix = currentLine.match(/^\s*\d+(?:\.\d+)?\.?\s*/)?.[0] || fallbackPrefix;
+    const minPosition = lineStart + actualPrefix.length;
     if (event.key === "Home") {
       event.preventDefault();
       requestAnimationFrame(() => {
@@ -1525,7 +1553,6 @@ const DisciplinaryHearingOutcomeGenerator = ({
       return;
     }
     if (event.key === "Backspace" && textarea.selectionStart === textarea.selectionEnd) {
-      const currentLine = lines[lineIndex] || "";
       const currentContent = stripParagraphNumberPrefix(currentLine);
       if (!currentContent && lineIndex > 0) {
         if (editingParagraphId === "employeeStatementGroup" && lineIndex === 1) {
@@ -1538,7 +1565,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
         setEditingParagraphDraft(renumbered);
         requestAnimationFrame(() => {
           const previousLineText = nextLines[lineIndex - 1] || "";
-          const previousPrefix = `${getEditorParagraphNumber(editingParagraphId, lineIndex - 1)} `;
+          const previousPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex - 1);
           const previousContentLength = stripParagraphNumberPrefix(previousLineText).length;
           const lineOffset = previousPrefix.length + previousContentLength;
           const finalPosition = renumbered
@@ -1568,7 +1595,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           .split(/\r?\n/)
           .slice(0, lineIndex + 1)
           .reduce((total, line) => total + line.length + 1, 0);
-        const nextPrefix = `${getEditorParagraphNumber(editingParagraphId, lineIndex + 1)} `;
+        const nextPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex + 1);
         const nextCaretPosition = nextLineStart + nextPrefix.length;
         editingTextareaRef.current?.setSelectionRange(nextCaretPosition, nextCaretPosition);
       });
@@ -2010,6 +2037,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ? `If the employer chooses to dismiss any of the employees, they must be notified that they may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`
       : `If the employer chooses to dismiss the employee, he/she must be notified that he/she may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`;
   const recourseParagraphNumber = `${recourseHeadingNumber}.`;
+  const signingPlaceValue = previewForm.signingPlace.trim();
+  const signingDayValue = previewForm.signingDay.trim();
+  const signingDayOrdinalSuffix = getOrdinalSuffix(signingDayValue);
+  const signingMonthValue = previewForm.signingMonth.trim();
+  const signingYearValue = String(new Date().getFullYear());
 
   async function handleDownloadPdf() {
     if (!isPreviewDownloadReady) {
@@ -2048,27 +2080,28 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     const textLines = (text: string, width: number) => pdf.splitTextToSize(text, width).map((line) => String(line));
 
-    const writeJustifiedLines = (lines: string[], x: number, startY: number, width: number) => {
-      lines.forEach((line, lineIndex) => {
-        const lineText = String(line);
-        const lineY = startY + lineIndex * paragraphLineHeight;
-        const isLastLine = lineIndex === lines.length - 1;
-        const words = lineText.trim().split(/\s+/).filter(Boolean);
-        if (isLastLine || words.length <= 1) {
-          pdf.text(lineText, x, lineY);
-          return;
-        }
+    const keepLineRoom = () => {
+      if (cursorY + paragraphLineHeight <= bodyLimitY) return;
+      startPage();
+    };
 
-        const extraSpace = width - pdf.getTextWidth(lineText);
-        const gapCount = words.length - 1;
-        let wordX = x;
-        words.forEach((word, wordIndex) => {
-          pdf.text(word, wordX, lineY);
-          wordX += pdf.getTextWidth(word);
-          if (wordIndex < gapCount) {
-            wordX += pdf.getTextWidth(" ") + extraSpace / gapCount;
-          }
-        });
+    const writeJustifiedLine = (line: string, x: number, y: number, width: number, isLastLine: boolean) => {
+      const lineText = String(line);
+      const words = lineText.trim().split(/\s+/).filter(Boolean);
+      if (isLastLine || words.length <= 1) {
+        pdf.text(lineText, x, y);
+        return;
+      }
+
+      const extraSpace = width - pdf.getTextWidth(lineText);
+      const gapCount = words.length - 1;
+      let wordX = x;
+      words.forEach((word, wordIndex) => {
+        pdf.text(word, wordX, y);
+        wordX += pdf.getTextWidth(word);
+        if (wordIndex < gapCount) {
+          wordX += pdf.getTextWidth(" ") + extraSpace / gapCount;
+        }
       });
     };
 
@@ -2101,13 +2134,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const indent = options?.indent ?? 0;
       const width = usableWidth - indent;
       const lines = textLines(text, width);
-      keepRoom(lines.length * paragraphLineHeight + (options?.gapAfter ?? paragraphGap));
       pdf.setFont("helvetica", options?.bold ? "bold" : "normal");
       pdf.setFontSize(options?.size ?? 10);
-      lines.forEach((line, index) => {
-        pdf.text(line, marginX + indent, cursorY + index * paragraphLineHeight);
+      lines.forEach((line) => {
+        keepLineRoom();
+        pdf.text(line, marginX + indent, cursorY);
+        cursorY += paragraphLineHeight;
       });
-      cursorY += lines.length * paragraphLineHeight + (options?.gapAfter ?? paragraphGap);
+      cursorY += options?.gapAfter ?? paragraphGap;
     };
 
     const writeSectionHeading = (heading: string) => {
@@ -2129,13 +2163,50 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const numberWidth = options?.nested ? nestedNumberColumnWidth : numberColumnWidth;
       const leftOffset = numberColumnWidth + 4;
       const lines = textLines(text, usableWidth - leftOffset);
-      const blockHeight = lines.length * paragraphLineHeight + (options?.gapAfter ?? paragraphGap);
-      keepRoom(blockHeight);
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(10);
-      pdf.text(number, marginX, cursorY);
-      writeJustifiedLines(lines, marginX + leftOffset, cursorY, usableWidth - leftOffset);
-      cursorY += blockHeight;
+      lines.forEach((line, index) => {
+        keepLineRoom();
+        if (index === 0) {
+          pdf.text(number, marginX, cursorY);
+        }
+        writeJustifiedLine(line, marginX + leftOffset, cursorY, usableWidth - leftOffset, index === lines.length - 1);
+        cursorY += paragraphLineHeight;
+      });
+      cursorY += options?.gapAfter ?? paragraphGap;
+    };
+
+    const writeSigningStatement = () => {
+      const segments: Array<{ text: string; bold?: boolean; size?: number; yOffset?: number }> = [
+        { text: "Done and Signed at " },
+        { text: signingPlaceValue || "________________", bold: true },
+        { text: " on this " },
+        { text: signingDayValue || "____", bold: true },
+        ...(signingDayValue && signingDayOrdinalSuffix
+          ? [{ text: signingDayOrdinalSuffix, bold: true, size: 7, yOffset: -1.8 }]
+          : []),
+        { text: " day of " },
+        { text: signingMonthValue || "________________", bold: true },
+        { text: ` ${signingYearValue}`, bold: true },
+      ];
+      keepRoom(paragraphLineHeight + paragraphGap);
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      let segmentX = marginX;
+      let segmentY = cursorY;
+      segments.forEach((segment) => {
+        pdf.setFont("helvetica", segment.bold ? "bold" : "normal");
+        pdf.setFontSize(segment.size ?? 10);
+        const segmentWidth = pdf.getTextWidth(segment.text);
+        if (segmentX > marginX && segmentX + segmentWidth > pageWidth - marginX) {
+          segmentX = marginX;
+          segmentY += paragraphLineHeight;
+        }
+        pdf.text(segment.text, segmentX, segmentY + (segment.yOffset ?? 0));
+        segmentX += segmentWidth;
+      });
+      pdf.setFontSize(10);
+      cursorY = segmentY + paragraphLineHeight + paragraphGap;
     };
 
     const writeDocumentSection = (heading: string, render: () => void) => {
@@ -2272,17 +2343,18 @@ const DisciplinaryHearingOutcomeGenerator = ({
       writeNumberedParagraph(recourseParagraphNumber, recourseParagraph);
     });
 
-    const chairpersonSignatureWidth = 23;
+    const chairpersonSignatureWidth = 33;
     const chairpersonSignatureHeight = 31;
-    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 18 : 24);
-    cursorY += 8;
+    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 36 : 42);
+    writeSigningStatement();
+    cursorY += 18;
     if (chairpersonSignatureDataUrl) {
-      const chairpersonSignatureX = marginX + (58 - chairpersonSignatureWidth) / 2;
+      const chairpersonSignatureX = marginX + (35 - chairpersonSignatureWidth) / 2 - 4;
       pdf.addImage(
         chairpersonSignatureDataUrl,
         "PNG",
         chairpersonSignatureX,
-        cursorY - 16,
+        cursorY - 21,
         chairpersonSignatureWidth,
         chairpersonSignatureHeight,
         undefined,
@@ -2290,7 +2362,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       );
     }
     pdf.setDrawColor(0, 0, 0);
-    pdf.line(marginX, cursorY, marginX + 58, cursorY);
+    pdf.line(marginX, cursorY, marginX + 35, cursorY);
     cursorY += 5.2;
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
@@ -2379,6 +2451,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const isPartiesStep = !isFinished && activeStep === 0;
   const isHearingDetailsStep = !isFinished && activeStep === 1;
   const isPreviewStep = isFinished;
+  const isPreviewEditorOpen = isPreviewEditable && (Boolean(editingParagraphId) || isAddRecommendationOpen);
   const previewWrapperClassName = "rounded-sm bg-white px-8 pt-6 pb-10 text-black shadow-[0_0_0_1px_rgba(148,163,184,0.16)]";
   const previewNumberClassName = "pt-[1px] text-[13px] leading-7 text-black";
   const previewBodyClassName = "text-[13px] leading-7 text-black";
@@ -2470,13 +2543,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
     if (field === "recommendation") return `${recommendationHeadingNumber + index}.`;
     return `${index + 1}.`;
   };
+  const editorParagraphNumberSpacing = "     ";
+  const getEditorParagraphPrefix = (field: EditorTarget, index: number, rawLines?: string[]) =>
+    `${getEditorParagraphNumber(field, index, rawLines)}${editorParagraphNumberSpacing}`;
   const formatEditorDraft = (field: EditorTarget, value: string) => {
     const paragraphs = normalizeParagraphText(value);
     if (paragraphs.length === 0) {
-      return `${getEditorParagraphNumber(field, 0, [""])} `;
+      return getEditorParagraphPrefix(field, 0, [""]);
     }
     return paragraphs
-      .map((paragraph, index) => `${getEditorParagraphNumber(field, index, paragraphs)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
+      .map((paragraph, index) => `${getEditorParagraphPrefix(field, index, paragraphs)}${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
       .join("\n");
   };
   const parseEditorDraft = (value: string) =>
@@ -2489,7 +2565,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     lines
       .map((line) => stripParagraphNumberPrefix(line))
       .map((line, index) => {
-        const prefix = `${getEditorParagraphNumber(field, index, lines)} `;
+        const prefix = getEditorParagraphPrefix(field, index, lines);
         return line.length > 0 ? `${prefix}${line}` : prefix;
       })
       .join("\n");
@@ -2512,21 +2588,28 @@ const DisciplinaryHearingOutcomeGenerator = ({
     });
   };
 
+  const blockPreviewInteractionWhenEditorOpen = (event: SyntheticEvent<HTMLElement>) => {
+    if (!isPreviewEditorOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    editingTextareaRef.current?.focus({ preventScroll: true });
+  };
+
   const openParagraphEditor = (field: EditorTarget, label: string, selectedLineIndex = 0) => {
     setEditingParagraphId(field);
     setEditingParagraphLabel(label);
     if (field === "preliminarySection") {
       const extraPreliminaryParagraphs = normalizeParagraphText(previewForm.preliminaryExtra);
       const preliminarySectionDraftLines = [
-        `1. ${stripParagraphNumberPrefix(preliminaryOneValue)}`.trimEnd(),
-        `2. ${stripParagraphNumberPrefix(preliminaryTwoValue)}`.trimEnd(),
-        `3. ${stripParagraphNumberPrefix(preliminaryThreeValue)}`.trimEnd(),
+        `1.${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(preliminaryOneValue)}`.trimEnd(),
+        `2.${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(preliminaryTwoValue)}`.trimEnd(),
+        `3.${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(preliminaryThreeValue)}`.trimEnd(),
         ...preliminaryChargeRows.flatMap((row) => [
-          `${row.number} ${stripParagraphNumberPrefix(row.value)}`.trimEnd(),
-          ...row.subRows.map((subRow) => `${subRow.number} ${stripParagraphNumberPrefix(subRow.value)}`.trimEnd()),
+          `${row.number}${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(row.value)}`.trimEnd(),
+          ...row.subRows.map((subRow) => `${subRow.number}${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(subRow.value)}`.trimEnd()),
         ]),
-        `${4 + preliminaryChargeRows.length}. ${stripParagraphNumberPrefix(preliminaryProcessValue)}`.trimEnd(),
-        ...extraPreliminaryParagraphs.map((paragraph, index) => `${5 + preliminaryChargeRows.length + index}. ${stripParagraphNumberPrefix(paragraph)}`.trimEnd()),
+        `${4 + preliminaryChargeRows.length}.${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(preliminaryProcessValue)}`.trimEnd(),
+        ...extraPreliminaryParagraphs.map((paragraph, index) => `${5 + preliminaryChargeRows.length + index}.${editorParagraphNumberSpacing}${stripParagraphNumberPrefix(paragraph)}`.trimEnd()),
       ];
       setEditingParagraphDraft(
         preliminarySectionDraftLines.join("\n"),
@@ -2552,10 +2635,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
           ? [""]
           : rawParagraphs;
       const sectionLines = [
-        `${mainNumber}. ${label}`,
+        `${mainNumber}.${editorParagraphNumberSpacing}${label}`,
         ...paragraphs.map((paragraph, index) => {
           const normalizedParagraph = stripParagraphNumberPrefix(paragraph);
-          return normalizedParagraph.length > 0 ? `${mainNumber}.${index + 1} ${normalizedParagraph}` : `${mainNumber}.${index + 1} `;
+          const prefix = `${mainNumber}.${index + 1}${editorParagraphNumberSpacing}`;
+          return normalizedParagraph.length > 0 ? `${prefix}${normalizedParagraph}` : prefix;
         }),
       ];
       setEditingParagraphDraft(sectionLines.join("\n"));
@@ -2571,14 +2655,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
           ...(savedAnalysisDetailParagraphs.length > 0 ? savedAnalysisDetailParagraphs : [""]),
           ...(savedAnalysisParagraphs.length > 0 ? savedAnalysisParagraphs : [""]),
         ]
-          .map((paragraph, index) => `${getEditorParagraphNumber("analysisSection", index)} ${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
+          .map((paragraph, index) => `${getEditorParagraphPrefix("analysisSection", index)}${stripParagraphNumberPrefix(paragraph)}`.trimEnd())
           .join("\n"),
       );
       moveEditorCaretToLineEnd(selectedLineIndex);
       return;
     }
     if (field === "analysisIntro") {
-      setEditingParagraphDraft(`${getEditorParagraphNumber("analysisIntro", 0)} ${stripParagraphNumberPrefix(previewForm.analysisIntro.trim() || analysisIntroValue)}`.trimEnd());
+      setEditingParagraphDraft(`${getEditorParagraphPrefix("analysisIntro", 0)}${stripParagraphNumberPrefix(previewForm.analysisIntro.trim() || analysisIntroValue)}`.trimEnd());
       moveEditorCaretToLineEnd(0);
       return;
     }
@@ -2589,8 +2673,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
           .map((paragraph, index) => {
             const normalizedParagraph = stripParagraphNumberPrefix(paragraph);
             return normalizedParagraph.length > 0
-              ? `${getEditorParagraphNumber("analysisFinding", index)} ${normalizedParagraph}`
-              : `${getEditorParagraphNumber("analysisFinding", index)} `;
+              ? `${getEditorParagraphPrefix("analysisFinding", index)}${normalizedParagraph}`
+              : getEditorParagraphPrefix("analysisFinding", index);
           })
           .join("\n"),
       );
@@ -2600,20 +2684,6 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setEditingParagraphDraft(formatEditorDraft(field, previewForm[field]));
     moveEditorCaretToLineEnd(selectedLineIndex);
   };
-  const enforceEditorCaretAfterPrefix = (textarea: HTMLTextAreaElement) => {
-    if (!editingParagraphId) return;
-    const lineIndex = textarea.value.slice(0, textarea.selectionStart).split(/\r?\n/).length - 1;
-    const lineStart = textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1;
-    const prefix = `${getEditorParagraphNumber(editingParagraphId, lineIndex)} `;
-    const minPosition = lineStart + prefix.length;
-    if (textarea.selectionStart < minPosition || textarea.selectionEnd < minPosition) {
-      textarea.setSelectionRange(minPosition, minPosition);
-    }
-  };
-  const handleEditingParagraphSelect = (event: SyntheticEvent<HTMLTextAreaElement>) => {
-    enforceEditorCaretAfterPrefix(event.currentTarget);
-  };
-
   const renderHearingDetailsFields = (form: HearingDetailsFormState, employeeIndex?: number) => {
     const fieldSuffix = employeeIndex === undefined ? "" : `-${employeeIndex}`;
     const isEmployeeScoped = employeeIndex !== undefined;
@@ -2650,7 +2720,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       <>
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeNoticeDate${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeNoticeDate${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Notice Date <span className="text-red-500">*</span>
             </Label>
             <Input
@@ -2700,7 +2770,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeHearingDate${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeHearingDate${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Hearing Date <span className="text-red-500">*</span>
             </Label>
             <Input
@@ -2750,7 +2820,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeHearingFormat${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeHearingFormat${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Hearing Format <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -2764,9 +2834,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeHearingFormat${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select hearing format" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {hearingFormatOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value} className="text-[10px]">
+                  <SelectItem key={option.value} value={option.value} className="text-[11px]">
                     {option.label}
                   </SelectItem>
                 ))}
@@ -2775,7 +2845,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeHearingVenue${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeHearingVenue${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Hearing Venue <span className="text-red-500">*</span>
             </Label>
             {form.hearingFormat === "virtual" ? (
@@ -2790,9 +2860,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 <SelectTrigger id={`disciplinaryOutcomeHearingVenue${fieldSuffix}`} className={inputClassName}>
                   <SelectValue placeholder="Select hearing venue" />
                 </SelectTrigger>
-                <SelectContent className="text-[10px]">
+                <SelectContent className="text-[11px]">
                   {virtualHearingVenueOptions.map((option) => (
-                    <SelectItem key={option} value={option} className="text-[10px]">
+                    <SelectItem key={option} value={option} className="text-[11px]">
                       {option}
                     </SelectItem>
                   ))}
@@ -2814,7 +2884,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeEmployeeAttendance${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeEmployeeAttendance${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Employee Attendance <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -2828,9 +2898,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeEmployeeAttendance${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select attendance" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {employeeAttendanceOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
+                  <SelectItem key={option} value={option} className="text-[11px]">
                     {option}
                   </SelectItem>
                 ))}
@@ -2839,7 +2909,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeHearingProcess${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeHearingProcess${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Hearing Process <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -2853,9 +2923,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeHearingProcess${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select hearing process" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {visibleProcessOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
+                  <SelectItem key={option} value={option} className="text-[11px]">
                     {option}
                   </SelectItem>
                 ))}
@@ -2864,7 +2934,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeBargainingCouncil${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeBargainingCouncil${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Bargaining Council <span className="text-red-500">*</span>
             </Label>
             <Popover
@@ -2886,7 +2956,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                   type="button"
                   className={cn(
                     inputClassName,
-                    "inline-flex w-full items-center justify-between border border-slate-300 px-3 text-[11px] hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                    "inline-flex w-full items-center justify-between border border-slate-300 px-3 text-[12px] hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
                   )}
                 >
                   <span className="truncate text-left text-slate-900">{form.bargainingCouncil || "None"}</span>
@@ -2916,10 +2986,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       setBargainingCouncilSearchValue(value);
                     }}
                     placeholder="Search bargaining council..."
-                    className="h-8 border-b border-slate-200 text-[11px] placeholder:text-slate-400"
+                    className="h-8 border-b border-slate-200 text-[12px] placeholder:text-[11px] placeholder:text-slate-400"
                   />
                   <CommandList>
-                    <CommandEmpty className="py-3 text-[11px] text-slate-500">No councils found.</CommandEmpty>
+                    <CommandEmpty className="py-3 text-[12px] text-slate-500">No councils found.</CommandEmpty>
                     <CommandGroup>
                       {filteredCouncilOptions.map((option) => (
                         <CommandItem
@@ -2936,7 +3006,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                             setBargainingCouncilSearchValue("");
                             setBargainingCouncilPickerOpen(false);
                           }}
-                          className="text-[11px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
+                          className="text-[12px] text-slate-700 data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
                         >
                           <Check className={`mr-2 h-3.5 w-3.5 ${form.bargainingCouncil === option.value ? "opacity-100" : "opacity-0"}`} />
                           <span className="truncate">{option.label}</span>
@@ -2950,7 +3020,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeRepresentation${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeRepresentation${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Representation <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -2964,9 +3034,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeRepresentation${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select representation" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {representationOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
+                  <SelectItem key={option} value={option} className="text-[11px]">
                     {option}
                   </SelectItem>
                 ))}
@@ -2975,7 +3045,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Interpreter <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -2989,9 +3059,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select interpreter option" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {interpreterOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
+                  <SelectItem key={option} value={option} className="text-[11px]">
                     {option}
                   </SelectItem>
                 ))}
@@ -3000,7 +3070,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+            <Label htmlFor={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Appeal Notice <span className="text-red-500">*</span>
             </Label>
             <Select
@@ -3014,9 +3084,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
               <SelectTrigger id={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className={inputClassName}>
                 <SelectValue placeholder="Select appeal notice period" />
               </SelectTrigger>
-              <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                 {appealNoticeOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
+                  <SelectItem key={option} value={option} className="text-[11px]">
                     {option} days
                   </SelectItem>
                 ))}
@@ -3026,7 +3096,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor={`disciplinaryOutcomeCharges${fieldSuffix}`} className="text-[10px] font-semibold text-slate-600">
+          <Label htmlFor={`disciplinaryOutcomeCharges${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
             Charge <span className="text-red-500">*</span>
           </Label>
           <Popover
@@ -3048,8 +3118,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 aria-expanded={isChargePickerActive}
                 className={cn(
                   inputClassName,
-                  "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                  form.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                  "w-full justify-between px-3 text-[12px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                  form.misconductTypes.length === 0 && "text-[11px] text-slate-400",
                 )}
               >
                 <span className="truncate text-left">{selectedChargeValue}</span>
@@ -3078,10 +3148,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                     setChargeSearchValue(value);
                   }}
                   placeholder="Search offences..."
-                  className="h-9 border-0 text-[10px] focus:ring-0"
+                  className="h-9 border-0 text-[11px] focus:ring-0"
                 />
                 <CommandList className="max-h-[320px]">
-                  <CommandEmpty className="py-4 text-center text-[10px] text-slate-500">
+                  <CommandEmpty className="py-4 text-center text-[11px] text-slate-500">
                     No offence found.
                   </CommandEmpty>
                   {offenceCategoryOrder.map((category) => {
@@ -3104,7 +3174,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                                   ? (handleEmployeeToggleCharge(employeeIndex, offence.name), setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" })))
                                   : (handleToggleCharge(offence.name), setChargeSearchValue(""))
                               }
-                              className="text-[10px]"
+                              className="text-[11px]"
                             >
                               <Check className={`mr-2 h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-0"}`} />
                               <span>{offence.name}</span>
@@ -3124,7 +3194,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           <div className="grid gap-4 md:grid-cols-2">
             {form.misconductTypes.map((type) => (
               <div key={`${fieldSuffix}-${type}`} className="space-y-2">
-                <Label htmlFor={`disciplinaryOutcomePlea${fieldSuffix}-${type}`} className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor={`disciplinaryOutcomePlea${fieldSuffix}-${type}`} className="text-[11px] font-semibold text-slate-600">
                   Plea For {type} <span className="text-red-500">*</span>
                 </Label>
                 <Select
@@ -3138,9 +3208,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
                   <SelectTrigger id={`disciplinaryOutcomePlea${fieldSuffix}-${type}`} className={inputClassName}>
                     <SelectValue placeholder="Select plea" />
                   </SelectTrigger>
-                  <SelectContent className="text-[10px]">
+              <SelectContent className="text-[11px]">
                     {pleaOptions.map((option) => (
-                      <SelectItem key={option} value={option} className="text-[10px]">
+                      <SelectItem key={option} value={option} className="text-[11px]">
                         {option}
                       </SelectItem>
                     ))}
@@ -3154,6 +3224,109 @@ const DisciplinaryHearingOutcomeGenerator = ({
     );
   };
 
+  const previewParagraphEditorDialog = (
+    <Dialog open={isPreviewEditable && Boolean(editingParagraphId)} onOpenChange={(open) => (!open ? closeParagraphEditor() : undefined)}>
+      <DialogContent
+        className="z-[10000] w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl [&>button]:right-3 [&>button]:top-3 [&>button]:text-white [&>button]:hover:text-white"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          requestAnimationFrame(() => editingTextareaRef.current?.focus({ preventScroll: true }));
+        }}
+      >
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <Pencil className="h-4 w-4 text-white" />
+          <DialogTitle className="text-[15px] font-semibold text-white">
+            Edit "{editingParagraphLabel}" Paragraph
+          </DialogTitle>
+        </div>
+
+        <div className="space-y-4 bg-white px-4 pb-4 pt-5">
+          <p className="flex items-center gap-1 text-[12px] text-slate-500">
+            <Info className="h-3.5 w-3.5" />
+            Press Enter to start the next numbered paragraph.
+          </p>
+          <textarea
+            ref={editingTextareaRef}
+            value={editingParagraphDraft}
+            onChange={(event) => setEditingParagraphDraft(event.target.value)}
+            onKeyDown={handleEditingParagraphKeyDown}
+            rows={10}
+            className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[13px] text-slate-700 placeholder:text-[13px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
+          />
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={closeParagraphEditor}
+              className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[12px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={saveParagraphEditor}
+              className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[12px] text-white hover:bg-[#34b73b]"
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const addRecommendationDialog = (
+    <Dialog open={isPreviewEditable && isAddRecommendationOpen} onOpenChange={(open) => (!open ? closeAddRecommendationForm() : undefined)}>
+      <DialogContent className="z-[10000] w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl [&>button]:right-3 [&>button]:top-3 [&>button]:text-white [&>button]:hover:text-white">
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <Plus className="h-4 w-4 text-white" />
+          <DialogTitle className="text-[15px] font-semibold text-white">Add Section</DialogTitle>
+        </div>
+
+        <div className="space-y-4 bg-white px-4 pb-4 pt-5">
+          <Input
+            value="Recommendation"
+            readOnly
+            className="h-8 border-slate-300 !text-[12px] font-bold text-black hover:border-slate-300 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
+          />
+          <p className="flex items-center gap-1 text-[12px] text-slate-500">
+            <Info className="h-3.5 w-3.5" />
+            Press Enter to start the next paragraph. Numbering is updated automatically.
+          </p>
+          <textarea
+            value={recommendationDraft}
+            onChange={(event) => setRecommendationDraft(event.target.value)}
+            rows={8}
+            autoFocus
+            className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[12px] text-slate-700 placeholder:text-[12px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
+            placeholder="Please start typing here..."
+          />
+          <div className="flex items-center justify-center gap-3 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={closeAddRecommendationForm}
+              className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[12px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={saveAddRecommendationForm}
+              className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[12px] text-white hover:bg-[#34b73b]"
+            >
+              Add Section
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   return (
     <div className="h-full overflow-y-auto py-1">
       {isPartiesStep ? (
@@ -3165,7 +3338,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="disciplinaryOutcomeClientName" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="disciplinaryOutcomeClientName" className="text-[11px] font-semibold text-slate-600">
                   Client Name <span className="text-red-500">*</span>
                 </Label>
                 <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
@@ -3178,8 +3351,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       aria-expanded={clientSearchOpen}
                       className={cn(
                         inputClassName,
-                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                        !clientForm.clientId && "text-[10px] text-slate-400",
+                        "w-full justify-between px-3 text-[12px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        !clientForm.clientId && "text-[11px] text-slate-400",
                       )}
                     >
                       <span className="truncate">{selectedClientLabel}</span>
@@ -3196,7 +3369,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                         value={clientSearchValue}
                         onValueChange={setClientSearchValue}
                         placeholder="Search registered or trading name..."
-                        className="h-8 text-[11px] placeholder:text-[10px]"
+                        className="h-8 text-[12px] placeholder:text-[11px]"
                       />
                       <CommandList className="max-h-[320px] overscroll-contain">
                         {filteredClientRows.length === 0 ? (
@@ -3210,7 +3383,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                                 key={client.id}
                                 value={`${String(client.registered_name || "").trim()} ${String(client.trading_as || "").trim()}`.trim()}
                                 onSelect={() => handleClientSelect(client.id)}
-                                className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
+                                className="flex items-center justify-between gap-3 px-3 py-2 text-[11px]"
                               >
                                 <span className="min-w-0 truncate font-medium text-slate-900">{label}</span>
                                 {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
@@ -3225,7 +3398,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="disciplinaryOutcomeRegistrationNumber" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="disciplinaryOutcomeRegistrationNumber" className="text-[11px] font-semibold text-slate-600">
                   Registration Number
                 </Label>
                 <Input
@@ -3260,7 +3433,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 <div key={`employee-form-${index}`} className="space-y-0">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1">
-                      <Label htmlFor={`disciplinaryOutcomeEmployeeName-${index}`} className="text-[10px] font-semibold text-slate-600">
+                      <Label htmlFor={`disciplinaryOutcomeEmployeeName-${index}`} className="text-[11px] font-semibold text-slate-600">
                         Employee Name <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -3273,7 +3446,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                     </div>
 
                     <div className="space-y-1">
-                      <Label htmlFor={`disciplinaryOutcomeEmployeeSurname-${index}`} className="text-[10px] font-semibold text-slate-600">
+                      <Label htmlFor={`disciplinaryOutcomeEmployeeSurname-${index}`} className="text-[11px] font-semibold text-slate-600">
                         Employee Surname <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -3335,7 +3508,13 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ) : isPreviewStep ? (
         <div className="h-full py-1">
           <div className="mx-auto max-w-[820px] space-y-5">
-            <div className={previewWrapperClassName}>
+            <div
+              className={cn(previewWrapperClassName, isPreviewEditorOpen && "pointer-events-none select-none")}
+              aria-hidden={isPreviewEditorOpen ? "true" : undefined}
+              onPointerDownCapture={blockPreviewInteractionWhenEditorOpen}
+              onMouseDownCapture={blockPreviewInteractionWhenEditorOpen}
+              onClickCapture={blockPreviewInteractionWhenEditorOpen}
+            >
               <div className="space-y-10">
                 <div className="pt-6 text-center">
                   <p className="text-[13px] font-bold uppercase leading-6">In The Disciplinary Hearing</p>
@@ -3723,166 +3902,74 @@ const DisciplinaryHearingOutcomeGenerator = ({
                 </div>
 
                 <div className="pt-6">
-                  <div className="relative w-[220px]">
+                  <div className="mb-[47px] flex flex-wrap items-center gap-x-2 gap-y-2 text-[13px] leading-7 text-black">
+                    <span>Done and Signed at</span>
+                    <Input
+                      value={previewForm.signingPlace}
+                      onChange={(event) =>
+                        setPreviewForm((current) => ({
+                          ...current,
+                          signingPlace: event.target.value,
+                        }))
+                      }
+                      placeholder="place"
+                      className="h-7 w-[170px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                    <span>on this</span>
+                    <Input
+                      value={previewForm.signingDay}
+                      onChange={(event) =>
+                        setPreviewForm((current) => ({
+                          ...current,
+                          signingDay: event.target.value.replace(/\D/g, "").slice(0, 2),
+                        }))
+                      }
+                      inputMode="numeric"
+                      placeholder="day"
+                      className="h-7 w-[46px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-center text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                    <span>day of</span>
+                    <Select
+                      value={previewForm.signingMonth}
+                      onValueChange={(value) =>
+                        setPreviewForm((current) => ({
+                          ...current,
+                          signingMonth: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-[128px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-[13px] font-bold text-black shadow-none focus:ring-0 focus:ring-offset-0 [&>span]:line-clamp-1">
+                        <SelectValue placeholder="month" />
+                      </SelectTrigger>
+                      <SelectContent className="text-[12px]">
+                        {monthOptions.map((month) => (
+                          <SelectItem key={month} value={month} className="text-[12px]">
+                            {month}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="font-bold">{signingYearValue}</span>
+                  </div>
+                  <div className="relative w-[132px]">
                     {chairpersonSignatureDataUrl ? (
                       <img
                         src={chairpersonSignatureDataUrl}
                         alt="Chairperson signature"
-                        className="pointer-events-none absolute left-1/2 top-[-69px] h-[136px] w-auto -translate-x-1/2 object-contain"
+                        className="pointer-events-none absolute left-[calc(50%-16px)] top-[-79px] h-[136px] w-auto -translate-x-1/2 object-contain"
                       />
                     ) : null}
-                    <div className="w-[220px] border-t border-black" />
+                    <div className="w-[132px] border-t border-black" />
                   </div>
                   <p className="mt-2 text-[13px] font-bold uppercase leading-7 text-black">Chairperson</p>
                 </div>
               </div>
             </div>
-
-            {isPreviewEditable && editingParagraphId ? (
-              <div className="fixed inset-0 z-[999]">
-                <div className="absolute inset-0 bg-slate-900/35" />
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={`Edit ${editingParagraphLabel}`}
-                    className="pointer-events-auto w-[94vw] max-w-[680px] overflow-hidden rounded-sm border-0 bg-[#2D4256] shadow-xl"
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <Pencil className="h-4 w-4 text-white" />
-                        <h3 className="text-sm font-semibold text-white">Edit Paragraph</h3>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={closeParagraphEditor}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white"
-                        aria-label="Close"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4 bg-white px-4 pb-4 pt-5">
-                      <Input
-                        value={editingParagraphLabel}
-                        readOnly
-                        className="h-8 border-slate-300 !text-[11px] font-bold text-black hover:border-slate-300 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
-                      />
-                      <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <Info className="h-3.5 w-3.5" />
-                        Press Enter to start the next numbered paragraph.
-                      </p>
-                      <textarea
-                        ref={editingTextareaRef}
-                        value={editingParagraphDraft}
-                        onChange={(event) => setEditingParagraphDraft(event.target.value)}
-                        onKeyDown={handleEditingParagraphKeyDown}
-                        onSelect={handleEditingParagraphSelect}
-                        onClick={handleEditingParagraphSelect}
-                        rows={10}
-                        autoFocus
-                        className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[11px] text-slate-700 placeholder:text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
-                      />
-                      <div className="flex items-center justify-center gap-3 pt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={closeParagraphEditor}
-                          className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={saveParagraphEditor}
-                          className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                        >
-                          Save
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {isPreviewEditable && isAddRecommendationOpen ? (
-              <div className="fixed inset-0 z-[999]">
-                <div className="absolute inset-0 bg-slate-900/35" />
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
-                  <div
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Add recommendation section"
-                    className="pointer-events-auto w-[94vw] max-w-[680px] overflow-hidden rounded-sm border-0 bg-[#2D4256] shadow-xl"
-                    onMouseDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <Plus className="h-4 w-4 text-white" />
-                        <h3 className="text-sm font-semibold text-white">Add Section</h3>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={closeAddRecommendationForm}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded text-white/80 transition hover:bg-white/10 hover:text-white"
-                        aria-label="Close"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4 bg-white px-4 pb-4 pt-5">
-                      <Input
-                        value="Recommendation"
-                        readOnly
-                        className="h-8 border-slate-300 !text-[11px] font-bold text-black hover:border-slate-300 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
-                      />
-                      <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <Info className="h-3.5 w-3.5" />
-                        Press Enter to start the next paragraph. Numbering is updated automatically.
-                      </p>
-                      <textarea
-                        value={recommendationDraft}
-                        onChange={(event) => setRecommendationDraft(event.target.value)}
-                        rows={8}
-                        autoFocus
-                        className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[11px] text-slate-700 placeholder:text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
-                        placeholder="Please start typing here..."
-                      />
-                      <div className="flex items-center justify-center gap-3 pt-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={closeAddRecommendationForm}
-                          className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={saveAddRecommendationForm}
-                          className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
-                        >
-                          Add Section
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
+      {previewParagraphEditorDialog}
+      {addRecommendationDialog}
     </div>
   );
 };

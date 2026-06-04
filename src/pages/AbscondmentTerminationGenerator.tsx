@@ -847,17 +847,17 @@ const AbscondmentTerminationGenerator = ({
   const previewScrollTop = useRef(0);
   const [companyLogoPreview, setCompanyLogoPreview] = useState<string>("");
   const baseModalFieldClass =
-    "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
+    "h-8 rounded-[4px] border border-slate-200 bg-white !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1.75px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default";
   const addendumModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-blue-400 data-[state=open]:border-slate-300 data-[state=open]:bg-white";
   const addendumModalSelectContentClass = "!rounded";
   const addendumModalSelectItemClass =
-    "!rounded text-[11px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
+    "!rounded text-[12.33px] text-slate-700 focus:bg-blue-50/70 focus:text-blue-600 data-[highlighted]:bg-blue-50/70 data-[highlighted]:text-blue-600 data-[state=checked]:text-slate-700 data-[state=checked]:data-[highlighted]:text-slate-700";
   const getAddendumModalInputClass = (isComplete: boolean) =>
     `${baseModalFieldClass} !h-[34px] !border-[1.75px] !border-slate-300 !focus-visible:border-slate-300 ${isComplete ? "!border-emerald-500" : ""}`;
   const getAddendumModalSelectTriggerClass = (isComplete: boolean) =>
-    `${baseModalFieldClass} !rounded justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
-  const modalFieldLabelClass = "text-[10px] font-semibold text-slate-400";
+    `${baseModalFieldClass} !rounded-[4px] justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-[11.33px] !h-[34px] !border-[1.75px] !border-slate-300 !focus:border-blue-600 !focus-visible:border-blue-600 data-[state=open]:!border-blue-600 !ring-0 !ring-offset-0 !outline-none !shadow-none !focus:ring-0 !focus:ring-offset-0 !focus:shadow-none !focus:outline-none !focus-visible:ring-0 !focus-visible:ring-offset-0 !focus-visible:shadow-none !focus-visible:outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none ${isComplete ? "!border-emerald-500" : ""}`;
+  const modalFieldLabelClass = "text-[11.33px] font-semibold text-slate-400";
   const fixedTooltipContentClass = "!rounded w-[260px] max-w-[260px] whitespace-normal break-words text-xs";
   const snippetPaddingTopMm = 2;
   const snippetVisibleHeightMm = 297 / 2; // show top half of the page
@@ -3300,7 +3300,7 @@ const AbscondmentTerminationGenerator = ({
                       >
                         <span
                           className={cn(
-                            "block truncate text-[11px]",
+                            "block truncate text-[12.33px]",
                             formData.attemptedContactMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
@@ -3422,7 +3422,7 @@ const AbscondmentTerminationGenerator = ({
                       >
                         <span
                           className={cn(
-                            "block truncate text-[11px]",
+                            "block truncate text-[12.33px]",
                             formData.transmissionMethods.length > 0 ? "text-slate-900" : "text-slate-400 font-normal",
                           )}
                         >
@@ -3446,7 +3446,7 @@ const AbscondmentTerminationGenerator = ({
                         type="button"
                         variant="outline"
                         onClick={handleBack}
-                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-[13.33px] text-blue-600 hover:bg-transparent hover:text-blue-600"
                       >
                         Back
                       </Button>
@@ -3476,7 +3476,7 @@ const AbscondmentTerminationGenerator = ({
                         type="button"
                         onClick={handleFinish}
                         disabled={!isFormComplete || isGenerating}
-                        className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                        className="h-[30px] w-[92px] rounded bg-blue-600 px-3 text-[13.33px] text-white hover:bg-blue-700 disabled:bg-slate-300"
                       >
                         Next
                       </Button>
@@ -3490,7 +3490,7 @@ const AbscondmentTerminationGenerator = ({
                           type="button"
                           variant="outline"
                           onClick={handleBack}
-                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                          className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-[13.33px] text-blue-600 hover:bg-transparent hover:text-blue-600"
                         >
                           Back
                         </Button>
@@ -3517,7 +3517,7 @@ const AbscondmentTerminationGenerator = ({
                           type="button"
                           onClick={handleNext}
                           disabled={!canGoNext}
-                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-xs text-white hover:bg-blue-700 disabled:bg-slate-300"
+                          className="h-[28px] w-[84px] rounded bg-blue-600 px-3 text-[13.33px] text-white hover:bg-blue-700 disabled:bg-slate-300"
                         >
                           Next
                         </Button>
@@ -3921,7 +3921,7 @@ const AbscondmentTerminationGenerator = ({
                         type="button"
                         variant="outline"
                         onClick={handleBack}
-                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-xs text-blue-600 hover:bg-transparent hover:text-blue-600"
+                        className="h-[28px] w-[84px] rounded border-blue-600 px-3 text-[13.33px] text-blue-600 hover:bg-transparent hover:text-blue-600"
                       >
                         Back
                       </Button>

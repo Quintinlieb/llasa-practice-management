@@ -557,6 +557,16 @@ const getShellCategoryTitle = (documentKey: DocumentKey) => {
   return documentMeta[documentKey].category;
 };
 
+const canAccessDisciplinaryHearingOutcome = (subuserRole: string) => {
+  const role = subuserRole.trim().toLowerCase();
+  return !role || role === "consultant";
+};
+
+const isDocumentAccessAllowed = (documentKey: DocumentKey, subuserRole: string) => {
+  if (documentKey !== "disciplinaryHearingOutcome") return true;
+  return canAccessDisciplinaryHearingOutcome(subuserRole);
+};
+
 const Documents = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -577,6 +587,7 @@ const Documents = () => {
   const [isNewDocumentMenuOpen, setIsNewDocumentMenuOpen] = useState(false);
   const [openDocumentCategory, setOpenDocumentCategory] = useState<DocumentCreateCategory | null>(null);
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
+  const [isCurrentUserRoleLoaded, setIsCurrentUserRoleLoaded] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>(() => loadCachedDocumentRows());
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(() => loadCachedDocumentRows().length === 0);
@@ -682,7 +693,13 @@ const Documents = () => {
     if (restoreMinimizedTabId) {
       const minimizedTab = minimizedTabs.find((item) => item.id === restoreMinimizedTabId);
       const normalizedMinimizedDocumentKey = normalizeLegacyDocumentKey(minimizedTab?.documentKey);
-      if (minimizedTab && normalizedMinimizedDocumentKey && documentComponents[normalizedMinimizedDocumentKey]) {
+      if (normalizedMinimizedDocumentKey === "disciplinaryHearingOutcome" && !isCurrentUserRoleLoaded) return;
+      if (
+        minimizedTab &&
+        normalizedMinimizedDocumentKey &&
+        documentComponents[normalizedMinimizedDocumentKey] &&
+        isDocumentAccessAllowed(normalizedMinimizedDocumentKey, currentUserSubuserRole)
+      ) {
         setSelectedDocument(normalizedMinimizedDocumentKey);
         setStepMeta(null);
         setBreadcrumbStep(null);
@@ -698,7 +715,22 @@ const Documents = () => {
       return;
     }
 
+    if (nextSelected === "disciplinaryHearingOutcome" && !isCurrentUserRoleLoaded) return;
     if (nextSelected && documentComponents[nextSelected]) {
+      if (!isDocumentAccessAllowed(nextSelected, currentUserSubuserRole)) {
+        toast({
+          title: "Permission denied",
+          description: "Only the master user and consultant subusers can access the disciplinary hearing outcome generator.",
+          variant: "destructive",
+        });
+        const nextState = { ...((routeState as Record<string, unknown> | null) ?? {}) };
+        delete nextState.selectedDocument;
+        navigate(location.pathname, {
+          replace: true,
+          state: Object.keys(nextState).length > 0 ? nextState : null,
+        });
+        return;
+      }
       setSelectedDocument(nextSelected);
       setStepMeta(null);
       setBreadcrumbStep(null);
@@ -710,7 +742,7 @@ const Documents = () => {
         state: Object.keys(nextState).length > 0 ? nextState : null,
       });
     }
-  }, [location.pathname, location.state, minimizedTabs, navigate]);
+  }, [currentUserSubuserRole, isCurrentUserRoleLoaded, location.pathname, location.state, minimizedTabs, navigate]);
 
   useEffect(() => {
     setBreadcrumbStep(null);
@@ -829,8 +861,12 @@ const Documents = () => {
     let isMounted = true;
 
     const loadCurrentUserRole = async () => {
+      setIsCurrentUserRoleLoaded(false);
       if (!user?.id) {
-        if (isMounted) setCurrentUserSubuserRole("");
+        if (isMounted) {
+          setCurrentUserSubuserRole("");
+          setIsCurrentUserRoleLoaded(true);
+        }
         return;
       }
 
@@ -850,6 +886,7 @@ const Documents = () => {
 
       if (!isMounted) return;
       setCurrentUserSubuserRole(String(subuserData?.role || "").trim());
+      setIsCurrentUserRoleLoaded(true);
     };
 
     void loadCurrentUserRole();
@@ -1259,15 +1296,18 @@ const Documents = () => {
   const shouldRenderInlineDocument = Boolean(
     SelectedComponent && selectedDocument && !modalOnlyDocumentSet.has(selectedDocument),
   );
+  const canCurrentUserAccessDisciplinaryHearingOutcome =
+    isCurrentUserRoleLoaded && canAccessDisciplinaryHearingOutcome(currentUserSubuserRole);
   const breadcrumbParts: string[] = [];
   if (breadcrumbCategoryTitle) breadcrumbParts.push(breadcrumbCategoryTitle);
   if (activeDocumentLabel) breadcrumbParts.push(activeDocumentLabel);
   if (breadcrumbStep) breadcrumbParts.push(breadcrumbStep);
   const canCurrentUserDeleteDocuments = useMemo(() => {
+    if (!user?.id || !isCurrentUserRoleLoaded) return false;
     const role = currentUserSubuserRole.trim().toLowerCase();
     if (!role) return true;
     return role === "consultant";
-  }, [currentUserSubuserRole]);
+  }, [currentUserSubuserRole, isCurrentUserRoleLoaded, user?.id]);
   const documentTypes = useMemo(
     () => Array.from(new Set(documentRows.map((row) => row.documentType).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
     [documentRows],
@@ -1411,14 +1451,22 @@ const Documents = () => {
   }, [searchQuery]);
 
   const newDocumentDropdownItemStyle =
-    "cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
+    "cursor-pointer text-[12.33px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
   const newDocumentDropdownContentStyle = "w-56 rounded-[4px] border-slate-200 p-1";
   const newDocumentSubItemStyle =
-    "cursor-pointer pl-3 text-[10.5px] font-medium text-slate-600 transition-transform duration-150 focus:bg-transparent focus:text-[#2f9f35] data-[highlighted]:bg-transparent data-[highlighted]:translate-x-[3px] data-[highlighted]:text-[#2f9f35]";
+    "cursor-pointer pl-3 text-[11.83px] font-medium text-slate-600 transition-transform duration-150 focus:bg-transparent focus:text-[#2f9f35] data-[highlighted]:bg-transparent data-[highlighted]:translate-x-[3px] data-[highlighted]:text-[#2f9f35]";
   const newDocumentButtonStyle =
-    "h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
+    "h-8 w-36 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
 
   const openDocumentGenerator = (documentKey: DocumentKey) => {
+    if (!isDocumentAccessAllowed(documentKey, currentUserSubuserRole) || (documentKey === "disciplinaryHearingOutcome" && !isCurrentUserRoleLoaded)) {
+      toast({
+        title: "Permission denied",
+        description: "Only the master user and consultant subusers can access the disciplinary hearing outcome generator.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsNewDocumentMenuOpen(false);
     setOpenDocumentCategory(null);
     navigate("/documents", { state: { selectedDocument: documentKey } });
@@ -1455,14 +1503,14 @@ const Documents = () => {
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className={cn(
-                              "h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44]",
+                              "h-8 rounded-sm border border-slate-200 bg-white !text-[12.33px] font-medium shadow-sm transition-colors placeholder:!text-[12.33px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44]",
                               searchQuery.trim().length > 0 ? "pr-20" : "pr-9",
                             )}
                           />
                           {searchQuery.trim().length > 0 ? (
                             <button
                               type="button"
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12.33px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
                               onClick={() => setSearchQuery("")}
                             >
                               Clear
@@ -1484,7 +1532,7 @@ const Documents = () => {
                             type="button"
                             variant="outline"
                             onClick={promptDeleteSelectedDocuments}
-                            className="h-8 rounded px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-red-400 hover:bg-white hover:text-red-600"
+                            className="h-8 rounded px-3 text-[12.33px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-red-400 hover:bg-white hover:text-red-600"
                           >
                             Delete
                           </Button>
@@ -1500,7 +1548,7 @@ const Documents = () => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
+                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
                             >
                               <span>Filter</span>
                               <ChevronDown className={cn("h-4 w-4 transition-transform", isFilterOpen && "rotate-180")} aria-hidden="true" />
@@ -1508,10 +1556,10 @@ const Documents = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
                             <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-                              <span className="text-[12px] font-semibold text-slate-800">Filter</span>
+                              <span className="text-[13.33px] font-semibold text-slate-800">Filter</span>
                               <button
                                 type="button"
-                                className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
+                                className="text-[11.33px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
                                 onClick={() => {
                                   setDocumentTypeFilter("all");
                                   setDocumentCreatedByFilter("all");
@@ -1527,7 +1575,7 @@ const Documents = () => {
                                 <div key={section}>
                                   <button
                                     type="button"
-                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === section ? "bg-slate-100" : ""}`}
+                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[12.33px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === section ? "bg-slate-100" : ""}`}
                                     onClick={() => setExpandedFilterSection((prev) => (prev === section ? null : section))}
                                   >
                                     <span>{section === "type" ? "Type" : section === "createdBy" ? "Created By" : "Created On"}</span>
@@ -1563,7 +1611,7 @@ const Documents = () => {
                                           <button
                                             key={value}
                                             type="button"
-                                            className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
+                                            className="flex h-8 w-full items-center justify-between text-[12.33px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
                                             onClick={() => {
                                               if (section === "type") setDocumentTypeFilter(value);
                                               if (section === "createdBy") setDocumentCreatedByFilter(value);
@@ -1644,7 +1692,9 @@ const Documents = () => {
                                         const itemDisabled =
                                           item.disabled ||
                                           !item.selectedDocument ||
-                                          !activeNewDocumentKeys.has(item.selectedDocument);
+                                          !activeNewDocumentKeys.has(item.selectedDocument) ||
+                                          (item.selectedDocument === "disciplinaryHearingOutcome" &&
+                                            !canCurrentUserAccessDisciplinaryHearingOutcome);
 
                                         return (
                                           <DropdownMenuItem
@@ -2048,7 +2098,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onBack?.()}
                           disabled={!stepMeta?.canGoBack}
-                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-xs font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-[13.33px] font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
                         >
                           Back
                         </button>
@@ -2081,7 +2131,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onNext?.()}
                           disabled={!stepMeta?.canGoNext}
-                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-[13.33px] font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {stepMeta?.isFinished
                             ? "Download"
@@ -2257,7 +2307,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onBack?.()}
                           disabled={!stepMeta?.canGoBack}
-                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-xs font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
+                          className="h-[28px] w-[84px] rounded border border-[#3eca44] px-3 text-[13.33px] font-semibold text-[#2f9f35] hover:bg-transparent hover:text-[#2f9f35] disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
                         >
                           Back
                         </button>
@@ -2290,7 +2340,7 @@ const Documents = () => {
                           type="button"
                           onClick={() => stepMeta?.onNext?.()}
                           disabled={!stepMeta?.canGoNext}
-                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-[13.33px] font-semibold text-white hover:bg-[#34b73b] disabled:cursor-not-allowed disabled:bg-slate-300"
                         >
                           {stepMeta?.isFinished
                             ? "Download"

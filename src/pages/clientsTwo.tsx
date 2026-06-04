@@ -722,6 +722,8 @@ const saveCachedClientRows = (rows: any[]) => {
   }
 };
 
+type NewClientStep = 1 | 2 | 3 | 4;
+
 const ClientsTwo = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -738,7 +740,9 @@ const ClientsTwo = () => {
   const [expandedClientFilterSection, setExpandedClientFilterSection] = useState<string | null>(null);
   const [isNewClientOpen, setIsNewClientOpen] = useState(false);
   const [isBulkClientOpen, setIsBulkClientOpen] = useState(false);
-  const [newClientStep, setNewClientStep] = useState<1 | 2 | 3>(1);
+  const [newClientStep, setNewClientStep] = useState<NewClientStep>(1);
+  const [isNewClientCompanyTypeOpen, setIsNewClientCompanyTypeOpen] = useState(false);
+  const [isNewClientMembershipTypeOpen, setIsNewClientMembershipTypeOpen] = useState(false);
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const editStartDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientTaskDateInputRef = useRef<HTMLInputElement | null>(null);
@@ -756,6 +760,8 @@ const ClientsTwo = () => {
     owner: "",
     telCell: "",
     email: "",
+    officeEmail: "",
+    officeNumber: "",
   });
   const [membershipForm, setMembershipForm] = useState({
     clientNumber: "",
@@ -922,13 +928,15 @@ const ClientsTwo = () => {
   const isStepOneComplete = Boolean(
     clientDetailsForm.registeredName.trim() &&
       clientDetailsForm.companyType.trim() &&
-      clientDetailsForm.registrationNumber.trim() &&
-      clientDetailsForm.owner.trim() &&
+      clientDetailsForm.registrationNumber.trim(),
+  );
+  const isStepTwoComplete = Boolean(
+    clientDetailsForm.owner.trim() &&
       clientDetailsForm.telCell.trim() &&
       clientDetailsForm.email.trim(),
   );
-  const isStepTwoComplete = Boolean(
-      membershipForm.clientNumber.trim() &&
+  const isStepThreeComplete = Boolean(
+    membershipForm.clientNumber.trim() &&
       membershipForm.startDate.trim() &&
       membershipForm.memberTypes.length > 0 &&
       membershipForm.memberTypes.every((serviceCode) => {
@@ -936,7 +944,7 @@ const ClientsTwo = () => {
         return String((membershipForm as any)[cycleField] || "").trim().length > 0;
       }),
   );
-  const isStepThreeComplete = Boolean(
+  const isStepFourComplete = Boolean(
     addressForm.line1.trim() &&
       addressForm.city.trim() &&
       addressForm.province.trim() &&
@@ -959,6 +967,8 @@ const ClientsTwo = () => {
 
   const resetNewClientForm = () => {
     setNewClientStep(1);
+    setIsNewClientCompanyTypeOpen(false);
+    setIsNewClientMembershipTypeOpen(false);
     setClientDetailsForm({
       registeredName: "",
       tradingAs: "",
@@ -968,6 +978,8 @@ const ClientsTwo = () => {
       owner: "",
       telCell: "",
       email: "",
+      officeEmail: "",
+      officeNumber: "",
     });
     setMembershipForm({
       clientNumber: getNextAvailableClientNumber(),
@@ -988,6 +1000,56 @@ const ClientsTwo = () => {
       areaCode: "",
     });
   };
+
+  const clearCurrentNewClientStepFields = () => {
+    if (newClientStep === 1) {
+      setClientDetailsForm((prev) => ({
+        ...prev,
+        registeredName: "",
+        tradingAs: "",
+        companyType: "",
+        registrationNumber: "",
+        vatNumber: "",
+      }));
+      return;
+    }
+
+    if (newClientStep === 2) {
+      setClientDetailsForm((prev) => ({
+        ...prev,
+        owner: "",
+        telCell: "",
+        email: "",
+        officeEmail: "",
+        officeNumber: "",
+      }));
+      return;
+    }
+
+    if (newClientStep === 3) {
+      setMembershipForm({
+        clientNumber: "",
+        startDate: "",
+        renewalDate: "",
+        paymentCycle: "",
+        memberTypes: [],
+        lrBillingCycle: "",
+        eeBillingCycle: "",
+        prBillingCycle: "",
+        hsBillingCycle: "",
+      });
+      return;
+    }
+
+    setAddressForm({
+      line1: "",
+      line2: "",
+      city: "",
+      province: "",
+      areaCode: "",
+    });
+  };
+
   const resetBulkClientImport = useCallback(() => {
     setBulkClientFileName("");
     setBulkClientParsedRows([]);
@@ -1007,16 +1069,18 @@ const ClientsTwo = () => {
   const handleNextStep = () => {
     if (newClientStep === 1 && !isStepOneComplete) return;
     if (newClientStep === 2 && !isStepTwoComplete) return;
-    setNewClientStep((prev) => (prev < 3 ? ((prev + 1) as 1 | 2 | 3) : prev));
+    if (newClientStep === 3 && !isStepThreeComplete) return;
+    setNewClientStep((prev) => (prev < 4 ? ((prev + 1) as NewClientStep) : prev));
   };
 
-  const canAccessStep = (step: 1 | 2 | 3) => {
+  const canAccessStep = (step: NewClientStep) => {
     if (step === 1) return true;
     if (step === 2) return isStepOneComplete;
-    return isStepOneComplete && isStepTwoComplete;
+    if (step === 3) return isStepOneComplete && isStepTwoComplete;
+    return isStepOneComplete && isStepTwoComplete && isStepThreeComplete;
   };
 
-  const goToStep = (step: 1 | 2 | 3) => {
+  const goToStep = (step: NewClientStep) => {
     if (!canAccessStep(step)) return;
     setNewClientStep(step);
   };
@@ -1095,20 +1159,6 @@ const ClientsTwo = () => {
     }
   };
 
-  const stepOneDone = isStepOneComplete || newClientStep > 1;
-  const stepTwoDone = isStepTwoComplete || newClientStep > 2;
-
-  const stepCircleClass = (step: 1 | 2 | 3) => {
-    const active = newClientStep === step;
-    const done = step === 1 ? stepOneDone : step === 2 ? stepTwoDone : false;
-    if (active || done) return "bg-[#3ec74a] text-white";
-    return "bg-slate-400 text-white";
-  };
-
-  const stepLabelClass = (step: 1 | 2 | 3) => {
-    if (newClientStep === step) return "text-slate-700";
-    return "text-slate-500";
-  };
   const addModalDropdownToneClass =
     "bg-white border-slate-300 hover:border-slate-500 data-[state=open]:border-black data-[state=open]:bg-white";
   const addModalFieldInputClass =
@@ -1117,6 +1167,19 @@ const ClientsTwo = () => {
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-xs !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black data-[state=open]:!border-black !ring-0 !ring-offset-0 !outline-none !shadow-none focus:!ring-0 focus:!ring-offset-0 focus:!shadow-none focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!shadow-none focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none";
   const addModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
+  const newClientFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold text-slate-400 transition-all duration-150",
+      isFloating
+        ? "-top-1.5 translate-y-0 !text-[11.33px]"
+        : "top-1/2 -translate-y-1/2 !text-[12.33px] group-focus-within:-top-1.5 group-focus-within:translate-y-0 group-focus-within:!text-[11.33px]",
+    ].join(" ");
+  const newClientDropdownFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold text-slate-400 transition-all duration-150",
+      isFloating ? "-top-1.5 translate-y-0 !text-[11.33px]" : "top-1/2 -translate-y-1/2 !text-[12.33px]",
+    ].join(" ");
+  const newClientSelectItemClass = `${addModalSelectItemClass} !text-[12.33px]`;
   const membershipTypeOptions = [
     { label: "Labour Relations", value: "LR" },
     { label: "Employment Equity", value: "EE" },
@@ -1298,7 +1361,7 @@ const ClientsTwo = () => {
     <button
       key={value}
       type="button"
-      className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
+      className="flex h-8 w-full items-center justify-between text-[12.33px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
       onClick={() => toggleClientFilterValue(setter, value)}
     >
       <span className="min-w-0 truncate">{label}</span>
@@ -3201,7 +3264,7 @@ const ClientsTwo = () => {
 
   const handleCreateClient = async () => {
     if (!user?.id) return;
-    if (!isStepOneComplete || !isStepTwoComplete || !isStepThreeComplete) return;
+    if (!isStepOneComplete || !isStepTwoComplete || !isStepThreeComplete || !isStepFourComplete) return;
     setIsSavingClient(true);
     try {
       const normalizedClientNumber = membershipForm.clientNumber.trim().toUpperCase();
@@ -3266,6 +3329,8 @@ const ClientsTwo = () => {
         primary_name: clientDetailsForm.owner.trim() || null,
         primary_number: clientDetailsForm.telCell.trim() || null,
         primary_email: clientDetailsForm.email.trim() || null,
+        office_email: clientDetailsForm.officeEmail.trim() || null,
+        office_number: clientDetailsForm.officeNumber.trim() || null,
         start_date: membershipForm.startDate.trim() || null,
         membership_period: firstSelectedCycle || null,
         retainer_cycle: firstSelectedCycle || null,
@@ -4284,14 +4349,14 @@ const ClientsTwo = () => {
                             placeholder="Search clients..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
+                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[12.33px] font-medium shadow-sm transition-colors placeholder:!text-[12.33px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${
                               searchQuery.trim().length > 0 ? "pr-20" : "pr-9"
                             }`}
                           />
                           {searchQuery.trim().length > 0 ? (
                             <button
                               type="button"
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-[12.33px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline"
                               onClick={() => setSearchQuery("")}
                             >
                               Clear
@@ -4321,7 +4386,7 @@ const ClientsTwo = () => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-8 rounded px-3 text-[11px] inline-flex items-center gap-1 border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                              className="h-8 rounded px-3 text-[12.33px] inline-flex items-center gap-1 border border-slate-200 bg-white text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                             >
                               <Download className="h-3.5 w-3.5" />
                               Export
@@ -4333,7 +4398,7 @@ const ClientsTwo = () => {
                               <DropdownMenuItem
                                 key={option.key}
                                 onClick={() => void handleExportClientsPdf(option)}
-                                className="text-[11px]"
+                                className="text-[12.33px]"
                               >
                                 {option.label}
                               </DropdownMenuItem>
@@ -4345,7 +4410,7 @@ const ClientsTwo = () => {
                             <Button
                               type="button"
                               variant="outline"
-                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
+                              className="h-8 w-24 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]"
                             >
                               <span>Filter</span>
                               <ChevronDown className={`h-4 w-4 transition-transform ${isFilterOpen ? "rotate-180" : ""}`} aria-hidden="true" />
@@ -4353,10 +4418,10 @@ const ClientsTwo = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
                             <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-                              <span className="text-[12px] font-semibold text-slate-800">Filter</span>
+                              <span className="text-[13.33px] font-semibold text-slate-800">Filter</span>
                               <button
                                 type="button"
-                                className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
+                                className="text-[11.33px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline"
                                 onClick={() => {
                                   clearClientFilters();
                                   setIsFilterOpen(false);
@@ -4406,7 +4471,7 @@ const ClientsTwo = () => {
                                 <div key={section.key}>
                                   <button
                                     type="button"
-                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedClientFilterSection === section.key ? "bg-slate-100" : ""}`}
+                                    className={`flex h-9 w-full items-center justify-between px-3 text-left text-[12.33px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedClientFilterSection === section.key ? "bg-slate-100" : ""}`}
                                     onClick={() => setExpandedClientFilterSection((prev) => (prev === section.key ? null : section.key))}
                                   >
                                     <span>{section.label}</span>
@@ -4420,7 +4485,7 @@ const ClientsTwo = () => {
                                         )}
                                       </div>
                                     ) : (
-                                      <p className="px-3 pb-2 text-[11px] text-slate-400">No options found.</p>
+                                      <p className="px-3 pb-2 text-[12.33px] text-slate-400">No options found.</p>
                                     )
                                   ) : (
                                     null
@@ -4434,7 +4499,7 @@ const ClientsTwo = () => {
                           <DropdownMenuTrigger asChild>
                             <Button
                               type="button"
-                              className="h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b]"
+                              className="h-8 w-36 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b]"
                             >
                               <span>New Client</span>
                               <ChevronDown className="h-4 w-4" aria-hidden="true" />
@@ -4442,7 +4507,7 @@ const ClientsTwo = () => {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-44 border-slate-200 p-1">
                             <DropdownMenuItem
-                              className="cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
+                              className="cursor-pointer text-[12.33px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
                               onSelect={() => {
                                 resetNewClientForm();
                                 setIsNewClientOpen(true);
@@ -4452,7 +4517,7 @@ const ClientsTwo = () => {
                               Single Client
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              className="cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
+                              className="cursor-pointer text-[12.33px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]"
                               onSelect={() => {
                                 resetBulkClientImport();
                                 setIsBulkClientOpen(true);
@@ -4567,7 +4632,10 @@ const ClientsTwo = () => {
           if (!open) resetNewClientForm();
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[380px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+        <DialogContent
+          className="w-[94vw] max-w-[820px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
           <div className="relative">
             <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
               <div className="flex items-center gap-2 pl-2">
@@ -4581,233 +4649,315 @@ const ClientsTwo = () => {
               </DialogClose>
             </div>
 
-            <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
-              <div className="pt-0 pb-2"></div>
-              <div className="mx-auto w-full max-w-[320px] py-4">
-                <div className="relative grid grid-cols-3 items-start">
-                  <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
-                  <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
-                  {(stepOneDone || newClientStep > 1) && <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />}
-                  {(stepTwoDone || newClientStep > 2) && <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />}
-
-                  {[{ step: 1 as const, label: "Client Details" }, { step: 2 as const, label: "Membership" }, { step: 3 as const, label: "Address" }].map((item) => {
-                    const done = item.step === 1 ? stepOneDone : item.step === 2 ? stepTwoDone : false;
-                    const active = newClientStep === item.step;
-                    const canOpen = canAccessStep(item.step);
-                    return (
-                      <button
-                        key={item.step}
-                        type="button"
-                        onClick={() => goToStep(item.step)}
-                        disabled={!canOpen}
-                        className={`z-10 flex flex-col items-center text-center ${canOpen ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}
-                      >
-                        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${stepCircleClass(item.step)}`}>
-                          {done && !active ? <Check className="h-3.5 w-3.5" /> : item.step}
+            <div className="mt-[46px] bg-white pb-6">
+              <div className="flex h-14 items-center justify-center border-b border-slate-200 px-4">
+                <div className="flex w-full justify-center overflow-x-auto">
+                  <div className="mx-auto flex min-w-fit items-center gap-1">
+                    {[
+                      { step: 1 as const, label: "Client Details" },
+                      { step: 2 as const, label: "Contact Details" },
+                      { step: 3 as const, label: "Membership" },
+                      { step: 4 as const, label: "Address" },
+                    ].map((item, index) => {
+                      const isActive = newClientStep === item.step;
+                      const isComplete = item.step < newClientStep;
+                      const canOpen = canAccessStep(item.step);
+                      const segmentClassName = [
+                        "relative flex h-9 w-[182px] shrink-0 items-center px-3 text-[10px] font-semibold transition-colors",
+                        isComplete ? "bg-[#31b236] text-white" : isActive ? "bg-[#2D4256] text-white" : "bg-slate-200 text-slate-500",
+                        canOpen ? "cursor-pointer hover:brightness-95" : "",
+                      ].filter(Boolean).join(" ");
+                      const segmentContent = (
+                        <span className="relative block h-full w-full">
+                          <span
+                            className={[
+                              "absolute left-5 top-1/2 inline-flex h-6 w-6 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[9px] font-bold leading-none",
+                              isComplete ? "text-[#31b236]" : isActive ? "text-[#2D4256]" : "text-slate-400",
+                            ].join(" ")}
+                          >
+                            {isComplete ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : item.step}
+                          </span>
+                          <span
+                            className={[
+                              "absolute left-[56px] right-3 top-1/2 block -translate-y-1/2 truncate whitespace-nowrap text-left text-[10px] font-semibold",
+                              isActive || isComplete ? "text-white" : "text-slate-500",
+                            ].join(" ")}
+                          >
+                            {item.label}
+                          </span>
                         </span>
-                        <span className={`mt-3 text-[10px] font-semibold ${stepLabelClass(item.step)}`}>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      );
+                      const segmentStyle = {
+                        clipPath:
+                          index === 0
+                            ? "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 18px 50%)"
+                            : "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 24px 50%)",
+                      };
 
+                      return canOpen ? (
+                        <button
+                          key={item.step}
+                          type="button"
+                          onClick={() => goToStep(item.step)}
+                          className={segmentClassName}
+                          style={segmentStyle}
+                        >
+                          {segmentContent}
+                        </button>
+                      ) : (
+                        <div key={item.step} className={segmentClassName} style={segmentStyle}>
+                          {segmentContent}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              <form
-                  className="space-y-4 pt-2"
+              <div className="px-6 pt-5">
+                <form
+                  className="mx-auto max-w-[720px] space-y-4 [&_button>span.truncate]:text-[12.33px] [&_input]:!text-[12.33px] [&_input::placeholder]:!text-[11.33px] [&_span.pointer-events-none]:text-[11.33px] [&_[data-placeholder]]:!text-[11.33px] [&_[role=combobox]]:!text-[12.33px]"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (newClientStep < 3) handleNextStep();
+                    if (newClientStep < 4) handleNextStep();
                   }}
                 >
-                  <div className="h-[390px] pr-1">
-                  {newClientStep === 1 && (
-                    <div className="w-full space-y-4">
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Registered Name <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert company registered name" value={clientDetailsForm.registeredName} onChange={(e) => setClientDetailsForm((p) => ({ ...p, registeredName: e.target.value }))} />
+                  <div className="h-[240px] overflow-y-auto pb-1 pl-0.5 pr-1 pt-2">
+                    {newClientStep === 1 && (
+                      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.registeredName.trim()))}>
+                            Registered Name <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.registeredName} onChange={(e) => setClientDetailsForm((p) => ({ ...p, registeredName: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.tradingAs.trim()))}>Trading as</span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.tradingAs} onChange={(e) => setClientDetailsForm((p) => ({ ...p, tradingAs: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientDropdownFloatingLabelClass(Boolean(clientDetailsForm.companyType.trim()) || isNewClientCompanyTypeOpen)}>
+                            Company Type <span className="text-red-600">*</span>
+                          </span>
+                          <Select
+                            value={clientDetailsForm.companyType || undefined}
+                            onOpenChange={setIsNewClientCompanyTypeOpen}
+                            onValueChange={(value) => setClientDetailsForm((p) => ({ ...p, companyType: value }))}
+                          >
+                            <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="text-[12.33px]">
+                              {companyTypeOptions.map((option) => (
+                                <SelectItem key={option} value={option} className={newClientSelectItemClass}>{option}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.registrationNumber.trim()))}>
+                            Registration Number <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.registrationNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, registrationNumber: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.vatNumber.trim()))}>VAT Number</span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.vatNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, vatNumber: e.target.value }))} />
+                        </div>
                       </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Trading as</span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert trading name" value={clientDetailsForm.tradingAs} onChange={(e) => setClientDetailsForm((p) => ({ ...p, tradingAs: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Company Type <span className="text-red-600">*</span></span>
-                        <Select value={clientDetailsForm.companyType || undefined} onValueChange={(value) => setClientDetailsForm((p) => ({ ...p, companyType: value }))}>
-                          <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
-                            <SelectValue placeholder="Select company type" />
-                          </SelectTrigger>
-                          <SelectContent className="text-[11px]">
-                            {companyTypeOptions.map((option) => (
-                              <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Registration Number <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert company registration number" value={clientDetailsForm.registrationNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, registrationNumber: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">VAT Number</span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert company vat number" value={clientDetailsForm.vatNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, vatNumber: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Contact <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact name and surname" value={clientDetailsForm.owner} onChange={(e) => setClientDetailsForm((p) => ({ ...p, owner: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Number <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact number" value={clientDetailsForm.telCell} onChange={(e) => setClientDetailsForm((p) => ({ ...p, telCell: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Primary Email <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Insert primary contact email" value={clientDetailsForm.email} onChange={(e) => setClientDetailsForm((p) => ({ ...p, email: e.target.value }))} />
-                      </div>
-                    </div>
-                  )}
+                    )}
 
-                  {newClientStep === 2 && (
-                    <div className="w-full space-y-4">
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Client Number <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} value={membershipForm.clientNumber} onChange={(e) => setMembershipForm((p) => ({ ...p, clientNumber: e.target.value }))} />
+                    {newClientStep === 2 && (
+                      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.owner.trim()))}>
+                            Primary Contact <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.owner} onChange={(e) => setClientDetailsForm((p) => ({ ...p, owner: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.telCell.trim()))}>
+                            Primary Number <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.telCell} onChange={(e) => setClientDetailsForm((p) => ({ ...p, telCell: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.email.trim()))}>
+                            Primary Email <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.email} onChange={(e) => setClientDetailsForm((p) => ({ ...p, email: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.officeEmail.trim()))}>Office Email</span>
+                          <Input
+                            aria-label="Office Email"
+                            className={addModalFieldInputClass}
+                            value={clientDetailsForm.officeEmail}
+                            onChange={(e) => setClientDetailsForm((p) => ({ ...p, officeEmail: e.target.value }))}
+                          />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(clientDetailsForm.officeNumber.trim()))}>Office Number</span>
+                          <Input className={addModalFieldInputClass} value={clientDetailsForm.officeNumber} onChange={(e) => setClientDetailsForm((p) => ({ ...p, officeNumber: e.target.value }))} />
+                        </div>
                       </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Start Date <span className="text-red-600">*</span></span>
-                        <Input
-                          type="text"
-                          readOnly
-                          className={addModalFieldInputClass}
-                          placeholder="Please select a date"
-                          value={membershipForm.startDate ? formatDisplayDate(membershipForm.startDate) : ""}
-                          onClick={() => openDatePicker(startDateInputRef.current)}
-                          onFocus={() => openDatePicker(startDateInputRef.current)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openDatePicker(startDateInputRef.current);
-                            }
-                          }}
-                        />
-                        <input
-                          ref={startDateInputRef}
-                          type="date"
-                          value={membershipForm.startDate}
-                          onChange={(e) => setMembershipForm((p) => ({ ...p, startDate: e.target.value }))}
-                          className="sr-only"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Membership Type <span className="text-red-600">*</span></span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="outline"
+                    )}
+
+                    {newClientStep === 3 && (
+                      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(membershipForm.clientNumber.trim()))}>
+                            Client Number <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={membershipForm.clientNumber} onChange={(e) => setMembershipForm((p) => ({ ...p, clientNumber: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(membershipForm.startDate.trim()))}>
+                            Start Date <span className="text-red-600">*</span>
+                          </span>
+                          <Input
+                            type="text"
+                            readOnly
+                            className={addModalFieldInputClass}
+                            value={membershipForm.startDate ? formatDisplayDate(membershipForm.startDate) : ""}
+                            onClick={() => openDatePicker(startDateInputRef.current)}
+                            onFocus={() => openDatePicker(startDateInputRef.current)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openDatePicker(startDateInputRef.current);
+                              }
+                            }}
+                          />
+                          <input
+                            ref={startDateInputRef}
+                            type="date"
+                            value={membershipForm.startDate}
+                            onChange={(e) => setMembershipForm((p) => ({ ...p, startDate: e.target.value }))}
+                            className="sr-only"
+                            aria-hidden="true"
+                            tabIndex={-1}
+                          />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientDropdownFloatingLabelClass(membershipForm.memberTypes.length > 0 || isNewClientMembershipTypeOpen)}>
+                            Membership Type <span className="text-red-600">*</span>
+                          </span>
+                          <DropdownMenu open={isNewClientMembershipTypeOpen} onOpenChange={setIsNewClientMembershipTypeOpen}>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
                                 className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} w-full justify-between px-3 hover:bg-white hover:text-slate-700`}
-                            >
-                              <span className={`truncate text-left ${membershipForm.memberTypes.length === 0 ? "text-[10px] text-slate-400" : ""}`}>
-                                {membershipForm.memberTypes.length > 0 ? membershipForm.memberTypes.join(", ") : "Select member type(s)"}
-                              </span>
-                              <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="w-[320px] text-[11px]">
-                            {membershipTypeOptions.map((memberType) => {
-                              const isChecked = membershipForm.memberTypes.includes(memberType.value);
-                              return (
-                                <DropdownMenuCheckboxItem
-                                  key={memberType.value}
-                                  checked={isChecked}
-                                  onSelect={(event) => event.preventDefault()}
-                                  onCheckedChange={() =>
-                                    setMembershipForm((prev) => ({
-                                      ...prev,
-                                      memberTypes: prev.memberTypes.includes(memberType.value)
-                                        ? prev.memberTypes.filter((value) => value !== memberType.value)
-                                        : [...prev.memberTypes, memberType.value],
-                                    }))
-                                  }
-                                  className="cursor-pointer text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]"
-                                >
-                                  <span className="flex w-full items-center justify-between gap-3">
-                                    <span>{memberType.label}</span>
-                                    <span className="text-[10px] font-semibold text-slate-500">{memberType.value}</span>
-                                  </span>
-                                </DropdownMenuCheckboxItem>
-                              );
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      {membershipForm.memberTypes.length > 0 ? (
-                        membershipForm.memberTypes.map((serviceCode) => {
-                          const cycleField = getServiceBillingCycleField(serviceCode);
-                          return (
-                            <div key={`new-client-cycle-${serviceCode}`} className="relative space-y-1">
-                              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">
-                                {serviceCode} Billing Cycle <span className="text-red-600">*</span>
-                              </span>
-                              <Select
-                                value={String((membershipForm as any)[cycleField] || "") || undefined}
-                                onValueChange={(value) => setMembershipForm((p) => ({ ...p, [cycleField]: value }))}
                               >
-                                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
-                                  <SelectValue placeholder="Please select billing cycle" />
-                                </SelectTrigger>
-                                <SelectContent className="text-[11px]">
-                                  <SelectItem value="Monthly" className={addModalSelectItemClass}>Monthly</SelectItem>
-                                  <SelectItem value="Annual" className={addModalSelectItemClass}>Annual</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          );
-                        })
-                      ) : null}
-                    </div>
-                  )}
+                                <span className="truncate text-left">
+                                  {membershipForm.memberTypes.length > 0 ? membershipForm.memberTypes.join(", ") : ""}
+                                </span>
+                                <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-[320px] text-[12.33px]">
+                              {membershipTypeOptions.map((memberType) => {
+                                const isChecked = membershipForm.memberTypes.includes(memberType.value);
+                                return (
+                                  <DropdownMenuCheckboxItem
+                                    key={memberType.value}
+                                    checked={isChecked}
+                                    onSelect={(event) => event.preventDefault()}
+                                    onCheckedChange={() =>
+                                      setMembershipForm((prev) => ({
+                                        ...prev,
+                                        memberTypes: prev.memberTypes.includes(memberType.value)
+                                          ? prev.memberTypes.filter((value) => value !== memberType.value)
+                                          : [...prev.memberTypes, memberType.value],
+                                      }))
+                                    }
+                                    className="cursor-pointer text-[12.33px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35]"
+                                  >
+                                    <span className="flex w-full items-center justify-between gap-3">
+                                      <span>{memberType.label}</span>
+                                      <span className="text-[11.33px] font-semibold text-slate-500">{memberType.value}</span>
+                                    </span>
+                                  </DropdownMenuCheckboxItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                        {membershipForm.memberTypes.length > 0 ? (
+                          membershipForm.memberTypes.map((serviceCode) => {
+                            const cycleField = getServiceBillingCycleField(serviceCode);
+                            const cycleValue = String((membershipForm as any)[cycleField] || "");
+                            return (
+                              <div key={`new-client-cycle-${serviceCode}`} className="group relative space-y-1">
+                                <span className={newClientFloatingLabelClass(Boolean(cycleValue.trim()))}>
+                                  {serviceCode} Billing Cycle <span className="text-red-600">*</span>
+                                </span>
+                                <Select
+                                  value={cycleValue || undefined}
+                                  onValueChange={(value) => setMembershipForm((p) => ({ ...p, [cycleField]: value }))}
+                                >
+                                  <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="text-[12.33px]">
+                                    <SelectItem value="Monthly" className={newClientSelectItemClass}>Monthly</SelectItem>
+                                    <SelectItem value="Annual" className={newClientSelectItemClass}>Annual</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            );
+                          })
+                        ) : null}
+                      </div>
+                    )}
 
-                  {newClientStep === 3 && (
-                    <div className="w-full space-y-4">
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Address Line 1 <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Please insert address line 1" value={addressForm.line1} onChange={(e) => setAddressForm((p) => ({ ...p, line1: e.target.value }))} />
+                    {newClientStep === 4 && (
+                      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(addressForm.line1.trim()))}>
+                            Address Line 1 <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={addressForm.line1} onChange={(e) => setAddressForm((p) => ({ ...p, line1: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(addressForm.line2.trim()))}>Address Line 2</span>
+                          <Input className={addModalFieldInputClass} value={addressForm.line2} onChange={(e) => setAddressForm((p) => ({ ...p, line2: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(addressForm.city.trim()))}>
+                            City <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={addressForm.city} onChange={(e) => setAddressForm((p) => ({ ...p, city: e.target.value }))} />
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(addressForm.province.trim()))}>
+                            Province <span className="text-red-600">*</span>
+                          </span>
+                          <Select value={addressForm.province || undefined} onValueChange={(value) => setAddressForm((p) => ({ ...p, province: value }))}>
+                            <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="text-[12.33px]">
+                              <SelectItem value="Gauteng" className={newClientSelectItemClass}>Gauteng</SelectItem>
+                              <SelectItem value="Limpopo" className={newClientSelectItemClass}>Limpopo</SelectItem>
+                              <SelectItem value="Mpumalanga" className={newClientSelectItemClass}>Mpumalanga</SelectItem>
+                              <SelectItem value="North West" className={newClientSelectItemClass}>North West</SelectItem>
+                              <SelectItem value="Free State" className={newClientSelectItemClass}>Free State</SelectItem>
+                              <SelectItem value="KwaZulu-Natal" className={newClientSelectItemClass}>KwaZulu-Natal</SelectItem>
+                              <SelectItem value="Western Cape" className={newClientSelectItemClass}>Western Cape</SelectItem>
+                              <SelectItem value="Eastern Cape" className={newClientSelectItemClass}>Eastern Cape</SelectItem>
+                              <SelectItem value="Northern Cape" className={newClientSelectItemClass}>Northern Cape</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="group relative space-y-1">
+                          <span className={newClientFloatingLabelClass(Boolean(addressForm.areaCode.trim()))}>
+                            Area Code <span className="text-red-600">*</span>
+                          </span>
+                          <Input className={addModalFieldInputClass} value={addressForm.areaCode} onChange={(e) => setAddressForm((p) => ({ ...p, areaCode: e.target.value }))} />
+                        </div>
                       </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Address Line 2</span>
-                        <Input className={addModalFieldInputClass} placeholder="Please insert address line 2" value={addressForm.line2} onChange={(e) => setAddressForm((p) => ({ ...p, line2: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">City <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Please insert city" value={addressForm.city} onChange={(e) => setAddressForm((p) => ({ ...p, city: e.target.value }))} />
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Province <span className="text-red-600">*</span></span>
-                        <Select value={addressForm.province || undefined} onValueChange={(value) => setAddressForm((p) => ({ ...p, province: value }))}>
-                          <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass}`}>
-                            <SelectValue placeholder="Please select province" />
-                          </SelectTrigger>
-                          <SelectContent className="text-[11px]">
-                            <SelectItem value="Gauteng" className={addModalSelectItemClass}>Gauteng</SelectItem>
-                            <SelectItem value="Limpopo" className={addModalSelectItemClass}>Limpopo</SelectItem>
-                            <SelectItem value="Mpumalanga" className={addModalSelectItemClass}>Mpumalanga</SelectItem>
-                            <SelectItem value="North West" className={addModalSelectItemClass}>North West</SelectItem>
-                            <SelectItem value="Free State" className={addModalSelectItemClass}>Free State</SelectItem>
-                            <SelectItem value="KwaZulu-Natal" className={addModalSelectItemClass}>KwaZulu-Natal</SelectItem>
-                            <SelectItem value="Western Cape" className={addModalSelectItemClass}>Western Cape</SelectItem>
-                            <SelectItem value="Eastern Cape" className={addModalSelectItemClass}>Eastern Cape</SelectItem>
-                            <SelectItem value="Northern Cape" className={addModalSelectItemClass}>Northern Cape</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="relative space-y-1">
-                        <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Area Code <span className="text-red-600">*</span></span>
-                        <Input className={addModalFieldInputClass} placeholder="Please insert area code" value={addressForm.areaCode} onChange={(e) => setAddressForm((p) => ({ ...p, areaCode: e.target.value }))} />
-                      </div>
-                    </div>
-                  )}
+                    )}
                   </div>
 
                   <div className="mt-6 grid grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
@@ -4816,35 +4966,40 @@ const ClientsTwo = () => {
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#3eca44] hover:bg-transparent hover:text-[#3eca44]"
-                          onClick={() => setNewClientStep((prev) => (prev === 1 ? prev : ((prev - 1) as 1 | 2 | 3)))}
+                          className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-[13.33px] text-[#3eca44] hover:bg-transparent hover:text-[#3eca44]"
+                          onClick={() => setNewClientStep((prev) => (prev === 1 ? prev : ((prev - 1) as NewClientStep)))}
                         >
                           Back
                         </Button>
                       )}
                     </div>
                     <div className="justify-self-center">
-                      <Button type="button" variant="ghost" className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline" onClick={resetNewClientForm}>
+                      <Button type="button" variant="ghost" className="h-[30px] rounded border-0 px-3 text-[13.33px] text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline" onClick={clearCurrentNewClientStepFields}>
                         Clear
                       </Button>
                     </div>
                     <div className="justify-self-end">
-                      {newClientStep < 3 ? (
+                      {newClientStep < 4 ? (
                         <Button
                           type="submit"
-                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]"
-                          disabled={(newClientStep === 1 && !isStepOneComplete) || (newClientStep === 2 && !isStepTwoComplete)}
+                          className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-[13.33px] text-white hover:bg-[#34b73b]"
+                          disabled={
+                            (newClientStep === 1 && !isStepOneComplete) ||
+                            (newClientStep === 2 && !isStepTwoComplete) ||
+                            (newClientStep === 3 && !isStepThreeComplete)
+                          }
                         >
                           Next
                         </Button>
                       ) : (
-                        <Button type="button" onClick={() => void handleCreateClient()} className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]" disabled={!isStepThreeComplete || isSavingClient}>
+                        <Button type="button" onClick={() => void handleCreateClient()} className="h-[30px] w-[92px] rounded bg-[#3eca44] px-3 text-[13.33px] text-white hover:bg-[#34b73b]" disabled={!isStepFourComplete || isSavingClient}>
                           {isSavingClient ? "Saving..." : "Add"}
                         </Button>
                       )}
                     </div>
                   </div>
                 </form>
+              </div>
             </div>
           </div>
         </DialogContent>

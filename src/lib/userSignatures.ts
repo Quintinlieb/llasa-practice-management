@@ -52,6 +52,26 @@ export const resolveUserSignatureUrl = (value: string | null | undefined) => {
   return String(data.publicUrl || "").trim();
 };
 
+export const fetchCurrentUserSignatureUrl = async (authUserId: string) => {
+  const userId = String(authUserId || "").trim();
+  if (!userId) return "";
+
+  const { data: profileData } = await (supabase as any)
+    .from("profiles")
+    .select("signature_storage_path")
+    .eq("id", userId)
+    .maybeSingle();
+  const profileSignature = resolveUserSignatureUrl((profileData as any)?.signature_storage_path);
+  if (profileSignature) return profileSignature;
+
+  const { data: subuserData } = await (supabase as any)
+    .from("subusers")
+    .select("signature_storage_path")
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+  return resolveUserSignatureUrl((subuserData as any)?.signature_storage_path);
+};
+
 export const buildUserSignatureStoragePath = (
   kind: "users" | "subusers",
   ownerId: string,

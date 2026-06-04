@@ -573,7 +573,7 @@ const createCaseDateEventDraft = (overrides?: Partial<CaseDateEvent>): CaseDateE
   eventLabel: String(overrides?.eventLabel || ""),
   eventDate: String(overrides?.eventDate || ""),
   eventTime: String(overrides?.eventTime || ""),
-  duration: String(overrides?.duration || "1 hour"),
+  duration: overrides?.duration === undefined ? "1 hour" : String(overrides.duration),
   createdByName: String(overrides?.createdByName || ""),
   created_at: overrides?.created_at ?? null,
   updated_at: overrides?.updated_at ?? null,
@@ -607,6 +607,7 @@ const createNewCasePrimaryDateEvent = (createdByName = "") =>
     createdByName,
     eventType: "",
     eventDate: "",
+    duration: "",
   });
 const formatDisplayDate = (value?: string) => {
   if (!value) return "";
@@ -1153,6 +1154,12 @@ const Matters = () => {
   const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
   const [isNewCaseDialogOpen, setIsNewCaseDialogOpen] = useState(false);
   const [isClientSelectOpen, setIsClientSelectOpen] = useState(false);
+  const [isNewCaseTypeOpen, setIsNewCaseTypeOpen] = useState(false);
+  const [isNewCaseSubtypeOpen, setIsNewCaseSubtypeOpen] = useState(false);
+  const [isNewCaseTimeHourOpen, setIsNewCaseTimeHourOpen] = useState(false);
+  const [isNewCaseTimeMinuteOpen, setIsNewCaseTimeMinuteOpen] = useState(false);
+  const [isNewCaseDurationOpen, setIsNewCaseDurationOpen] = useState(false);
+  const [isNewCaseConsultantOpen, setIsNewCaseConsultantOpen] = useState(false);
   const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [newCaseStep, setNewCaseStep] = useState<NewCaseStep>(1);
   const [newCaseForm, setNewCaseForm] = useState<NewCaseForm>(createBlankCaseForm());
@@ -1162,11 +1169,23 @@ const Matters = () => {
   const caseEditScheduleDateInputRef = useRef<HTMLInputElement | null>(null);
   const caseOutcomeDateInputRef = useRef<HTMLInputElement | null>(null);
   const newCaseDateEventInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const newCaseShortDescriptionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const caseNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const openingNoteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const hasLoadedClientOptionsRef = useRef(false);
   const hasLoadedConsultantOptionsRef = useRef(false);
   const hasLoadedMentionOptionsRef = useRef(false);
+
+  const resizeNewCaseShortDescriptionTextarea = useCallback(() => {
+    const textarea = newCaseShortDescriptionTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "34px";
+    textarea.style.height = `${Math.max(34, textarea.scrollHeight)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeNewCaseShortDescriptionTextarea();
+  }, [newCaseForm.shortDescription, resizeNewCaseShortDescriptionTextarea]);
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
@@ -2340,6 +2359,13 @@ const Matters = () => {
 
   const openNewCaseDialog = (presetCaseType?: (typeof CASE_TYPE_OPTIONS)[number]) => {
     setIsNewCaseMenuOpen(false);
+    setIsNewCaseTypeOpen(false);
+    setIsNewCaseSubtypeOpen(false);
+    setIsClientSelectOpen(false);
+    setIsNewCaseTimeHourOpen(false);
+    setIsNewCaseTimeMinuteOpen(false);
+    setIsNewCaseDurationOpen(false);
+    setIsNewCaseConsultantOpen(false);
     setNewCaseStep(1);
     const nextForm = createBlankCaseForm();
     nextForm.dateEvents = [createNewCasePrimaryDateEvent(resolveCurrentUserName())];
@@ -2404,11 +2430,26 @@ const Matters = () => {
     }
   };
   const updateNewCaseDateEventRow = useCallback((eventId: string, updates: Partial<CaseDateEvent>) => {
-    setNewCaseForm((prev) => ({
-      ...prev,
-      dateEvents: prev.dateEvents.map((event) => event.id === eventId ? { ...event, ...updates } : event),
-    }));
-  }, []);
+    setNewCaseForm((prev) => {
+      const hasMatchingEvent = prev.dateEvents.some((event) => event.id === eventId);
+      if (!hasMatchingEvent) {
+        return {
+          ...prev,
+          dateEvents: [
+            createCaseDateEventDraft({
+              id: eventId,
+              createdByName: resolveCurrentUserName(),
+              ...updates,
+            }),
+          ],
+        };
+      }
+      return {
+        ...prev,
+        dateEvents: prev.dateEvents.map((event) => event.id === eventId ? { ...event, ...updates } : event),
+      };
+    });
+  }, [resolveCurrentUserName]);
 
   const filteredCaseFiles = useMemo(() => {
     const today = new Date();
@@ -2675,10 +2716,10 @@ const Matters = () => {
   };
 
   const newCaseDropdownItemStyle =
-    "cursor-pointer text-[11px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
+    "cursor-pointer text-[12.33px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
   const newCaseDropdownContentStyle = "w-44 rounded-[4px] border-slate-200 p-1";
   const newCaseButtonStyle =
-    "h-8 w-36 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
+    "h-8 w-36 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
   const modalInputClass =
     "h-8 rounded border border-slate-200 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
   const modalSelectClass =
@@ -2689,6 +2730,42 @@ const Matters = () => {
     "bg-white border-slate-300 hover:border-slate-500 data-[state=open]:border-black data-[state=open]:bg-white";
   const addModalSelectItemClass =
     "text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
+  const newMatterFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold text-slate-400 transition-all duration-150",
+      isFloating
+        ? "-top-1.5 translate-y-0 !text-[11.33px]"
+        : "top-1/2 -translate-y-1/2 !text-[12.33px] group-focus-within:-top-1.5 group-focus-within:translate-y-0 group-focus-within:!text-[11.33px]",
+    ].join(" ");
+  const newMatterDropdownFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold text-slate-400 transition-all duration-150",
+      isFloating ? "-top-1.5 translate-y-0 !text-[11.33px]" : "top-1/2 -translate-y-1/2 !text-[12.33px]",
+    ].join(" ");
+  const newMatterRaisedFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold leading-none text-slate-400 transition-all duration-150",
+      isFloating
+        ? "-top-[7px] translate-y-0 !text-[11.33px]"
+        : "top-1/2 -translate-y-1/2 !text-[12.33px] group-focus-within:-top-[7px] group-focus-within:translate-y-0 group-focus-within:!text-[11.33px]",
+    ].join(" ");
+  const newMatterRaisedDropdownFloatingLabelClass = (isFloating: boolean) =>
+    [
+      "pointer-events-none absolute left-3 z-10 bg-white px-1 font-semibold leading-none text-slate-400 transition-all duration-150",
+      isFloating ? "-top-[7px] translate-y-0 !text-[11.33px]" : "top-1/2 -translate-y-1/2 !text-[12.33px]",
+    ].join(" ");
+  const newMatterModalInputClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
+  const newMatterModalSelectClass =
+    "h-8 rounded border border-slate-200 bg-white !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default justify-between data-[placeholder]:text-slate-400 data-[placeholder]:text-[11.33px] !h-[34px] !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black data-[state=open]:!border-black !ring-0 !ring-offset-0 !outline-none !shadow-none focus:!ring-0 focus:!ring-offset-0 focus:!shadow-none focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!shadow-none focus-visible:!outline-none data-[state=open]:!ring-0 data-[state=open]:!ring-offset-0 data-[state=open]:!shadow-none data-[state=open]:!outline-none";
+  const newMatterModalTextareaClass =
+    "min-h-[76px] rounded border border-slate-200 bg-white !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
+  const newMatterShortDescriptionTextareaClass =
+    "h-[34px] min-h-[34px] resize-none overflow-hidden rounded border border-slate-200 bg-white px-3 py-[7px] !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
+  const newMatterSelectItemClass =
+    "text-[12.33px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
+  const newMatterTimeSelectClass =
+    "relative !h-[34px] !border-slate-300 !text-[11.33px] !justify-center !px-3 hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:w-full [&>span]:text-center [&>span]:text-[11.33px] [&>span]:font-medium [&>svg]:absolute [&>svg]:right-3 data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400";
   const isEditableCaseTab = activeCaseTab === "overview" || activeCaseTab === "outcome";
   const caseEditSubtypeOptions = getSubtypeOptions(caseEditForm?.caseType ?? "");
   const caseEditCurrentStageOptions = (caseEditForm?.status === "Inactive"
@@ -3136,10 +3213,10 @@ const Matters = () => {
                             placeholder="Search matters..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[11px] font-medium shadow-sm transition-colors placeholder:!text-[11px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${searchQuery.trim().length > 0 ? "pr-20" : "pr-9"}`}
+                            className={`h-8 rounded-sm border border-slate-200 bg-white !text-[12.33px] font-medium shadow-sm transition-colors placeholder:!text-[12.33px] hover:border-[#3eca44] focus-visible:!border focus-visible:!border-black focus-visible:ring-0 group-hover:border-[#3eca44] ${searchQuery.trim().length > 0 ? "pr-20" : "pr-9"}`}
                           />
                           {searchQuery.trim().length > 0 ? (
-                            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline" onClick={() => setSearchQuery("")}>Clear</button>
+                            <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-[12.33px] font-semibold text-slate-500 hover:text-[#2f9f35] hover:underline" onClick={() => setSearchQuery("")}>Clear</button>
                           ) : (
                             <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
                           )}
@@ -3154,29 +3231,29 @@ const Matters = () => {
                             type="button"
                             variant="outline"
                             onClick={handleDeleteSelectedCases}
-                            className="h-8 w-24 rounded px-3 text-[11px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white"
+                            className="h-8 w-24 rounded px-3 text-[12.33px] inline-flex items-center justify-center border border-rose-500 bg-white text-rose-600 hover:bg-rose-600 hover:text-white"
                           >
                             Delete ({selectedCaseIds.size})
                           </Button>
                         ) : null}
                         <DropdownMenu open={isFiltersPanelOpen} onOpenChange={(open) => { setIsFiltersPanelOpen(open); if (!open) setExpandedFilterSection(null); }}>
                           <DropdownMenuTrigger asChild>
-                            <Button type="button" variant="outline" className="h-8 w-24 justify-between rounded-[4px] px-3 text-[11px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]">
+                            <Button type="button" variant="outline" className="h-8 w-24 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-slate-200 bg-white transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:border-[#3eca44]">
                               <span>Filter</span>
                               <ChevronDown className={`h-4 w-4 transition-transform ${isFiltersPanelOpen ? "rotate-180" : ""}`} />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" sideOffset={0} className="w-[260px] rounded-[4px] border border-slate-200 bg-white p-0 shadow-lg">
                             <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-                              <span className="text-[12px] font-semibold text-slate-800">Filter</span>
-                              <button type="button" className="text-[10px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline" onClick={() => { setStatusFilter("Active"); setCaseTypeFilter("all"); setConsultantFilter("all"); setNextDateFilter("all"); setIsFiltersPanelOpen(false); }}>
+                              <span className="text-[13.33px] font-semibold text-slate-800">Filter</span>
+                              <button type="button" className="text-[11.33px] font-semibold uppercase tracking-wide text-[#2f9f35] hover:underline" onClick={() => { setStatusFilter("Active"); setCaseTypeFilter("all"); setConsultantFilter("all"); setNextDateFilter("all"); setIsFiltersPanelOpen(false); }}>
                                 Clear
                               </button>
                             </div>
                             <div className="divide-y divide-slate-200">
                               {["status", "type", "consultant", "date"].map((section) => (
                                 <div key={section}>
-                                  <button type="button" className={`flex h-9 w-full items-center justify-between px-3 text-left text-[11px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === section ? "bg-slate-100" : ""}`} onClick={() => setExpandedFilterSection((prev) => (prev === section ? null : section))}>
+                                  <button type="button" className={`flex h-9 w-full items-center justify-between px-3 text-left text-[12.33px] font-semibold text-slate-800 hover:bg-slate-100 ${expandedFilterSection === section ? "bg-slate-100" : ""}`} onClick={() => setExpandedFilterSection((prev) => (prev === section ? null : section))}>
                                     <span>{section === "status" ? "Status" : section === "type" ? "Case Type" : section === "consultant" ? "Consultant" : "Next Date"}</span>
                                     <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${expandedFilterSection === section ? "rotate-180" : ""}`} />
                                   </button>
@@ -3196,7 +3273,7 @@ const Matters = () => {
                                           <button
                                             key={value}
                                             type="button"
-                                            className="flex h-8 w-full items-center justify-between text-[11px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
+                                            className="flex h-8 w-full items-center justify-between text-[12.33px] text-slate-700 hover:bg-[#3eca44]/10 hover:text-[#2f9f35]"
                                             onClick={() => {
                                               if (section === "status") setStatusFilter(value as "all" | CaseFile["status"]);
                                               if (section === "type") setCaseTypeFilter(value);
@@ -3361,7 +3438,7 @@ const Matters = () => {
       </div>
 
       <Dialog open={isNewCaseDialogOpen} onOpenChange={setIsNewCaseDialogOpen}>
-      <DialogContent className="w-[94vw] max-w-[560px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+      <DialogContent className="w-[94vw] max-w-[820px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
           <div className="relative">
             <div className="absolute inset-x-0 top-0 flex h-[46px] items-center justify-between px-4">
               <div className="flex items-center gap-2 pl-2">
@@ -3374,42 +3451,75 @@ const Matters = () => {
                 </button>
               </DialogClose>
             </div>
-            <div className="mt-[46px] bg-white px-6 pb-6 pt-2">
-              <form
-                className="space-y-4 pt-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleCreateCase();
-                }}
-              >
-                <div className="mx-auto w-full max-w-[320px] py-4">
-                  <div className="relative grid grid-cols-3 items-start">
-                    <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
-                    <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-slate-300" />
-                    {newCaseStep > 1 && <div className="pointer-events-none absolute left-[calc(16.6667%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />}
-                    {newCaseStep > 2 && <div className="pointer-events-none absolute left-[calc(50%+26px)] top-[10px] h-[2px] w-[calc(33.3333%-52px)] bg-[#3eca44]" />}
-                    {[{ step: 1 as const, label: "Case Identity" }, { step: 2 as const, label: "Forum & Dates" }, { step: 3 as const, label: "Allocation" }].map((item) => {
-                      const active = item.step === newCaseStep;
-                      const complete = item.step < newCaseStep;
+            <div className="mt-[46px] bg-white pb-6">
+              <div className="flex h-14 items-center justify-center border-b border-slate-200 px-4">
+                <div className="flex w-full justify-center overflow-x-auto">
+                  <div className="mx-auto flex min-w-fit items-center gap-1">
+                    {[{ step: 1 as const, label: "Case Identity" }, { step: 2 as const, label: "Forum & Dates" }, { step: 3 as const, label: "Allocation" }].map((item, index) => {
+                      const isActive = newCaseStep === item.step;
+                      const isComplete = item.step < newCaseStep;
+                      const segmentClassName = [
+                        "relative flex h-9 w-[182px] shrink-0 items-center px-3 text-[10px] font-semibold transition-colors",
+                        isComplete ? "bg-[#31b236] text-white" : isActive ? "bg-[#2D4256] text-white" : "bg-slate-200 text-slate-500",
+                        "cursor-pointer hover:brightness-95",
+                      ].join(" ");
+                      const segmentStyle = {
+                        clipPath:
+                          index === 0
+                            ? "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 18px 50%)"
+                            : "polygon(0 0, calc(100% - 24px) 0, 100% 50%, calc(100% - 24px) 100%, 0 100%, 24px 50%)",
+                      };
+
                       return (
-                        <button key={item.step} type="button" onClick={() => handleStepTrackerSelect(item.step)} className="z-10 flex flex-col items-center text-center cursor-pointer">
-                          <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${complete ? "bg-[#3eca44] text-white" : active ? "bg-[#2D4256] text-white" : "bg-slate-300 text-slate-500"}`}>
-                            {complete ? <Check className="h-3 w-3" /> : item.step}
+                        <button
+                          key={item.step}
+                          type="button"
+                          onClick={() => handleStepTrackerSelect(item.step)}
+                          className={segmentClassName}
+                          style={segmentStyle}
+                        >
+                          <span className="relative block h-full w-full">
+                            <span
+                              className={[
+                                "absolute left-5 top-1/2 inline-flex h-6 w-6 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[9px] font-bold leading-none",
+                                isComplete ? "text-[#31b236]" : isActive ? "text-[#2D4256]" : "text-slate-400",
+                              ].join(" ")}
+                            >
+                              {isComplete ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : item.step}
+                            </span>
+                            <span
+                              className={[
+                                "absolute left-[56px] right-3 top-1/2 block -translate-y-1/2 truncate whitespace-nowrap text-left text-[10px] font-semibold",
+                                isActive || isComplete ? "text-white" : "text-slate-500",
+                              ].join(" ")}
+                            >
+                              {item.label}
+                            </span>
                           </span>
-                          <span className={`mt-3 text-[10px] font-semibold ${complete ? "text-[#2f9f35]" : active ? "text-black" : "text-slate-400"}`}>{item.label}</span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
-
-                <div className="h-[420px] space-y-4 overflow-y-auto pr-1">
+              </div>
+              <div className="px-6 pt-5">
+                <form
+                className="space-y-4 [&_button>span.truncate]:text-[12.33px] [&_input]:!text-[12.33px] [&_input::placeholder]:!text-[11.33px] [&_span.pointer-events-none]:text-[11.33px] [&_[data-placeholder]]:!text-[11.33px] [&_[role=combobox]]:!text-[12.33px]"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCreateCase();
+                }}
+              >
+                <div className="h-[320px] space-y-4 overflow-y-auto pr-1 pt-2">
                   {newCaseStep === 1 && (
-                    <>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Case Type <span className="text-red-600">*</span></p>
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-6 md:grid-cols-2">
+                      <div className={`group relative space-y-1 ${isSubtypeHidden ? "md:col-span-2" : ""}`}>
+                        <span className={newMatterDropdownFloatingLabelClass(Boolean(newCaseForm.caseType.trim()) || isNewCaseTypeOpen)}>
+                          Case Type <span className="text-red-600">*</span>
+                        </span>
                         <Select
                           value={newCaseForm.caseType || undefined}
+                          onOpenChange={setIsNewCaseTypeOpen}
                           onValueChange={(value) =>
                             setNewCaseForm((p) => ({
                               ...p,
@@ -3419,15 +3529,18 @@ const Matters = () => {
                             }))
                           }
                         >
-                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Please select case type" /></SelectTrigger>
-                          <SelectContent className="text-[11px]">{CASE_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt} className={addModalSelectItemClass}>{opt}</SelectItem>)}</SelectContent>
+                          <SelectTrigger className={`${newMatterModalSelectClass} ${addModalDropdownToneClass}`}><SelectValue /></SelectTrigger>
+                          <SelectContent className="text-[12.33px]">{CASE_TYPE_OPTIONS.map((opt) => <SelectItem key={opt} value={opt} className={newMatterSelectItemClass}>{opt}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
                       {!isSubtypeHidden ? (
-                        <div className="space-y-1">
-                          <p className="text-[10px] font-semibold text-slate-400">Subtype <span className="text-red-600">*</span></p>
+                        <div className="group relative space-y-1">
+                          <span className={newMatterDropdownFloatingLabelClass(Boolean(newCaseForm.subtype.trim()) || isNewCaseSubtypeOpen)}>
+                            Subtype <span className="text-red-600">*</span>
+                          </span>
                           <Select
-                          value={newCaseForm.subtype || undefined}
+                            value={newCaseForm.subtype || undefined}
+                            onOpenChange={setIsNewCaseSubtypeOpen}
                             onValueChange={(value) => setNewCaseForm((p) => ({
                               ...p,
                               subtype: value,
@@ -3436,26 +3549,28 @@ const Matters = () => {
                                 : p.dateEvents,
                             }))}
                           >
-                            <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Please select subtype" /></SelectTrigger>
-                            <SelectContent className="text-[11px]">
+                            <SelectTrigger className={`${newMatterModalSelectClass} ${addModalDropdownToneClass}`}><SelectValue /></SelectTrigger>
+                            <SelectContent className="text-[12.33px]">
                               {subtypeOptions.map((opt) => (
-                                <SelectItem key={opt} value={opt} className={addModalSelectItemClass}>{opt}</SelectItem>
+                                <SelectItem key={opt} value={opt} className={newMatterSelectItemClass}>{opt}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                       ) : null}
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Client <span className="text-red-600">*</span></p>
+                      <div className="group relative space-y-1 md:col-span-2">
+                        <span className={newMatterDropdownFloatingLabelClass(Boolean(newCaseForm.clientName.trim()) || isClientSelectOpen)}>
+                          Client <span className="text-red-600">*</span>
+                        </span>
                         <Popover open={isClientSelectOpen} onOpenChange={setIsClientSelectOpen}>
                           <PopoverTrigger asChild>
                             <Button
                               type="button"
                               variant="outline"
-                              className={`${modalSelectClass} ${addModalDropdownToneClass} w-full justify-between px-3 hover:bg-white hover:text-slate-700`}
+                              className={`${newMatterModalSelectClass} ${addModalDropdownToneClass} w-full justify-between px-3 hover:bg-white hover:text-slate-700`}
                             >
                               <span className={`truncate text-left ${newCaseForm.clientName ? "" : "text-slate-400"}`}>
-                                {newCaseForm.clientName || "Please select client"}
+                                {newCaseForm.clientName}
                               </span>
                               <ChevronDown className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
                             </Button>
@@ -3468,18 +3583,18 @@ const Matters = () => {
                             <Command shouldFilter={false}>
                               <CommandInput
                                 placeholder="Search client name..."
-                                className="h-8 text-[11px]"
+                                className="h-8 text-[12.33px] placeholder:text-[11.33px]"
                                 value={clientSearchQuery}
                                 onValueChange={setClientSearchQuery}
                               />
                               <CommandList className="max-h-[min(420px,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain">
-                                <CommandEmpty className="py-3 text-[11px] text-slate-500 px-2 text-center">{clientLoadMessage}</CommandEmpty>
+                                <CommandEmpty className="py-3 text-[12.33px] text-slate-500 px-2 text-center">{clientLoadMessage}</CommandEmpty>
                                 <CommandGroup>
                                   {filteredClientOptions.map((client) => (
                                     <CommandItem
                                       key={client.id}
                                       value={client.label}
-                                      className="text-[11px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
+                                      className="text-[12.33px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[selected=true]:bg-[#3eca44]/10 data-[selected=true]:text-[#2f9f35]"
                                       onSelect={() => {
                                         setNewCaseForm((prev) => ({ ...prev, clientId: client.id, clientName: client.label }));
                                         setClientSearchQuery("");
@@ -3495,35 +3610,47 @@ const Matters = () => {
                           </PopoverContent>
                         </Popover>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Parties <span className="text-red-600">*</span></p>
-                        <Input className={`${modalInputClass} !text-[11px]`} value={newCaseForm.parties} onChange={(e) => setNewCaseForm((p) => ({ ...p, parties: e.target.value }))} placeholder="ABC Manufacturing (Pty) Ltd // John Smith" />
+                      <div className="group relative space-y-1 md:col-span-2">
+                        <span className={newMatterFloatingLabelClass(Boolean(newCaseForm.parties.trim()))}>
+                          Parties <span className="text-red-600">*</span>
+                        </span>
+                        <Input className={newMatterModalInputClass} value={newCaseForm.parties} onChange={(e) => setNewCaseForm((p) => ({ ...p, parties: e.target.value }))} />
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Short Description <span className="text-red-600">*</span></p>
-                        <Textarea className={modalTextareaClass} value={newCaseForm.shortDescription} onChange={(e) => setNewCaseForm((p) => ({ ...p, shortDescription: e.target.value }))} placeholder="Please type a short description of the case" />
+                      <div className="group relative space-y-1 md:col-span-2">
+                        <span className={newMatterFloatingLabelClass(Boolean(newCaseForm.shortDescription.trim()))}>
+                          Short Description <span className="text-red-600">*</span>
+                        </span>
+                        <Textarea
+                          ref={newCaseShortDescriptionTextareaRef}
+                          rows={1}
+                          className={newMatterShortDescriptionTextareaClass}
+                          value={newCaseForm.shortDescription}
+                          onChange={(e) => setNewCaseForm((p) => ({ ...p, shortDescription: e.target.value }))}
+                        />
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {newCaseStep === 2 && (
-                    <>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Forum / Venue <span className="text-red-600">*</span></p>
-                        <Input className={modalInputClass} value={newCaseForm.forumVenue} onChange={(e) => setNewCaseForm((p) => ({ ...p, forumVenue: e.target.value }))} placeholder="CCMA Johannesburg, MIBCO, Teams..." />
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-6 md:grid-cols-2">
+                      <div className="group relative space-y-1">
+                        <span className={newMatterFloatingLabelClass(Boolean(newCaseForm.forumVenue.trim()))}>
+                          Forum / Venue <span className="text-red-600">*</span>
+                        </span>
+                        <Input className={newMatterModalInputClass} value={newCaseForm.forumVenue} onChange={(e) => setNewCaseForm((p) => ({ ...p, forumVenue: e.target.value }))} />
                       </div>
                       {!isNewCaseReferral ? (
                         <>
-                          <div className="space-y-1">
-                            <p className="text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></p>
+                          <div className="group relative space-y-1">
+                            <span className={newMatterFloatingLabelClass(Boolean(primaryNewCaseDateEvent.eventDate.trim()))}>
+                              Date <span className="text-red-600">*</span>
+                            </span>
                             <Input
-                              className={modalInputClass}
+                              className={newMatterModalInputClass}
                               type="text"
                               readOnly
-                              placeholder="Please select a date"
                               value={primaryNewCaseDateEvent.eventDate ? formatDisplayDate(primaryNewCaseDateEvent.eventDate) : ""}
                               onClick={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
-                              onFocus={() => openDatePicker(newCaseDateEventInputRefs.current[primaryNewCaseDateEvent.id] ?? null)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
                                   e.preventDefault();
@@ -3545,204 +3672,173 @@ const Matters = () => {
                               tabIndex={-1}
                             />
                           </div>
-                          <div className="space-y-1">
-                            <p className="text-[10px] font-semibold text-slate-400">Time <span className="text-red-600">*</span></p>
-                            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
-                              <Select
-                                value={primaryNewCaseEventHour || undefined}
-                                onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${value}:${primaryNewCaseEventMinute || "00"}` })}
-                              >
-                                <SelectTrigger
-                                  className={cn(
-                                    modalSelectClass,
-                                    addModalDropdownToneClass,
-                                    "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
-                                  )}
+                          <div className="grid items-end grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 md:col-span-2">
+                            <div className="grid items-end grid-cols-[minmax(0,1fr)_minmax(0,1fr)_60px] gap-2">
+                              <div className="relative space-y-1">
+                                <span className={newMatterDropdownFloatingLabelClass(Boolean(primaryNewCaseEventHour) || isNewCaseTimeHourOpen)}>
+                                  Time (Hour) <span className="text-red-600">*</span>
+                                </span>
+                                <Select
+                                  value={primaryNewCaseEventHour || undefined}
+                                  onOpenChange={setIsNewCaseTimeHourOpen}
+                                  onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${value}:${primaryNewCaseEventMinute || "00"}` })}
                                 >
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                    <SelectValue placeholder="Hour" />
-                                  </div>
-                                </SelectTrigger>
-                                <SelectContent className="text-[10px]">
-                                  {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
-                                    <SelectItem key={hour} value={hour} className="text-[10px]">
-                                      {hour}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Select
-                                value={primaryNewCaseEventMinute || undefined}
-                                onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${primaryNewCaseEventHour || "00"}:${value}` })}
-                              >
-                                <SelectTrigger
-                                  className={cn(
-                                    modalSelectClass,
-                                    addModalDropdownToneClass,
-                                    "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
-                                  )}
+                                  <SelectTrigger
+                                    className={cn(
+                                      newMatterModalSelectClass,
+                                      addModalDropdownToneClass,
+                                      newMatterTimeSelectClass,
+                                    )}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="text-[11.33px]">
+                                    {HEARING_TIME_HOUR_OPTIONS.map((hour) => (
+                                      <SelectItem key={hour} value={hour} className="text-[11.33px]">
+                                        {hour}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="relative space-y-1">
+                                <span className={newMatterDropdownFloatingLabelClass(Boolean(primaryNewCaseEventMinute) || isNewCaseTimeMinuteOpen)}>
+                                  Time (Minute) <span className="text-red-600">*</span>
+                                </span>
+                                <Select
+                                  value={primaryNewCaseEventMinute || undefined}
+                                  onOpenChange={setIsNewCaseTimeMinuteOpen}
+                                  onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventTime: `${primaryNewCaseEventHour || "00"}:${value}` })}
                                 >
-                                  <SelectValue placeholder="Min" />
-                                </SelectTrigger>
-                                <SelectContent className="text-[10px]">
-                                  {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
-                                    <SelectItem key={minute} value={minute} className="text-[10px]">
-                                      {minute}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <div className="flex h-8 items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[10px] font-semibold text-slate-600">
-                                {primaryNewCaseEventMeridiem || "AM/PM"}
+                                  <SelectTrigger
+                                    className={cn(
+                                      newMatterModalSelectClass,
+                                      addModalDropdownToneClass,
+                                      newMatterTimeSelectClass,
+                                    )}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="text-[11.33px]">
+                                    {HEARING_TIME_MINUTE_OPTIONS.map((minute) => (
+                                      <SelectItem key={minute} value={minute} className="text-[11.33px]">
+                                        {minute}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <div className="flex h-[34px] items-center justify-center rounded-sm border border-slate-300 bg-slate-50 text-[11.33px] font-semibold text-slate-600">
+                                  {primaryNewCaseEventMeridiem || "AM/PM"}
+                                </div>
                               </div>
                             </div>
+                            <div className="relative space-y-1">
+                              <span className={newMatterDropdownFloatingLabelClass(Boolean(primaryNewCaseDateEvent.duration.trim()) || isNewCaseDurationOpen)}>
+                                Duration <span className="text-red-600">*</span>
+                              </span>
+                              <Select
+                                value={primaryNewCaseDateEvent.duration || undefined}
+                                onOpenChange={setIsNewCaseDurationOpen}
+                                onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { duration: value })}
+                              >
+                                <SelectTrigger className={`${newMatterModalSelectClass} ${addModalDropdownToneClass}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="text-[12.33px]">
+                                  {MATTER_DATE_DURATION_OPTIONS.map((option) => (
+                                    <SelectItem key={option} value={option} className={newMatterSelectItemClass}>{option}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            <p className="text-[10px] font-semibold text-slate-400">Duration <span className="text-red-600">*</span></p>
-                            <Select
-                              value={primaryNewCaseDateEvent.duration || undefined}
-                              onValueChange={(value) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { duration: value })}
-                            >
-                              <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}>
-                                <SelectValue placeholder="Please select duration" />
-                              </SelectTrigger>
-                              <SelectContent className="text-[11px]">
-                                {MATTER_DATE_DURATION_OPTIONS.map((option) => (
-                                  <SelectItem key={option} value={option} className={addModalSelectItemClass}>{option}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-[10px] font-semibold text-slate-400">Event Description <span className="text-red-600">*</span></p>
+                          <div className="group relative space-y-1 md:col-span-2">
+                            <span className={newMatterFloatingLabelClass(Boolean(primaryNewCaseDateEvent.eventType.trim()))}>
+                              Event Description <span className="text-red-600">*</span>
+                            </span>
                             <Input
-                              className={modalInputClass}
-                              placeholder="Type event description"
+                              className={newMatterModalInputClass}
                               value={primaryNewCaseDateEvent.eventType}
                               onChange={(e) => updateNewCaseDateEventRow(primaryNewCaseDateEvent.id, { eventType: e.target.value, createdByName: primaryNewCaseDateEvent.createdByName || resolveCurrentUserName() })}
                             />
                           </div>
                         </>
-                      ) : null}
-                    </>
+                      ) : (
+                        <div className="md:col-span-2" />
+                      )}
+                    </div>
                   )}
 
                   {newCaseStep === 3 && (
-                    <>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Assigned Consultant <span className="text-red-600">*</span></p>
-                        <Select value={newCaseForm.assignedConsultant || undefined} onValueChange={(value) => setNewCaseForm((p) => ({ ...p, assignedConsultant: value }))}>
-                          <SelectTrigger className={`${modalSelectClass} ${addModalDropdownToneClass}`}><SelectValue placeholder="Please select consultant" /></SelectTrigger>
-                          <SelectContent className="text-[11px]">
-                            {consultantOptions.map((opt) => <SelectItem key={opt.id} value={opt.label} className={addModalSelectItemClass}>{opt.label}</SelectItem>)}
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-6 md:grid-cols-2">
+                      <div className="relative space-y-1 md:col-span-2">
+                        <span className={newMatterDropdownFloatingLabelClass(Boolean(newCaseForm.assignedConsultant.trim()) || isNewCaseConsultantOpen)}>
+                          Assigned Consultant <span className="text-red-600">*</span>
+                        </span>
+                        <Select value={newCaseForm.assignedConsultant || undefined} onOpenChange={setIsNewCaseConsultantOpen} onValueChange={(value) => setNewCaseForm((p) => ({ ...p, assignedConsultant: value }))}>
+                          <SelectTrigger className={`${newMatterModalSelectClass} ${addModalDropdownToneClass}`}><SelectValue /></SelectTrigger>
+                          <SelectContent className="text-[12.33px]">
+                            {consultantOptions.map((opt) => <SelectItem key={opt.id} value={opt.label} className={newMatterSelectItemClass}>{opt.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-semibold text-slate-400">Opening Note <span className="text-red-600">*</span></p>
-                        <div className="relative">
-                          <div
-                            className="pointer-events-none min-h-[96px] whitespace-pre-wrap break-words rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium leading-5 text-slate-900"
-                            aria-hidden="true"
-                            dangerouslySetInnerHTML={{ __html: newCaseForm.openingNote ? renderTextWithMentions(newCaseForm.openingNote) : '<span class="text-slate-400">Please type the first file note or instruction received. Use @ to tag a user.</span>' }}
-                          />
-                          <textarea
-                            ref={openingNoteTextareaRef}
-                            className="absolute inset-0 min-h-[96px] w-full resize-none rounded border border-slate-300 bg-transparent px-3 py-2 text-[11px] font-medium leading-5 text-transparent caret-black shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
-                            value={newCaseForm.openingNote}
-                            onChange={(e) => handleOpeningNoteContentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
-                            onClick={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
-                            onKeyUp={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
-                            onSelect={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Backspace") {
-                                const textarea = e.currentTarget;
-                                const selectionStart = textarea.selectionStart ?? 0;
-                                const selectionEnd = textarea.selectionEnd ?? selectionStart;
-                                if (selectionStart === selectionEnd) {
-                                  const mentionRange = getMentionTokenRangeAtCaret(textarea.value, selectionStart);
-                                  if (mentionRange) {
-                                    e.preventDefault();
-                                    const trailingSpaceLength = textarea.value.slice(mentionRange.end, mentionRange.end + 1) === " " ? 1 : 0;
-                                    const nextContent = `${textarea.value.slice(0, mentionRange.start)}${textarea.value.slice(mentionRange.end + trailingSpaceLength)}`;
-                                    setNewCaseForm((prev) => ({ ...prev, openingNote: nextContent }));
-                                    setOpeningNoteMentionRange(null);
-                                    setOpeningNoteMentionPopupPosition(null);
-                                    requestAnimationFrame(() => {
-                                      textarea.focus();
-                                      textarea.setSelectionRange(mentionRange.start, mentionRange.start);
-                                    });
-                                    return;
-                                  }
-                                }
-                              }
-                              if (openingNoteMentionRange && filteredOpeningNoteMentionOptions.length > 0 && (e.key === "Enter" || e.key === "Tab")) {
-                                e.preventDefault();
-                                insertOpeningNoteMention(filteredOpeningNoteMentionOptions[0]);
-                              }
-                              if (e.key === "Escape") {
-                                setOpeningNoteMentionRange(null);
-                                setOpeningNoteMentionPopupPosition(null);
-                              }
-                            }}
-                          />
-                          {openingNoteMentionRange && openingNoteMentionPopupPosition ? (
-                            <div
-                              className="absolute z-20 max-h-[220px] w-[220px] overflow-y-auto rounded border border-[#2D4256] bg-[#2D4256] shadow-lg"
-                              style={{ top: openingNoteMentionPopupPosition.top, left: openingNoteMentionPopupPosition.left }}
-                            >
-                              {filteredOpeningNoteMentionOptions.length === 0 ? (
-                                <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-300">No matching users.</div>
-                              ) : (
-                                filteredOpeningNoteMentionOptions.map((option) => (
-                                  <button
-                                    key={option.id}
-                                    type="button"
-                                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[10px] font-semibold text-slate-300 hover:bg-white/10 hover:text-slate-100"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      insertOpeningNoteMention(option);
-                                    }}
-                                  >
-                                    <span>@{option.token}</span>
-                                  </button>
-                                ))
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
+                      <div className="group relative space-y-1 md:col-span-2">
+                        <span className={newMatterFloatingLabelClass(Boolean(newCaseForm.openingNote.trim()))}>
+                          Opening Note <span className="text-red-600">*</span>
+                        </span>
+                        <Textarea
+                          ref={openingNoteTextareaRef}
+                          rows={1}
+                          className={newMatterShortDescriptionTextareaClass}
+                          value={newCaseForm.openingNote}
+                          onChange={(e) => setNewCaseForm((p) => ({ ...p, openingNote: e.target.value }))}
+                        />
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 
                 <div className="mt-6 grid grid-cols-3 items-center border-t border-dashed border-muted/60 pt-4">
                   <div className="justify-self-start">
                     {newCaseStep > 1 && (
-                      <Button type="button" variant="outline" className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-xs text-[#3eca44] hover:bg-transparent hover:text-[#3eca44]" onClick={() => setNewCaseStep((prev) => (prev === 1 ? prev : ((prev - 1) as NewCaseStep)))}>
+                      <Button type="button" variant="outline" className="h-[28px] w-[84px] rounded border-[#3eca44] px-3 text-[13.33px] text-[#3eca44] hover:bg-transparent hover:text-[#3eca44]" onClick={() => setNewCaseStep((prev) => (prev === 1 ? prev : ((prev - 1) as NewCaseStep)))}>
                         Back
                       </Button>
                     )}
                   </div>
                   <div className="justify-self-center">
-                    <Button type="button" variant="ghost" className="h-[30px] rounded border-0 px-3 text-xs text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline" onClick={() => setNewCaseForm(createBlankCaseForm())}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-[30px] rounded border-0 px-3 text-[13.33px] text-slate-500 shadow-none hover:bg-transparent hover:text-slate-600 hover:underline"
+                      onClick={() => {
+                        const nextForm = createBlankCaseForm();
+                        nextForm.dateEvents = [createNewCasePrimaryDateEvent(resolveCurrentUserName())];
+                        setNewCaseForm(nextForm);
+                        setIsNewCaseTimeHourOpen(false);
+                        setIsNewCaseTimeMinuteOpen(false);
+                        setIsNewCaseDurationOpen(false);
+                      }}
+                    >
                       Clear
                     </Button>
                   </div>
                   <div className="justify-self-end">
                     {newCaseStep < 3 ? (
-                      <Button type="button" className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]" onClick={handleNext} disabled={(newCaseStep === 1 && !isStepOneComplete) || (newCaseStep === 2 && !isStepTwoComplete)}>
+                      <Button type="button" className="h-[28px] w-[84px] rounded bg-[#3eca44] px-3 text-[13.33px] text-white hover:bg-[#34b73b]" onClick={handleNext} disabled={(newCaseStep === 1 && !isStepOneComplete) || (newCaseStep === 2 && !isStepTwoComplete)}>
                         Next
                       </Button>
                     ) : (
-                      <Button type="submit" className="h-[30px] w-[120px] rounded bg-[#3eca44] px-3 text-xs text-white hover:bg-[#34b73b]" disabled={isSavingCase || !isStepOneComplete || !isStepTwoComplete || !isStepThreeComplete}>
+                      <Button type="submit" className="h-[30px] w-[120px] rounded bg-[#3eca44] px-3 text-[13.33px] text-white hover:bg-[#34b73b]" disabled={isSavingCase || !isStepOneComplete || !isStepTwoComplete || !isStepThreeComplete}>
                         {isSavingCase ? "Saving..." : "Submit"}
                       </Button>
                     )}
                   </div>
                 </div>
-              </form>
+                </form>
+              </div>
             </div>
           </div>
         </DialogContent>

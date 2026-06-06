@@ -746,6 +746,7 @@ const ClientsTwo = () => {
   const startDateInputRef = useRef<HTMLInputElement | null>(null);
   const editStartDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientTaskDateInputRef = useRef<HTMLInputElement | null>(null);
+  const fileNoteDateInputRef = useRef<HTMLInputElement | null>(null);
   const clientLogoFileInputRef = useRef<HTMLInputElement | null>(null);
   const slaFileInputRef = useRef<HTMLInputElement | null>(null);
   const ahiCertificateFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -864,6 +865,7 @@ const ClientsTwo = () => {
   const [fileNotePreviewContent, setFileNotePreviewContent] = useState("");
   const [fileNotePreviewEditTag, setFileNotePreviewEditTag] = useState("");
   const [fileNotePreviewUpdatedAt, setFileNotePreviewUpdatedAt] = useState("");
+  const [fileNotePreviewCreatedAt, setFileNotePreviewCreatedAt] = useState("");
   const [fileNotePreviewType, setFileNotePreviewType] = useState("");
   const [fileNoteForm, setFileNoteForm] = useState({
     noteDate: "",
@@ -2138,6 +2140,10 @@ const ClientsTwo = () => {
     setFileNoteMentionPopupPosition(null);
     setEditingFileNoteId(null);
   }, [resolveCurrentUserName]);
+  const normalizeClientFileNoteRow = useCallback((row: any) => ({
+    ...row,
+    file_note_date: String(row?.file_note_date ?? row?.fileNoteDate ?? "").trim(),
+  }), []);
   const fetchClientFileNotes = useCallback(async (clientId: string) => {
     if (!user?.id || !clientId) return;
     setIsNotesLoading(true);
@@ -2146,16 +2152,16 @@ const ClientsTwo = () => {
         .from("client_file_notes")
         .select("*")
         .eq("client_id", clientId)
-        .order("note_date", { ascending: false, nullsFirst: false })
+        .order("file_note_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
-      setClientFileNotes(data ?? []);
+      setClientFileNotes((data ?? []).map(normalizeClientFileNoteRow));
     } catch (error: any) {
       toast({ title: "Unable to load file notes", description: error?.message || "Load failed.", variant: "destructive" });
     } finally {
       setIsNotesLoading(false);
     }
-  }, [toast, user?.id]);
+  }, [normalizeClientFileNoteRow, toast, user?.id]);
 
   useEffect(() => {
     void fetchClients();
@@ -2206,6 +2212,7 @@ const ClientsTwo = () => {
         String(matchingNote.note_content || ""),
         String(matchingNote.updated_at || ""),
         String(matchingNote.note_type || ""),
+        String(matchingNote.created_at || ""),
       );
     }
     navigate("/clients-2", { replace: true, state: {} });
@@ -3770,11 +3777,12 @@ const ClientsTwo = () => {
     resetFileNoteForm();
     setIsFileNoteDialogOpen(true);
   };
-  const openFileNotePreviewDialog = (rawContent: string, updatedAt?: string, noteType?: string) => {
+  const openFileNotePreviewDialog = (rawContent: string, updatedAt?: string, noteType?: string, createdAt?: string) => {
     const { content, editTag } = splitFileNoteContentAndEditTag(rawContent);
     setFileNotePreviewContent(content);
     setFileNotePreviewEditTag(editTag);
     setFileNotePreviewUpdatedAt(String(updatedAt || "").trim());
+    setFileNotePreviewCreatedAt(String(createdAt || "").trim());
     setFileNotePreviewType(String(noteType || "").trim());
     setIsFileNotePreviewOpen(true);
   };
@@ -3791,7 +3799,7 @@ const ClientsTwo = () => {
     const { content: editableContent } = splitFileNoteContentAndEditTag(rawNoteContent);
     setEditingFileNoteId(note.id);
     setFileNoteForm({
-      noteDate: String(note.note_date || dateToday()),
+      noteDate: String(note.file_note_date || ""),
       noteType: String(note.note_type || ""),
       noteContent: editableContent,
       noteUserName: String(note.note_user_name || resolveCurrentUserName()),
@@ -3910,35 +3918,46 @@ const ClientsTwo = () => {
     setIsSavingFileNote(true);
     try {
       let savedFileNoteId = String(editingFileNoteId || "").trim();
+      let savedFileNoteRow: any = null;
       if (editingFileNoteId) {
         const baseContent = noteContent.replace(FILE_NOTE_EDIT_TAG_REGEX, "").trim();
         const now = new Date();
         const editedTag = `Edited by ${noteUserName} on ${formatDisplayDate(now.toISOString())} at ${formatDisplayTime(now)}`;
         const updatedContent = `${baseContent} ${editedTag}`.trim();
-        const { error } = await (supabase as any)
+        const { data: updatedFileNote, error } = await (supabase as any)
           .from("client_file_notes")
           .update({
+            file_note_date: noteDate,
             note_type: noteType,
             note_content: updatedContent,
             note_user_name: noteUserName,
           })
           .eq("id", editingFileNoteId)
-          .eq("client_id", selectedClientRow.id);
+          .eq("client_id", selectedClientRow.id)
+          .select("*")
+          .single();
         if (error) throw error;
+        savedFileNoteRow = updatedFileNote;
       } else {
         const { data: insertedFileNote, error } = await (supabase as any)
           .from("client_file_notes")
           .insert({
             client_id: selectedClientRow.id,
-            note_date: noteDate,
+            note_date: dateToday(),
+            file_note_date: noteDate,
             note_type: noteType,
             note_content: noteContent,
             note_user_name: noteUserName,
           })
-          .select("id")
+          .select("*")
           .single();
         if (error) throw error;
         savedFileNoteId = String(insertedFileNote?.id || "").trim();
+        savedFileNoteRow = insertedFileNote;
+      }
+
+      if (savedFileNoteRow && !String(savedFileNoteRow?.file_note_date || "").trim()) {
+        throw new Error("The selected note date was not saved to file_note_date. Please refresh the Supabase schema cache and confirm the column exists as public.client_file_notes.file_note_date.");
       }
 
       if (savedFileNoteId) {
@@ -3947,6 +3966,19 @@ const ClientsTwo = () => {
       setIsFileNoteDialogOpen(false);
       resetFileNoteForm();
       await fetchClientFileNotes(selectedClientRow.id);
+      if (savedFileNoteRow) {
+        const normalizedSavedFileNoteRow = normalizeClientFileNoteRow({
+          ...savedFileNoteRow,
+          file_note_date: savedFileNoteRow.file_note_date || noteDate,
+        });
+        setClientFileNotes((prev) => {
+          const savedId = String(normalizedSavedFileNoteRow?.id || "").trim();
+          if (!savedId) return prev;
+          const exists = prev.some((note) => String(note?.id || "").trim() === savedId);
+          if (!exists) return [normalizedSavedFileNoteRow, ...prev];
+          return prev.map((note) => (String(note?.id || "").trim() === savedId ? { ...note, ...normalizedSavedFileNoteRow } : note));
+        });
+      }
       toast({ title: "Success", description: editingFileNoteId ? "File note updated." : "File note created." });
     } catch (error: any) {
       toast({ title: "Unable to save file note", description: error?.message || "Save failed.", variant: "destructive" });
@@ -6100,7 +6132,7 @@ const ClientsTwo = () => {
                                     const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
                                     return (
                                       <>
-                                        <div className="min-w-0 text-slate-700">{formatDisplayDate(String(note.note_date || ""))}</div>
+                                        <div className="min-w-0 text-slate-700">{note.file_note_date ? formatDisplayDate(String(note.file_note_date)) : ""}</div>
                                         <div className="flex min-w-0 items-center justify-center truncate">
                                           <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientFileNoteTypePillClassName(String(note.note_type || ""))}`}>
                                             {String(note.note_type || "--")}
@@ -6119,7 +6151,7 @@ const ClientsTwo = () => {
                                           <button
                                             type="button"
                                             className="text-slate-500 hover:text-[#2f9f35]"
-                                            onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""), String(note.note_type || ""))}
+                                            onClick={() => openFileNotePreviewDialog(String(note.note_content || ""), String(note.updated_at || ""), String(note.note_type || ""), String(note.created_at || ""))}
                                             aria-label="View note"
                                           >
                                             <Eye className="h-3.5 w-3.5" />
@@ -6844,6 +6876,34 @@ const ClientsTwo = () => {
               </Select>
             </div>
             <div className="relative space-y-1">
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></span>
+              <Input
+                id="fileNoteDate"
+                type="text"
+                readOnly
+                placeholder="Please select a date"
+                value={fileNoteForm.noteDate ? formatDisplayDate(fileNoteForm.noteDate) : ""}
+                onClick={() => openDatePicker(fileNoteDateInputRef.current)}
+                onFocus={() => openDatePicker(fileNoteDateInputRef.current)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openDatePicker(fileNoteDateInputRef.current);
+                  }
+                }}
+                className={addModalFieldInputClass}
+              />
+              <input
+                ref={fileNoteDateInputRef}
+                type="date"
+                value={fileNoteForm.noteDate}
+                onChange={(e) => setFileNoteForm((prev) => ({ ...prev, noteDate: e.target.value }))}
+                className="sr-only"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            </div>
+            <div className="relative space-y-1">
               <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
               <div className="relative">
                 <div
@@ -6945,7 +7005,7 @@ const ClientsTwo = () => {
           </div>
           <div className="space-y-3 bg-white p-4">
             {fileNotePreviewType ? (
-              <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
+              <div className="inline-flex rounded bg-slate-200 px-2 py-1 text-[12px] font-medium text-slate-600">
                 {fileNotePreviewType}
               </div>
             ) : null}
@@ -6953,6 +7013,11 @@ const ClientsTwo = () => {
               className="max-h-[52vh] overflow-y-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-900"
               dangerouslySetInnerHTML={{ __html: fileNotePreviewContent ? renderTextWithMentions(fileNotePreviewContent) : "--" }}
             />
+            {fileNotePreviewCreatedAt ? (
+              <div className="inline-flex rounded-full border border-[#3eca44] bg-transparent px-2 py-1 text-[10px] font-medium text-[#2f9f35]">
+                {`${formatDisplayDate(fileNotePreviewCreatedAt)} at ${formatDisplayTime(fileNotePreviewCreatedAt)}`}
+              </div>
+            ) : null}
             {fileNotePreviewEditTag ? (
               <div className="inline-flex rounded-full bg-slate-200 px-2 py-1 text-[10px] font-medium text-slate-600">
                 {sanitizeEditedTag(fileNotePreviewEditTag, fileNotePreviewUpdatedAt)}

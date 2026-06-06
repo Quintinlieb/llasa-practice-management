@@ -219,6 +219,13 @@ const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const terminationNoticeOptions = ["None", "One week", "Two weeks", "One month"] as const;
 const appealNoticeOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const issuingMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
+const appealNoticeTextByValue: Record<TerminationStepState["appealNotice"], string> = {
+  "3 days": "three (3) days",
+  "5 days": "five (5) days",
+  "7 days": "seven (7) days",
+  "10 days": "ten (10) days",
+};
+const formatIssuingMethodLabel = (method: string) => (method === "By Hand" ? "By Hand" : method.replace(/^By\s+/i, "Per "));
 const bargainingCouncilOptions = [
   { label: "None", value: "None" },
   { label: "National Bargaining Council for the Road Freight and Logistics Industry (NBCRFLI)", value: "NBCRFLI" },
@@ -605,7 +612,7 @@ const terminationNoticeTextByValue: Record<TerminationStepState["terminationNoti
 const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
   const hearingDateDisplay = formatLongDate(termination.hearingDate) || "[hearing date]";
   const misconductSummary = formatMisconductList(termination.misconductTypes);
-  const appealNoticeDisplay = termination.appealNotice || "5 days";
+  const appealNoticeDisplay = appealNoticeTextByValue[termination.appealNotice] || "five (5) days";
   const usesPda = termination.progressiveDisciplinaryAction === "Yes";
   const disputeForumText = getDisputeForumText(termination);
   const noticeText = terminationNoticeTextByValue[termination.terminationNotice] || "";
@@ -616,11 +623,11 @@ const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
 
   return [
     `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay}.`,
-    `After considering the statements and/or evidence presented at the disciplinary hearing, you were found guilty of misconduct relating to ${misconductSummary}.`,
+    `After considering the statements and/or evidence presented at the disciplinary hearing, the Chairperson found you guilty of misconduct relating to ${misconductSummary}.`,
     usesPda
       ? `Take notice that we are implementing progressive disciplinary action and your employment is hereby ${terminationActionText} for misconduct relating to ${misconductSummary}. ${propertyReturnText}`
       : `Take notice that your employment is hereby ${terminationActionText} for misconduct relating to ${misconductSummary}. ${propertyReturnText}`,
-    `You may appeal against this decision to terminate your employment within ${appealNoticeDisplay.replace(" days", "")} days from the date of this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
+    `You may appeal against this decision to terminate your employment within ${appealNoticeDisplay} from the date of this termination letter, in accordance with the company's disciplinary procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
     "We trust you find the above in order and wish you well in your future endeavours.",
   ];
 };
@@ -747,7 +754,7 @@ const MiscTermPreview = ({
           </div>
           <div className="pt-20 text-right font-semibold">
             {termination.issuingMethods.length > 0 ? (
-              termination.issuingMethods.map((method) => <p key={method}>{method}</p>)
+              termination.issuingMethods.map((method) => <p key={method}>{formatIssuingMethodLabel(method)}</p>)
             ) : (
               <p>[method of issuing]</p>
             )}
@@ -1451,7 +1458,7 @@ const MiscTermLetterGenerator = ({
       let methodY = y + 20;
       pdf.setFont("helvetica", "bold");
       termination.issuingMethods.forEach((method) => {
-        pdf.text(method, pageWidth - margin, methodY, { align: "right" });
+        pdf.text(formatIssuingMethodLabel(method), pageWidth - margin, methodY, { align: "right" });
         methodY += 5;
       });
 
@@ -2174,7 +2181,7 @@ const MiscTermLetterGenerator = ({
                         return (
                           <CommandItem
                             key={option}
-                            value={option}
+                            value={`${option} ${formatIssuingMethodLabel(option)}`}
                             onSelect={() => toggleIssuingMethod(option)}
                             className={cn(
                               "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
@@ -2187,7 +2194,7 @@ const MiscTermLetterGenerator = ({
                                 isSelected ? "text-[#2f9f35]" : "text-slate-600",
                               )}
                             >
-                              {option}
+                              {formatIssuingMethodLabel(option)}
                             </p>
                             {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
                           </CommandItem>
@@ -2204,7 +2211,7 @@ const MiscTermLetterGenerator = ({
                           key={method}
                           className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
                         >
-                          <span className="truncate">{method}</span>
+                          <span className="truncate">{formatIssuingMethodLabel(method)}</span>
                         </div>
                       ))}
                     </div>

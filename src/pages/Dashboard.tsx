@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { southAfricanProvinces } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Building2,
   Calendar,
   CalendarCheck2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Files,
   FolderOpen,
   Users,
@@ -31,6 +34,29 @@ type DashboardTaskRow = {
   dateLabel: string;
   taskType: string;
   assignedTo: string;
+};
+
+type ConsultantEventPerson = {
+  id: string;
+  label: string;
+  normalizedLabel: string;
+  type: "main" | "subuser";
+};
+
+type ConsultantWeekEvent = {
+  id: string;
+  dateValue: string;
+  timeLabel: string;
+  consultant: string;
+  normalizedConsultant: string;
+  matterEvent: string;
+  category: string;
+  parties: string;
+};
+
+type ConsultantWeekEventGroup = {
+  category: string;
+  events: ConsultantWeekEvent[];
 };
 
 type CachedDashboardUpcomingEvents = {
@@ -159,6 +185,27 @@ const clientRenewals = [
   { label: "Clients with no recent activity (90+ days)", value: 7, colorClassName: "bg-[#94a3b8]" },
 ] as const;
 
+const dashboardMatterPalette = {
+  card: "bg-sky-50",
+  border: "border-sky-200",
+  text: "text-sky-700",
+};
+const dashboardHearingPalette = {
+  card: "bg-orange-50",
+  border: "border-orange-200",
+  text: "text-orange-700",
+};
+const dashboardCcmaPalette = {
+  card: "bg-blue-50",
+  border: "border-blue-200",
+  text: "text-blue-700",
+};
+const dashboardFallbackPalette = {
+  card: "bg-slate-100",
+  border: "border-slate-200",
+  text: "text-slate-700",
+};
+
 function CardLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
@@ -182,6 +229,42 @@ function formatDashboardDate(value: unknown) {
   const month = String(parsed.getMonth() + 1).padStart(2, "0");
   const year = String(parsed.getFullYear());
   return `${day}/${month}/${year}`;
+}
+function formatDashboardDateValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function formatDashboardShortDate(value: unknown) {
+  const parsed = parseDashboardIsoDate(value);
+  if (!parsed) return "--";
+  return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+function getDashboardMonday(date: Date) {
+  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = result.getDay();
+  result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
+  return result;
+}
+function addDashboardDays(date: Date, amount: number) {
+  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  result.setDate(result.getDate() + amount);
+  return result;
+}
+function normalizeDashboardPersonName(value: unknown) {
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+function formatDashboardEventTime(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "--";
+  const match = raw.match(/^(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : raw;
+}
+function getDashboardEventTimeSortValue(value: string) {
+  const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 function parseDashboardIsoDate(value: unknown) {
   const raw = String(value ?? "").trim();
@@ -244,6 +327,13 @@ function getDashboardEventLabel(dateType: unknown, eventLabel: unknown) {
   if (label) return label;
   const type = String(dateType ?? "").trim();
   return type || "Event";
+}
+function getDashboardCalendarEventPalette(category: string) {
+  const normalizedCategory = category.toLowerCase();
+  if (normalizedCategory.includes("ccma") || normalizedCategory.includes("bargaining council")) return dashboardCcmaPalette;
+  if (normalizedCategory.includes("hearing")) return dashboardHearingPalette;
+  if (normalizedCategory.includes("consultation")) return dashboardMatterPalette;
+  return dashboardFallbackPalette;
 }
 function normalizeDashboardCaseFileRow(value: DashboardCaseDateRow["case_files"]) {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -349,8 +439,14 @@ function normalizeProvinceLabel(value: unknown) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [eventRows, setEventRows] = useState<DashboardEventRow[]>(() => loadCachedDashboardUpcomingEvents());
   const [taskRows, setTaskRows] = useState<DashboardTaskRow[]>([]);
+  const [consultantPeople, setConsultantPeople] = useState<ConsultantEventPerson[]>([]);
+  const [consultantWeekEvents, setConsultantWeekEvents] = useState<ConsultantWeekEvent[]>([]);
+  const [consultantWeekStart, setConsultantWeekStart] = useState<Date>(() => getDashboardMonday(new Date()));
+  const [hoveredConsultantWeekDate, setHoveredConsultantWeekDate] = useState<string | null>(null);
+  const [hoveredConsultantRowIndex, setHoveredConsultantRowIndex] = useState<number | null>(null);
   const [activeClientCount, setActiveClientCount] = useState<number>(0);
   const [activeClientsThisMonthCount, setActiveClientsThisMonthCount] = useState<number>(0);
   const [documentsThisMonthCount, setDocumentsThisMonthCount] = useState<number>(0);
@@ -376,8 +472,137 @@ export default function Dashboard() {
       })
       .join(", ");
 
-    return `conic-gradient(${segments})`;
+  return `conic-gradient(${segments})`;
   })();
+  const consultantWeekDays = useMemo(
+    () => Array.from({ length: 5 }, (_, index) => addDashboardDays(consultantWeekStart, index)),
+    [consultantWeekStart],
+  );
+  const todayDateLabel = formatDashboardDateValue(new Date());
+  const consultantWeekStartLabel = formatDashboardDateValue(consultantWeekDays[0]);
+  const consultantWeekEndLabel = formatDashboardDateValue(consultantWeekDays[4]);
+  const consultantEventsByPersonAndDate = useMemo(() => {
+    const grouped = new Map<string, ConsultantWeekEventGroup[]>();
+    [...consultantWeekEvents]
+      .sort((left, right) => getDashboardEventTimeSortValue(left.timeLabel) - getDashboardEventTimeSortValue(right.timeLabel))
+      .forEach((event) => {
+      const key = `${event.normalizedConsultant}::${event.dateValue}`;
+      const currentGroups = grouped.get(key) ?? [];
+      const existingGroup = currentGroups.find((group) => group.category === event.category);
+      if (existingGroup) {
+        existingGroup.events.push(event);
+        return;
+      }
+      grouped.set(key, [...currentGroups, { category: event.category, events: [event] }]);
+    });
+    return grouped;
+  }, [consultantWeekEvents]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let isMounted = true;
+
+    const loadConsultantPeople = async () => {
+      const { data: profilesData } = await (supabase as any)
+        .from("profiles")
+        .select("id,user_name,user_surname,user_email")
+        .order("user_name", { ascending: true });
+
+      const { data: subusersData } = await (supabase as any)
+        .from("subusers")
+        .select("auth_user_id,name,surname,email,status,role")
+        .in("status", ["accepted", "active"])
+        .order("name", { ascending: true });
+
+      if (!isMounted) return;
+
+      const people = new Map<string, ConsultantEventPerson>();
+
+      (Array.isArray(profilesData) ? profilesData : []).forEach((row: any) => {
+        const id = String(row?.id || "").trim();
+        if (!id) return;
+        const label = [row?.user_name, row?.user_surname]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim() || String(row?.user_email || "").trim() || "User";
+        people.set(`main:${id}`, {
+          id,
+          label,
+          normalizedLabel: normalizeDashboardPersonName(label),
+          type: "main",
+        });
+      });
+
+      (Array.isArray(subusersData) ? subusersData : []).forEach((row: any) => {
+        const role = String(row?.role || "").trim().toLowerCase();
+        if (role && role !== "consultant") return;
+        const id = String(row?.auth_user_id || row?.email || "").trim();
+        if (!id) return;
+        const label = [row?.name, row?.surname]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim() || String(row?.email || "").trim() || "Subuser";
+        people.set(`subuser:${id}`, {
+          id,
+          label,
+          normalizedLabel: normalizeDashboardPersonName(label),
+          type: "subuser",
+        });
+      });
+
+      setConsultantPeople([...people.values()].sort((left, right) => left.label.localeCompare(right.label)));
+    };
+
+    void loadConsultantPeople();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadConsultantWeekEvents = async () => {
+      const { data, error } = await (supabase as any)
+        .from("case_dates")
+        .select("id,date_type,event_label,date_value,event_time,case_files!inner(id,parties,case_type,case_subtype,consultant,status)")
+        .gte("date_value", consultantWeekStartLabel)
+        .lte("date_value", consultantWeekEndLabel)
+        .order("date_value", { ascending: true });
+
+      if (!isMounted || error) return;
+
+      const rows = (Array.isArray(data) ? data : [])
+        .map((row: any) => {
+          const caseFile = Array.isArray(row?.case_files) ? row.case_files[0] : row?.case_files;
+          const consultant = String(caseFile?.consultant || "").trim();
+          return {
+            id: String(row?.id || ""),
+            dateValue: String(row?.date_value || "").trim(),
+            timeLabel: formatDashboardEventTime(row?.event_time),
+            consultant,
+            normalizedConsultant: normalizeDashboardPersonName(consultant),
+            matterEvent: getDashboardEventLabel(row?.date_type, row?.event_label),
+            category: getMatterHeaderTitle(caseFile?.case_type, caseFile?.case_subtype),
+            parties: String(caseFile?.parties || "").trim() || "--",
+            status: String(caseFile?.status || "").trim().toLowerCase(),
+          };
+        })
+        .filter((row: any) => row.id && row.dateValue && row.normalizedConsultant && row.status === "active")
+        .map(({ status, ...row }: any) => row);
+
+      setConsultantWeekEvents(rows);
+    };
+
+    void loadConsultantWeekEvents();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [consultantWeekEndLabel, consultantWeekStartLabel]);
 
   useEffect(() => {
     let isMounted = true;
@@ -727,13 +952,13 @@ export default function Dashboard() {
 
             <section className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-2">
               <div className="min-h-0 px-4 pt-5 pb-5">
-                <div className="space-y-5">
+                <div className="flex flex-col gap-5">
                   <div
                     className="grid gap-4"
                     style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(340px, 0.9fr)" }}
                   >
                     <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col">
-                      <CardHeader className="border-b border-slate-200 px-5 py-3">
+                      <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex items-start gap-3 pl-[10px]">
                             <div
@@ -742,7 +967,7 @@ export default function Dashboard() {
                                 width: "36px",
                                 height: "36px",
                                 borderRadius: "8px",
-                                backgroundColor: "#24384e",
+                                backgroundColor: "rgba(255,255,255,0.12)",
                                 color: "#ffffff",
                                 display: "flex",
                                 alignItems: "center",
@@ -752,10 +977,10 @@ export default function Dashboard() {
                               <Calendar size={16} strokeWidth={2.1} />
                             </div>
                             <div>
-                              <CardTitle className="text-[14px] font-semibold leading-none text-slate-900">
+                              <CardTitle className="text-[14px] font-semibold leading-none text-white">
                                 Upcoming Events
                               </CardTitle>
-                              <p className="mt-1.5 text-[11px] text-slate-500">
+                              <p className="mt-1.5 text-[11px] text-white/70">
                                 Matters and events coming up in the next 30 days.
                               </p>
                             </div>
@@ -763,7 +988,7 @@ export default function Dashboard() {
 
                           <button
                             type="button"
-                            className="inline-flex h-8 min-w-[116px] shrink-0 items-center justify-between gap-1.5 rounded-[8px] border border-slate-200 bg-white px-4 text-[10.5px] font-medium text-slate-600 transition-colors hover:border-[#3eca44] hover:text-[#3eca44]"
+                            className="inline-flex h-8 min-w-[116px] shrink-0 items-center justify-between gap-1.5 rounded-[8px] border border-white/20 bg-white/10 px-4 text-[10.5px] font-medium text-white transition-colors hover:border-[#3eca44] hover:text-[#3eca44]"
                           >
                             <span>Next 30 days</span>
                             <ChevronDown className="h-3.5 w-3.5" />
@@ -852,7 +1077,7 @@ export default function Dashboard() {
                     </Card>
 
                     <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col">
-                      <CardHeader className="border-b border-slate-200 px-5 py-3">
+                      <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div
@@ -861,7 +1086,7 @@ export default function Dashboard() {
                                 width: "36px",
                                 height: "36px",
                                 borderRadius: "8px",
-                                backgroundColor: "#24384e",
+                                backgroundColor: "rgba(255,255,255,0.12)",
                                 color: "#ffffff",
                                 display: "flex",
                                 alignItems: "center",
@@ -870,11 +1095,17 @@ export default function Dashboard() {
                             >
                               <CalendarCheck2 size={16} strokeWidth={2.1} />
                             </div>
-                            <CardTitle className="text-[14px] font-semibold leading-none text-slate-900">
+                            <CardTitle className="text-[14px] font-semibold leading-none text-white">
                               Diary / Tasks
                             </CardTitle>
                           </div>
-                          <CardLink label="View all" onClick={() => navigate("/clients")} />
+                          <button
+                            type="button"
+                            onClick={() => navigate("/clients")}
+                            className="text-[12px] font-semibold text-white/85 transition-colors hover:text-[#3eca44]"
+                          >
+                            View all
+                          </button>
                         </div>
                       </CardHeader>
 
@@ -949,6 +1180,195 @@ export default function Dashboard() {
                       </CardContent>
                     </Card>
                   </div>
+
+                  <Card className="order-first min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none">
+                    <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/10 text-white shadow-sm"
+                          >
+                            <Users size={16} strokeWidth={2.1} />
+                          </div>
+                          <div>
+                            <CardTitle className="text-[14px] font-semibold leading-none text-white">
+                              Weekly Matters
+                            </CardTitle>
+                            <p className="mt-1.5 text-[11px] text-white/70">
+                              Monday to Friday matters scheduled for consultants.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-white/20 bg-white/10 px-2.5 text-[10.5px] font-semibold text-white hover:border-[#3eca44] hover:bg-[#3eca44] hover:text-white"
+                            onClick={() => setConsultantWeekStart((current) => addDashboardDays(current, -7))}
+                          >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                            Previous
+                          </button>
+                          <div className="min-w-[138px] rounded-[4px] border border-white/20 bg-white/10 px-2.5 py-1 text-center text-[10.5px] font-semibold text-white">
+                            {formatDashboardShortDate(consultantWeekStartLabel)} - {formatDashboardShortDate(consultantWeekEndLabel)}
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-white/20 bg-white/10 px-2.5 text-[10.5px] font-semibold text-white hover:border-[#3eca44] hover:bg-[#3eca44] hover:text-white"
+                            onClick={() => setConsultantWeekStart((current) => addDashboardDays(current, 7))}
+                          >
+                            Next
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[860px] table-fixed">
+                          <colgroup>
+                            <col className="w-[210px]" />
+                            <col />
+                            <col />
+                            <col />
+                            <col />
+                            <col />
+                          </colgroup>
+                          <thead>
+                            <tr className={cn("border-b text-left", hoveredConsultantRowIndex === 0 ? "!border-b-[#3eca44]" : "border-slate-200")}>
+                              <th
+                                className={cn(
+                                  "px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.02em] text-slate-500",
+                                  hoveredConsultantRowIndex === 0 && "shadow-[inset_0_-1px_0_#3eca44]",
+                                )}
+                              >
+                                Consultant
+                              </th>
+                              {consultantWeekDays.map((day) => {
+                                const dateValue = formatDashboardDateValue(day);
+                                const isHovered = hoveredConsultantWeekDate === dateValue;
+                                const isToday = todayDateLabel === dateValue;
+                                const isHighlighted = isHovered || isToday;
+                                return (
+                                  <th
+                                    key={dateValue}
+                                    className={cn(
+                                      "relative px-4 py-3 pl-5 text-left",
+                                      isToday && "bg-[#3eca44]",
+                                      isHovered && "bg-slate-100",
+                                      hoveredConsultantRowIndex === 0 && "shadow-[inset_0_-1px_0_#3eca44]",
+                                    )}
+                                    onMouseEnter={() => setHoveredConsultantWeekDate(dateValue)}
+                                    onMouseLeave={() => setHoveredConsultantWeekDate(null)}
+                                  >
+                                  <span
+                                    className={cn(
+                                      "absolute left-0 top-1/2 h-4 -translate-y-1/2 border-l",
+                                      isHighlighted ? "border-transparent" : "border-slate-200",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                  <div className="flex items-baseline gap-2 text-[11px]">
+                                    <span className={cn("font-semibold uppercase tracking-[0.02em]", isToday ? "text-white" : isHovered ? "text-slate-700" : "text-slate-500")}>
+                                      {day.toLocaleDateString("en-GB", { weekday: "short" })}
+                                    </span>
+                                    <span className={cn("font-medium", isToday ? "text-white" : isHovered ? "text-slate-600" : "text-slate-400")}>
+                                      {formatDashboardShortDate(dateValue)}
+                                    </span>
+                                  </div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {consultantPeople.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="px-5 py-4 text-center text-[12px] text-slate-500">
+                                  No consultants found.
+                                </td>
+                              </tr>
+                            ) : (
+                              consultantPeople.map((person, personIndex) => (
+                                <tr
+                                  key={`${person.type}:${person.id}`}
+                                  className="group hover:bg-[#3eca44]/5"
+                                  onMouseEnter={() => setHoveredConsultantRowIndex(personIndex)}
+                                  onMouseLeave={() => setHoveredConsultantRowIndex(null)}
+                                >
+                                  <td
+                                    className={cn(
+                                      "border-b border-l border-t border-b-slate-100 border-l-transparent border-t-transparent px-5 py-2 align-middle group-hover:border-b-[#3eca44] group-hover:border-l-[#3eca44]",
+                                      personIndex === 0 ? "group-hover:border-t-transparent group-hover:shadow-none" : "group-hover:border-t-[#3eca44] group-hover:shadow-[inset_0_1px_0_#3eca44]",
+                                    )}
+                                  >
+                                    <div className="font-semibold text-[11px] text-slate-800 group-hover:text-[12px]">{person.label}</div>
+                                  </td>
+                                  {consultantWeekDays.map((day, dayIndex) => {
+                                    const dateValue = formatDashboardDateValue(day);
+                                    const eventGroups = consultantEventsByPersonAndDate.get(`${person.normalizedLabel}::${dateValue}`) ?? [];
+                                    return (
+                                      <td
+                                        key={dateValue}
+                                        className={cn(
+                                          "border-b border-l border-t border-b-slate-100 border-l-slate-100 border-t-transparent px-4 py-2 align-middle group-hover:border-b-[#3eca44]",
+                                          personIndex === 0 ? "group-hover:border-t-transparent group-hover:shadow-none" : "group-hover:border-t-[#3eca44] group-hover:shadow-[inset_0_1px_0_#3eca44]",
+                                          dayIndex === consultantWeekDays.length - 1 && "border-r border-r-transparent group-hover:border-r-[#3eca44]",
+                                        )}
+                                        onMouseEnter={() => setHoveredConsultantWeekDate(dateValue)}
+                                        onMouseLeave={() => setHoveredConsultantWeekDate(null)}
+                                      >
+                                        {eventGroups.length > 0 ? (
+                                          <div className="space-y-1.5 py-0.5">
+                                            {eventGroups.map((group) => {
+                                              const palette = getDashboardCalendarEventPalette(group.category);
+                                              return (
+                                                <Tooltip key={group.category}>
+                                                  <TooltipTrigger asChild>
+                                                    <div
+                                                      className={cn(
+                                                        "flex cursor-default items-center justify-between gap-2 rounded border px-2 py-0.5 text-[11px] leading-snug",
+                                                        palette.card,
+                                                        palette.border,
+                                                        palette.text,
+                                                      )}
+                                                    >
+                                                      <span className="truncate">{group.category}</span>
+                                                      {group.events.length > 1 ? (
+                                                        <span className="shrink-0 rounded-full bg-white/70 px-1.5 text-[9px] font-semibold leading-4 text-slate-600 ring-1 ring-inset ring-slate-200">
+                                                          {group.events.length}
+                                                        </span>
+                                                      ) : null}
+                                                    </div>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-[360px] rounded border border-[#3eca44]/35 text-[10px] shadow-none">
+                                                    <div className="space-y-1">
+                                                      {group.events.map((event) => (
+                                                        <div key={event.id} className="whitespace-normal break-words">
+                                                          <span className="font-semibold">{event.timeLabel}:</span> {event.parties}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              );
+                                            })}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[11px] text-slate-400">None</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
                     {statCards.map((card, index) => {

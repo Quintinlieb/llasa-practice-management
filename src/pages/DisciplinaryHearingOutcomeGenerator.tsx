@@ -984,7 +984,17 @@ const DisciplinaryHearingOutcomeGenerator = ({
       statementGroups.slice(0, presentEmployeeCount).every((group) => hasEditablePreviewText(group))
     );
   })();
+  const signingPlaceValue = previewForm.signingPlace.trim();
+  const signingDayValue = previewForm.signingDay.trim();
+  const signingDayOrdinalSuffix = getOrdinalSuffix(signingDayValue);
+  const signingMonthValue = previewForm.signingMonth.trim();
+  const signingYearValue = String(new Date().getFullYear());
+  const isPreviewEditorOpen = isPreviewEditable && (Boolean(editingParagraphId) || isAddRecommendationOpen);
+  const hasCompleteSigningLine = Boolean(signingPlaceValue && signingDayValue && signingMonthValue);
   const isPreviewDownloadReady =
+    !isPreviewEditable &&
+    !isPreviewEditorOpen &&
+    hasCompleteSigningLine &&
     hasCompleteEmployeeStatements &&
     hasEditablePreviewText(previewForm.employerStatement) &&
     hasEditablePreviewText(previewForm.employerEvidence) &&
@@ -1699,6 +1709,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
     inlineReferenceLabel: `the ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
     hearingDetails: isSingleEmployeeFlow ? hearingDetailsForm : (employeeHearingDetailsForms[index] || createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil)),
   }));
+  const getChargeRightsPhrase = (chargeCount: number) => `${chargeCount > 1 ? "charges" : "charge"} and rights`;
+  const hasMultipleMisconductTypes = (rows = employeeHearingSummaryRows) =>
+    rows.some((row) => row.hearingDetails.misconductTypes.length > 1);
   const presentEmployeeStatementRows = employeeHearingSummaryRows.filter((row) => row.hearingDetails.employeeAttendance === "Present");
   const employeeStatementOverrideGroups = parseEmployeeStatementOverrides(previewForm.employeeStatementsByEmployee);
   const employeeStatementGroups = isSingleEmployeeFlow
@@ -1788,7 +1801,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     previewForm.preliminaryThree.trim() ||
     (() => {
       if (employeeHearingSummaryRows.length <= 1) {
-        return `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}.`;
+        return `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hearingDetailsForm.misconductTypes.length)}.`;
       }
 
       const noticeDateGroups = employeeHearingSummaryRows.reduce<Array<{ noticeDate: string; names: string[] }>>((groups, row, rowIndex) => {
@@ -1803,14 +1816,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
       }, []);
 
       if (noticeDateGroups.length === 1) {
-        return `The employees received the notice to attend on ${formatDateLabel(noticeDateGroups[0].noticeDate) || "______________________________"}.`;
+        return `The employees received the notice to attend on ${formatDateLabel(noticeDateGroups[0].noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hasMultipleMisconductTypes() ? 2 : 1)}.`;
       }
 
       return `${joinSentenceParts(
         noticeDateGroups.map((group) => {
           const groupedNames = joinSentenceParts(group.names);
           const verb = group.names.length > 1 ? "received" : "received";
-          return `${groupedNames} ${verb} the notice to attend on ${formatDateLabel(group.noticeDate) || "______________________________"}`;
+          const rowsInGroup = employeeHearingSummaryRows.filter((row) => row.hearingDetails.noticeDate === group.noticeDate);
+          const hasMultipleCharges = hasMultipleMisconductTypes(rowsInGroup);
+          return `${groupedNames} ${verb} the notice to attend on ${formatDateLabel(group.noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hasMultipleCharges ? 2 : 1)}`;
         }),
       )}.`;
     })();
@@ -1904,21 +1919,25 @@ const DisciplinaryHearingOutcomeGenerator = ({
         process: row.hearingDetails.hearingProcess,
       }));
       const continuedRows = activeRows.filter((row) => row.process === "Continued");
+      const presentContinuedRows = continuedRows.filter((row) => row.hearingDetails.employeeAttendance === "Present");
       const proceededInAbsenceRows = activeRows.filter((row) => row.process === "Continued in absence");
       const postponedRows = activeRows.filter((row) => row.process === "Postponed");
       const withdrawnRows = activeRows.filter((row) => row.process === "Withdrawn");
 
       const sentences: string[] = [];
+      if (presentContinuedRows.length > 0) {
+        const subject = presentContinuedRows.length > 1 ? "employees" : "employee";
+        const chargePhrase = hasMultipleMisconductTypes(presentContinuedRows) ? "charges and rights" : "charge and rights";
+        sentences.push(`The ${subject} understood the ${chargePhrase} as they were stipulated in the notice of hearing.`);
+      }
       if (proceededInAbsenceRows.length > 0) {
         sentences.push(
-          `There were no objections to the continuation of the hearing, and the hearing proceeded in the absence of ${joinEmployeeReferences(
+          `There were no objections to proceeding with the disciplinary hearing, and the hearing proceeded in the absence of ${joinEmployeeReferences(
             proceededInAbsenceRows.map((row) => row.inlineReferenceLabel),
           )}.`,
         );
-      } else if (continuedRows.length > 0) {
-        sentences.push("There were no objections to the continuation of the hearing, and the hearing proceeded.");
-      } else {
-        sentences.push("There were no objections to the continuation of the hearing.");
+      } else if (continuedRows.length > 0 || activeRows.length === 0) {
+        sentences.push("There were no objections to proceeding with the disciplinary hearing.");
       }
 
       if (postponedRows.length > 0) {
@@ -2037,17 +2056,11 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ? `If the employer chooses to dismiss any of the employees, they must be notified that they may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`
       : `If the employer chooses to dismiss the employee, he/she must be notified that he/she may refer a dispute to ${disputeForumText} within 30 (THIRTY) days of dismissal or alternatively, apply for an appeal to the outcome within ${appealNoticeDaysLabel} (${appealNoticeDaysWord}) days of dismissal.`;
   const recourseParagraphNumber = `${recourseHeadingNumber}.`;
-  const signingPlaceValue = previewForm.signingPlace.trim();
-  const signingDayValue = previewForm.signingDay.trim();
-  const signingDayOrdinalSuffix = getOrdinalSuffix(signingDayValue);
-  const signingMonthValue = previewForm.signingMonth.trim();
-  const signingYearValue = String(new Date().getFullYear());
-
   async function handleDownloadPdf() {
     if (!isPreviewDownloadReady) {
       toast({
         title: "Complete preview",
-        description: "Please complete all required preview paragraphs before downloading.",
+        description: "Please complete all required preview paragraphs, fill in the Done and Signed fields, and turn off preview edit mode before downloading.",
         variant: "destructive",
       });
       return;
@@ -2345,7 +2358,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     const chairpersonSignatureWidth = 33;
     const chairpersonSignatureHeight = 31;
-    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 36 : 42);
+    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 40 : 46);
     writeSigningStatement();
     cursorY += 18;
     if (chairpersonSignatureDataUrl) {
@@ -2367,6 +2380,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.text("CHAIRPERSON", marginX, cursorY);
+    cursorY += 4.2;
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(7.5);
+    pdf.text("(Signed electronically)", marginX, cursorY);
 
     addPageNumbers();
 
@@ -2451,7 +2468,6 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const isPartiesStep = !isFinished && activeStep === 0;
   const isHearingDetailsStep = !isFinished && activeStep === 1;
   const isPreviewStep = isFinished;
-  const isPreviewEditorOpen = isPreviewEditable && (Boolean(editingParagraphId) || isAddRecommendationOpen);
   const previewWrapperClassName = "rounded-sm bg-white px-8 pt-6 pb-10 text-black shadow-[0_0_0_1px_rgba(148,163,184,0.16)]";
   const previewNumberClassName = "pt-[1px] text-[13px] leading-7 text-black";
   const previewBodyClassName = "text-[13px] leading-7 text-black";
@@ -2459,6 +2475,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const previewEditableParagraphClassName =
     "rounded-sm transition-colors hover:bg-slate-100/70";
   const placeholderRowClassName = "rounded-sm bg-red-50";
+  const signingFieldClassName = (isComplete: boolean) => (isComplete ? "bg-transparent" : "bg-red-50");
   const isEditablePlaceholder = (value: string) => value.trim() === editablePlaceholderText;
   const getPreliminarySectionSourceLines = () => [
     preliminaryOneValue,
@@ -3913,7 +3930,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                         }))
                       }
                       placeholder="place"
-                      className="h-7 w-[170px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0"
+                      className={cn(
+                        "h-7 w-[170px] rounded-none border-0 border-b border-black px-1 py-0 text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0",
+                        signingFieldClassName(Boolean(signingPlaceValue)),
+                      )}
                     />
                     <span>on this</span>
                     <Input
@@ -3926,7 +3946,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       }
                       inputMode="numeric"
                       placeholder="day"
-                      className="h-7 w-[46px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-center text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0"
+                      className={cn(
+                        "h-7 w-[46px] rounded-none border-0 border-b border-black px-1 py-0 text-center text-[13px] font-bold text-black shadow-none placeholder:text-[12px] placeholder:font-normal placeholder:text-slate-400 focus-visible:border-black focus-visible:ring-0 focus-visible:ring-offset-0",
+                        signingFieldClassName(Boolean(signingDayValue)),
+                      )}
                     />
                     <span>day of</span>
                     <Select
@@ -3938,7 +3961,12 @@ const DisciplinaryHearingOutcomeGenerator = ({
                         }))
                       }
                     >
-                      <SelectTrigger className="h-7 w-[128px] rounded-none border-0 border-b border-black bg-transparent px-1 py-0 text-[13px] font-bold text-black shadow-none focus:ring-0 focus:ring-offset-0 [&>span]:line-clamp-1">
+                      <SelectTrigger
+                        className={cn(
+                          "h-7 w-[128px] rounded-none border-0 border-b border-black px-1 py-0 text-[13px] text-black shadow-none focus:ring-0 focus:ring-offset-0 data-[placeholder]:font-normal data-[placeholder]:text-[12px] data-[placeholder]:text-slate-400 [&:not([data-placeholder])>span]:font-bold [&>span]:line-clamp-1",
+                          signingFieldClassName(Boolean(signingMonthValue)),
+                        )}
+                      >
                         <SelectValue placeholder="month" />
                       </SelectTrigger>
                       <SelectContent className="text-[12px]">
@@ -3962,6 +3990,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                     <div className="w-[132px] border-t border-black" />
                   </div>
                   <p className="mt-2 text-[13px] font-bold uppercase leading-7 text-black">Chairperson</p>
+                  <p className="text-[10px] italic leading-4 text-black">(Signed electronically)</p>
                 </div>
               </div>
             </div>

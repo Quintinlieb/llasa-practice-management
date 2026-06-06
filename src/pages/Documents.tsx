@@ -937,6 +937,7 @@ const Documents = () => {
   const usesChevronTracker = modalDocument ? chevronTrackerDocumentSet.has(modalDocument) : false;
   const isCodeOfConductModal = modalDocument === "codeOfConduct";
   const isLightWizardModal = modalDocument ? lightWizardDocumentSet.has(modalDocument) : false;
+  const isDisciplinaryOutcomeModal = modalDocument === "disciplinaryHearingOutcome";
   const modalSteps =
     stepMeta?.steps && stepMeta.steps.length > 0
       ? stepMeta.steps
@@ -1885,6 +1886,9 @@ const Documents = () => {
         }}
       >
       <DialogContent
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
         className={cn(
           "p-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 [&>button]:hidden",
           isDarkStepperModal
@@ -1958,7 +1962,7 @@ const Documents = () => {
                           const isComplete = index < modalActiveStep;
                           const isClickable = canSelectTrackerStep(index);
                           const segmentClassName = cn(
-                            "relative flex h-9 w-[182px] shrink-0 items-center px-3 text-[10px] font-semibold text-white transition-colors",
+                            "relative flex h-9 w-[196px] shrink-0 items-center px-3 text-[10px] font-semibold text-white transition-colors",
                             isComplete
                               ? "bg-[#31b236]"
                               : isActive
@@ -2065,7 +2069,16 @@ const Documents = () => {
                 </div>
                 <div className="h-[calc(100%-56px)] p-4">
                   <div className="mx-auto flex h-full max-w-[900px] min-h-0 flex-col">
-                    <section className="min-h-0 flex-1 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-3 pb-4">
+                    <section
+                      className={cn(
+                        "min-h-0 flex-1 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-3 pb-4",
+                        isDisciplinaryOutcomeModal && stepMeta?.isFinished && stepMeta?.isPreviewEditable
+                          ? "!border-yellow-400"
+                          : isDisciplinaryOutcomeModal && stepMeta?.isFinished && stepMeta?.canGoNext
+                            ? "!border-[#3eca44]"
+                            : "",
+                      )}
+                    >
                     <Suspense
                       fallback={
                         <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">
@@ -2275,6 +2288,11 @@ const Documents = () => {
                     <section
                       className={cn(
                         "relative min-h-0 overflow-hidden rounded-sm border border-slate-300 bg-white px-5 pt-2 pb-4",
+                        isDisciplinaryOutcomeModal && stepMeta?.isFinished && stepMeta?.isPreviewEditable
+                          ? "!border-yellow-400"
+                          : isDisciplinaryOutcomeModal && stepMeta?.isFinished && stepMeta?.canGoNext
+                            ? "!border-[#3eca44]"
+                            : "",
                         modalDocument === "discWarningGenerator"
                           ? stepMeta?.isFinished
                             ? "flex-1"

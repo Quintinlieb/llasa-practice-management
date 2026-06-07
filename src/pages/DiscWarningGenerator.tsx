@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BriefcaseIcon, EnvelopeIcon, MapPinIcon, PhoneIcon as HeroPhoneIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
@@ -189,6 +189,7 @@ const normalizeWarningFormState = (value: unknown): WarningFormState => {
   return {
     ...emptyWarningFormState,
     ...candidate,
+    misconductDescription: normalizeMisconductDescriptionText(String(candidate.misconductDescription || "")),
     misconductTypes: Array.isArray(candidate.misconductTypes)
       ? candidate.misconductTypes.filter((item): item is string => typeof item === "string")
       : [],
@@ -219,7 +220,7 @@ const stepShellCopy = [
 ] as const;
 
 const inputClassName =
-  "h-8 rounded-sm border-slate-300 bg-white !text-[10px] md:!text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] md:placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+  "h-8 rounded-sm border-slate-300 bg-white !text-[12px] md:!text-[12px] font-medium text-slate-900 shadow-none placeholder:!text-[12px] md:placeholder:!text-[12px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 
 const companyTypeSuffixByValue: Record<string, string> = {
   "Private Company ((Pty) Ltd)": "(Pty) Ltd",
@@ -278,6 +279,11 @@ const formatWarningOffences = (offences: string[], fallback: string) => {
   return normalizedOffences.map((offence, index) => `${index + 1}) ${offence}`).join(", ");
 };
 
+const normalizeMisconductDescriptionText = (value: string) =>
+  String(value || "")
+    .replace(/\s*\r?\n\s*/g, " ")
+    .replace(/[ \t]{2,}/g, " ");
+
 const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientId: client.id,
   clientName: formatClientDisplayName(client),
@@ -307,6 +313,7 @@ const offenceGroupLabel: Record<OffenceCategory, string> = {
 const fallbackConductOffences: ConductOffence[] = [
   { name: "Unauthorised Absenteeism", category: "Minor", firstOutcome: "" },
   { name: "Arriving Late For Work", category: "Minor", firstOutcome: "" },
+  { name: "Poor Time Keeping", category: "Minor", firstOutcome: "" },
   { name: "Leaving Work Early", category: "Minor", firstOutcome: "" },
   { name: "Failure To Report Absence", category: "Minor", firstOutcome: "" },
   { name: "Failure To Report Late Arrival", category: "Minor", firstOutcome: "" },
@@ -320,6 +327,7 @@ const fallbackConductOffences: ConductOffence[] = [
   { name: "Breach Of Rules Or Regulations", category: "Minor", firstOutcome: "" },
   { name: "Failure To Carry Out Instructions", category: "Minor", firstOutcome: "" },
   { name: "Negligence", category: "Serious", firstOutcome: "" },
+  { name: "Dereliction of Duties", category: "Serious", firstOutcome: "" },
   { name: "Unauthorised Absenteeism > 5 Days", category: "Serious", firstOutcome: "" },
   { name: "Refusal To Work Overtime", category: "Serious", firstOutcome: "" },
   { name: "Consistent Poor Time Keeping", category: "Serious", firstOutcome: "" },
@@ -750,6 +758,18 @@ const DiscWarningGeneratorContent = ({
   const isEmployeeStep = activeStep === 1 && !isFinished;
   const isWarningStep = activeStep === 2 && !isFinished;
   const isPreviewStep = isFinished;
+  const misconductDescriptionRef = useRef<HTMLTextAreaElement | null>(null);
+  const resizeMisconductDescription = useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.max(textarea.scrollHeight, 56)}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isWarningStep) return;
+    resizeMisconductDescription(misconductDescriptionRef.current);
+  }, [isWarningStep, resizeMisconductDescription, warningForm.misconductDescription]);
+
   const misconductSelectionLabel =
     warningForm.misconductTypes.length === 0
       ? "Select misconduct type(s)"
@@ -763,6 +783,8 @@ const DiscWarningGeneratorContent = ({
   const previewLine = "______________________________";
   const footerLogoDimensions = getDiscWarningFooterLogoDimensions(clientForm.companyLogoOrientation);
   const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
+  const employeeIdOrPassportNumber = employeeForm.employeeIdOrPassportNumber.trim();
+  const misconductDescription = normalizeMisconductDescriptionText(warningForm.misconductDescription).trim();
   const employerRows = [
     { label: "Company Name:", value: clientForm.clientName || previewLine },
     { label: "Registration No:", value: clientForm.registrationNumber || previewLine },
@@ -772,7 +794,7 @@ const DiscWarningGeneratorContent = ({
   ];
   const employeeRows = [
     { label: "Employee Name:", value: employeeFullName || previewLine },
-    { label: "ID Number:", value: employeeForm.employeeIdOrPassportNumber || previewLine },
+    ...(employeeIdOrPassportNumber ? [{ label: "ID Number:", value: employeeIdOrPassportNumber }] : []),
     ...(employeeForm.jobTitle.trim() ? [{ label: "Job Title:", value: employeeForm.jobTitle.trim() }] : []),
     ...(employeeForm.department.trim() ? [{ label: "Department:", value: employeeForm.department.trim() }] : []),
     ...(employeeForm.employeeNumber.trim()
@@ -784,7 +806,7 @@ const DiscWarningGeneratorContent = ({
       label: "Offence(s):",
       value: formatWarningOffences(warningForm.misconductTypes, previewLine),
     },
-    { label: "Description:", value: warningForm.misconductDescription || previewLine },
+    { label: "Description:", value: misconductDescription || previewLine },
     {
       label: "Validity Period:",
       value: warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : previewLine,
@@ -828,7 +850,7 @@ const DiscWarningGeneratorContent = ({
             <>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningClientName" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningClientName" className="text-[12px] font-semibold text-slate-600">
                     Client Name <span className="text-red-500">*</span>
                   </Label>
                   <Popover open={clientSearchOpen} onOpenChange={handleClientSearchOpenChange}>
@@ -841,8 +863,8 @@ const DiscWarningGeneratorContent = ({
                         aria-expanded={clientSearchOpen}
                         className={cn(
                           inputClassName,
-                          "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                          !clientForm.clientName && "text-[10px]",
+                          "w-full justify-between px-3 text-[13px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                          !clientForm.clientName && "text-[12px]",
                           !clientForm.clientName && "text-slate-400",
                         )}
                       >
@@ -860,7 +882,7 @@ const DiscWarningGeneratorContent = ({
                           value={clientSearchValue}
                           onValueChange={setClientSearchValue}
                           placeholder="Search registered or trading name..."
-                          className="h-8 text-[11px] placeholder:text-[10px]"
+                          className="h-8 text-[13px] placeholder:text-[12px]"
                         />
                         <CommandList className="max-h-[320px] overscroll-contain">
                           {filteredClientRows.length === 0 ? (
@@ -879,9 +901,9 @@ const DiscWarningGeneratorContent = ({
                                     setClientSearchValue("");
                                     setClientSearchOpen(false);
                                   }}
-                                  className="flex items-center justify-between gap-3 px-3 py-2 text-[10px]"
+                                  className="flex items-center justify-between gap-3 px-3 py-2 text-[12px]"
                                 >
-                                  <p className="min-w-0 truncate text-[10px] font-medium text-slate-900">{label}</p>
+                                  <p className="min-w-0 truncate text-[12px] font-medium text-slate-900">{label}</p>
                                   {clientForm.clientId === client.id ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
                                 </CommandItem>
                               );
@@ -894,7 +916,7 @@ const DiscWarningGeneratorContent = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningRegistrationNumber" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningRegistrationNumber" className="text-[12px] font-semibold text-slate-600">
                     Registration Number
                   </Label>
                   <Input
@@ -907,7 +929,7 @@ const DiscWarningGeneratorContent = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningClientContactNumber" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningClientContactNumber" className="text-[12px] font-semibold text-slate-600">
                     Contact Number
                   </Label>
                   <Input
@@ -920,7 +942,7 @@ const DiscWarningGeneratorContent = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningClientEmail" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningClientEmail" className="text-[12px] font-semibold text-slate-600">
                     Client Email
                   </Label>
                   <Input
@@ -934,7 +956,7 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningClientAddress" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningClientAddress" className="text-[12px] font-semibold text-slate-600">
                   Client Address
                 </Label>
                 <Input
@@ -948,7 +970,7 @@ const DiscWarningGeneratorContent = ({
 
               {showClientLogoField ? (
                 <div className="max-w-[320px] space-y-2">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[12px] font-semibold text-slate-600">
                     Client Logo
                   </Label>
                   <div className="flex min-h-[132px] items-center justify-center rounded-sm border border-slate-300 bg-white px-4 py-5">
@@ -966,7 +988,7 @@ const DiscWarningGeneratorContent = ({
                   <button
                     type="button"
                     onClick={onClientLogoRemove}
-                    className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-700 transition hover:border-rose-500 hover:text-rose-600"
+                    className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-2.5 py-1 text-[12px] font-medium text-slate-700 transition hover:border-rose-500 hover:text-rose-600"
                   >
                     <X className="h-3.5 w-3.5" />
                     Remove logo
@@ -977,7 +999,7 @@ const DiscWarningGeneratorContent = ({
           ) : isEmployeeStep ? (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeName" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningEmployeeName" className="text-[12px] font-semibold text-slate-600">
                   Employee Name <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -990,7 +1012,7 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeSurname" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningEmployeeSurname" className="text-[12px] font-semibold text-slate-600">
                   Employee Surname <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -1003,8 +1025,8 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeIdOrPassportNumber" className="text-[10px] font-semibold text-slate-600">
-                  Employee ID/Passport Number <span className="text-red-500">*</span>
+                <Label htmlFor="discWarningEmployeeIdOrPassportNumber" className="text-[12px] font-semibold text-slate-600">
+                  Employee ID/Passport Number
                 </Label>
                 <Input
                   id="discWarningEmployeeIdOrPassportNumber"
@@ -1017,7 +1039,7 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeJobTitle" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningEmployeeJobTitle" className="text-[12px] font-semibold text-slate-600">
                   Job Title
                 </Label>
                 <Input
@@ -1030,7 +1052,7 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeDepartment" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningEmployeeDepartment" className="text-[12px] font-semibold text-slate-600">
                   Department
                 </Label>
                 <Input
@@ -1043,7 +1065,7 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningEmployeeNumber" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningEmployeeNumber" className="text-[12px] font-semibold text-slate-600">
                   Employee Number
                 </Label>
                 <Input
@@ -1058,7 +1080,7 @@ const DiscWarningGeneratorContent = ({
           ) : isWarningStep ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="discWarningMisconductTypes" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningMisconductTypes" className="text-[12px] font-semibold text-slate-600">
                   Misconduct Type(s) <span className="text-red-500">*</span>
                 </Label>
                 <Popover open={misconductSearchOpen} onOpenChange={setMisconductSearchOpen}>
@@ -1071,8 +1093,8 @@ const DiscWarningGeneratorContent = ({
                       aria-expanded={misconductSearchOpen}
                       className={cn(
                         inputClassName,
-                        "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                        warningForm.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                        "w-full justify-between px-3 text-[13px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                        warningForm.misconductTypes.length === 0 && "text-[12px] text-slate-400",
                       )}
                     >
                       <span className="truncate text-left">{misconductSelectionLabel}</span>
@@ -1087,7 +1109,7 @@ const DiscWarningGeneratorContent = ({
                     <Command shouldFilter>
                       <CommandInput
                         placeholder="Search misconduct types..."
-                        className="h-8 text-[11px] placeholder:text-[10px]"
+                        className="h-8 text-[13px] placeholder:text-[12px]"
                       />
                       <CommandList className="max-h-[248px] overscroll-contain">
                         <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
@@ -1098,7 +1120,7 @@ const DiscWarningGeneratorContent = ({
                             <CommandGroup
                               key={category}
                               heading={offenceGroupLabel[category]}
-                              className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
+                              className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[12px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
                             >
                               {offences.map((offence) => {
                                 const isSelected = warningForm.misconductTypes.includes(offence.name);
@@ -1108,13 +1130,13 @@ const DiscWarningGeneratorContent = ({
                                     value={`${offenceGroupLabel[category]} ${offence.name}`}
                                     onSelect={() => onMisconductToggle(offence.name)}
                                     className={cn(
-                                      "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                      "flex items-center justify-between gap-3 px-3 py-2 text-[12px]",
                                       isSelected ? "text-[#2f9f35]" : "text-slate-600",
                                     )}
                                   >
                                     <p
                                       className={cn(
-                                        "min-w-0 truncate text-[10px] font-medium",
+                                        "min-w-0 truncate text-[12px] font-medium",
                                         isSelected ? "text-[#2f9f35]" : "text-slate-600",
                                       )}
                                     >
@@ -1135,7 +1157,7 @@ const DiscWarningGeneratorContent = ({
                           {warningForm.misconductTypes.map((type) => (
                             <div
                               key={type}
-                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                              className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[12px] font-medium text-[#2f9f35]"
                             >
                               <span className="truncate">{type}</span>
                               <button
@@ -1150,7 +1172,7 @@ const DiscWarningGeneratorContent = ({
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
+                        <p className="text-[12px] text-slate-500">No misconduct types selected.</p>
                       )}
                     </div>
                   </PopoverContent>
@@ -1160,7 +1182,7 @@ const DiscWarningGeneratorContent = ({
                     {warningForm.misconductTypes.map((type) => (
                       <div
                         key={type}
-                        className="group inline-flex items-center rounded-sm border border-[#3eca44] bg-[#3eca44]/10 px-2 py-1 text-[10px] font-medium text-[#2f9f35] transition-all"
+                        className="group inline-flex items-center rounded-sm border border-[#3eca44] bg-[#3eca44]/10 px-2 py-1 text-[12px] font-medium text-[#2f9f35] transition-all"
                       >
                         <span>{type}</span>
                         <span className="inline-flex w-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:ml-1 group-hover:w-3.5 group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-3.5 group-focus-within:opacity-100">
@@ -1180,27 +1202,26 @@ const DiscWarningGeneratorContent = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="discWarningMisconductDescription" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="discWarningMisconductDescription" className="text-[12px] font-semibold text-slate-600">
                   Misconduct Description <span className="text-red-500">*</span>
                 </Label>
                 <Textarea
                   id="discWarningMisconductDescription"
-                  value={warningForm.misconductDescription}
-                  onChange={(event) => onWarningFormChange("misconductDescription", event.target.value)}
-                  onInput={(event) => {
-                    const textarea = event.currentTarget;
-                    textarea.style.height = "auto";
-                    textarea.style.height = `${textarea.scrollHeight}px`;
-                  }}
+                  ref={misconductDescriptionRef}
+                  value={normalizeMisconductDescriptionText(warningForm.misconductDescription)}
+                  onChange={(event) =>
+                    onWarningFormChange("misconductDescription", normalizeMisconductDescriptionText(event.target.value))
+                  }
+                  onInput={(event) => resizeMisconductDescription(event.currentTarget)}
                   placeholder="Provide specific details about the misconduct incident(s)"
                   rows={2}
-                  className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
+                  className={`${inputClassName} min-h-[56px] overflow-y-hidden resize-none py-2`}
                 />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningWarningType" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningWarningType" className="text-[12px] font-semibold text-slate-600">
                     Warning Type <span className="text-red-500">*</span>
                   </Label>
                   <Select
@@ -1211,22 +1232,22 @@ const DiscWarningGeneratorContent = ({
                       id="discWarningWarningType"
                       className={cn(
                         inputClassName,
-                        "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                        "!h-8 !border-slate-300 !text-[12px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[12px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
                       )}
                     >
                       <SelectValue placeholder="Select warning type" />
                     </SelectTrigger>
-                    <SelectContent className="text-[10px]">
-                      <SelectItem value="first" className="text-[10px]">First Written Warning</SelectItem>
-                      <SelectItem value="second" className="text-[10px]">Second Written Warning</SelectItem>
-                      <SelectItem value="serious" className="text-[10px]">Serious Written Warning</SelectItem>
-                      <SelectItem value="final" className="text-[10px]">Final Written Warning</SelectItem>
+                    <SelectContent className="text-[12px]">
+                      <SelectItem value="first" className="text-[12px]">First Written Warning</SelectItem>
+                      <SelectItem value="second" className="text-[12px]">Second Written Warning</SelectItem>
+                      <SelectItem value="serious" className="text-[12px]">Serious Written Warning</SelectItem>
+                      <SelectItem value="final" className="text-[12px]">Final Written Warning</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningValidityPeriod" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningValidityPeriod" className="text-[12px] font-semibold text-slate-600">
                     Validity Period <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1239,7 +1260,7 @@ const DiscWarningGeneratorContent = ({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="discWarningIssuedBy" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="discWarningIssuedBy" className="text-[12px] font-semibold text-slate-600">
                     Issued By
                   </Label>
                   <Input
@@ -1309,12 +1330,19 @@ const DiscWarningGeneratorContent = ({
                     </p>
                   </div>
                   <div className="mt-3 space-y-1">
-                    {(hasClientLogo ? logoWarningRows : warningRows).map((row) => (
-                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                        <p className="font-bold text-black">{row.label}</p>
-                        <p className="whitespace-pre-wrap text-black">{row.value}</p>
-                      </div>
-                    ))}
+                    {(hasClientLogo ? logoWarningRows : warningRows).map((row) =>
+                      row.label === "Description:" ? (
+                        <div key={row.label} className="text-[11px] leading-5">
+                          <p className="font-bold text-black">{row.label}</p>
+                          <p className="whitespace-normal break-words text-black">{row.value}</p>
+                        </div>
+                      ) : (
+                        <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                          <p className="font-bold text-black">{row.label}</p>
+                          <p className="whitespace-pre-wrap text-black">{row.value}</p>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </section>
 
@@ -1736,24 +1764,26 @@ const DiscWarningGenerator = ({
       ["Employer Email:", clientForm.clientEmail || lineFallback],
       ["Employer Address:", clientForm.clientAddress || lineFallback],
     ] as const;
+    const resolvedEmployeeIdOrPassportNumber = employeeForm.employeeIdOrPassportNumber.trim();
     const resolvedEmployeeRows = [
       ["Employee Name:", resolvedEmployeeName],
-      ["ID Number:", employeeForm.employeeIdOrPassportNumber || lineFallback],
+      ...(resolvedEmployeeIdOrPassportNumber ? ([["ID Number:", resolvedEmployeeIdOrPassportNumber]] as const) : []),
       ...(employeeForm.jobTitle.trim() ? ([["Job Title:", employeeForm.jobTitle.trim()]] as const) : []),
       ...(employeeForm.department.trim() ? ([["Department:", employeeForm.department.trim()]] as const) : []),
       ...(employeeForm.employeeNumber.trim()
         ? ([["Employee Number:", employeeForm.employeeNumber.trim()]] as const)
         : []),
     ] as const;
+    const resolvedMisconductDescription = normalizeMisconductDescriptionText(warningForm.misconductDescription).trim();
     const resolvedWarningRows = [
       ["Offence(s):", formatWarningOffences(warningForm.misconductTypes, lineFallback)],
-      ["Description:", warningForm.misconductDescription || lineFallback],
+      ["Description:", resolvedMisconductDescription || lineFallback],
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
       ["Issued By:", warningForm.issuedBy || lineFallback],
     ] as const;
     const resolvedLogoWarningRows = [
       ["Offence(s):", formatWarningOffences(warningForm.misconductTypes, lineFallback)],
-      ["Description:", warningForm.misconductDescription || lineFallback],
+      ["Description:", resolvedMisconductDescription || lineFallback],
       ["Warning Type:", warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : lineFallback],
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
       ["Issued By:", warningForm.issuedBy || lineFallback],
@@ -1808,11 +1838,9 @@ const DiscWarningGenerator = ({
           y += extraTop;
         }
         const useFullWidthValue = Boolean(options?.fullWidthValueByLabel?.[label]);
-        const fullWidthValueX = margin + labelWidth;
-        const fullWidthValueWidth = contentWidth - labelWidth;
-        const valueLines = doc.splitTextToSize(value, useFullWidthValue ? fullWidthValueWidth : valueWidth);
+        const valueLines = doc.splitTextToSize(value, useFullWidthValue ? contentWidth : valueWidth);
         const rowHeight = useFullWidthValue
-          ? Math.max(4.2, valueLines.length * lineHeight)
+          ? Math.max(4.2, (valueLines.length + 1) * lineHeight)
           : Math.max(4.2, valueLines.length * lineHeight);
         ensureSpace(rowHeight);
         doc.setFont("helvetica", "bold");
@@ -1821,17 +1849,17 @@ const DiscWarningGenerator = ({
         doc.setFont("helvetica", "normal");
         if (useFullWidthValue) {
           valueLines.forEach((line, index) => {
-            const lineY = y + index * lineHeight;
+            const lineY = y + (index + 1) * lineHeight;
             const isLastLine = index === valueLines.length - 1;
             const words = String(line).trim().split(/\s+/).filter(Boolean);
             if (isLastLine || words.length <= 1) {
-              doc.text(String(line), fullWidthValueX, lineY);
+              doc.text(String(line), margin, lineY);
               return;
             }
             const lineWidth = doc.getTextWidth(String(line));
-            const extraSpace = fullWidthValueWidth - lineWidth;
+            const extraSpace = contentWidth - lineWidth;
             const gapCount = words.length - 1;
-            let x = fullWidthValueX;
+            let x = margin;
             words.forEach((word, wordIndex) => {
               doc.text(word, x, lineY);
               x += doc.getTextWidth(word);
@@ -2166,8 +2194,7 @@ const DiscWarningGenerator = ({
 
   const isEmployeeStepComplete =
     employeeForm.employeeName.trim().length > 0 &&
-    employeeForm.employeeSurname.trim().length > 0 &&
-    employeeForm.employeeIdOrPassportNumber.trim().length > 0;
+    employeeForm.employeeSurname.trim().length > 0;
   const isWarningStepComplete =
     warningForm.misconductTypes.length > 0 &&
     warningForm.misconductDescription.trim().length > 0 &&

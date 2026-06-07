@@ -227,7 +227,7 @@ const SUBTYPE_NONE = "None";
 const REFERRAL_SUBTYPE = "Referral";
 const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[number], readonly string[]>> = {
   Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance", "Abscondment"],
-  Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
+  Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Employment Equity", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
   CCMA: [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
   "Bargaining Council": [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
 };
@@ -1021,6 +1021,7 @@ const getMatterHeaderTitle = (caseFile: CaseFile | null) => {
     const subtype = String(caseFile.subtype || "").trim();
     const hasSubtype = subtype && subtype !== "--" && subtype !== "None";
     if (caseFile.caseType === "Consultation") {
+      if (subtype === "Employment Equity") return "Equity Meeting";
       return hasSubtype ? `${subtype} Consultation` : "Consultation";
     }
     if (caseFile.caseType === "CCMA") {
@@ -1183,9 +1184,20 @@ const Matters = () => {
     textarea.style.height = `${Math.max(34, textarea.scrollHeight)}px`;
   }, []);
 
+  const resizeOpeningNoteTextarea = useCallback(() => {
+    const textarea = openingNoteTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "44px";
+    textarea.style.height = `${Math.max(44, textarea.scrollHeight)}px`;
+  }, []);
+
   useEffect(() => {
     resizeNewCaseShortDescriptionTextarea();
   }, [newCaseForm.shortDescription, resizeNewCaseShortDescriptionTextarea]);
+
+  useEffect(() => {
+    resizeOpeningNoteTextarea();
+  }, [newCaseForm.openingNote, resizeOpeningNoteTextarea]);
 
   const caseTypes = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.caseType))), [caseFiles]);
   const consultants = useMemo(() => Array.from(new Set(caseFiles.map((item) => item.consultant).filter(Boolean))), [caseFiles]);
@@ -2762,6 +2774,8 @@ const Matters = () => {
     "min-h-[76px] rounded border border-slate-200 bg-white !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
   const newMatterShortDescriptionTextareaClass =
     "h-[34px] min-h-[34px] resize-none overflow-hidden rounded border border-slate-200 bg-white px-3 py-[7px] !text-[12.33px] md:!text-[12.33px] font-medium text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
+  const newMatterOpeningNoteTextareaClass =
+    "h-[44px] min-h-[44px] resize-none overflow-hidden rounded border border-slate-200 bg-white px-3 py-3 !text-[12.33px] md:!text-[12.33px] font-medium leading-5 text-slate-900 shadow-none placeholder:!text-[11.33px] placeholder:!text-slate-400 hover:border-blue-400 !focus-visible:border-[1px] !focus-visible:border-blue-600 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:bg-white disabled:text-slate-900 disabled:border-slate-200 disabled:opacity-100 disabled:cursor-default !border-[0.5px] !border-slate-300 hover:!border-slate-500 focus:!border-black focus-visible:!border-black";
   const newMatterSelectItemClass =
     "text-[12.33px] text-slate-700 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:bg-[#3eca44]/10 data-[highlighted]:text-[#2f9f35] [&_svg]:!text-[#2f9f35]";
   const newMatterTimeSelectClass =
@@ -3790,10 +3804,14 @@ const Matters = () => {
                         </span>
                         <Textarea
                           ref={openingNoteTextareaRef}
-                          rows={1}
-                          className={newMatterShortDescriptionTextareaClass}
+                          rows={2}
+                          className={newMatterOpeningNoteTextareaClass}
                           value={newCaseForm.openingNote}
-                          onChange={(e) => setNewCaseForm((p) => ({ ...p, openingNote: e.target.value }))}
+                          onChange={(e) => handleOpeningNoteContentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
+                          onInput={resizeOpeningNoteTextarea}
+                          onClick={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                          onKeyUp={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
+                          onSelect={(e) => syncOpeningNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
                         />
                       </div>
                     </div>

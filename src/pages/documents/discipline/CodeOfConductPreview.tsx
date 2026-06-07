@@ -73,6 +73,15 @@ const defaultOffences: Record<FixedCategoryId, OffenceRow[]> = {
     },
     {
       category: "Minor",
+      name: "Poor Time Keeping",
+      first: "First Written Warning",
+      second: "Second Written Warning",
+      third: "Final Written Warning",
+      fourth: "Dismissal",
+      isDefault: true,
+    },
+    {
+      category: "Minor",
       name: "Leaving work early",
       first: "First Written Warning",
       second: "Second Written Warning",
@@ -184,6 +193,13 @@ const defaultOffences: Record<FixedCategoryId, OffenceRow[]> = {
     {
       category: "Serious",
       name: "Negligence",
+      first: "Final Written Warning",
+      second: "Dismissal",
+      isDefault: true,
+    },
+    {
+      category: "Serious",
+      name: "Dereliction of Duties",
       first: "Final Written Warning",
       second: "Dismissal",
       isDefault: true,

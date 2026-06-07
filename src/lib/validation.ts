@@ -938,8 +938,9 @@ export const warningGeneratorSchema = z.object({
     .transform(sanitizeText),
   employeeIdNumber: z
     .string()
-    .min(5, "ID number is required")
-    .transform(sanitizeText),
+    .optional()
+    .or(z.literal(""))
+    .transform((val) => (val ? sanitizeText(val) : "")),
   warningType: z
     .enum(["first", "second", "serious", "final"], {
       errorMap: () => ({ message: "Please select a warning type" }),

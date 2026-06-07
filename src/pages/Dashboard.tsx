@@ -200,6 +200,11 @@ const dashboardCcmaPalette = {
   border: "border-blue-200",
   text: "text-blue-700",
 };
+const dashboardEquityMeetingPalette = {
+  card: "bg-emerald-50",
+  border: "border-emerald-200",
+  text: "text-emerald-700",
+};
 const dashboardFallbackPalette = {
   card: "bg-slate-100",
   border: "border-slate-200",
@@ -303,6 +308,7 @@ function getMatterHeaderTitle(caseType: unknown, subtype: unknown) {
 
   if (safeCaseType !== "Hearing") {
     if (safeCaseType === "Consultation") {
+      if (safeSubtype === "Employment Equity") return "Equity Meeting";
       return hasSubtype ? `${safeSubtype} Consultation` : "Consultation";
     }
     if (safeCaseType === "CCMA") {
@@ -330,6 +336,7 @@ function getDashboardEventLabel(dateType: unknown, eventLabel: unknown) {
 }
 function getDashboardCalendarEventPalette(category: string) {
   const normalizedCategory = category.toLowerCase();
+  if (normalizedCategory === "equity meeting") return dashboardEquityMeetingPalette;
   if (normalizedCategory.includes("ccma") || normalizedCategory.includes("bargaining council")) return dashboardCcmaPalette;
   if (normalizedCategory.includes("hearing")) return dashboardHearingPalette;
   if (normalizedCategory.includes("consultation")) return dashboardMatterPalette;

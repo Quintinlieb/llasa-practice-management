@@ -346,6 +346,7 @@ const getMatterHeaderTitle = (caseType: unknown, subtype: unknown) => {
 
   if (safeCaseType !== "Hearing") {
     if (safeCaseType === "Consultation") {
+      if (safeSubtype === "Employment Equity") return "Equity Meeting";
       return hasSubtype ? `${safeSubtype} Consultation` : "Consultation";
     }
     if (safeCaseType === "CCMA") {

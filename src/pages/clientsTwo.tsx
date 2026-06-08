@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { BuildingOffice2Icon, BuildingOfficeIcon, DocumentMagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { BuildingOffice2Icon, BuildingOfficeIcon, DocumentMagnifyingGlassIcon, FolderOpenIcon } from "@heroicons/react/24/outline";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import { PageDateStamp } from "@/components/DashboardLayout";
@@ -378,6 +378,19 @@ const buildClientTaskRelatedMatterLabel = (matter: Pick<ClientMatter, "fileNumbe
   const fileNumber = String(matter.fileNumber || "").trim() || "MATTER";
   const matterTitle = formatClientMatterType(matter);
   return matterTitle ? `${fileNumber} - ${matterTitle}` : fileNumber;
+};
+const getClientMatterTypePillClassName = (caseType: string) => {
+  const normalized = String(caseType || "").trim().toLowerCase();
+  if (normalized.includes("hearing")) {
+    return "border-orange-200 bg-orange-100 text-orange-700 hover:bg-orange-100 hover:text-orange-700";
+  }
+  if (normalized.includes("ccma") || normalized.includes("bargaining council")) {
+    return "border-blue-200 bg-blue-100 text-blue-700 hover:bg-blue-100 hover:text-blue-700";
+  }
+  if (normalized.includes("consultation")) {
+    return "border-purple-200 bg-purple-100 text-purple-700 hover:bg-purple-100 hover:text-purple-700";
+  }
+  return "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
 };
 const resolveCurrentCompanyIdForMentions = async (user: any) => {
   if (!user?.id) return "";
@@ -2131,7 +2144,7 @@ const ClientsTwo = () => {
   );
   const resetFileNoteForm = useCallback(() => {
     setFileNoteForm({
-      noteDate: dateToday(),
+      noteDate: "",
       noteType: "",
       noteContent: "",
       noteUserName: resolveCurrentUserName(),
@@ -6111,7 +6124,7 @@ const ClientsTwo = () => {
                           </Button>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[110px_130px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
+                          <div className="grid grid-cols-[90px_130px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>Date</div>
                             <div className="text-center">Type</div>
                             <div>Description</div>
@@ -6127,7 +6140,7 @@ const ClientsTwo = () => {
                               <div className="px-3 py-3 text-slate-500">No file notes found.</div>
                             ) : (
                               paginatedClientFileNotes.map((note) => (
-                                <div key={note.id} className="grid grid-cols-[110px_130px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
+                                <div key={note.id} className="grid grid-cols-[90px_130px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
                                   {(() => {
                                     const { content } = splitFileNoteContentAndEditTag(String(note.note_content || ""));
                                     return (
@@ -6250,39 +6263,54 @@ const ClientsTwo = () => {
                           )}
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
-                            <div>File No</div>
+                          <div className="grid grid-cols-[90px_0.8fr_1.3fr_2.4fr_1fr_72px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
+                            <div>Date</div>
+                            <div>Reference</div>
+                            <div className="text-center">Type</div>
                             <div>Parties</div>
-                            <div>Type</div>
                             <div className="text-center">Stage</div>
-                            <div className="text-center">Next Date</div>
+                            <div className="text-center">View</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientMattersLoading ? (
-                              <div className="px-2 py-3 text-slate-500">Loading matters...</div>
+                              <div className="px-3 py-3 text-slate-500">Loading matters...</div>
                             ) : filteredClientMatters.length === 0 ? (
-                              <div className="px-2 py-3 text-slate-500">No matters found for this client.</div>
+                              <div className="px-3 py-3 text-slate-500">No matters found for this client.</div>
                             ) : (
                               paginatedClientMatters.map((matter) => (
                                 <div
                                   key={matter.id}
-                                  className="grid grid-cols-[1fr_2.4fr_1.3fr_1fr_1fr] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
+                                  className="grid grid-cols-[90px_0.8fr_1.3fr_2.4fr_1fr_72px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                                 >
+                                  <div className="min-w-0 text-slate-700">{matter.nextDate ? formatDisplayDate(matter.nextDate) : "--"}</div>
                                   <button
                                     type="button"
                                     onClick={() => handleOpenClientMatter(matter)}
-                                    className="min-w-0 truncate text-left font-medium text-slate-900 hover:text-[#2f9f35] hover:underline"
+                                    className="min-w-0 truncate text-left text-slate-900 hover:text-[#2f9f35] hover:underline"
                                   >
                                     {matter.fileNumber || "--"}
                                   </button>
+                                  <div className="flex min-w-0 items-center justify-center truncate">
+                                    <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientMatterTypePillClassName(matter.caseType)}`}>
+                                      {formatClientMatterType(matter) || "--"}
+                                    </Badge>
+                                  </div>
                                   <div className="min-w-0 truncate text-slate-700">{matter.parties || "--"}</div>
-                                  <div className="min-w-0 truncate text-slate-700">{formatClientMatterType(matter) || "--"}</div>
-                                  <div className="min-w-0 flex items-center justify-center truncate">
+                                  <div className="flex min-w-0 items-center justify-center truncate">
                                     <Badge className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientMatterStagePillClassName(matter.currentStage)}`}>
                                       {normalizeClientMatterStageValue(matter.currentStage) || matter.currentStage || "--"}
                                     </Badge>
                                   </div>
-                                  <div className="min-w-0 text-center text-slate-700">{matter.nextDate ? formatDisplayDate(matter.nextDate) : "--"}</div>
+                                  <div className="flex min-w-0 items-center justify-center">
+                                    <button
+                                      type="button"
+                                      className="text-slate-500 hover:text-[#2f9f35]"
+                                      onClick={() => handleOpenClientMatter(matter)}
+                                      aria-label="View matter"
+                                    >
+                                      <FolderOpenIcon className="h-5 w-5 stroke-[1.5]" />
+                                    </button>
+                                  </div>
                                 </div>
                               ))
                             )}
@@ -6344,7 +6372,7 @@ const ClientsTwo = () => {
                           </Button>
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[110px_64px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
+                          <div className="grid grid-cols-[90px_64px_150px_1fr_140px_84px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
                             <div>Date</div>
                             <div>Time</div>
                             <div className="text-center">Type</div>
@@ -6359,7 +6387,7 @@ const ClientsTwo = () => {
                               <div className="px-3 py-3 text-slate-500">No diary tasks created for this client yet.</div>
                             ) : (
                               paginatedClientTasks.map((task) => (
-                                <div key={task.id} className="grid grid-cols-[110px_64px_150px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
+                                <div key={task.id} className="grid grid-cols-[90px_64px_150px_1fr_140px_84px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2">
                                   <div className="min-w-0 text-slate-700">{formatDisplayDate(task.diaryDate) || "--"}</div>
                                   <div className="min-w-0 text-slate-700">{formatTaskTime(task.taskTime)}</div>
                                   <div className="flex min-w-0 items-center justify-center truncate">
@@ -6475,37 +6503,25 @@ const ClientsTwo = () => {
                           )}
                         </div>
                         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-slate-200">
-                          <div className="grid grid-cols-[3.4fr_0.9fr_0.9fr_1fr_72px] items-center gap-2 border-b border-slate-200 bg-[#2D4256] px-2 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
-                            <div>Description</div>
+                          <div className="grid grid-cols-[90px_130px_1fr_140px_72px] items-center gap-3 border-b border-slate-200 bg-[#2D4256] px-3 py-2 text-[10px] font-semibold text-white [&>*+*]:border-l [&>*+*]:border-white/20 [&>*+*]:pl-2">
+                            <div>Date</div>
                             <div className="text-center">Type</div>
-                            <div className="text-center">Drafted On</div>
+                            <div>Description</div>
                             <div className="text-center">Drafted By</div>
                             <div className="text-center">View</div>
                           </div>
                           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto text-[11px] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                             {isClientGeneratedDocumentsLoading ? (
-                              <div className="px-2 py-3 text-slate-500">Loading documents...</div>
+                              <div className="px-3 py-3 text-slate-500">Loading documents...</div>
                             ) : filteredClientGeneratedDocuments.length === 0 ? (
-                              <div className="px-2 py-3 text-slate-500">No generated documents found for this client.</div>
+                              <div className="px-3 py-3 text-slate-500">No generated documents found for this client.</div>
                             ) : (
                               paginatedClientGeneratedDocuments.map((document) => (
                                 <div
                                   key={document.id}
-                                  className="grid grid-cols-[3.4fr_0.9fr_0.9fr_1fr_72px] items-center gap-2 px-2 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
+                                  className="grid grid-cols-[90px_130px_1fr_140px_72px] items-start gap-3 px-3 py-2 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                                 >
-                                  <div className="min-w-0 truncate font-medium text-slate-900">
-                                    {document.documentName || "--"}
-                                  </div>
-                                  <div className="flex min-w-0 items-center justify-center">
-                                    {document.documentType ? (
-                                      <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientDocumentTypePillClassName(document.documentType)}`}>
-                                        {document.documentType}
-                                      </Badge>
-                                    ) : (
-                                      <span className="text-slate-700">--</span>
-                                    )}
-                                  </div>
-                                  <div className="min-w-0 text-center text-slate-700">
+                                  <div className="min-w-0 text-slate-700">
                                     {document.createdAt ? (
                                       <Tooltip disableHoverableContent>
                                         <TooltipTrigger asChild>
@@ -6520,6 +6536,18 @@ const ClientsTwo = () => {
                                     ) : (
                                       "--"
                                     )}
+                                  </div>
+                                  <div className="flex min-w-0 items-center justify-center">
+                                    {document.documentType ? (
+                                      <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getClientDocumentTypePillClassName(document.documentType)}`}>
+                                        {document.documentType}
+                                      </Badge>
+                                    ) : (
+                                      <span className="text-slate-700">--</span>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 truncate font-medium text-slate-900">
+                                    {document.documentName || "--"}
                                   </div>
                                   <div className="min-w-0 flex items-center justify-center truncate">
                                     <Badge className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-700 shadow-none hover:bg-slate-100 hover:text-slate-700">
@@ -6850,7 +6878,7 @@ const ClientsTwo = () => {
           if (!open) resetFileNoteForm();
         }}
       >
-        <DialogContent className="w-[94vw] max-w-[420px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
+        <DialogContent className="w-[94vw] max-w-[640px] p-0 gap-0 overflow-hidden border-0 rounded-sm sm:rounded-sm bg-[#2D4256] [&>button]:hidden">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <DialogTitle className="text-sm font-semibold text-white">{editingFileNoteId ? "Edit File Note" : "Add File Note"}</DialogTitle>
             <DialogClose asChild>
@@ -6861,14 +6889,14 @@ const ClientsTwo = () => {
           </div>
           <div className="space-y-4 bg-white p-4 pt-6">
             <div className="relative space-y-1.5">
-              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Type</span>
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[11.33px] font-semibold text-slate-400">Type</span>
               <Select value={fileNoteForm.noteType || undefined} onValueChange={(value) => setFileNoteForm((prev) => ({ ...prev, noteType: value }))}>
-                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 text-[11px]`}>
+                <SelectTrigger className={`${addModalFieldSelectTriggerClass} ${addModalDropdownToneClass} h-8 !items-end pb-1 pt-2 !text-[12.33px] md:!text-[12.33px] [&>span]:!text-[12.33px] data-[placeholder]:[&>span]:!text-[12.33px]`}>
                   <SelectValue placeholder="Please select a type..." />
                 </SelectTrigger>
-                <SelectContent className="text-[11px]">
+                <SelectContent className="text-[12.33px]">
                   {CLIENT_FILE_NOTE_TYPES.map((option) => (
-                    <SelectItem key={option} value={option} className={addModalSelectItemClass}>
+                    <SelectItem key={option} value={option} className={`${addModalSelectItemClass} !text-[12.33px]`}>
                       {option}
                     </SelectItem>
                   ))}
@@ -6876,7 +6904,7 @@ const ClientsTwo = () => {
               </Select>
             </div>
             <div className="relative space-y-1">
-              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></span>
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[11.33px] font-semibold text-slate-400">Date <span className="text-red-600">*</span></span>
               <Input
                 id="fileNoteDate"
                 type="text"
@@ -6891,7 +6919,7 @@ const ClientsTwo = () => {
                     openDatePicker(fileNoteDateInputRef.current);
                   }
                 }}
-                className={addModalFieldInputClass}
+                className={`${addModalFieldInputClass} pb-1 pt-2 !text-[12.33px] md:!text-[12.33px] placeholder:!text-[12.33px] md:placeholder:!text-[12.33px]`}
               />
               <input
                 ref={fileNoteDateInputRef}
@@ -6904,16 +6932,16 @@ const ClientsTwo = () => {
               />
             </div>
             <div className="relative space-y-1">
-              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[10px] font-semibold text-slate-400">Note Content</span>
+              <span className="pointer-events-none absolute -top-1.5 left-3 z-10 bg-white px-1 text-[11.33px] font-semibold text-slate-400">Note Content</span>
               <div className="relative">
                 <div
-                  className="pointer-events-none min-h-[96px] whitespace-pre-wrap break-words rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-medium leading-5 text-slate-900"
+                  className="pointer-events-none min-h-[96px] whitespace-pre-wrap break-words rounded border border-slate-300 bg-white px-3 pb-2 pt-3 text-[12.33px] font-medium leading-5 text-slate-900"
                   aria-hidden="true"
                   dangerouslySetInnerHTML={{ __html: fileNoteForm.noteContent ? renderTextWithMentions(fileNoteForm.noteContent) : '<span class="text-slate-400">Type your note. Use @ to tag a user.</span>' }}
                 />
                 <textarea
                   ref={fileNoteTextareaRef}
-                  className="absolute inset-0 min-h-[96px] w-full resize-none rounded border border-slate-300 bg-transparent px-3 py-2 text-[11px] font-medium leading-5 text-transparent caret-black shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
+                  className="absolute inset-0 min-h-[96px] w-full resize-none rounded border border-slate-300 bg-transparent px-3 pb-2 pt-3 text-[12.33px] font-medium leading-5 text-transparent caret-black shadow-none outline-none transition-colors hover:border-slate-500 focus:border-black"
                   value={fileNoteForm.noteContent}
                   onChange={(e) => handleFileNoteContentChange(e.target.value, e.target.selectionStart ?? e.target.value.length)}
                   onClick={(e) => syncFileNoteMentionRange(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}

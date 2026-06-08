@@ -131,7 +131,7 @@ const getDocumentTypePillClassName = (type: string) => {
     return "border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-50 hover:text-orange-600";
   }
   if (normalized.includes("notice")) {
-    return "border-red-600 bg-red-50 text-red-700 hover:bg-red-50 hover:text-red-700";
+    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
   }
   if (normalized.includes("termination") || normalized.includes("retrenchment") || normalized.includes("abscondment")) {
     return "border-rose-600 bg-rose-50 text-rose-700 hover:bg-rose-50 hover:text-rose-700";
@@ -140,7 +140,7 @@ const getDocumentTypePillClassName = (type: string) => {
     return "border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-50 hover:text-blue-700";
   }
   if (normalized.includes("contract") || normalized.includes("addendum")) {
-    return "border-violet-600 bg-violet-50 text-violet-700 hover:bg-violet-50 hover:text-violet-700";
+    return "border-slate-600 bg-slate-100 text-slate-800 hover:bg-slate-100 hover:text-slate-800";
   }
   if (normalized.includes("other") || normalized.includes("service") || normalized.includes("certificate") || normalized.includes("debt")) {
     return "border-slate-500 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
@@ -273,7 +273,7 @@ const splitCreatedOnParts = (value: string) => {
   };
 };
 
-const documentsTableGridClassName = "grid-cols-[0.39fr_2.35fr_2.05fr_0.82fr_0.9fr_0.65fr_0.5fr]";
+const documentsTableGridClassName = "grid-cols-[0.39fr_0.72fr_2.35fr_2.05fr_0.82fr_1fr_0.36fr]";
 
 const loadCachedDocumentRows = (): DocumentTableRow[] => {
   try {
@@ -1740,10 +1740,10 @@ const Documents = () => {
                             className="h-3 w-3 rounded-[2px] border-white/80 bg-white text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                           />
                         </div>
+                        <div>Date</div>
                         <div>Document Name</div>
                         <div>Client Name</div>
                         <div className="text-center">Type</div>
-                        <div className="text-center">Created On</div>
                         <div className="text-center">Created By</div>
                         <div className="text-center">View</div>
                       </div>
@@ -1765,24 +1765,6 @@ const Documents = () => {
                                 />
                               </div>
                               <div>
-                                <span className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
-                                  {row.documentName}
-                                </span>
-                              </div>
-                              <div className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">{formatDocumentClientName(row.clientName)}</div>
-                              <div className="flex justify-center">
-                                {row.documentType ? (
-                                  <span
-                                    className={cn(
-                                      "inline-flex max-w-full items-center rounded-full border px-2 py-0 text-[10px] font-medium leading-4 shadow-none",
-                                      getDocumentTypePillClassName(row.documentType),
-                                    )}
-                                  >
-                                    <span className="truncate">{row.documentType}</span>
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="flex justify-center">
                                 {splitCreatedOnParts(row.createdOn).date ? (
                                   <Tooltip disableHoverableContent>
                                     <TooltipTrigger asChild>
@@ -1800,20 +1782,28 @@ const Documents = () => {
                                   "--"
                                 )}
                               </div>
+                              <div>
+                                <span className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
+                                  {row.documentName}
+                                </span>
+                              </div>
+                              <div className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">{formatDocumentClientName(row.clientName)}</div>
+                              <div className="flex justify-center">
+                                {row.documentType ? (
+                                  <span
+                                    className={cn(
+                                      "inline-flex max-w-full items-center rounded-full border px-2 py-0 text-[10px] font-medium leading-4 shadow-none",
+                                      getDocumentTypePillClassName(row.documentType),
+                                    )}
+                                  >
+                                    <span className="truncate">{row.documentType}</span>
+                                  </span>
+                                ) : null}
+                              </div>
                               <div className="flex min-w-0 items-center justify-center">
-                                <Tooltip disableHoverableContent>
-                                  <TooltipTrigger asChild>
-                                    <span
-                                      className="inline-flex h-5 w-5 cursor-default items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[8px] font-semibold text-slate-700"
-                                      aria-label={row.createdBy || "Unknown user"}
-                                    >
-                                      {getInitials(row.createdBy)}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" sideOffset={6} className="rounded border border-[#3eca44]/35 bg-white px-2 py-1 text-[10.67px] font-semibold text-slate-700 shadow-none">
-                                    {row.createdBy || "Unknown user"}
-                                  </TooltipContent>
-                                </Tooltip>
+                                <span className="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium leading-4 text-slate-700 shadow-none">
+                                  <span className="truncate">{row.createdBy || "Unknown user"}</span>
+                                </span>
                               </div>
                               <div className="flex items-center justify-center">
                                 <button

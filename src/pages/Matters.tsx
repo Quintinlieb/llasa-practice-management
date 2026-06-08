@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
 import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
 import { cn } from "@/lib/utils";
+import { invalidateDashboardWeeklyMattersCache } from "@/lib/dashboardWeeklyMatters";
 import { useLocation, useNavigate } from "react-router-dom";
 
 type CaseNote = {
@@ -2065,6 +2066,7 @@ const Matters = () => {
       await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents, {
         preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
       });
+      invalidateDashboardWeeklyMattersCache();
       await fetchCaseFiles();
       toast({ title: "Success", description: "Matter date deleted." });
     } catch (error: any) {
@@ -2129,6 +2131,7 @@ const Matters = () => {
       await syncCaseFileTimelineSummary(selectedCase.id, selectedCase.status, selectedCase.currentStage, dateEvents, {
         preserveExplicitStage: isReferralSubtype(selectedCase.caseType, selectedCase.subtype),
       });
+      invalidateDashboardWeeklyMattersCache();
       await fetchCaseFiles();
       toast({ title: "Success", description: editingCaseDateEventId ? "Matter date updated." : "Matter date added." });
       setIsCaseDateDialogOpen(false);
@@ -2169,6 +2172,7 @@ const Matters = () => {
       const nextSelectedCase = { ...selectedCase, status: "Inactive" as const, currentStage: "Finalised" };
       setSelectedCase(nextSelectedCase);
       setCaseEditForm((prev) => prev ? { ...prev, status: "Inactive", currentStage: "Finalised" } : createCaseEditForm(nextSelectedCase));
+      invalidateDashboardWeeklyMattersCache();
       await fetchCaseFiles();
       toast({ title: "Success", description: "Case closed successfully." });
     } catch (error: any) {
@@ -2338,6 +2342,7 @@ const Matters = () => {
             }
           : selectedCase.outcome,
       };
+      invalidateDashboardWeeklyMattersCache();
       await fetchCaseFiles();
       setSelectedCase({ ...refreshedCase });
       setCaseEditForm(createCaseEditForm({ ...refreshedCase }));
@@ -2540,6 +2545,7 @@ const Matters = () => {
       return;
     }
     setSelectedCaseIds(new Set());
+    invalidateDashboardWeeklyMattersCache();
     await fetchCaseFiles();
   };
   useEffect(() => {
@@ -2718,6 +2724,7 @@ const Matters = () => {
       setIsNewCaseDialogOpen(false);
       setNewCaseForm(createBlankCaseForm());
       setNewCaseStep(1);
+      invalidateDashboardWeeklyMattersCache();
       await fetchCaseFiles();
       toast({ title: "Success", description: "Case file created successfully." });
     } catch (error: any) {

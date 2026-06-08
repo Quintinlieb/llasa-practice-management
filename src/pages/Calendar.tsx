@@ -79,6 +79,7 @@ type CalendarEntry = {
     badge: string;
     accent: string;
     text: string;
+    monthBorder: string;
     hoverText: string;
   };
 };
@@ -147,6 +148,7 @@ const matterPalette = {
   badge: "bg-sky-100 text-sky-700",
   accent: "bg-sky-500",
   text: "text-sky-700",
+  monthBorder: "border-sky-700",
   hoverText: "hover:text-sky-700",
 };
 
@@ -156,6 +158,7 @@ const hearingPalette = {
   badge: "bg-orange-100 text-orange-700",
   accent: "bg-orange-500",
   text: "text-orange-700",
+  monthBorder: "border-orange-700",
   hoverText: "hover:text-orange-700",
 };
 
@@ -165,6 +168,7 @@ const ccmaPalette = {
   badge: "bg-blue-100 text-blue-700",
   accent: "bg-blue-500",
   text: "text-blue-700",
+  monthBorder: "border-blue-700",
   hoverText: "hover:text-blue-700",
 };
 
@@ -174,6 +178,7 @@ const taskPalette = {
   badge: "bg-emerald-100 text-emerald-700",
   accent: "bg-emerald-500",
   text: "text-emerald-700",
+  monthBorder: "border-emerald-700",
   hoverText: "hover:text-emerald-700",
 };
 
@@ -183,6 +188,7 @@ const fallbackPalette = {
   badge: "bg-slate-200 text-slate-700",
   accent: "bg-slate-500",
   text: "text-slate-700",
+  monthBorder: "border-slate-700",
   hoverText: "hover:text-slate-700",
 };
 
@@ -1483,8 +1489,10 @@ const CalendarPage = () => {
                                 {format(day, "d")}
                               </button>
                             </div>
-                            <div className="space-y-2">
-                              {dayTypeSummary.map((item) => (
+                            <div className="grid grid-cols-4 gap-1">
+                              {dayTypeSummary.map((item, itemIndex) => {
+                                const summaryRowIndex = Math.floor(itemIndex / 4);
+                                return (
                                 <button
                                   key={`${dayKey}-${item.typeLabel}`}
                                   type="button"
@@ -1492,18 +1500,44 @@ const CalendarPage = () => {
                                     setSelectedDate(day);
                                     setView("day");
                                   }}
-                                className={cn(
-                                  "flex w-full items-center justify-between gap-2 rounded-[5px] border px-2 py-[2px] text-left",
-                                  item.palette.card,
-                                  item.palette.border,
-                                )}
-                              >
-                                  <p className="truncate text-[9.5px] font-semibold leading-tight text-slate-800">{item.typeLabel}</p>
-                                  {item.count > 1 ? (
-                                    <span className="shrink-0 text-[9px] font-semibold leading-tight text-slate-500">{item.count}</span>
-                                  ) : null}
+                                  className="group/month-item h-4 w-4 rounded-[3px] text-left hover:z-40 focus-visible:z-40 focus-visible:outline-none"
+                                  aria-label={`${item.typeLabel}${item.count > 1 ? `, ${item.count}` : ""}`}
+                                >
+                                  <span
+                                    className={cn(
+                                      "flex h-4 w-4 items-center justify-center rounded-[3px] border text-[9px] font-semibold leading-none shadow-none transition-colors duration-200",
+                                      item.palette.card,
+                                      item.palette.text,
+                                      item.palette.monthBorder,
+                                    )}
+                                  >
+                                    {item.count > 1 ? (
+                                      item.count
+                                    ) : null}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      "pointer-events-none absolute left-2.5 right-2.5 z-40 flex h-5 origin-center scale-x-0 items-center rounded-[3px] border shadow-sm transition-transform duration-300 ease-out group-hover/month-item:scale-x-100 group-focus-visible/month-item:scale-x-100",
+                                      item.palette.card,
+                                      item.palette.monthBorder,
+                                    )}
+                                    style={{ top: `${46 + summaryRowIndex * 20}px` }}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "hidden w-full items-center justify-between gap-2 px-2 text-[9px] font-semibold leading-none group-hover/month-item:flex group-focus-visible/month-item:flex",
+                                        item.palette.text,
+                                      )}
+                                    >
+                                      <span className="min-w-0 truncate">
+                                        {item.typeLabel}
+                                      </span>
+                                      {item.count > 1 ? <span className="shrink-0">{item.count}</span> : null}
+                                    </span>
+                                  </span>
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
                           </>
                         );

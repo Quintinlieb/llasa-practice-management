@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageDateStamp } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { southAfricanProvinces } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import {
+  getCurrentDashboardWeeklyMattersRange,
+  loadCachedDashboardWeeklyMatters,
+  loadCachedDashboardWeeklySchedulePeople,
+  prefetchDashboardWeeklySchedule,
+  prefetchDashboardWeeklySchedulePeople,
+  type DashboardWeeklyMatterEvent,
+  type DashboardWeeklySchedulePerson,
+} from "@/lib/dashboardWeeklyMatters";
 import {
   Building2,
   Calendar,
@@ -29,6 +39,13 @@ type DashboardEventRow = {
   consultant: string;
 };
 
+type DashboardEventRangeDays = 7 | 30 | 60;
+
+type DashboardEventConsultantOption = {
+  value: string;
+  label: string;
+};
+
 type DashboardTaskRow = {
   id: string;
   dateLabel: string;
@@ -36,23 +53,9 @@ type DashboardTaskRow = {
   assignedTo: string;
 };
 
-type ConsultantEventPerson = {
-  id: string;
-  label: string;
-  normalizedLabel: string;
-  type: "main" | "subuser";
-};
+type ConsultantEventPerson = DashboardWeeklySchedulePerson;
 
-type ConsultantWeekEvent = {
-  id: string;
-  dateValue: string;
-  timeLabel: string;
-  consultant: string;
-  normalizedConsultant: string;
-  matterEvent: string;
-  category: string;
-  parties: string;
-};
+type ConsultantWeekEvent = DashboardWeeklyMatterEvent;
 
 type ConsultantWeekEventGroup = {
   category: string;
@@ -100,7 +103,14 @@ const avatarClassNames = [
   "border-[#f2d9c2] bg-[#fff6ee] text-[#b45309]",
 ] as const;
 
-const dashboardUpcomingEventsCacheKey = "dashboard:upcoming-events";
+const dashboardUpcomingEventsCacheKey = "dashboard:ccma-bargaining-council-events";
+const allDashboardEventConsultantsValue = "__all__";
+const allDashboardEventConsultantsLabel = "All consultants";
+const dashboardEventRangeOptions: Array<{ value: DashboardEventRangeDays; label: string }> = [
+  { value: 7, label: "Next 7 days" },
+  { value: 30, label: "Next 30 days" },
+  { value: 60, label: "Next 60 days" },
+];
 
 type DashboardCaseDatesQuery = {
   from: (table: "case_dates") => {
@@ -241,6 +251,16 @@ function formatDashboardDateValue(date: Date) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+function getDashboardUpcomingEventsRange(days: DashboardEventRangeDays) {
+  const today = new Date();
+  const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + days);
+  return {
+    startLabel: formatDashboardDateValue(startDate),
+    endLabel: formatDashboardDateValue(endDate),
+  };
+}
 function formatDashboardShortDate(value: unknown) {
   const parsed = parseDashboardIsoDate(value);
   if (!parsed) return "--";
@@ -259,12 +279,6 @@ function addDashboardDays(date: Date, amount: number) {
 }
 function normalizeDashboardPersonName(value: unknown) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
-}
-function formatDashboardEventTime(value: unknown) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "--";
-  const match = raw.match(/^(\d{2}):(\d{2})/);
-  return match ? `${match[1]}:${match[2]}` : raw;
 }
 function getDashboardEventTimeSortValue(value: string) {
   const match = String(value || "").match(/^(\d{2}):(\d{2})$/);
@@ -366,21 +380,17 @@ function getInitials(value: string) {
   return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
 }
 
-function loadCachedDashboardUpcomingEvents() {
+function getDashboardUpcomingEventsCacheKey(rangeStart: string, rangeEnd: string, consultantFilter: string) {
+  return `${dashboardUpcomingEventsCacheKey}:${rangeStart}:${rangeEnd}:${consultantFilter || allDashboardEventConsultantsValue}`;
+}
+
+function loadCachedDashboardUpcomingEvents(rangeStart: string, rangeEnd: string, consultantFilter = allDashboardEventConsultantsValue) {
   try {
-    const raw = sessionStorage.getItem(dashboardUpcomingEventsCacheKey);
+    const raw = sessionStorage.getItem(getDashboardUpcomingEventsCacheKey(rangeStart, rangeEnd, consultantFilter));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Partial<CachedDashboardUpcomingEvents> | null;
     if (!parsed || !Array.isArray(parsed.rows)) return [];
-
-    const today = new Date();
-    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 30);
-    const expectedRangeStart = startDate.toISOString().slice(0, 10);
-    const expectedRangeEnd = endDate.toISOString().slice(0, 10);
-
-    if (parsed.rangeStart !== expectedRangeStart || parsed.rangeEnd !== expectedRangeEnd) return [];
+    if (parsed.rangeStart !== rangeStart || parsed.rangeEnd !== rangeEnd) return [];
 
     return parsed.rows.filter(
       (row): row is DashboardEventRow =>
@@ -399,14 +409,14 @@ function loadCachedDashboardUpcomingEvents() {
   }
 }
 
-function saveCachedDashboardUpcomingEvents(rangeStart: string, rangeEnd: string, rows: DashboardEventRow[]) {
+function saveCachedDashboardUpcomingEvents(rangeStart: string, rangeEnd: string, consultantFilter: string, rows: DashboardEventRow[]) {
   try {
     const payload: CachedDashboardUpcomingEvents = {
       rangeStart,
       rangeEnd,
       rows,
     };
-    sessionStorage.setItem(dashboardUpcomingEventsCacheKey, JSON.stringify(payload));
+    sessionStorage.setItem(getDashboardUpcomingEventsCacheKey(rangeStart, rangeEnd, consultantFilter), JSON.stringify(payload));
   } catch {
     // ignore storage errors
   }
@@ -447,13 +457,27 @@ function normalizeProvinceLabel(value: unknown) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [eventRows, setEventRows] = useState<DashboardEventRow[]>(() => loadCachedDashboardUpcomingEvents());
+  const initialWeeklyMattersRange = getCurrentDashboardWeeklyMattersRange();
+  const initialUpcomingEventsRange = getDashboardUpcomingEventsRange(30);
+  const [upcomingEventsRangeDays, setUpcomingEventsRangeDays] = useState<DashboardEventRangeDays>(30);
+  const [upcomingEventsConsultantFilter, setUpcomingEventsConsultantFilter] = useState(allDashboardEventConsultantsValue);
+  const [upcomingEventConsultantOptions, setUpcomingEventConsultantOptions] = useState<DashboardEventConsultantOption[]>([]);
+  const [eventRows, setEventRows] = useState<DashboardEventRow[]>(
+    () => loadCachedDashboardUpcomingEvents(
+      initialUpcomingEventsRange.startLabel,
+      initialUpcomingEventsRange.endLabel,
+      allDashboardEventConsultantsValue,
+    ),
+  );
   const [taskRows, setTaskRows] = useState<DashboardTaskRow[]>([]);
-  const [consultantPeople, setConsultantPeople] = useState<ConsultantEventPerson[]>([]);
-  const [consultantWeekEvents, setConsultantWeekEvents] = useState<ConsultantWeekEvent[]>([]);
+  const [consultantPeople, setConsultantPeople] = useState<ConsultantEventPerson[]>(
+    () => loadCachedDashboardWeeklySchedulePeople() ?? [],
+  );
+  const [consultantWeekEvents, setConsultantWeekEvents] = useState<ConsultantWeekEvent[]>(
+    () => loadCachedDashboardWeeklyMatters(initialWeeklyMattersRange.startLabel, initialWeeklyMattersRange.endLabel) ?? [],
+  );
   const [consultantWeekStart, setConsultantWeekStart] = useState<Date>(() => getDashboardMonday(new Date()));
   const [hoveredConsultantWeekDate, setHoveredConsultantWeekDate] = useState<string | null>(null);
-  const [hoveredConsultantRowIndex, setHoveredConsultantRowIndex] = useState<number | null>(null);
   const [activeClientCount, setActiveClientCount] = useState<number>(0);
   const [activeClientsThisMonthCount, setActiveClientsThisMonthCount] = useState<number>(0);
   const [documentsThisMonthCount, setDocumentsThisMonthCount] = useState<number>(0);
@@ -486,6 +510,9 @@ export default function Dashboard() {
     [consultantWeekStart],
   );
   const todayDateLabel = formatDashboardDateValue(new Date());
+  const upcomingEventsRangeLabel = dashboardEventRangeOptions.find((option) => option.value === upcomingEventsRangeDays)?.label ?? "Next 30 days";
+  const upcomingEventsConsultantLabel =
+    upcomingEventConsultantOptions.find((option) => option.value === upcomingEventsConsultantFilter)?.label ?? allDashboardEventConsultantsLabel;
   const consultantWeekStartLabel = formatDashboardDateValue(consultantWeekDays[0]);
   const consultantWeekEndLabel = formatDashboardDateValue(consultantWeekDays[4]);
   const consultantEventsByPersonAndDate = useMemo(() => {
@@ -510,56 +537,18 @@ export default function Dashboard() {
     let isMounted = true;
 
     const loadConsultantPeople = async () => {
-      const { data: profilesData } = await (supabase as any)
-        .from("profiles")
-        .select("id,user_name,user_surname,user_email")
-        .order("user_name", { ascending: true });
+      const cachedRows = loadCachedDashboardWeeklySchedulePeople();
+      if (cachedRows) {
+        setConsultantPeople(cachedRows);
+        return;
+      }
 
-      const { data: subusersData } = await (supabase as any)
-        .from("subusers")
-        .select("auth_user_id,name,surname,email,status,role")
-        .in("status", ["accepted", "active"])
-        .order("name", { ascending: true });
-
-      if (!isMounted) return;
-
-      const people = new Map<string, ConsultantEventPerson>();
-
-      (Array.isArray(profilesData) ? profilesData : []).forEach((row: any) => {
-        const id = String(row?.id || "").trim();
-        if (!id) return;
-        const label = [row?.user_name, row?.user_surname]
-          .map((value) => String(value || "").trim())
-          .filter(Boolean)
-          .join(" ")
-          .trim() || String(row?.user_email || "").trim() || "User";
-        people.set(`main:${id}`, {
-          id,
-          label,
-          normalizedLabel: normalizeDashboardPersonName(label),
-          type: "main",
-        });
-      });
-
-      (Array.isArray(subusersData) ? subusersData : []).forEach((row: any) => {
-        const role = String(row?.role || "").trim().toLowerCase();
-        if (role && role !== "consultant") return;
-        const id = String(row?.auth_user_id || row?.email || "").trim();
-        if (!id) return;
-        const label = [row?.name, row?.surname]
-          .map((value) => String(value || "").trim())
-          .filter(Boolean)
-          .join(" ")
-          .trim() || String(row?.email || "").trim() || "Subuser";
-        people.set(`subuser:${id}`, {
-          id,
-          label,
-          normalizedLabel: normalizeDashboardPersonName(label),
-          type: "subuser",
-        });
-      });
-
-      setConsultantPeople([...people.values()].sort((left, right) => left.label.localeCompare(right.label)));
+      try {
+        const people = await prefetchDashboardWeeklySchedulePeople();
+        if (isMounted) setConsultantPeople(people);
+      } catch {
+        // Keep cached/empty state if the consultant prefetch fails.
+      }
     };
 
     void loadConsultantPeople();
@@ -573,35 +562,23 @@ export default function Dashboard() {
     let isMounted = true;
 
     const loadConsultantWeekEvents = async () => {
-      const { data, error } = await (supabase as any)
-        .from("case_dates")
-        .select("id,date_type,event_label,date_value,event_time,case_files!inner(id,parties,case_type,case_subtype,consultant,status)")
-        .gte("date_value", consultantWeekStartLabel)
-        .lte("date_value", consultantWeekEndLabel)
-        .order("date_value", { ascending: true });
+      const cachedRows = loadCachedDashboardWeeklyMatters(consultantWeekStartLabel, consultantWeekEndLabel);
+      if (cachedRows) {
+        setConsultantWeekEvents(cachedRows);
+        return;
+      }
 
-      if (!isMounted || error) return;
+      setConsultantWeekEvents([]);
 
-      const rows = (Array.isArray(data) ? data : [])
-        .map((row: any) => {
-          const caseFile = Array.isArray(row?.case_files) ? row.case_files[0] : row?.case_files;
-          const consultant = String(caseFile?.consultant || "").trim();
-          return {
-            id: String(row?.id || ""),
-            dateValue: String(row?.date_value || "").trim(),
-            timeLabel: formatDashboardEventTime(row?.event_time),
-            consultant,
-            normalizedConsultant: normalizeDashboardPersonName(consultant),
-            matterEvent: getDashboardEventLabel(row?.date_type, row?.event_label),
-            category: getMatterHeaderTitle(caseFile?.case_type, caseFile?.case_subtype),
-            parties: String(caseFile?.parties || "").trim() || "--",
-            status: String(caseFile?.status || "").trim().toLowerCase(),
-          };
-        })
-        .filter((row: any) => row.id && row.dateValue && row.normalizedConsultant && row.status === "active")
-        .map(({ status, ...row }: any) => row);
-
-      setConsultantWeekEvents(rows);
+      try {
+        const { matters } = await prefetchDashboardWeeklySchedule({
+          startLabel: consultantWeekStartLabel,
+          endLabel: consultantWeekEndLabel,
+        });
+        if (isMounted) setConsultantWeekEvents(matters);
+      } catch {
+        // Keep the current empty state if the dashboard prefetch fails.
+      }
     };
 
     void loadConsultantWeekEvents();
@@ -615,12 +592,9 @@ export default function Dashboard() {
     let isMounted = true;
 
     const loadUpcomingEvents = async () => {
-      const today = new Date();
-      const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 30);
-      const startLabel = startDate.toISOString().slice(0, 10);
-      const endLabel = endDate.toISOString().slice(0, 10);
+      const { startLabel, endLabel } = getDashboardUpcomingEventsRange(upcomingEventsRangeDays);
+      const cachedRows = loadCachedDashboardUpcomingEvents(startLabel, endLabel, upcomingEventsConsultantFilter);
+      setEventRows(cachedRows);
 
       const caseDatesClient = supabase as unknown as DashboardCaseDatesQuery;
       const { data, error } = await caseDatesClient
@@ -629,13 +603,14 @@ export default function Dashboard() {
         .gte("date_value", startLabel)
         .lte("date_value", endLabel)
         .order("date_value", { ascending: true })
-        .limit(50);
+        .limit(200);
 
       if (!isMounted || error || !Array.isArray(data)) return;
 
-      const mapped = data
+      const activeForumRows = data
         .map((row) => {
           const caseFile = normalizeDashboardCaseFileRow(row.case_files);
+          const consultant = String(caseFile?.consultant || "").trim() || "--";
           return {
             id: String(row.id || ""),
             caseId: String(row.case_file_id || caseFile?.id || ""),
@@ -643,15 +618,52 @@ export default function Dashboard() {
             matterEvent: getDashboardEventLabel(row.date_type, row.event_label),
             matterType: getMatterHeaderTitle(caseFile?.case_type, caseFile?.case_subtype),
             client: getMatterClientDisplayName(caseFile?.client_name),
-            consultant: String(caseFile?.consultant || "").trim() || "--",
+            consultant,
+            normalizedConsultant: normalizeDashboardPersonName(consultant),
             status: String(caseFile?.status || "").trim(),
+            caseType: String(caseFile?.case_type || "").trim(),
           };
         })
-        .filter((row) => row.id && row.caseId && row.dateLabel !== "--" && row.status.toLowerCase() === "active")
+        .filter(
+          (row) =>
+            row.id &&
+            row.caseId &&
+            row.dateLabel !== "--" &&
+            row.status.toLowerCase() === "active" &&
+            (row.caseType === "CCMA" || row.caseType === "Bargaining Council"),
+        );
+
+      const consultantOptions = new Map<string, string>();
+      activeForumRows.forEach((row) => {
+        if (row.consultant === "--" || !row.normalizedConsultant) return;
+        if (!consultantOptions.has(row.normalizedConsultant)) consultantOptions.set(row.normalizedConsultant, row.consultant);
+      });
+
+      const nextConsultantOptions = [
+        { value: allDashboardEventConsultantsValue, label: allDashboardEventConsultantsLabel },
+        ...Array.from(consultantOptions.entries())
+          .map(([value, label]) => ({ value, label }))
+          .sort((left, right) => left.label.localeCompare(right.label)),
+      ];
+      const resolvedConsultantFilter = nextConsultantOptions.some((option) => option.value === upcomingEventsConsultantFilter)
+        ? upcomingEventsConsultantFilter
+        : allDashboardEventConsultantsValue;
+
+      const mapped = activeForumRows
+        .filter(
+          (row) =>
+            resolvedConsultantFilter === allDashboardEventConsultantsValue ||
+            row.normalizedConsultant === resolvedConsultantFilter,
+        )
+        .map(({ caseType, normalizedConsultant, status, ...row }) => row)
         .slice(0, 5);
 
+      setUpcomingEventConsultantOptions(nextConsultantOptions);
+      if (resolvedConsultantFilter !== upcomingEventsConsultantFilter) {
+        setUpcomingEventsConsultantFilter(resolvedConsultantFilter);
+      }
       setEventRows(mapped);
-      saveCachedDashboardUpcomingEvents(startLabel, endLabel, mapped);
+      saveCachedDashboardUpcomingEvents(startLabel, endLabel, resolvedConsultantFilter, mapped);
     };
 
     void loadUpcomingEvents();
@@ -659,7 +671,7 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [upcomingEventsConsultantFilter, upcomingEventsRangeDays]);
 
   useEffect(() => {
     let isMounted = true;
@@ -964,42 +976,76 @@ export default function Dashboard() {
                     className="grid gap-4"
                     style={{ gridTemplateColumns: "minmax(0, 2fr) minmax(340px, 0.9fr)" }}
                   >
-                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col">
-                      <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 pl-[10px]">
-                            <div
-                              className="mt-0.5 shrink-0 shadow-sm"
-                              style={{
-                                width: "36px",
-                                height: "36px",
-                                borderRadius: "8px",
-                                backgroundColor: "rgba(255,255,255,0.12)",
-                                color: "#ffffff",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
+                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col transition-colors hover:border-[#50677B]">
+                      <CardHeader className="border-b border-slate-200 bg-slate-100 px-5 py-2">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/70 text-slate-700 shadow-sm">
                               <Calendar size={16} strokeWidth={2.1} />
                             </div>
                             <div>
-                              <CardTitle className="text-[14px] font-semibold leading-none text-white">
-                                Upcoming Events
+                              <CardTitle className="text-[17.33px] font-semibold leading-none text-slate-800">
+                                CCMA / Bargaining Council
                               </CardTitle>
-                              <p className="mt-1.5 text-[11px] text-white/70">
-                                Matters and events coming up in the next 30 days.
-                              </p>
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            className="inline-flex h-8 min-w-[116px] shrink-0 items-center justify-between gap-1.5 rounded-[8px] border border-white/20 bg-white/10 px-4 text-[10.5px] font-medium text-white transition-colors hover:border-[#3eca44] hover:text-[#3eca44]"
-                          >
-                            <span>Next 30 days</span>
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 min-w-[150px] max-w-[210px] items-center justify-between gap-1.5 rounded-[4px] border border-slate-300 bg-white/70 px-4 text-[10.5px] font-medium text-slate-700 transition-colors hover:border-[#3eca44] hover:text-[#3eca44]"
+                                >
+                                  <span className="truncate">{upcomingEventsConsultantLabel}</span>
+                                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="max-h-[260px] w-52 overflow-y-auto rounded-[4px] border-slate-200 p-1">
+                                {(upcomingEventConsultantOptions.length
+                                  ? upcomingEventConsultantOptions
+                                  : [{ value: allDashboardEventConsultantsValue, label: allDashboardEventConsultantsLabel }]
+                                ).map((option) => (
+                                  <DropdownMenuItem
+                                    key={option.value}
+                                    onClick={() => setUpcomingEventsConsultantFilter(option.value)}
+                                    className={cn(
+                                      "cursor-pointer text-[11px]",
+                                      option.value === upcomingEventsConsultantFilter && "bg-[#3eca44]/10 text-[#2f9f35]",
+                                    )}
+                                  >
+                                    {option.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 min-w-[116px] items-center justify-between gap-1.5 rounded-[4px] border border-[#3eca44] bg-[#3eca44] px-4 text-[10.5px] font-medium text-white transition-colors hover:bg-[#34b73b]"
+                                >
+                                  <span>{upcomingEventsRangeLabel}</span>
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40 rounded-[4px] border-slate-200 p-1">
+                                {dashboardEventRangeOptions.map((option) => (
+                                  <DropdownMenuItem
+                                    key={option.value}
+                                    onClick={() => setUpcomingEventsRangeDays(option.value)}
+                                    className={cn(
+                                      "cursor-pointer text-[11px]",
+                                      option.value === upcomingEventsRangeDays && "bg-[#3eca44]/10 text-[#2f9f35]",
+                                    )}
+                                  >
+                                    {option.label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </div>
                       </CardHeader>
 
@@ -1014,11 +1060,14 @@ export default function Dashboard() {
                             </colgroup>
                             <thead>
                               <tr className="border-b border-slate-200 text-left">
-                                {["DATE", "MATTER / EVENT", "CLIENT", "ASSIGNED"].map((label) => (
+                                {["DATE", "MATTER / EVENT", "CLIENT", "ASSIGNED"].map((label, index) => (
                                   <th
                                     key={label}
-                                    className="px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500"
+                                    className="relative px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500"
                                   >
+                                    {index > 0 ? (
+                                      <span className="absolute left-0 top-1/2 h-4 -translate-y-1/2 border-l border-slate-200" aria-hidden="true" />
+                                    ) : null}
                                     {label}
                                   </th>
                                 ))}
@@ -1044,11 +1093,11 @@ export default function Dashboard() {
                                   <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
                                     <div className="text-[11px] text-slate-700">{row.dateLabel}</div>
                                   </td>
-                                  <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
+                                  <td className="border-l border-l-slate-100 px-5 py-0 align-middle" style={{ height: "36px" }}>
                                     <div className="text-[11px] text-slate-700">{row.matterEvent}</div>
                                   </td>
-                                  <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "36px" }}>{row.client}</td>
-                                  <td className="px-5 py-0 align-middle" style={{ height: "36px" }}>
+                                  <td className="border-l border-l-slate-100 px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "36px" }}>{row.client}</td>
+                                  <td className="border-l border-l-slate-100 px-5 py-0 align-middle" style={{ height: "36px" }}>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <span
@@ -1083,33 +1132,21 @@ export default function Dashboard() {
                       </CardContent>
                     </Card>
 
-                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col">
-                      <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
+                    <Card className="min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none flex h-full flex-col transition-colors hover:border-[#50677B]">
+                      <CardHeader className="border-b border-slate-200 bg-slate-100 px-5 py-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div
-                              className="shrink-0"
-                              style={{
-                                width: "36px",
-                                height: "36px",
-                                borderRadius: "8px",
-                                backgroundColor: "rgba(255,255,255,0.12)",
-                                color: "#ffffff",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/70 text-slate-700 shadow-sm">
                               <CalendarCheck2 size={16} strokeWidth={2.1} />
                             </div>
-                            <CardTitle className="text-[14px] font-semibold leading-none text-white">
+                            <CardTitle className="text-[14px] font-semibold leading-none text-slate-800">
                               Diary / Tasks
                             </CardTitle>
                           </div>
                           <button
                             type="button"
                             onClick={() => navigate("/clients")}
-                            className="text-[12px] font-semibold text-white/85 transition-colors hover:text-[#3eca44]"
+                            className="text-[12px] font-semibold text-slate-700 transition-colors hover:text-[#3eca44]"
                           >
                             View all
                           </button>
@@ -1188,40 +1225,37 @@ export default function Dashboard() {
                     </Card>
                   </div>
 
-                  <Card className="order-first min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none">
-                    <CardHeader className="border-b border-white/10 bg-[#2D4256] px-5 py-3">
+                  <Card className="order-first min-w-0 overflow-hidden rounded-[10px] border border-slate-200 bg-white shadow-none transition-colors hover:border-[#50677B]">
+                    <CardHeader className="border-b border-slate-200 bg-slate-100 px-5 py-2">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
                           <div
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/10 text-white shadow-sm"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/70 text-slate-700 shadow-sm"
                           >
                             <Users size={16} strokeWidth={2.1} />
                           </div>
                           <div>
-                            <CardTitle className="text-[14px] font-semibold leading-none text-white">
-                              Weekly Matters
+                            <CardTitle className="text-[17.33px] font-semibold leading-none text-slate-800">
+                              Weekly Schedule
                             </CardTitle>
-                            <p className="mt-1.5 text-[11px] text-white/70">
-                              Monday to Friday matters scheduled for consultants.
-                            </p>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-white/20 bg-white/10 px-2.5 text-[10.5px] font-semibold text-white hover:border-[#3eca44] hover:bg-[#3eca44] hover:text-white"
+                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-slate-300 bg-white/70 px-2.5 text-[10.5px] font-semibold text-slate-700 hover:border-[#3eca44] hover:text-[#3eca44]"
                             onClick={() => setConsultantWeekStart((current) => addDashboardDays(current, -7))}
                           >
                             <ChevronLeft className="h-3.5 w-3.5" />
                             Previous
                           </button>
-                          <div className="min-w-[138px] rounded-[4px] border border-white/20 bg-white/10 px-2.5 py-1 text-center text-[10.5px] font-semibold text-white">
+                          <div className="min-w-[138px] rounded-[4px] border border-[#3eca44] bg-[#3eca44] px-2.5 py-1 text-center text-[10.5px] font-semibold text-white">
                             {formatDashboardShortDate(consultantWeekStartLabel)} - {formatDashboardShortDate(consultantWeekEndLabel)}
                           </div>
                           <button
                             type="button"
-                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-white/20 bg-white/10 px-2.5 text-[10.5px] font-semibold text-white hover:border-[#3eca44] hover:bg-[#3eca44] hover:text-white"
+                            className="inline-flex h-7 w-[86px] items-center justify-center gap-1.5 rounded-[4px] border border-slate-300 bg-white/70 px-2.5 text-[10.5px] font-semibold text-slate-700 hover:border-[#3eca44] hover:text-[#3eca44]"
                             onClick={() => setConsultantWeekStart((current) => addDashboardDays(current, 7))}
                           >
                             Next
@@ -1243,44 +1277,36 @@ export default function Dashboard() {
                             <col />
                           </colgroup>
                           <thead>
-                            <tr className={cn("border-b text-left", hoveredConsultantRowIndex === 0 ? "!border-b-[#3eca44]" : "border-slate-200")}>
-                              <th
-                                className={cn(
-                                  "px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.02em] text-slate-500",
-                                  hoveredConsultantRowIndex === 0 && "shadow-[inset_0_-1px_0_#3eca44]",
-                                )}
-                              >
+                            <tr className="border-b border-slate-200 text-left">
+                              <th className="border-b border-slate-200 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.02em] text-slate-600">
                                 Consultant
                               </th>
                               {consultantWeekDays.map((day) => {
                                 const dateValue = formatDashboardDateValue(day);
                                 const isHovered = hoveredConsultantWeekDate === dateValue;
                                 const isToday = todayDateLabel === dateValue;
-                                const isHighlighted = isHovered || isToday;
                                 return (
                                   <th
                                     key={dateValue}
-                                    className={cn(
-                                      "relative px-4 py-3 pl-5 text-left",
-                                      isToday && "bg-[#3eca44]",
-                                      isHovered && "bg-slate-100",
-                                      hoveredConsultantRowIndex === 0 && "shadow-[inset_0_-1px_0_#3eca44]",
-                                    )}
+                                    className="relative border-b border-slate-200 px-4 py-3 text-left"
                                     onMouseEnter={() => setHoveredConsultantWeekDate(dateValue)}
                                     onMouseLeave={() => setHoveredConsultantWeekDate(null)}
                                   >
                                   <span
-                                    className={cn(
-                                      "absolute left-0 top-1/2 h-4 -translate-y-1/2 border-l",
-                                      isHighlighted ? "border-transparent" : "border-slate-200",
-                                    )}
+                                    className="absolute left-0 top-1/2 h-4 -translate-y-1/2 border-l border-slate-200"
                                     aria-hidden="true"
                                   />
-                                  <div className="flex items-baseline gap-2 text-[11px]">
-                                    <span className={cn("font-semibold uppercase tracking-[0.02em]", isToday ? "text-white" : isHovered ? "text-slate-700" : "text-slate-500")}>
+                                  <div
+                                    className={cn(
+                                      "flex items-baseline gap-2 text-[11px]",
+                                      isHovered && "underline underline-offset-2",
+                                      isHovered && isToday && "decoration-[#3eca44]",
+                                    )}
+                                  >
+                                    <span className={cn("font-semibold uppercase tracking-[0.02em]", isToday ? "text-[#3eca44]" : isHovered ? "text-slate-800" : "text-slate-600")}>
                                       {day.toLocaleDateString("en-GB", { weekday: "short" })}
                                     </span>
-                                    <span className={cn("font-medium", isToday ? "text-white" : isHovered ? "text-slate-600" : "text-slate-400")}>
+                                    <span className={cn("font-medium", isToday ? "text-[#3eca44]" : isHovered ? "text-slate-700" : "text-slate-500")}>
                                       {formatDashboardShortDate(dateValue)}
                                     </span>
                                   </div>
@@ -1297,19 +1323,12 @@ export default function Dashboard() {
                                 </td>
                               </tr>
                             ) : (
-                              consultantPeople.map((person, personIndex) => (
+                              consultantPeople.map((person) => (
                                 <tr
                                   key={`${person.type}:${person.id}`}
                                   className="group hover:bg-[#3eca44]/5"
-                                  onMouseEnter={() => setHoveredConsultantRowIndex(personIndex)}
-                                  onMouseLeave={() => setHoveredConsultantRowIndex(null)}
                                 >
-                                  <td
-                                    className={cn(
-                                      "border-b border-l border-t border-b-slate-100 border-l-transparent border-t-transparent px-5 py-2 align-middle group-hover:border-b-[#3eca44] group-hover:border-l-[#3eca44]",
-                                      personIndex === 0 ? "group-hover:border-t-transparent group-hover:shadow-none" : "group-hover:border-t-[#3eca44] group-hover:shadow-[inset_0_1px_0_#3eca44]",
-                                    )}
-                                  >
+                                  <td className="border-b border-l border-t border-b-slate-100 border-l-transparent border-t-transparent px-5 py-2 align-middle">
                                     <div className="font-semibold text-[11px] text-slate-800 group-hover:text-[12px]">{person.label}</div>
                                   </td>
                                   {consultantWeekDays.map((day, dayIndex) => {
@@ -1319,9 +1338,8 @@ export default function Dashboard() {
                                       <td
                                         key={dateValue}
                                         className={cn(
-                                          "border-b border-l border-t border-b-slate-100 border-l-slate-100 border-t-transparent px-4 py-2 align-middle group-hover:border-b-[#3eca44]",
-                                          personIndex === 0 ? "group-hover:border-t-transparent group-hover:shadow-none" : "group-hover:border-t-[#3eca44] group-hover:shadow-[inset_0_1px_0_#3eca44]",
-                                          dayIndex === consultantWeekDays.length - 1 && "border-r border-r-transparent group-hover:border-r-[#3eca44]",
+                                          "border-b border-l border-t border-b-slate-100 border-l-slate-100 border-t-transparent px-4 py-2 align-middle",
+                                          dayIndex === consultantWeekDays.length - 1 && "border-r border-r-transparent",
                                         )}
                                         onMouseEnter={() => setHoveredConsultantWeekDate(dateValue)}
                                         onMouseLeave={() => setHoveredConsultantWeekDate(null)}
@@ -1402,7 +1420,7 @@ export default function Dashboard() {
                                 : card.delta;
 
                       return (
-                        <Card key={card.title} className="rounded-[10px] border border-slate-200 bg-white shadow-none">
+                        <Card key={card.title} className="rounded-[10px] border border-slate-200 bg-white shadow-none transition-colors hover:border-[#50677B]">
                           <CardContent className="px-5 py-4">
                             <div className="flex items-start gap-4">
                               <div
@@ -1433,7 +1451,7 @@ export default function Dashboard() {
                   </div>
 
                   <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none">
+                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none transition-colors hover:border-[#50677B]">
                       <CardHeader className="px-5 py-4">
                         <CardTitle className="text-[26px] font-semibold leading-none text-slate-900">
                           Matters by Category
@@ -1474,7 +1492,7 @@ export default function Dashboard() {
                       </div>
                     </Card>
 
-                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none">
+                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none transition-colors hover:border-[#50677B]">
                       <CardHeader className="px-5 py-4">
                         <CardTitle className="text-[26px] font-semibold leading-none text-slate-900">
                           Clients by Province
@@ -1515,7 +1533,7 @@ export default function Dashboard() {
                       </div>
                     </Card>
 
-                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none">
+                    <Card className="rounded-[10px] border border-slate-200 bg-white shadow-none transition-colors hover:border-[#2D4256]">
                       <CardHeader className="flex-row items-center justify-between px-5 py-4">
                         <CardTitle className="text-[26px] font-semibold leading-none text-slate-900">
                           Client Renewals

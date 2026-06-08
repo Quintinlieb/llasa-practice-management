@@ -3167,7 +3167,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
                   placeholder="Search offences..."
                   className="h-9 border-0 text-[11px] focus:ring-0"
                 />
-                <CommandList className="max-h-[320px]">
+                <CommandList
+                  className="max-h-[320px] overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:thin]"
+                  onWheelCapture={(event) => event.stopPropagation()}
+                >
                   <CommandEmpty className="py-4 text-center text-[11px] text-slate-500">
                     No offence found.
                   </CommandEmpty>

@@ -192,6 +192,11 @@ const inputClassName =
 const hiddenScrollClassName =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
+const normalizeDescriptionLineBreaks = (value: string) =>
+  String(value || "")
+    .replace(/\r?\n+/g, " ")
+    .replace(/[ \t]{2,}/g, " ");
+
 const employeeIdOrPassportMaxLength = 13;
 const generatedDocumentsBucket = "documents";
 const clientLogosBucket = "client-logos";
@@ -931,7 +936,7 @@ const HearingNoticeGeneratorContent = ({
             </div>
             <Textarea
               id={`discHearingDescription-${type}-${countIndex}`}
-              value={description}
+              value={normalizeDescriptionLineBreaks(description)}
               onChange={(event) => onMisconductDescriptionChange(type, countIndex, event.target.value)}
               onInput={(event) => {
                 const textarea = event.currentTarget;
@@ -944,7 +949,7 @@ const HearingNoticeGeneratorContent = ({
                   : `Describe the allegation for ${type}`
               }
               rows={1}
-              className={`${inputClassName} min-h-[56px] overflow-hidden resize-none py-2`}
+              className={`${inputClassName} min-h-[56px] w-full overflow-hidden resize-none py-2`}
             />
           </div>
         ))}
@@ -998,7 +1003,7 @@ const HearingNoticeGeneratorContent = ({
             </div>
             <Textarea
               id={`discHearingPerformanceConcernDescription-${type}-${countIndex}`}
-              value={description}
+              value={normalizeDescriptionLineBreaks(description)}
               onChange={(event) => onPerformanceConcernDescriptionChange(type, countIndex, event.target.value)}
               placeholder={hasMultipleCounts ? "Describe this count" : "Describe the performance concern"}
               className="min-h-[88px] rounded-sm border-slate-300 bg-white text-[10px] text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0"
@@ -1054,7 +1059,7 @@ const HearingNoticeGeneratorContent = ({
             </div>
             <Textarea
               id={`discHearingIllHealthConcernDescription-${type}-${countIndex}`}
-              value={description}
+              value={normalizeDescriptionLineBreaks(description)}
               onChange={(event) => onIllHealthConcernDescriptionChange(type, countIndex, event.target.value)}
               placeholder={hasMultipleCounts ? "Describe this count" : "Describe the ill-health concern"}
               className="min-h-[88px] rounded-sm border-slate-300 bg-white text-[10px] text-slate-900 shadow-none placeholder:text-[10px] placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0"
@@ -2059,9 +2064,10 @@ const HearingNoticeGeneratorContent = ({
                           <p className="font-bold">{`${index + 1}.`}</p>
                           <p className="font-bold">{type}</p>
                         </div>
-                        <div className="space-y-1.5 pl-[26px]">
+                        <div className="space-y-1.5">
                           {(activeConcernConfig.descriptions[type] || [previewLine]).map((description, countIndex, descriptions) => {
                             const hasMultipleCounts = descriptions.length > 1;
+                            const normalizedDescription = normalizeDescriptionLineBreaks(description);
                             return hasMultipleCounts ? (
                               <div key={`${type}-preview-count-${countIndex}`} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2">
                                 <p>{`${formatRomanNumeral(countIndex + 1)}.`}</p>
@@ -2069,7 +2075,7 @@ const HearingNoticeGeneratorContent = ({
                                   className="whitespace-pre-wrap"
                                   style={{ textAlign: "justify", textJustify: "inter-word" }}
                                 >
-                                  {description || previewLine}
+                                  {normalizedDescription || previewLine}
                                 </p>
                               </div>
                             ) : (
@@ -2078,7 +2084,7 @@ const HearingNoticeGeneratorContent = ({
                                 className="whitespace-pre-wrap"
                                 style={{ textAlign: "justify", textJustify: "inter-word" }}
                               >
-                                {description || previewLine}
+                                {normalizedDescription || previewLine}
                               </p>
                             );
                           })}
@@ -2620,7 +2626,7 @@ const HearingNoticeGenerator = ({
       ...current,
       misconductDescriptions: {
         ...current.misconductDescriptions,
-        [type]: (current.misconductDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+        [type]: (current.misconductDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? normalizeDescriptionLineBreaks(value) : entry)),
       },
     }));
   }, []);
@@ -2640,7 +2646,7 @@ const HearingNoticeGenerator = ({
       ...current,
       performanceConcernDescriptions: {
         ...current.performanceConcernDescriptions,
-        [type]: (current.performanceConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+        [type]: (current.performanceConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? normalizeDescriptionLineBreaks(value) : entry)),
       },
     }));
   }, []);
@@ -2669,7 +2675,7 @@ const HearingNoticeGenerator = ({
       ...current,
       illHealthConcernDescriptions: {
         ...current.illHealthConcernDescriptions,
-        [type]: (current.illHealthConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? value : entry)),
+        [type]: (current.illHealthConcernDescriptions[type] || [""]).map((entry, index) => (index === countIndex ? normalizeDescriptionLineBreaks(value) : entry)),
       },
     }));
   }, []);
@@ -2998,9 +3004,10 @@ const HearingNoticeGenerator = ({
         const descriptions = activeConcernConfig.descriptions[type] || [lineFallback];
         const countHeight = descriptions.reduce((countTotal, description) => {
           const hasMultipleCounts = descriptions.length > 1;
+          const normalizedDescription = normalizeDescriptionLineBreaks(description);
           const lines = doc.splitTextToSize(
-            description || lineFallback,
-            hasMultipleCounts ? contentWidth - 24 : contentWidth - 18,
+            normalizedDescription || lineFallback,
+            hasMultipleCounts ? contentWidth - 24 : contentWidth - 6,
           );
           return countTotal + lines.length * 4.2 + 2.2;
         }, 0);
@@ -3020,9 +3027,9 @@ const HearingNoticeGenerator = ({
         descriptions.forEach((description, countIndex) => {
           const hasMultipleCounts = descriptions.length > 1;
           const marker = `${formatRomanNumeral(countIndex + 1)}.`;
-          const textX = hasMultipleCounts ? margin + 18 : margin + 12;
-          const textWidth = hasMultipleCounts ? contentWidth - 24 : contentWidth - 18;
-          const lines = doc.splitTextToSize(description || lineFallback, textWidth);
+          const textX = hasMultipleCounts ? margin + 18 : margin + 3;
+          const textWidth = hasMultipleCounts ? contentWidth - 24 : contentWidth - 6;
+          const lines = doc.splitTextToSize(normalizeDescriptionLineBreaks(description) || lineFallback, textWidth);
           if (hasMultipleCounts) {
             doc.text(marker, margin + 12, y);
           }

@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { prefetchDashboardWeeklySchedule } from "@/lib/dashboardWeeklyMatters";
 
 const primaryNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
@@ -46,6 +47,12 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
   const pathname = location.pathname;
   const navigate = useNavigate();
   const { signOut } = useAuth();
+
+  const handleDashboardIntent = () => {
+    void prefetchDashboardWeeklySchedule().catch(() => {
+      // Dashboard will retry normally if the hover prefetch fails.
+    });
+  };
 
   const withTooltip = (element: ReactElement, label: string) =>
     isCollapsed ? (
@@ -142,6 +149,8 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                               <NavLink
                                 to={item.url}
                                 className="group flex w-full items-center gap-2 text-[13.33px]"
+                                onFocus={item.url === "/dashboard" ? handleDashboardIntent : undefined}
+                                onMouseEnter={item.url === "/dashboard" ? handleDashboardIntent : undefined}
                               >
                                 <span
                                   className={cn(

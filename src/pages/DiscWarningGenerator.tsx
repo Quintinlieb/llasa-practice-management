@@ -779,7 +779,7 @@ const DiscWarningGeneratorContent = ({
   const warningTypeLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "";
   const hasClientLogo = Boolean(clientForm.companyLogoDataUrl);
   const showClientLogoField = Boolean(clientForm.clientId && clientForm.companyLogoDataUrl);
-  const previewTitle = "Disciplinary Warning";
+  const previewTitle = warningTypeLabel || "Disciplinary Warning";
   const previewLine = "______________________________";
   const footerLogoDimensions = getDiscWarningFooterLogoDimensions(clientForm.companyLogoOrientation);
   const employeeFullName = [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim();
@@ -816,7 +816,6 @@ const DiscWarningGeneratorContent = ({
   const logoWarningRows = [
     warningRows[0],
     warningRows[1],
-    { label: "Warning Type:", value: warningTypeLabel || previewLine },
     warningRows[2],
     warningRows[3],
   ];
@@ -1330,19 +1329,12 @@ const DiscWarningGeneratorContent = ({
                     </p>
                   </div>
                   <div className="mt-3 space-y-1">
-                    {(hasClientLogo ? logoWarningRows : warningRows).map((row) =>
-                      row.label === "Description:" ? (
-                        <div key={row.label} className="text-[11px] leading-5">
-                          <p className="font-bold text-black">{row.label}</p>
-                          <p className="whitespace-normal break-words text-black">{row.value}</p>
-                        </div>
-                      ) : (
-                        <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
-                          <p className="font-bold text-black">{row.label}</p>
-                          <p className="whitespace-pre-wrap text-black">{row.value}</p>
-                        </div>
-                      ),
-                    )}
+                    {(hasClientLogo ? logoWarningRows : warningRows).map((row) => (
+                      <div key={row.label} className="grid grid-cols-[176px_minmax(0,1fr)] gap-2 text-[11px] leading-5">
+                        <p className="font-bold text-black">{row.label}</p>
+                        <p className="whitespace-pre-wrap break-words text-black">{row.value}</p>
+                      </div>
+                    ))}
                   </div>
                 </section>
 
@@ -1754,7 +1746,7 @@ const DiscWarningGenerator = ({
     const sectionFill = [237, 237, 239] as const;
     const sectionBorder = [161, 161, 170] as const;
     const lineFallback = "______________________________";
-    const resolvedTitle = "Disciplinary Warning";
+    const resolvedTitle = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "Disciplinary Warning";
     const resolvedEmployeeName =
       [employeeForm.employeeName, employeeForm.employeeSurname].filter(Boolean).join(" ").trim() || lineFallback;
     const resolvedEmployerRows = [
@@ -1784,7 +1776,6 @@ const DiscWarningGenerator = ({
     const resolvedLogoWarningRows = [
       ["Offence(s):", formatWarningOffences(warningForm.misconductTypes, lineFallback)],
       ["Description:", resolvedMisconductDescription || lineFallback],
-      ["Warning Type:", warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : lineFallback],
       ["Validity Period:", warningForm.validityPeriod ? `${warningForm.validityPeriod} months` : lineFallback],
       ["Issued By:", warningForm.issuedBy || lineFallback],
     ] as const;
@@ -1829,7 +1820,7 @@ const DiscWarningGenerator = ({
       },
     ) => {
       const labelWidth = 42;
-      const valueWidth = contentWidth - labelWidth - 4;
+      const valueWidth = contentWidth - labelWidth - 1.5;
       const lineHeight = 3.7;
       rows.forEach(([label, value]) => {
         const extraTop = options?.extraTopByLabel?.[label] ?? 0;
@@ -1940,7 +1931,6 @@ const DiscWarningGenerator = ({
     drawSectionHeader(hasLogoLayout ? "B. WARNING DETAILS" : "C. WARNING DETAILS");
     drawKeyValueRows(hasLogoLayout ? resolvedLogoWarningRows : resolvedWarningRows, {
       extraTopByLabel: { "Validity Period:": 0.6 },
-      fullWidthValueByLabel: { "Description:": true },
     });
 
     y += 4;

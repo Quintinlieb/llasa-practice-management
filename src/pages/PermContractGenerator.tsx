@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode, type SVGProps } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -312,13 +312,13 @@ const getFooterLogoDimensions = (orientation: CompanyLogoOrientation | "") =>
         previewMaxHeight: 56,
         previewMaxWidth: 92,
         pdfMaxHeight: 18,
-        pdfMaxWidth: 18,
+        pdfMaxWidth: 14,
       }
     : {
         previewMaxHeight: 54,
         previewMaxWidth: 184,
         pdfMaxHeight: 14,
-        pdfMaxWidth: 52,
+        pdfMaxWidth: 48,
       };
 
 const loadImageUrlAsDataUrl = (url: string) =>
@@ -481,7 +481,10 @@ const formatDateForDisplay = (value: string) => {
 };
 
 const sanitizeCurrencyInput = (value: string) => {
-  const cleaned = value.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const normalizedValue = value.includes(".")
+    ? value.replace(/,/g, "")
+    : value.replace(/,/g, ".");
+  const cleaned = normalizedValue.replace(/[^\d.]/g, "");
   const parts = cleaned.split(".");
   const whole = parts[0] || "";
   const decimals = parts[1] ? parts[1].slice(0, 2) : "";
@@ -493,7 +496,7 @@ const formatCurrencyDisplay = (value: string) => {
   if (!normalized) return "";
   const amount = Number(normalized);
   if (Number.isNaN(amount)) return "";
-  return `R ${amount.toLocaleString("en-ZA", {
+  return `R${amount.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -580,8 +583,8 @@ const templateNationalityOptions = [
 ] as const;
 
 const workingHoursModeOptions = [
-  { label: "Undefined", value: "undefined" },
-  { label: "Defined", value: "defined" },
+  { label: "Unspecified", value: "undefined" },
+  { label: "Specified", value: "defined" },
   { label: "Scheduled", value: "scheduled" },
 ] as const;
 
@@ -704,6 +707,32 @@ const normalizeClauseBodyText = (value: string) =>
     .split(/\n\s*\n/g)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
+
+const clauseEditorNumberSpacing = "     ";
+
+const stripClauseEditorNumberPrefix = (value: string) =>
+  String(value || "").replace(/^\s*\d+(?:\.\d+)*\.?\s*/, "").trim();
+
+const parseClauseEditorDraft = (value: string) =>
+  String(value || "")
+    .split(/\r?\n/)
+    .map((line) => stripClauseEditorNumberPrefix(line))
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const formatClauseEditorDraft = (paragraphs: string[], clauseNumber: number) => {
+  const sourceParagraphs = paragraphs.length > 0 ? paragraphs : [""];
+  return sourceParagraphs
+    .map((paragraph, index) => {
+      const prefix = `${clauseNumber}.${index + 1}${clauseEditorNumberSpacing}`;
+      const body = stripClauseEditorNumberPrefix(paragraph);
+      return body ? `${prefix}${body}` : prefix;
+    })
+    .join("\n");
+};
+
+const renumberClauseEditorDraft = (lines: string[], clauseNumber: number) =>
+  formatClauseEditorDraft(lines.map((line) => stripClauseEditorNumberPrefix(line)), clauseNumber);
 
 const generateCustomClauseId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -1272,6 +1301,7 @@ const PreviewClauseBlock = ({
   isAdded = false,
   isEdited = false,
   onEdit,
+  onRemoveAdded,
   workingHoursMode,
   workingHoursScheduleRows,
   onWorkingHoursTimeChange,
@@ -1282,6 +1312,7 @@ const PreviewClauseBlock = ({
   isAdded?: boolean;
   isEdited?: boolean;
   onEdit?: () => void;
+  onRemoveAdded?: () => void;
   workingHoursMode?: ContractStepState["permContractWorkingHoursMode"];
   workingHoursScheduleRows?: WorkingHoursScheduleRow[];
   onWorkingHoursTimeChange?: (field: keyof ContractStepState, value: string) => void;
@@ -1310,6 +1341,16 @@ const PreviewClauseBlock = ({
               <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
                 Added
               </span>
+            ) : null}
+            {isAdded && isPreviewEditable && onRemoveAdded ? (
+              <button
+                type="button"
+                onClick={onRemoveAdded}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 transition-colors hover:text-red-600"
+              >
+                <X className="h-3 w-3" />
+                Remove
+              </button>
             ) : null}
             {isEdited ? (
               <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
@@ -1667,6 +1708,9 @@ const PermContractGenerator = ({
   const [company, setCompany] = useState<CompanyStepState>(() => normalizeCompanyDraft(restored?.company));
   const [employee, setEmployee] = useState<EmployeeStepState>(() => normalizeEmployeeDraft(restored?.employee));
   const [contract, setContract] = useState<ContractStepState>(() => normalizeContractDraft(restored?.contract));
+  const stepScrollRef = useRef<HTMLDivElement | null>(null);
+  const clauseBodyEditorRef = useRef<HTMLDivElement | null>(null);
+  const clauseBodyLineRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
   const [clauseBodyEdits, setClauseBodyEdits] = useState<Record<string, string>>(() =>
     normalizePreviewEditRecord(restored?.preview?.clauseBodyEdits),
   );
@@ -1677,9 +1721,11 @@ const PermContractGenerator = ({
     normalizeCustomPreviewClauses(restored?.preview?.customClauses),
   );
   const [editingClauseId, setEditingClauseId] = useState<string | null>(null);
+  const [editingClauseNumber, setEditingClauseNumber] = useState(1);
   const [clauseTitleDraft, setClauseTitleDraft] = useState("");
   const [clauseBodyDraft, setClauseBodyDraft] = useState("");
   const [addingAfterId, setAddingAfterId] = useState<string | null | undefined>(undefined);
+  const [newClauseNumber, setNewClauseNumber] = useState(1);
   const [newClauseTitle, setNewClauseTitle] = useState("");
   const [newClauseBody, setNewClauseBody] = useState("");
   const startDatePickerRef = useRef<HTMLInputElement | null>(null);
@@ -1687,6 +1733,27 @@ const PermContractGenerator = ({
   useEffect(() => {
     onStepChange?.(isFinished ? steps[3] : steps[activeStep]);
   }, [activeStep, isFinished, onStepChange]);
+
+  useEffect(() => {
+    const scrollContainer = clauseBodyEditorRef.current;
+    if (!scrollContainer) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      const scrollDelta =
+        event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scrollContainer.clientHeight : 1);
+      if (!scrollDelta) return;
+
+      const maxScrollTop = Math.max(scrollContainer.scrollHeight - scrollContainer.clientHeight, 0);
+      if (maxScrollTop <= 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      scrollContainer.scrollTop = Math.min(Math.max(scrollContainer.scrollTop + scrollDelta, 0), maxScrollTop);
+    };
+
+    scrollContainer.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    return () => scrollContainer.removeEventListener("wheel", handleWheel, { capture: true });
+  }, [addingAfterId, editingClauseId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1750,9 +1817,11 @@ const PermContractGenerator = ({
     setClauseTitleEdits({});
     setCustomClauses([]);
     setEditingClauseId(null);
+    setEditingClauseNumber(1);
     setClauseTitleDraft("");
     setClauseBodyDraft("");
     setAddingAfterId(undefined);
+    setNewClauseNumber(1);
     setNewClauseTitle("");
     setNewClauseBody("");
     setBargainingCouncilMenuOpen(false);
@@ -1885,9 +1954,11 @@ const PermContractGenerator = ({
     setIsPreviewEditable((current) => {
       if (current) {
         setEditingClauseId(null);
+        setEditingClauseNumber(1);
         setClauseTitleDraft("");
         setClauseBodyDraft("");
         setAddingAfterId(undefined);
+        setNewClauseNumber(1);
         setNewClauseTitle("");
         setNewClauseBody("");
       }
@@ -1976,6 +2047,14 @@ const PermContractGenerator = ({
   useEffect(() => {
     onStepMetaChange?.(stepMeta);
   }, [onStepMetaChange, stepMeta]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      stepScrollRef.current?.scrollTo({ top: 0 });
+      stepScrollRef.current?.scrollIntoView({ block: "start" });
+      window.scrollTo({ top: 0 });
+    });
+  }, [activeStep, isFinished]);
 
   useEffect(() => {
     onDraftStateChange?.({
@@ -2127,8 +2206,8 @@ const PermContractGenerator = ({
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 20;
     const contentWidth = pageWidth - margin * 2;
-    const footerTop = pageHeight - 22;
-    const footerReserve = 28;
+    const footerTop = pageHeight - 20;
+    const footerReserve = 27;
     const topStart = 20;
     const bodyBottomLimit = pageHeight - footerReserve;
     const annexureBodyBottomLimit = pageHeight - 22;
@@ -2461,10 +2540,10 @@ const PermContractGenerator = ({
       const paragraphGap = 2.4;
       const headingHeight = headingLines.length * 4.2 + 2.2;
       const firstParagraphLines = pdf.splitTextToSize(clause.paragraphs[0] || "", paragraphWidth) as string[];
-      const firstParagraphHeight = firstParagraphLines.length * paragraphLineHeight + paragraphGap;
+      const firstParagraphFirstLineHeight = Math.min(firstParagraphLines.length, 1) * paragraphLineHeight + paragraphGap;
 
-      // Keep the heading with at least the first paragraph.
-      ensureSpace(headingHeight + firstParagraphHeight);
+      // Keep the heading with at least the first rendered line of the first paragraph.
+      ensureSpace(headingHeight + firstParagraphFirstLineHeight);
 
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(9.4);
@@ -2477,38 +2556,44 @@ const PermContractGenerator = ({
       pdf.setFontSize(10);
       pdf.setTextColor(0, 0, 0);
 
+      const drawJustifiedParagraphLine = (lineText: string, lineY: number, shouldJustify: boolean) => {
+        const words = lineText.trim().split(/\s+/).filter(Boolean);
+        if (!shouldJustify || words.length <= 1) {
+          pdf.text(lineText, margin + paragraphTextOffset, lineY);
+          return;
+        }
+        const lineWidth = pdf.getTextWidth(lineText);
+        const extraSpace = paragraphWidth - lineWidth;
+        const gapCount = words.length - 1;
+        let x = margin + paragraphTextOffset;
+        words.forEach((word, wordIndex) => {
+          pdf.text(word, x, lineY);
+          x += pdf.getTextWidth(word);
+          if (wordIndex < gapCount) {
+            x += pdf.getTextWidth(" ") + extraSpace / gapCount;
+          }
+        });
+      };
+
       const drawParagraph = (paragraph: string, paragraphIndex: number) => {
         const numberLabel = `${clauseNumber}.${paragraphIndex + 1}`;
         const lines = pdf.splitTextToSize(paragraph, paragraphWidth) as string[];
-        const blockHeight = lines.length * paragraphLineHeight;
+        if (lines.length <= 1) {
+          ensureSpace(paragraphLineHeight + paragraphGap);
+        }
 
-        // After a clause has started, break only the paragraph that does not fit.
-        ensureSpace(blockHeight + paragraphGap);
-        pdf.setFont("helvetica", "normal");
-        pdf.text(numberLabel, margin, y);
         pdf.setFont("helvetica", "normal");
         lines.forEach((line, lineIndex) => {
-          const lineText = String(line);
-          const lineY = y + lineIndex * paragraphLineHeight;
-          const isLastLine = lineIndex === lines.length - 1;
-          const words = lineText.trim().split(/\s+/).filter(Boolean);
-          if (isLastLine || words.length <= 1) {
-            pdf.text(lineText, margin + paragraphTextOffset, lineY);
-            return;
+          if (y + paragraphLineHeight > currentBodyBottomLimit) {
+            pushPage();
           }
-          const lineWidth = pdf.getTextWidth(lineText);
-          const extraSpace = paragraphWidth - lineWidth;
-          const gapCount = words.length - 1;
-          let x = margin + paragraphTextOffset;
-          words.forEach((word, wordIndex) => {
-            pdf.text(word, x, lineY);
-            x += pdf.getTextWidth(word);
-            if (wordIndex < gapCount) {
-              x += pdf.getTextWidth(" ") + extraSpace / gapCount;
-            }
-          });
+          if (lineIndex === 0) {
+            pdf.text(numberLabel, margin, y);
+          }
+          drawJustifiedParagraphLine(String(line), y, lineIndex < lines.length - 1);
+          y += paragraphLineHeight;
         });
-        y += blockHeight + paragraphGap;
+        y += paragraphGap;
       };
 
       if (shouldRenderGroupedWorkingHours) {
@@ -2791,8 +2876,9 @@ const PermContractGenerator = ({
       showPageNumber = true,
     ) => {
       pdf.setPage(pageIndex);
+      const footerContentTop = footerTop - 3;
       pdf.setDrawColor(203, 213, 225);
-      pdf.line(margin, footerTop - 4, pageWidth - margin, footerTop - 4);
+      pdf.line(margin, footerTop - 6, pageWidth - margin, footerTop - 6);
       if (showPageNumber) {
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(7);
@@ -2811,7 +2897,7 @@ const PermContractGenerator = ({
             logoHeight = footerLogoDimensions.pdfMaxHeight;
             logoWidth *= scale;
           }
-          pdf.addImage(logoDataUrl, "PNG", margin, footerTop, logoWidth, logoHeight);
+          pdf.addImage(logoDataUrl, "PNG", margin, footerContentTop, logoWidth, logoHeight);
         } catch {
           // Continue without logo if it fails.
         }
@@ -2820,14 +2906,14 @@ const PermContractGenerator = ({
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(9);
       pdf.setTextColor(0, 0, 0);
-      pdf.text("Initial here:", pageWidth - margin - 50, footerTop + 6);
-      pdf.line(pageWidth - margin - 34.5, footerTop + 6.3, pageWidth - margin, footerTop + 6.3);
+      pdf.text("Initial here:", pageWidth - margin - 50, footerContentTop + 6);
+      pdf.line(pageWidth - margin - 34.5, footerContentTop + 6.3, pageWidth - margin, footerContentTop + 6.3);
 
       const generatedByPrefix = "Document generated by ";
       const generatedByUrl = "www.llasa.co.za";
-      const generatedByY = pageHeight - 5.5;
+      const generatedByY = pageHeight - 8.5;
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(6.5);
+      pdf.setFontSize(7);
       pdf.setTextColor(63, 63, 70);
       const generatedByPrefixWidth = pdf.getTextWidth(generatedByPrefix);
       const generatedByUrlWidth = pdf.getTextWidth(generatedByUrl);
@@ -3050,7 +3136,7 @@ const PermContractGenerator = ({
       isClientTemplateMode ? { fieldName: "template_contract_workplace" } : undefined,
     );
 
-    pushPage({ annexure: true });
+    pushPage();
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(16);
     pdf.setTextColor(0, 0, 0);
@@ -3161,30 +3247,121 @@ const PermContractGenerator = ({
     }
 
     pdf.save(downloadFileName);
+    onRequestClose?.();
   }
 
-  const openClauseEditor = (clause: PreviewClause) => {
+  const getPendingClauseNumber = (afterId: string | null) => {
+    if (afterId === null) return 1;
+    const afterIndex = previewClauses.findIndex((clause) => clause.id === afterId);
+    return afterIndex >= 0 ? afterIndex + 2 : previewClauses.length + 1;
+  };
+
+  const getClauseEditorDraftLines = (draft: string) => {
+    const lines = String(draft || "").split(/\r?\n/).map((line) => stripClauseEditorNumberPrefix(line));
+    return lines.length > 0 ? lines : [""];
+  };
+
+  const setClauseEditorDraftLines = (
+    lines: string[],
+    clauseNumber: number,
+    setDraft: (value: string) => void,
+  ) => {
+    setDraft(formatClauseEditorDraft(lines, clauseNumber));
+  };
+
+  const focusClauseBodyLine = (lineIndex: number, atEnd = false) => {
+    requestAnimationFrame(() => {
+      const textarea = clauseBodyLineRefs.current[lineIndex];
+      if (!textarea) return;
+      const targetPosition = atEnd ? textarea.value.length : 0;
+      textarea.focus();
+      textarea.setSelectionRange(targetPosition, targetPosition);
+      textarea.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  };
+
+  const updateClauseBodyLine = ({
+    draft,
+    lineIndex,
+    value,
+    clauseNumber,
+    setDraft,
+  }: {
+    draft: string;
+    lineIndex: number;
+    value: string;
+    clauseNumber: number;
+    setDraft: (value: string) => void;
+  }) => {
+    const lines = getClauseEditorDraftLines(draft);
+    lines[lineIndex] = value;
+    setClauseEditorDraftLines(lines, clauseNumber, setDraft);
+  };
+
+  const handleClauseBodyKeyDown = ({
+    event,
+    draft,
+    lineIndex,
+    clauseNumber,
+    setDraft,
+    blockFirstParagraphEnter = false,
+  }: {
+    event: KeyboardEvent<HTMLTextAreaElement>;
+    draft: string;
+    lineIndex: number;
+    clauseNumber: number;
+    setDraft: (value: string) => void;
+    blockFirstParagraphEnter?: boolean;
+  }) => {
+    const textarea = event.currentTarget;
+    const lines = getClauseEditorDraftLines(draft);
+
+    if (event.key === "Backspace" && textarea.selectionStart === textarea.selectionEnd) {
+      if (!textarea.value && lineIndex > 0) {
+        event.preventDefault();
+        const nextLines = lines.filter((_, index) => index !== lineIndex);
+        setClauseEditorDraftLines(nextLines, clauseNumber, setDraft);
+        focusClauseBodyLine(lineIndex - 1, true);
+        return;
+      }
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (blockFirstParagraphEnter && lineIndex === 0) return;
+      const nextLines = [...lines];
+      nextLines.splice(lineIndex + 1, 0, "");
+      setClauseEditorDraftLines(nextLines, clauseNumber, setDraft);
+      focusClauseBodyLine(lineIndex + 1);
+    }
+  };
+
+  const openClauseEditor = (clause: PreviewClause, clauseNumber: number) => {
     setEditingClauseId(clause.id);
+    setEditingClauseNumber(clauseNumber);
     setClauseTitleDraft(clause.title);
     setClauseBodyDraft(
-      serializeClauseParagraphs(
+      formatClauseEditorDraft(
         getEditableClauseParagraphs({
           clause,
           workingHoursMode: contract.permContractWorkingHoursMode,
         }),
+        clauseNumber,
       ),
     );
   };
 
   const closeClauseEditor = () => {
     setEditingClauseId(null);
+    setEditingClauseNumber(1);
     setClauseTitleDraft("");
     setClauseBodyDraft("");
   };
 
   const saveClauseEdit = (clause: PreviewClause) => {
     const nextTitle = clauseTitleDraft.trim();
-    const nextBody = clauseBodyDraft.trim();
+    const nextBodyParagraphs = parseClauseEditorDraft(clauseBodyDraft);
+    const nextBody = serializeClauseParagraphs(nextBodyParagraphs).trim();
     if (!nextTitle) {
       toast({
         title: "Edit clause",
@@ -3193,7 +3370,7 @@ const PermContractGenerator = ({
       });
       return;
     }
-    if (!nextBody) {
+    if (nextBodyParagraphs.length === 0) {
       toast({
         title: "Edit clause",
         description: "Clause body cannot be empty.",
@@ -3221,10 +3398,10 @@ const PermContractGenerator = ({
     const nextParagraphs =
       originalClause.id === makePreviewClauseId("Hours of Work") && contract.permContractWorkingHoursMode === "defined"
         ? mergeHoursOfWorkEditedParagraphs({
-            editedParagraphs: normalizeClauseBodyText(nextBody),
+            editedParagraphs: nextBodyParagraphs,
             originalClause,
           })
-        : normalizeClauseBodyText(nextBody);
+        : nextBodyParagraphs;
 
     setClauseTitleEdits((current) => {
       const next = { ...current };
@@ -3266,32 +3443,50 @@ const PermContractGenerator = ({
     if (originalClause) {
       setClauseTitleDraft(originalClause.title);
       setClauseBodyDraft(
-        serializeClauseParagraphs(
+        formatClauseEditorDraft(
           getEditableClauseParagraphs({
             clause: originalClause,
             workingHoursMode: contract.permContractWorkingHoursMode,
           }),
+          editingClauseNumber,
         ),
       );
     }
   };
 
   const openAddClauseForm = (afterId: string | null) => {
+    const pendingClauseNumber = getPendingClauseNumber(afterId);
     setAddingAfterId(afterId);
+    setNewClauseNumber(pendingClauseNumber);
     setNewClauseTitle("");
-    setNewClauseBody("");
+    setNewClauseBody(formatClauseEditorDraft([""], pendingClauseNumber));
   };
 
   const closeAddClauseForm = () => {
     setAddingAfterId(undefined);
+    setNewClauseNumber(1);
     setNewClauseTitle("");
     setNewClauseBody("");
   };
 
+  const removeCustomClause = (clauseId: string) => {
+    setCustomClauses((current) => current.filter((clause) => clause.id !== clauseId));
+    setClauseTitleEdits((current) => {
+      const next = { ...current };
+      delete next[clauseId];
+      return next;
+    });
+    setClauseBodyEdits((current) => {
+      const next = { ...current };
+      delete next[clauseId];
+      return next;
+    });
+  };
+
   const saveNewClause = () => {
     const title = newClauseTitle.trim();
-    const body = newClauseBody.trim();
-    if (!title || !body) {
+    const bodyParagraphs = parseClauseEditorDraft(newClauseBody);
+    if (!title || bodyParagraphs.length === 0) {
       toast({
         title: "Add clause",
         description: "Please provide both a clause title and body.",
@@ -3305,15 +3500,87 @@ const PermContractGenerator = ({
       {
         id: generateCustomClauseId(),
         title,
-        paragraphs: normalizeClauseBodyText(body),
+        paragraphs: bodyParagraphs,
         insertAfterId: addingAfterId ?? null,
       },
     ]);
     closeAddClauseForm();
   };
 
+  const resizeClauseEditorTextarea = (textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    const autosizeKey = `${textarea.value}\u0000${textarea.clientWidth}`;
+    if (textarea.dataset.autosizeKey === autosizeKey && textarea.style.height) return;
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+    textarea.dataset.autosizeKey = autosizeKey;
+  };
+
+  const renderClauseBodyEditor = ({
+    draft,
+    setDraft,
+    clauseNumber,
+    blockFirstParagraphEnter = false,
+    placeholder,
+  }: {
+    draft: string;
+    setDraft: (value: string) => void;
+    clauseNumber: number;
+    blockFirstParagraphEnter?: boolean;
+    placeholder?: string;
+  }) => {
+    const lines = getClauseEditorDraftLines(draft);
+    return (
+      <div
+        ref={clauseBodyEditorRef}
+        data-clause-body-editor
+        className="max-h-[180px] overflow-y-auto overscroll-contain rounded-sm border-[0.5px] border-slate-300 bg-white px-3 pb-6 pt-2 text-[13px] text-slate-700 [overflow-anchor:none] [scrollbar-gutter:stable] hover:border-slate-500"
+      >
+        {lines.map((line, lineIndex) => (
+          <div key={`${clauseNumber}-${lineIndex}`} className="grid min-w-0 grid-cols-[34px_minmax(0,1fr)] items-start gap-3">
+            <div className="pt-[1px] leading-6 text-slate-700">{`${clauseNumber}.${lineIndex + 1}`}</div>
+            <textarea
+              ref={(element) => {
+                clauseBodyLineRefs.current[lineIndex] = element;
+                resizeClauseEditorTextarea(element);
+              }}
+              value={line}
+              onChange={(event) => {
+                resizeClauseEditorTextarea(event.currentTarget);
+                updateClauseBodyLine({
+                  draft,
+                  lineIndex,
+                  value: event.target.value,
+                  clauseNumber,
+                  setDraft,
+                });
+              }}
+              onKeyDown={(event) =>
+                handleClauseBodyKeyDown({
+                  event,
+                  draft,
+                  lineIndex,
+                  clauseNumber,
+                  setDraft,
+                  blockFirstParagraphEnter,
+                })
+              }
+              rows={1}
+              spellCheck={true}
+              lang="en"
+              autoCorrect="on"
+              placeholder={lineIndex === 0 ? placeholder : undefined}
+              className="block w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[13px] leading-6 text-slate-700 outline-none placeholder:text-[13px] placeholder:text-slate-400 focus:outline-none"
+            />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const stepOneBody = (
-    <div className={cn("h-full py-1", hiddenScrollClassName)}>
+    <div ref={stepScrollRef} className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -3501,7 +3768,7 @@ const PermContractGenerator = ({
   );
 
   const stepTwoBody = (
-    <div className={cn("h-full py-1", hiddenScrollClassName)}>
+    <div ref={stepScrollRef} className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
         {isClientTemplateMode ? (
           <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
@@ -3567,7 +3834,7 @@ const PermContractGenerator = ({
                   <CommandList className="max-h-[320px] overscroll-contain">
                     <CommandEmpty className="px-3 py-4 text-sm text-slate-500">No matching nationalities found.</CommandEmpty>
                     <CommandGroup>
-                      {nationalityOptions.map((option) => (
+                      {templateNationalityOptions.map((option) => (
                         <CommandItem
                           key={option}
                           value={option}
@@ -3750,7 +4017,7 @@ const PermContractGenerator = ({
   );
 
   const stepThreeBody = (
-    <div className={cn("h-full py-1", hiddenScrollClassName)}>
+    <div ref={stepScrollRef} className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
         {isClientTemplateMode ? (
           <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] text-slate-600">
@@ -3899,7 +4166,7 @@ const PermContractGenerator = ({
               onBlur={() => setIsSalaryAmountFocused(false)}
               onChange={(event) => updateContract("permContractSalaryAmount", sanitizeCurrencyInput(event.target.value))}
               inputMode="decimal"
-              placeholder="R 0.00"
+              placeholder="R0.00"
               className={fieldClassName}
             />
           </div>
@@ -4070,7 +4337,7 @@ const PermContractGenerator = ({
   );
 
   const previewBody = (
-    <div className={cn("h-full py-1", hiddenScrollClassName)}>
+    <div ref={stepScrollRef} className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="mx-auto max-w-[820px] space-y-5">
         <div className="rounded-sm bg-white px-8 pt-6 pb-10 text-black shadow-[0_0_0_1px_rgba(148,163,184,0.16)]">
           <h2 className="text-center text-[20px] font-bold uppercase tracking-tight text-black">EMPLOYMENT CONTRACT</h2>
@@ -4191,7 +4458,8 @@ const PermContractGenerator = ({
                       workingHoursMode={contract.permContractWorkingHoursMode}
                       workingHoursScheduleRows={workingHoursScheduleRows}
                       onWorkingHoursTimeChange={updateWorkingHoursDay}
-                      onEdit={() => openClauseEditor(clause)}
+                      onEdit={() => openClauseEditor(clause, currentNumber)}
+                      onRemoveAdded={isAdded ? () => removeCustomClause(clause.id) : undefined}
                     />,
                     isPreviewEditable && !isLastClause ? (
                       <AddClauseDivider key={`add-after-${clause.id}`} onClick={() => openAddClauseForm(clause.id)} />
@@ -4229,7 +4497,7 @@ const PermContractGenerator = ({
     typeof document !== "undefined" && isPreviewEditable && activeEditingClause
       ? (
           <Dialog open onOpenChange={(open) => { if (!open) closeClauseEditor(); }}>
-            <DialogContent className="max-w-[680px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
+            <DialogContent className="w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
               <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <Pencil className="h-4 w-4 text-white" />
@@ -4243,12 +4511,12 @@ const PermContractGenerator = ({
                     value={clauseTitleDraft}
                     onChange={(event) => setClauseTitleDraft(event.target.value)}
                     placeholder="Clause title"
-                    className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
+                    className="h-9 border-slate-300 !text-[13px] font-bold text-black placeholder:!text-[13px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
                     autoFocus
                   />
                   <p className="flex items-center gap-1 text-[11px] text-slate-500">
                     <Info className="h-3.5 w-3.5" />
-                    Separate paragraphs with a blank line. Numbering is updated automatically.
+                    Press Enter to start the next numbered paragraph.
                   </p>
                   <div className="space-y-2">
                     {clauseTitleEdits[activeEditingClause.id] || clauseBodyEdits[activeEditingClause.id] ? (
@@ -4264,15 +4532,14 @@ const PermContractGenerator = ({
                         </Button>
                       </div>
                     ) : null}
-                    <Textarea
-                      value={clauseBodyDraft}
-                      onChange={(event) => setClauseBodyDraft(event.target.value)}
-                      rows={10}
-                      spellCheck={true}
-                      lang="en"
-                      autoCorrect="on"
-                      className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
-                    />
+                    {renderClauseBodyEditor({
+                      draft: clauseBodyDraft,
+                      setDraft: setClauseBodyDraft,
+                      clauseNumber: editingClauseNumber,
+                      blockFirstParagraphEnter:
+                        activeEditingClause.id === makePreviewClauseId("Hours of Work") &&
+                        contract.permContractWorkingHoursMode === "defined",
+                    })}
                   </div>
                   <div className="flex items-center justify-center gap-3 pt-1">
                     <Button
@@ -4280,7 +4547,7 @@ const PermContractGenerator = ({
                       variant="outline"
                       size="sm"
                       onClick={closeClauseEditor}
-                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[12px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                     >
                       Cancel
                     </Button>
@@ -4288,7 +4555,7 @@ const PermContractGenerator = ({
                       type="button"
                       size="sm"
                       onClick={() => saveClauseEdit(activeEditingClause)}
-                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[12px] text-white hover:bg-[#34b73b]"
                     >
                       Save
                     </Button>
@@ -4304,7 +4571,7 @@ const PermContractGenerator = ({
     typeof document !== "undefined" && isPreviewEditable && addingAfterId !== undefined
       ? (
           <Dialog open onOpenChange={(open) => { if (!open) closeAddClauseForm(); }}>
-            <DialogContent className="max-w-[680px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
+            <DialogContent className="w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl">
               <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
                 <div className="flex items-center gap-2">
                   <Plus className="h-4 w-4 text-white" />
@@ -4318,30 +4585,26 @@ const PermContractGenerator = ({
                     value={newClauseTitle}
                     onChange={(event) => setNewClauseTitle(event.target.value)}
                     placeholder="Clause title"
-                    className="h-8 border-slate-300 !text-[11px] font-bold text-black placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
+                    className="h-9 border-slate-300 !text-[13px] font-bold text-black placeholder:!text-[13px] placeholder:font-normal placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0"
                     autoFocus
                   />
                   <p className="flex items-center gap-1 text-[11px] text-slate-500">
                     <Info className="h-3.5 w-3.5" />
-                    Separate paragraphs with a blank line. Numbering is updated automatically.
+                    Press Enter to start the next numbered paragraph.
                   </p>
-                  <Textarea
-                    value={newClauseBody}
-                    onChange={(event) => setNewClauseBody(event.target.value)}
-                    rows={8}
-                    spellCheck={true}
-                    lang="en"
-                    autoCorrect="on"
-                    className="min-h-[180px] border-[0.5px] border-slate-300 !text-[11px] text-slate-700 placeholder:!text-[11px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus-visible:border-slate-300 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:outline-none focus-visible:outline-none"
-                    placeholder="Clause body"
-                  />
+                  {renderClauseBodyEditor({
+                    draft: newClauseBody,
+                    setDraft: setNewClauseBody,
+                    clauseNumber: newClauseNumber,
+                    placeholder: "Clause body",
+                  })}
                   <div className="flex items-center justify-center gap-3 pt-1">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={closeAddClauseForm}
-                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[11px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
+                      className="h-8 w-[92px] rounded border-slate-300 bg-white px-3 text-[12px] text-slate-700 hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35]"
                     >
                       Cancel
                     </Button>
@@ -4349,7 +4612,7 @@ const PermContractGenerator = ({
                       type="button"
                       size="sm"
                       onClick={saveNewClause}
-                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[11px] text-white hover:bg-[#34b73b]"
+                      className="h-8 w-[92px] rounded bg-[#3eca44] px-3 text-[12px] text-white hover:bg-[#34b73b]"
                     >
                       Add Clause
                     </Button>

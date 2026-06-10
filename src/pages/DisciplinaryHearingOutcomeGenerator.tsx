@@ -1596,6 +1596,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
       if (editingParagraphId === "analysisIntro") {
         return;
       }
+      if (editingParagraphId === "preliminarySection" && getPreliminarySectionEditorNumber(lineIndex, lines) === "4.") {
+        return;
+      }
       const nextLines = [...lines];
       nextLines.splice(lineIndex + 1, 0, "");
       const renumbered = renumberEditorDraft(editingParagraphId, nextLines);

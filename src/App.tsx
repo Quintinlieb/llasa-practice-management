@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,6 +25,53 @@ import NotFound from "./pages/NotFound";
 import TermsAndConditions from "./pages/TermsAndConditions";
 
 const queryClient = new QueryClient();
+const doingGreatDisplayMs = 10_000;
+const doingGreatHourlyIntervalMs = 60 * 60 * 1_000;
+
+const DoingGreatImage = ({ className = "" }: { className?: string }) => (
+  <img
+    src="/doing-great.png"
+    alt=""
+    aria-hidden="true"
+    className={`pointer-events-none fixed bottom-0 right-[50px] z-[10000] w-[clamp(140px,18vw,260px)] select-none ${className}`}
+  />
+);
+
+const DoingGreatOverlay = () => {
+  const [isVisible, setIsVisible] = useState(false);
+  const hideTimerRef = useRef<number | null>(null);
+
+  const clearHideTimer = useCallback(() => {
+    if (hideTimerRef.current !== null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  const showOverlay = useCallback(
+    () => {
+      clearHideTimer();
+      setIsVisible(true);
+      hideTimerRef.current = window.setTimeout(() => {
+        setIsVisible(false);
+        hideTimerRef.current = null;
+      }, doingGreatDisplayMs);
+    },
+    [clearHideTimer],
+  );
+
+  useEffect(() => {
+    const hourlyTimer = window.setInterval(showOverlay, doingGreatHourlyIntervalMs);
+    return () => {
+      window.clearInterval(hourlyTimer);
+      clearHideTimer();
+    };
+  }, [clearHideTimer, showOverlay]);
+
+  if (!isVisible) return null;
+
+  return <DoingGreatImage />;
+};
 
 const RootRedirect = () => {
   const { user, loading } = useAuth();
@@ -108,6 +156,7 @@ const App = () => (
             <AppRoutes />
           </BrowserRouter>
         </AuthProvider>
+        <DoingGreatOverlay />
       </TooltipProvider>
     </ThemeProvider>
   </QueryClientProvider>

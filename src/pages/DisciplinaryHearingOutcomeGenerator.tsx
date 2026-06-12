@@ -140,7 +140,7 @@ type PreviewFormState = {
   signingMonth: string;
 };
 
-type EditorTarget = keyof PreviewFormState | "preliminarySection" | "issueSection" | "analysisSection" | "employeeStatementGroup";
+type EditorTarget = keyof PreviewFormState | "preliminarySection" | "issueSection" | "analysisSection" | "employeeStatementGroup" | "employerStatementGroup";
 
 type OutcomeDraftState = {
   activeStep: number;
@@ -376,7 +376,7 @@ const representationOptions: readonly RepresentationOption[] = [
 ] as const;
 const interpreterOptions: readonly InterpreterOption[] = ["Yes", "No"] as const;
 const appealNoticeOptions: readonly AppealNoticeOption[] = ["3", "5", "7", "10"] as const;
-const pleaOptions: readonly PleaOption[] = ["No plea", "Guilty", "Not guilty"] as const;
+const pleaOptions: readonly PleaOption[] = ["Not guilty", "Guilty", "No plea"] as const;
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 const offenceGroupLabel: Record<OffenceCategory, string> = {
   Minor: "Minor Offences",
@@ -399,6 +399,7 @@ const conductOffenceOptions: ConductOffence[] = [
   { name: "Breach Of Rules Or Regulations", category: "Minor" },
   { name: "Failure To Carry Out Instructions", category: "Minor" },
   { name: "Negligence", category: "Serious" },
+  { name: "Dereliction of Duties", category: "Serious" },
   { name: "Unauthorised Absenteeism > 5 Days", category: "Serious" },
   { name: "Refusal To Work Overtime", category: "Serious" },
   { name: "Consistent Poor Time Keeping", category: "Serious" },
@@ -687,6 +688,7 @@ const parseEmployeeStatementOverrides = (value: string) => {
 };
 
 const stripParagraphNumberPrefix = (value: string) => String(value || "").replace(/^\s*\d+(?:\.\d+)?\.?\s*/, "").trim();
+const stripParagraphNumberPrefixPreserveSpacing = (value: string) => String(value || "").replace(/^\s*\d+(?:\.\d+)?\.?\s*/, "");
 
 const splitEditorDraftLines = (value: string) =>
   String(value || "")
@@ -805,6 +807,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const employeeNoticeDatePickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const employeeHearingDatePickerRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const editingTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editingLineTextareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const downloadPdfRef = useRef<(() => void) | null>(null);
   const lastEmittedDraftSnapshotRef = useRef<string | null>(null);
   const [editingParagraphId, setEditingParagraphId] = useState<EditorTarget | null>(null);
@@ -1405,20 +1408,26 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setEditingParagraphLabel("");
     setEditingParagraphDraft("");
     setEditingEmployeeStatementGroupIndex(null);
+    editingTextareaRef.current = null;
+    editingLineTextareaRefs.current = {};
   };
 
   const openAddRecommendationForm = () => {
-    setRecommendationDraft(previewForm.recommendation.trim());
+    editingTextareaRef.current = null;
+    editingLineTextareaRefs.current = {};
+    setRecommendationDraft(formatEditorDraft("recommendation", previewForm.recommendation.trim()));
     setIsAddRecommendationOpen(true);
   };
 
   const closeAddRecommendationForm = () => {
     setIsAddRecommendationOpen(false);
     setRecommendationDraft("");
+    editingTextareaRef.current = null;
+    editingLineTextareaRefs.current = {};
   };
 
   const saveAddRecommendationForm = () => {
-    const nextRecommendation = recommendationDraft.trim();
+    const nextRecommendation = parseEditorDraft(recommendationDraft).trim();
     if (!nextRecommendation) {
       toast({
         title: "Add section",
@@ -1527,6 +1536,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
       closeParagraphEditor();
       return;
     }
+    if (editingParagraphId === "employerStatementGroup") {
+      const rawLines = String(editingParagraphDraft || "").split(/\r?\n/);
+      const lines = splitEditorDraftLines(editingParagraphDraft);
+      const statementLines = rawLines
+        .map((rawLine, index) => {
+          const numberMatch = String(rawLine || "").trim().match(/^(\d+(?:\.\d+)?)\.?/);
+          const number = numberMatch?.[1] || "";
+          if (/^\d+\.\d+$/.test(number)) return (lines[index] || "").trim();
+          return "";
+        })
+        .filter(Boolean);
+      setPreviewForm((current) => ({
+        ...current,
+        employerStatement: statementLines.join("\n"),
+      }));
+      closeParagraphEditor();
+      return;
+    }
     if (editingParagraphId === "analysisSection") {
       const lines = splitEditorDraftLines(editingParagraphDraft);
       setPreviewForm((current) => ({
@@ -1545,16 +1572,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
     closeParagraphEditor();
   };
 
-  const handleEditingParagraphKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditingParagraphKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>, forcedLineIndex?: number) => {
     const textarea = event.currentTarget;
     if (!editingParagraphId) return;
-    const lines = textarea.value.split(/\r?\n/);
-    const lineIndex = textarea.value.slice(0, textarea.selectionStart).split(/\r?\n/).length - 1;
-    const lineStart = textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1;
+    const lines = String(editingParagraphDraft || "").split(/\r?\n/);
+    const lineIndex = forcedLineIndex ?? textarea.value.slice(0, textarea.selectionStart).split(/\r?\n/).length - 1;
+    const lineStart = forcedLineIndex === undefined ? textarea.value.lastIndexOf("\n", textarea.selectionStart - 1) + 1 : 0;
     const currentLine = lines[lineIndex] || "";
     const fallbackPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex);
     const actualPrefix = currentLine.match(/^\s*\d+(?:\.\d+)?\.?\s*/)?.[0] || fallbackPrefix;
-    const minPosition = lineStart + actualPrefix.length;
+    const minPosition = forcedLineIndex === undefined ? lineStart + actualPrefix.length : 0;
     if (event.key === "Home") {
       event.preventDefault();
       requestAnimationFrame(() => {
@@ -1563,9 +1590,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
       return;
     }
     if (event.key === "Backspace" && textarea.selectionStart === textarea.selectionEnd) {
-      const currentContent = stripParagraphNumberPrefix(currentLine);
+      const currentContent = forcedLineIndex === undefined ? stripParagraphNumberPrefix(currentLine) : textarea.value.trim();
       if (!currentContent && lineIndex > 0) {
-        if (editingParagraphId === "employeeStatementGroup" && lineIndex === 1) {
+        if ((editingParagraphId === "employeeStatementGroup" || editingParagraphId === "employerStatementGroup") && lineIndex === 1) {
           event.preventDefault();
           return;
         }
@@ -1573,17 +1600,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
         const nextLines = lines.filter((_, index) => index !== lineIndex);
         const renumbered = renumberEditorDraft(editingParagraphId, nextLines);
         setEditingParagraphDraft(renumbered);
-        requestAnimationFrame(() => {
-          const previousLineText = nextLines[lineIndex - 1] || "";
-          const previousPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex - 1);
-          const previousContentLength = stripParagraphNumberPrefix(previousLineText).length;
-          const lineOffset = previousPrefix.length + previousContentLength;
-          const finalPosition = renumbered
-            .split(/\r?\n/)
-            .slice(0, lineIndex - 1)
-            .reduce((total, line) => total + line.length + 1, 0) + lineOffset;
-          editingTextareaRef.current?.setSelectionRange(finalPosition, finalPosition);
-        });
+        moveEditorCaretToLineEnd(lineIndex - 1);
         return;
       }
     }
@@ -1603,15 +1620,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       nextLines.splice(lineIndex + 1, 0, "");
       const renumbered = renumberEditorDraft(editingParagraphId, nextLines);
       setEditingParagraphDraft(renumbered);
-      requestAnimationFrame(() => {
-        const nextLineStart = renumbered
-          .split(/\r?\n/)
-          .slice(0, lineIndex + 1)
-          .reduce((total, line) => total + line.length + 1, 0);
-        const nextPrefix = getEditorParagraphPrefix(editingParagraphId, lineIndex + 1);
-        const nextCaretPosition = nextLineStart + nextPrefix.length;
-        editingTextareaRef.current?.setSelectionRange(nextCaretPosition, nextCaretPosition);
-      });
+      focusEditorLine(lineIndex + 1, "start");
     }
   };
 
@@ -1844,22 +1853,25 @@ const DisciplinaryHearingOutcomeGenerator = ({
           : selectedMisconductCount > 0
             ? `The employee was charged with ${misconductListLabel}.`
             : "The employee was charged with ______________________________.");
-      const defaultPleaRowValues = hearingDetailsForm.misconductTypes
-        .map((type) => {
-          const plea = toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[type] || "").trim());
-          const charge = toSentenceCaseLower(type);
-          return plea && charge
-            ? plea === "no plea"
-              ? `In respect of ${charge}, the employee entered no plea.`
-              : `In respect of ${charge}, the employee pleaded ${plea}.`
-            : "";
-        })
-        .filter(Boolean);
-      const pleaRowValues = Array.from({
-        length: Math.max(defaultPleaRowValues.length, preliminaryPleaOverrideLines.length),
-      })
-        .map((_, index) => preliminaryPleaOverrideLines[index] || defaultPleaRowValues[index] || "")
-        .filter(Boolean);
+      const pleaRowValues =
+        selectedMisconductCount > 1
+          ? Array.from({
+              length: Math.max(hearingDetailsForm.misconductTypes.length, preliminaryPleaOverrideLines.length),
+            })
+              .map((_, index) => {
+                const type = hearingDetailsForm.misconductTypes[index] || "";
+                const plea = toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[type] || "").trim());
+                const charge = toSentenceCaseLower(type);
+                const defaultValue =
+                  plea && charge
+                    ? plea === "no plea"
+                      ? `In respect of ${charge}, the employee entered no plea.`
+                      : `In respect of ${charge}, the employee pleaded ${plea}.`
+                    : "";
+                return preliminaryPleaOverrideLines[index] || defaultValue;
+              })
+              .filter(Boolean)
+          : [];
       return [
         {
           number: "4.",
@@ -2545,6 +2557,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
       if (index === 0) return `${mainNumber}.`;
       return `${mainNumber}.${index}`;
     }
+    if (field === "employerStatementGroup") {
+      if (index === 0) return `${employerStatementNumber}.`;
+      return `${employerStatementNumber}.${index}`;
+    }
     if (field === "preliminaryOne") return "1.";
     if (field === "preliminaryTwo") return "2.";
     if (field === "preliminaryThree") return "3.";
@@ -2590,22 +2606,99 @@ const DisciplinaryHearingOutcomeGenerator = ({
       })
       .join("\n");
 
+  const resizeEditorLineTextarea = (textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+
+  const setEditorLineTextareaRef = (index: number, textarea: HTMLTextAreaElement | null) => {
+    if (textarea) {
+      editingLineTextareaRefs.current[index] = textarea;
+      if (index === 0 || !editingTextareaRef.current) editingTextareaRef.current = textarea;
+      resizeEditorLineTextarea(textarea);
+      return;
+    }
+    const previousTextarea = editingLineTextareaRefs.current[index];
+    delete editingLineTextareaRefs.current[index];
+    if (editingTextareaRef.current === previousTextarea) {
+      editingTextareaRef.current = Object.keys(editingLineTextareaRefs.current)
+        .map((key) => Number(key))
+        .sort((left, right) => left - right)
+        .map((key) => editingLineTextareaRefs.current[key])
+        .find((nextTextarea): nextTextarea is HTMLTextAreaElement => Boolean(nextTextarea)) ?? null;
+    }
+  };
+
+  const focusEditorLine = (lineIndex: number, position: "start" | "end" = "end") => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const textarea = editingLineTextareaRefs.current[lineIndex] ?? editingTextareaRef.current;
+        if (!textarea) return;
+        const nextPosition = position === "start" ? 0 : textarea.value.length;
+        textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(nextPosition, nextPosition);
+      });
+    });
+  };
+
+  const updateEditorDraftLine = (lineIndex: number, value: string) => {
+    if (!editingParagraphId) return;
+    const lines = String(editingParagraphDraft || "").split(/\r?\n/);
+    const nextLines = lines.length > 0 ? [...lines] : [""];
+    const prefix = getEditorParagraphPrefix(editingParagraphId, lineIndex, nextLines);
+    nextLines[lineIndex] = `${prefix}${value}`;
+    setEditingParagraphDraft(nextLines.join("\n"));
+  };
+
+  const updateRecommendationDraftLine = (lineIndex: number, value: string) => {
+    const lines = String(recommendationDraft || "").split(/\r?\n/);
+    const nextLines = lines.length > 0 ? [...lines] : [""];
+    const prefix = getEditorParagraphPrefix("recommendation", lineIndex, nextLines);
+    nextLines[lineIndex] = `${prefix}${value}`;
+    setRecommendationDraft(nextLines.join("\n"));
+  };
+
+  const handleRecommendationDraftKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>, lineIndex: number) => {
+    const textarea = event.currentTarget;
+    const lines = String(recommendationDraft || "").split(/\r?\n/);
+    if (event.key === "Home") {
+      event.preventDefault();
+      requestAnimationFrame(() => {
+        textarea.setSelectionRange(0, 0);
+      });
+      return;
+    }
+    if (event.key === "Backspace" && textarea.selectionStart === textarea.selectionEnd) {
+      const currentContent = textarea.value.trim();
+      if (!currentContent && lineIndex > 0) {
+        event.preventDefault();
+        const nextLines = lines.filter((_, index) => index !== lineIndex);
+        const renumbered = renumberEditorDraft("recommendation", nextLines);
+        setRecommendationDraft(renumbered);
+        focusEditorLine(lineIndex - 1);
+        return;
+      }
+    }
+    if ((event.key === "ArrowLeft" || event.key === "Backspace") && textarea.selectionStart === 0 && textarea.selectionEnd === 0) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const nextLines = [...lines];
+      nextLines.splice(lineIndex + 1, 0, "");
+      const renumbered = renumberEditorDraft("recommendation", nextLines);
+      setRecommendationDraft(renumbered);
+      focusEditorLine(lineIndex + 1, "start");
+    }
+  };
+
   const removeEditablePlaceholderParagraphs = (value: string) =>
     normalizeParagraphText(value).filter((paragraph) => paragraph.trim() !== editablePlaceholderText);
 
   const moveEditorCaretToLineEnd = (lineIndex: number) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const textarea = editingTextareaRef.current;
-        if (!textarea) return;
-        const lines = textarea.value.split(/\r?\n/);
-        const targetLineIndex = Math.max(0, Math.min(lineIndex, lines.length - 1));
-        const lineStart = lines.slice(0, targetLineIndex).reduce((total, line) => total + line.length + 1, 0);
-        const targetPosition = lineStart + (lines[targetLineIndex] || "").length;
-        textarea.focus();
-        textarea.setSelectionRange(targetPosition, targetPosition);
-      });
-    });
+    focusEditorLine(lineIndex, "end");
   };
 
   const blockPreviewInteractionWhenEditorOpen = (event: SyntheticEvent<HTMLElement>) => {
@@ -2664,6 +2757,24 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ];
       setEditingParagraphDraft(sectionLines.join("\n"));
       moveEditorCaretToLineEnd(Math.min(1, sectionLines.length - 1));
+      return;
+    }
+    if (field === "employerStatementGroup") {
+      const rawParagraphs = normalizeParagraphText(employerStatementValue);
+      const paragraphs =
+        rawParagraphs.length === 1 && rawParagraphs[0] === editablePlaceholderText
+          ? [""]
+          : rawParagraphs;
+      const sectionLines = [
+        `${employerStatementNumber}.${editorParagraphNumberSpacing}The Employer's statement:`,
+        ...paragraphs.map((paragraph, index) => {
+          const normalizedParagraph = stripParagraphNumberPrefix(paragraph);
+          const prefix = `${employerStatementNumber}.${index + 1}${editorParagraphNumberSpacing}`;
+          return normalizedParagraph.length > 0 ? `${prefix}${normalizedParagraph}` : prefix;
+        }),
+      ];
+      setEditingParagraphDraft(sectionLines.join("\n"));
+      moveEditorCaretToLineEnd(Math.min(selectedLineIndex + 1, sectionLines.length - 1));
       return;
     }
     if (field === "analysisSection") {
@@ -3268,14 +3379,38 @@ const DisciplinaryHearingOutcomeGenerator = ({
             <Info className="h-3.5 w-3.5" />
             Press Enter to start the next numbered paragraph.
           </p>
-          <textarea
-            ref={editingTextareaRef}
-            value={editingParagraphDraft}
-            onChange={(event) => setEditingParagraphDraft(event.target.value)}
-            onKeyDown={handleEditingParagraphKeyDown}
-            rows={10}
-            className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[13px] text-slate-700 placeholder:text-[13px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
-          />
+          <div className="min-h-[180px] w-full rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[13px] text-slate-700 hover:border-slate-500 focus-within:border-slate-300">
+            {(String(editingParagraphDraft || "").split(/\r?\n/).length > 0
+              ? String(editingParagraphDraft || "").split(/\r?\n/)
+              : [getEditorParagraphPrefix(editingParagraphId || "issueInDispute", 0)]
+            ).map((line, lineIndex, lines) => {
+              const isReadonlyStatementHeading =
+                lineIndex === 0 &&
+                (editingParagraphId === "employeeStatementGroup" || editingParagraphId === "employerStatementGroup");
+              return (
+                <div key={`editor-line-${lineIndex}`} className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4">
+                  <span className="select-none text-[13px] text-slate-700">
+                    {editingParagraphId ? getEditorParagraphNumber(editingParagraphId, lineIndex, lines) : ""}
+                  </span>
+                  {isReadonlyStatementHeading ? (
+                    <p className="min-h-[1.5em] text-[13px] text-slate-700">
+                      {stripParagraphNumberPrefixPreserveSpacing(line)}
+                    </p>
+                  ) : (
+                    <textarea
+                      ref={(textarea) => setEditorLineTextareaRef(lineIndex, textarea)}
+                      value={stripParagraphNumberPrefixPreserveSpacing(line)}
+                      onChange={(event) => updateEditorDraftLine(lineIndex, event.target.value)}
+                      onInput={(event) => resizeEditorLineTextarea(event.currentTarget)}
+                      onKeyDown={(event) => handleEditingParagraphKeyDown(event, lineIndex)}
+                      rows={1}
+                      className="min-h-[1.5em] w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[13px] text-slate-700 placeholder:text-[13px] placeholder:text-slate-400 focus:outline-none"
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
           <div className="flex items-center justify-center gap-3 pt-1">
             <Button
               type="button"
@@ -3302,7 +3437,13 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
   const addRecommendationDialog = (
     <Dialog open={isPreviewEditable && isAddRecommendationOpen} onOpenChange={(open) => (!open ? closeAddRecommendationForm() : undefined)}>
-      <DialogContent className="z-[10000] w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl [&>button]:right-3 [&>button]:top-3 [&>button]:text-white [&>button]:hover:text-white">
+      <DialogContent
+        className="z-[10000] w-[94vw] max-w-[860px] gap-0 overflow-hidden rounded-sm border-0 bg-[#2D4256] p-0 shadow-xl [&>button]:right-3 [&>button]:top-3 [&>button]:text-white [&>button]:hover:text-white"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          requestAnimationFrame(() => editingTextareaRef.current?.focus({ preventScroll: true }));
+        }}
+      >
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
           <Plus className="h-4 w-4 text-white" />
           <DialogTitle className="text-[15px] font-semibold text-white">Add Section</DialogTitle>
@@ -3318,14 +3459,28 @@ const DisciplinaryHearingOutcomeGenerator = ({
             <Info className="h-3.5 w-3.5" />
             Press Enter to start the next paragraph. Numbering is updated automatically.
           </p>
-          <textarea
-            value={recommendationDraft}
-            onChange={(event) => setRecommendationDraft(event.target.value)}
-            rows={8}
-            autoFocus
-            className="min-h-[180px] w-full resize-none rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[12px] text-slate-700 placeholder:text-[12px] placeholder:text-slate-400 hover:border-slate-500 focus:border-slate-300 focus:outline-none"
-            placeholder="Please start typing here..."
-          />
+          <div className="min-h-[180px] w-full rounded-sm border-[0.5px] border-slate-300 px-3 py-2 text-[13px] text-slate-700 hover:border-slate-500 focus-within:border-slate-300">
+            {(String(recommendationDraft || "").split(/\r?\n/).length > 0
+              ? String(recommendationDraft || "").split(/\r?\n/)
+              : [getEditorParagraphPrefix("recommendation", 0)]
+            ).map((line, lineIndex, lines) => (
+              <div key={`recommendation-editor-line-${lineIndex}`} className="grid grid-cols-[24px_minmax(0,1fr)] items-start gap-4">
+                <span className="select-none text-[13px] text-slate-700">
+                  {getEditorParagraphNumber("recommendation", lineIndex, lines)}
+                </span>
+                <textarea
+                  ref={(textarea) => setEditorLineTextareaRef(lineIndex, textarea)}
+                  value={stripParagraphNumberPrefixPreserveSpacing(line)}
+                  onChange={(event) => updateRecommendationDraftLine(lineIndex, event.target.value)}
+                  onInput={(event) => resizeEditorLineTextarea(event.currentTarget)}
+                  onKeyDown={(event) => handleRecommendationDraftKeyDown(event, lineIndex)}
+                  rows={1}
+                  className="min-h-[1.5em] w-full resize-none overflow-hidden border-0 bg-transparent p-0 text-[13px] text-slate-700 placeholder:text-[13px] placeholder:text-slate-400 focus:outline-none"
+                  placeholder={lineIndex === 0 ? "Please start typing here..." : ""}
+                />
+              </div>
+            ))}
+          </div>
           <div className="flex items-center justify-center gap-3 pt-1">
             <Button
               type="button"
@@ -3676,7 +3831,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                       <div>
                         <button
                           type="button"
-                          onClick={() => (isPreviewEditable ? openParagraphEditor("employerStatement", "The Employer's statement", 0) : undefined)}
+                          onClick={() => (isPreviewEditable ? openParagraphEditor("employerStatementGroup", "The Employer's statement", 0) : undefined)}
                           className={cn(
                             "w-full text-left",
                             isPreviewEditable ? previewEditableParagraphClassName : "",
@@ -3688,7 +3843,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
                               onClick={(event) => {
                                 if (!isPreviewEditable) return;
                                 event.stopPropagation();
-                                openParagraphEditor("employerStatement", "The Employer's statement", index);
+                                openParagraphEditor("employerStatementGroup", "The Employer's statement", index);
                               }}
                               className={cn("grid grid-cols-[36px_minmax(0,1fr)] items-start gap-4", isEditablePlaceholder(paragraph) ? placeholderRowClassName : "")}
                             >

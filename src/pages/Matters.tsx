@@ -261,6 +261,7 @@ const fallbackConductOffences: ConductOffence[] = [
   { name: "Breach Of Rules Or Regulations", category: "Minor", firstOutcome: "" },
   { name: "Failure To Carry Out Instructions", category: "Minor", firstOutcome: "" },
   { name: "Negligence", category: "Serious", firstOutcome: "" },
+  { name: "Dereliction of Duties", category: "Serious", firstOutcome: "" },
   { name: "Unauthorised Absenteeism > 5 Days", category: "Serious", firstOutcome: "" },
   { name: "Refusal To Work Overtime", category: "Serious", firstOutcome: "" },
   { name: "Consistent Poor Time Keeping", category: "Serious", firstOutcome: "" },

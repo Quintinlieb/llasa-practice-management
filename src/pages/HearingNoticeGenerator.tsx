@@ -321,6 +321,7 @@ const fallbackConductOffences: ConductOffence[] = [
   { name: "Breach Of Rules Or Regulations", category: "Minor", firstOutcome: "" },
   { name: "Failure To Carry Out Instructions", category: "Minor", firstOutcome: "" },
   { name: "Negligence", category: "Serious", firstOutcome: "" },
+  { name: "Dereliction of Duties", category: "Serious", firstOutcome: "" },
   { name: "Unauthorised Absenteeism > 5 Days", category: "Serious", firstOutcome: "" },
   { name: "Refusal To Work Overtime", category: "Serious", firstOutcome: "" },
   { name: "Consistent Poor Time Keeping", category: "Serious", firstOutcome: "" },
@@ -2064,7 +2065,7 @@ const HearingNoticeGeneratorContent = ({
                           <p className="font-bold">{`${index + 1}.`}</p>
                           <p className="font-bold">{type}</p>
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 pl-[26px]">
                           {(activeConcernConfig.descriptions[type] || [previewLine]).map((description, countIndex, descriptions) => {
                             const hasMultipleCounts = descriptions.length > 1;
                             const normalizedDescription = normalizeDescriptionLineBreaks(description);
@@ -3007,7 +3008,7 @@ const HearingNoticeGenerator = ({
           const normalizedDescription = normalizeDescriptionLineBreaks(description);
           const lines = doc.splitTextToSize(
             normalizedDescription || lineFallback,
-            hasMultipleCounts ? contentWidth - 24 : contentWidth - 6,
+            hasMultipleCounts ? contentWidth - 24 : contentWidth - 15,
           );
           return countTotal + lines.length * 4.2 + 2.2;
         }, 0);
@@ -3027,8 +3028,8 @@ const HearingNoticeGenerator = ({
         descriptions.forEach((description, countIndex) => {
           const hasMultipleCounts = descriptions.length > 1;
           const marker = `${formatRomanNumeral(countIndex + 1)}.`;
-          const textX = hasMultipleCounts ? margin + 18 : margin + 3;
-          const textWidth = hasMultipleCounts ? contentWidth - 24 : contentWidth - 6;
+          const textX = hasMultipleCounts ? margin + 18 : margin + 12;
+          const textWidth = hasMultipleCounts ? contentWidth - 24 : contentWidth - 15;
           const lines = doc.splitTextToSize(normalizeDescriptionLineBreaks(description) || lineFallback, textWidth);
           if (hasMultipleCounts) {
             doc.text(marker, margin + 12, y);

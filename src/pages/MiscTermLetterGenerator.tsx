@@ -695,8 +695,7 @@ const MiscTermPreview = ({
   const companyInfoRows = [
     { key: "registered", icon: null, text: registeredNameDisplay, bold: true },
     { key: "trading", icon: null, text: client.tradingName.trim() ? `t/a ${client.tradingName.trim()}` : "" },
-    { key: "address1", icon: null, text: client.addressLine1.trim() },
-    { key: "address2", icon: null, text: client.addressLine2.trim() },
+    { key: "address", icon: null, text: [client.addressLine1.trim(), client.addressLine2.trim()].filter(Boolean).join(", ") },
     { key: "location", icon: null, text: clientLocationLine },
     { key: "areaCode", icon: null, text: client.areaCode.trim() },
     { key: "phone", icon: HeroPhoneIcon, text: client.phone.trim() },
@@ -1358,10 +1357,8 @@ const MiscTermLetterGenerator = ({
       const companyInfoRows: Array<{ text: string; icon: "phone" | "email" | null }> = [
         { text: registeredNameDisplay, icon: null },
         { text: client.tradingName.trim() ? `t/a ${client.tradingName.trim()}` : "", icon: null },
-        { text: client.addressLine1.trim(), icon: null },
-        { text: client.addressLine2.trim(), icon: null },
-        { text: client.city.trim(), icon: null },
-        { text: client.province.trim(), icon: null },
+        { text: [client.addressLine1.trim(), client.addressLine2.trim()].filter(Boolean).join(", "), icon: null },
+        { text: [client.city.trim(), client.province.trim()].filter(Boolean).join(", "), icon: null },
         { text: client.areaCode.trim(), icon: null },
         { text: client.phone.trim(), icon: "phone" as const },
         { text: client.email.trim(), icon: "email" as const },

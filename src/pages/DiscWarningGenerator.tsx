@@ -68,8 +68,10 @@ type ClientRow = {
   company_type: string | null;
   registration_number: string | null;
   client_number: string | null;
+  office_number: string | null;
   owner_number: string | null;
   primary_number: string | null;
+  office_email: string | null;
   owner_email: string | null;
   primary_email: string | null;
   physical_address_line1: string | null;
@@ -290,8 +292,8 @@ const mapClientToFormState = (client: ClientRow): ClientFormState => ({
   clientRegisteredName: String(client.registered_name || "").trim(),
   clientTradingAsName: String(client.trading_as || "").trim(),
   registrationNumber: String(client.registration_number || "").trim(),
-  clientContactNumber: String(client.primary_number || "").trim(),
-  clientEmail: String(client.primary_email || "").trim(),
+  clientContactNumber: String(client.office_number || client.primary_number || "").trim(),
+  clientEmail: String(client.office_email || client.primary_email || "").trim(),
   clientAddress: formatClientAddress(client),
   clientAddressLine1: String(client.physical_address_line1 || "").trim(),
   clientAddressLine2: String(client.physical_address_line2 || "").trim(),
@@ -1524,7 +1526,7 @@ const DiscWarningGenerator = ({
       const { data, error } = await supabaseUntyped
         .from("clients")
         .select(
-          "id,registered_name,trading_as,company_type,registration_number,client_number,owner_number,primary_number,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
+          "id,registered_name,trading_as,company_type,registration_number,client_number,office_number,owner_number,primary_number,office_email,owner_email,primary_email,physical_address_line1,physical_address_line2,city,province,area_code",
         )
         .order("registered_name", { ascending: true, nullsFirst: false });
 

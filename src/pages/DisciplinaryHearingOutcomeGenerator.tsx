@@ -79,6 +79,8 @@ type EmployeeFormState = {
 };
 
 type HearingFormat = "in_person" | "virtual";
+type HearingType = "Disciplinary" | "Incapacity" | "Appeal";
+type IncapacityType = "Poor Performance" | "Ill Health" | "Impossibility" | "Incompatibility";
 type EmployeeAttendance = "Absent" | "Present";
 type HearingProcess = "Continued" | "Continued in absence" | "Postponed" | "Withdrawn";
 type RepresentationOption =
@@ -88,7 +90,6 @@ type RepresentationOption =
   | "Union Official"
   | "Attorney"
   | "Other";
-type InterpreterOption = "Yes" | "No";
 type AppealNoticeOption = "3" | "5" | "7" | "10";
 type PleaOption = "No plea" | "Guilty" | "Not guilty";
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
@@ -99,6 +100,8 @@ type ConductOffence = {
 };
 
 type HearingDetailsFormState = {
+  hearingType: HearingType | "";
+  incapacityType: IncapacityType | "";
   noticeDate: string;
   hearingDate: string;
   hearingFormat: HearingFormat | "";
@@ -108,7 +111,6 @@ type HearingDetailsFormState = {
   hearingProcess: HearingProcess | "";
   bargainingCouncil: string;
   representation: RepresentationOption | "";
-  interpreter: InterpreterOption | "";
   appealNoticeDays: AppealNoticeOption;
   pleasByCharge: Record<string, PleaOption | "">;
 };
@@ -157,7 +159,7 @@ type OutcomeDraftState = {
 const steps = ["Parties", "Hearing Details", "Preview / Edit"] as const;
 const stepIcons = [Building2, FileText, Check] as const;
 const inputClassName =
-  "h-8 rounded-sm border-slate-300 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[11px] md:placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+  "h-8 rounded-sm border-slate-300 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[11px] md:placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 data-[placeholder]:font-normal data-[placeholder]:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 const editablePlaceholderText = "Please start typing here...";
 const generatedDocumentsBucket = "documents";
 const monthOptions = [
@@ -219,6 +221,8 @@ const emptyEmployeeFormState: EmployeeFormState = {
 };
 
 const emptyHearingDetailsFormState: HearingDetailsFormState = {
+  hearingType: "",
+  incapacityType: "",
   noticeDate: "",
   hearingDate: "",
   hearingFormat: "in_person",
@@ -228,7 +232,6 @@ const emptyHearingDetailsFormState: HearingDetailsFormState = {
   hearingProcess: "",
   bargainingCouncil: "None",
   representation: "",
-  interpreter: "",
   appealNoticeDays: "5",
   pleasByCharge: {},
 };
@@ -374,7 +377,8 @@ const representationOptions: readonly RepresentationOption[] = [
   "Attorney",
   "Other",
 ] as const;
-const interpreterOptions: readonly InterpreterOption[] = ["Yes", "No"] as const;
+const hearingTypeOptions: readonly HearingType[] = ["Disciplinary", "Incapacity", "Appeal"] as const;
+const incapacityTypeOptions: readonly IncapacityType[] = ["Poor Performance", "Ill Health", "Impossibility", "Incompatibility"] as const;
 const appealNoticeOptions: readonly AppealNoticeOption[] = ["3", "5", "7", "10"] as const;
 const pleaOptions: readonly PleaOption[] = ["Not guilty", "Guilty", "No plea"] as const;
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
@@ -454,6 +458,27 @@ const conductOffenceOptions: ConductOffence[] = [
   { name: "Threatening Another Employee/Client", category: "Dismissible" },
   { name: "Unauthorised Possession Of A Weapon On Duty", category: "Dismissible" },
 ];
+const performanceConcernOptions = [
+  "Not meeting required productivity levels",
+  "Not achieving expected work output",
+  "Work not meeting required quality standards",
+  "Inability to meet deadlines or required turnaround times",
+  "Not achieving agreed performance targets or KPIs",
+  "Inconsistent work performance",
+  "Errors affecting accuracy of work output",
+  "Difficulty performing key duties of the position",
+] as const;
+const illHealthConcernOptions = [
+  "Prolonged or repeated absence from work due to ill health",
+  "Medical condition affecting ability to perform core duties",
+  "Medical report of permanent incapacity",
+  "Medical report of temporary incapacity",
+  "Reduced physical capacity affecting required tasks",
+  "Reduced ability to perform duties effectively due to ill health",
+  "Inability to perform duties safely due to health condition",
+  "Ongoing medical restrictions limiting role requirements",
+  "Limited capacity despite reasonable support provided",
+] as const;
 
 const companyTypeSuffixByValue: Record<string, string> = {
   "Private Company ((Pty) Ltd)": "(Pty) Ltd",
@@ -548,11 +573,183 @@ const getOutcomeDisputeForumText = (bargainingCouncil: string) => {
   return `the ${councilLabel}`;
 };
 
+const getOutcomeHearingLabel = (hearingType: HearingType | "") => {
+  switch (hearingType) {
+    case "Incapacity":
+      return "incapacity hearing";
+    case "Appeal":
+      return "appeal hearing";
+    case "Disciplinary":
+    default:
+      return "disciplinary hearing";
+  }
+};
+
+const getOutcomeHearingTitle = (hearingType: HearingType | "") => {
+  switch (hearingType) {
+    case "Incapacity":
+      return "Outcome Of The Incapacity Hearing";
+    case "Appeal":
+      return "Outcome Of The Appeal Hearing";
+    case "Disciplinary":
+    default:
+      return "Outcome Of The Disciplinary Hearing";
+  }
+};
+
+const getOutcomeDocumentLabel = (hearingType: HearingType | "") => {
+  return "Hearing Outcome";
+};
+
+const getSavedOutcomeDocumentLabel = (hearingType: HearingType | "") => {
+  switch (hearingType) {
+    case "Incapacity":
+      return "Incapacity Hearing Outcome";
+    case "Appeal":
+      return "Appeal Hearing Outcome";
+    case "Disciplinary":
+    default:
+      return "Disciplinary Hearing Outcome";
+  }
+};
+
+const getOutcomeHearingBanner = (hearingType: HearingType | "") => {
+  switch (hearingType) {
+    case "Incapacity":
+      return "In The Incapacity Hearing";
+    case "Appeal":
+      return "In The Appeal Hearing";
+    case "Disciplinary":
+    default:
+      return "In The Disciplinary Hearing";
+  }
+};
+
+const conductOffenceNames = new Set(conductOffenceOptions.map((offence) => offence.name));
+const performanceConcernNames = new Set<string>(performanceConcernOptions);
+const illHealthConcernNames = new Set<string>(illHealthConcernOptions);
+
+const getSelectableIssueOptions = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Disciplinary") {
+    return conductOffenceOptions.map((offence) => offence.name);
+  }
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return [...performanceConcernOptions];
+    if (form.incapacityType === "Ill Health") return [...illHealthConcernOptions];
+  }
+  return [];
+};
+
+const requiresIssueSelection = (form: HearingDetailsFormState) =>
+  form.hearingType === "Disciplinary" ||
+  (form.hearingType === "Incapacity" && (form.incapacityType === "Poor Performance" || form.incapacityType === "Ill Health"));
+
+const requiresPleaSelection = (form: HearingDetailsFormState) =>
+  form.hearingType === "Disciplinary" || (form.hearingType === "Incapacity" && form.incapacityType === "Poor Performance");
+
+const getIssueFieldLabel = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return "Performance Concern";
+    if (form.incapacityType === "Ill Health") return "Ill Health Condition";
+  }
+  return "Charge";
+};
+
+const getIssuePickerPlaceholder = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return "Select performance concern(s)";
+    if (form.incapacityType === "Ill Health") return "Select ill health condition(s)";
+  }
+  return "Select charge(s)";
+};
+
+const getIssueSearchPlaceholder = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return "Search performance concerns...";
+    if (form.incapacityType === "Ill Health") return "Search ill health conditions...";
+  }
+  return "Search offences...";
+};
+
+const getIssueEmptyLabel = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return "No performance concern found.";
+    if (form.incapacityType === "Ill Health") return "No ill health condition found.";
+  }
+  return "No offence found.";
+};
+
+const getNoticeContentPhrase = (form: HearingDetailsFormState, count: number) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return `${count > 1 ? "performance concerns" : "performance concern"} and rights`;
+    if (form.incapacityType === "Ill Health") return `${count > 1 ? "health concerns" : "health concern"} and rights`;
+    return "grounds and rights";
+  }
+  if (form.hearingType === "Appeal") return "grounds of appeal and rights";
+  return `${count > 1 ? "charges" : "charge"} and rights`;
+};
+
+const getIssueSummaryLabel = (form: HearingDetailsFormState) => {
+  if (form.hearingType === "Incapacity") {
+    if (form.incapacityType === "Poor Performance") return "performance concern";
+    if (form.incapacityType === "Ill Health") return "ill health condition";
+    if (form.incapacityType === "Impossibility") return "impossibility";
+    if (form.incapacityType === "Incompatibility") return "incompatibility";
+  }
+  if (form.hearingType === "Appeal") return "appeal";
+  return "charge";
+};
+
+const sanitizeHearingDetailsForm = (form: HearingDetailsFormState): HearingDetailsFormState => {
+  let incapacityType = form.incapacityType;
+  let validIssueNames: Set<string>;
+  if (form.hearingType === "Disciplinary") {
+    incapacityType = "";
+    validIssueNames = conductOffenceNames;
+  } else if (form.hearingType === "Incapacity") {
+    if (incapacityType === "Poor Performance") {
+      validIssueNames = performanceConcernNames;
+    } else if (incapacityType === "Ill Health") {
+      validIssueNames = illHealthConcernNames;
+    } else {
+      validIssueNames = new Set<string>();
+    }
+  } else {
+    incapacityType = "";
+    validIssueNames = new Set<string>();
+  }
+  const misconductTypes = form.misconductTypes.filter((entry) => validIssueNames.has(entry));
+  const pleasByCharge = requiresPleaSelection({ ...form, incapacityType, misconductTypes })
+    ? Object.fromEntries(
+        Object.entries(form.pleasByCharge).filter(
+          (entry): entry is [string, PleaOption | ""] => validIssueNames.has(entry[0]) && typeof entry[1] === "string",
+        ),
+      )
+    : {};
+  return {
+    ...form,
+    incapacityType,
+    misconductTypes,
+    pleasByCharge,
+  };
+};
+
 const normalizeHearingDetailsFormState = (
   value: unknown,
   options?: { defaultInPersonVenue?: string },
 ): HearingDetailsFormState => {
   const candidate = (value && typeof value === "object" ? value : {}) as Partial<HearingDetailsFormState>;
+  const hearingType =
+    candidate.hearingType === "Disciplinary" || candidate.hearingType === "Incapacity" || candidate.hearingType === "Appeal"
+      ? candidate.hearingType
+      : "";
+  const incapacityType =
+    candidate.incapacityType === "Poor Performance" ||
+    candidate.incapacityType === "Ill Health" ||
+    candidate.incapacityType === "Impossibility" ||
+    candidate.incapacityType === "Incompatibility"
+      ? candidate.incapacityType
+      : "";
   const hearingFormat =
     candidate.hearingFormat === "in_person" || candidate.hearingFormat === "virtual" ? candidate.hearingFormat : "in_person";
   const defaultInPersonVenue = String(options?.defaultInPersonVenue || "").trim();
@@ -576,9 +773,11 @@ const normalizeHearingDetailsFormState = (
         : employeeAttendance === "Absent"
           ? "Continued in absence"
           : "";
-  return {
+  return sanitizeHearingDetailsForm({
     ...emptyHearingDetailsFormState,
     ...candidate,
+    hearingType,
+    incapacityType,
     hearingFormat,
     hearingVenue,
     employeeAttendance,
@@ -595,7 +794,7 @@ const normalizeHearingDetailsFormState = (
             ),
           )
         : {},
-  };
+  });
 };
 
 const formatDateLabel = (value: string) => {
@@ -946,22 +1145,25 @@ const DisciplinaryHearingOutcomeGenerator = ({
     employeeForms.length > 0 &&
     employeeForms.every((employee) => Boolean(employee.employeeName.trim() && employee.employeeSurname.trim()));
   const getSelectedPleaCount = (form: HearingDetailsFormState) =>
-    form.misconductTypes.filter((type) => Boolean(String(form.pleasByCharge[type] || "").trim())).length;
+    requiresPleaSelection(form)
+      ? form.misconductTypes.filter((type) => Boolean(String(form.pleasByCharge[type] || "").trim())).length
+      : 0;
   const isSingleEmployeeFlow = employeeForms.length <= 1;
   const isHearingDetailsFormComplete = (form: HearingDetailsFormState) =>
     Boolean(
-      form.noticeDate.trim() &&
+      form.hearingType.trim() &&
+        (form.hearingType !== "Incapacity" || form.incapacityType.trim()) &&
+        form.noticeDate.trim() &&
         form.hearingDate.trim() &&
         form.hearingFormat.trim() &&
-        form.hearingVenue.trim() &&
-        form.misconductTypes.length > 0 &&
+      form.hearingVenue.trim() &&
+        (!requiresIssueSelection(form) || form.misconductTypes.length > 0) &&
         form.employeeAttendance.trim() &&
         form.hearingProcess.trim() &&
         form.bargainingCouncil.trim() &&
         form.representation.trim() &&
-        form.interpreter.trim() &&
         form.appealNoticeDays.trim() &&
-        getSelectedPleaCount(form) === form.misconductTypes.length,
+        (!requiresPleaSelection(form) || getSelectedPleaCount(form) === form.misconductTypes.length),
     );
   const selectedPleaCount = getSelectedPleaCount(hearingDetailsForm);
   const isHearingDetailsStepValid = isSingleEmployeeFlow
@@ -1234,25 +1436,25 @@ const DisciplinaryHearingOutcomeGenerator = ({
       });
       return;
     }
-    setHearingDetailsForm((current) => ({
+    setHearingDetailsForm((current) => sanitizeHearingDetailsForm({
       ...current,
       [field]: value,
     }));
     setEmployeeHearingDetailsForms((current) => {
       if (current.length === 0) {
         return [
-          {
+          sanitizeHearingDetailsForm({
             ...createEmptyHearingDetailsFormState(),
             [field]: value,
-          },
+          }),
         ];
       }
       return current.map((form, index) =>
         index === 0
-          ? {
+          ? sanitizeHearingDetailsForm({
               ...form,
               [field]: value,
-            }
+            })
           : form,
       );
     });
@@ -1289,15 +1491,15 @@ const DisciplinaryHearingOutcomeGenerator = ({
     setEmployeeHearingDetailsForms((current) =>
       current.map((form, index) =>
         index === employeeIndex
-          ? {
+          ? sanitizeHearingDetailsForm({
               ...form,
               [field]: value,
-            }
+            })
           : form,
       ),
     );
     if (employeeIndex === 0) {
-      setHearingDetailsForm((current) => ({
+      setHearingDetailsForm((current) => sanitizeHearingDetailsForm({
         ...current,
         [field]: value,
       }));
@@ -1634,14 +1836,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const nextPleasByCharge = { ...current.pleasByCharge };
       if (isSelected) {
         delete nextPleasByCharge[charge];
-      } else if (!nextPleasByCharge[charge]) {
+      } else if (requiresPleaSelection(current) && !nextPleasByCharge[charge]) {
         nextPleasByCharge[charge] = "";
       }
-      nextPrimaryForm = {
+      nextPrimaryForm = sanitizeHearingDetailsForm({
         ...current,
         misconductTypes: nextMisconductTypes,
         pleasByCharge: nextPleasByCharge,
-      };
+      });
       return nextPrimaryForm;
     });
     setEmployeeHearingDetailsForms((current) => {
@@ -1662,14 +1864,14 @@ const DisciplinaryHearingOutcomeGenerator = ({
         const nextPleasByCharge = { ...form.pleasByCharge };
         if (isSelected) {
           delete nextPleasByCharge[charge];
-        } else if (!nextPleasByCharge[charge]) {
+        } else if (requiresPleaSelection(form) && !nextPleasByCharge[charge]) {
           nextPleasByCharge[charge] = "";
         }
-        return {
+        return sanitizeHearingDetailsForm({
           ...form,
           misconductTypes: nextMisconductTypes,
           pleasByCharge: nextPleasByCharge,
-        };
+        });
       }),
     );
     if (employeeIndex === 0) {
@@ -1687,10 +1889,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
   const selectedChargeLabel =
     hearingDetailsForm.misconductTypes.length === 0
-      ? "Select misconduct type(s)"
+      ? getIssuePickerPlaceholder(hearingDetailsForm)
       : hearingDetailsForm.misconductTypes.length === 1
         ? hearingDetailsForm.misconductTypes[0]
-        : `${hearingDetailsForm.misconductTypes.length} misconduct type(s) selected`;
+        : `${hearingDetailsForm.misconductTypes.length} ${getIssueFieldLabel(hearingDetailsForm).toLowerCase()}(s) selected`;
   const misconductListLabel = joinWithAnd(hearingDetailsForm.misconductTypes);
   const preliminaryPleaOverrideLines = normalizeParagraphText(previewForm.preliminaryPleaOverrides);
   const hearingVenueLabel = hearingDetailsForm.hearingVenue.trim() || defaultClientVenue || "CITY, PROVINCE";
@@ -1715,13 +1917,16 @@ const DisciplinaryHearingOutcomeGenerator = ({
   const preliminaryChargeParagraphOverrideLines = normalizeParagraphText(previewForm.preliminaryChargeParagraphOverrides);
   const preliminaryChargePleaOverrideLines = normalizeParagraphText(previewForm.preliminaryChargePleaOverrides);
   const selectedMisconductCount = hearingDetailsForm.misconductTypes.length;
+  const isPoorPerformanceIncapacity =
+    hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType === "Poor Performance";
+  const isIllHealthIncapacity =
+    hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType === "Ill Health";
   const employeeHearingSummaryRows = normalizedEmployees.map((employee, index) => ({
     fullName: employeeRoleLabels[index] || `Employee ${index + 1}`,
     referenceLabel: `The ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
     inlineReferenceLabel: `the ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
     hearingDetails: isSingleEmployeeFlow ? hearingDetailsForm : (employeeHearingDetailsForms[index] || createEmptyHearingDetailsFormState(hearingDetailsForm.bargainingCouncil)),
   }));
-  const getChargeRightsPhrase = (chargeCount: number) => `${chargeCount > 1 ? "charges" : "charge"} and rights`;
   const hasMultipleMisconductTypes = (rows = employeeHearingSummaryRows) =>
     rows.some((row) => row.hearingDetails.misconductTypes.length > 1);
   const presentEmployeeStatementRows = employeeHearingSummaryRows.filter((row) => row.hearingDetails.employeeAttendance === "Present");
@@ -1807,13 +2012,13 @@ const DisciplinaryHearingOutcomeGenerator = ({
   })();
   const preliminaryOneValue =
     previewForm.preliminaryOne.trim() ||
-    `The disciplinary hearing was held on ${formatDateLabel(hearingDetailsForm.hearingDate) || "______________________________"}.`;
+    `The ${getOutcomeHearingLabel(hearingDetailsForm.hearingType)} was held on ${formatDateLabel(hearingDetailsForm.hearingDate) || "______________________________"}.`;
   const preliminaryTwoValue = previewForm.preliminaryTwo.trim() || employeeAttendanceSentence;
   const preliminaryThreeValue =
     previewForm.preliminaryThree.trim() ||
     (() => {
       if (employeeHearingSummaryRows.length <= 1) {
-        return `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hearingDetailsForm.misconductTypes.length)}.`;
+        return `The employee received the notice to attend on ${formatDateLabel(hearingDetailsForm.noticeDate) || "______________________________"}, which contained the ${getNoticeContentPhrase(hearingDetailsForm, hearingDetailsForm.misconductTypes.length)}.`;
       }
 
       const noticeDateGroups = employeeHearingSummaryRows.reduce<Array<{ noticeDate: string; names: string[] }>>((groups, row, rowIndex) => {
@@ -1828,7 +2033,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       }, []);
 
       if (noticeDateGroups.length === 1) {
-        return `The employees received the notice to attend on ${formatDateLabel(noticeDateGroups[0].noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hasMultipleMisconductTypes() ? 2 : 1)}.`;
+        return `The employees received the notice to attend on ${formatDateLabel(noticeDateGroups[0].noticeDate) || "______________________________"}, which contained the ${getNoticeContentPhrase(hearingDetailsForm, hasMultipleMisconductTypes() ? 2 : 1)}.`;
       }
 
       return `${joinSentenceParts(
@@ -1837,7 +2042,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
           const verb = group.names.length > 1 ? "received" : "received";
           const rowsInGroup = employeeHearingSummaryRows.filter((row) => row.hearingDetails.noticeDate === group.noticeDate);
           const hasMultipleCharges = hasMultipleMisconductTypes(rowsInGroup);
-          return `${groupedNames} ${verb} the notice to attend on ${formatDateLabel(group.noticeDate) || "______________________________"}, which contained the ${getChargeRightsPhrase(hasMultipleCharges ? 2 : 1)}`;
+          return `${groupedNames} ${verb} the notice to attend on ${formatDateLabel(group.noticeDate) || "______________________________"}, which contained the ${getNoticeContentPhrase(rowsInGroup[0]?.hearingDetails || hearingDetailsForm, hasMultipleCharges ? 2 : 1)}`;
         }),
       )}.`;
     })();
@@ -1846,15 +2051,20 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const singleChargePlea = hearingDetailsForm.misconductTypes.length === 1
         ? toSentenceCaseLower(String(hearingDetailsForm.pleasByCharge[hearingDetailsForm.misconductTypes[0]] || "").trim())
         : "";
+      const summaryLabel = getIssueSummaryLabel(hearingDetailsForm);
       const preliminaryFourValue =
         previewForm.preliminaryFour.trim() ||
-        (selectedMisconductCount === 1 && singleChargePlea
-          ? `The employee was charged with ${misconductListLabel} and pleaded ${singleChargePlea}.`
+        (selectedMisconductCount === 1 && singleChargePlea && requiresPleaSelection(hearingDetailsForm)
+          ? `The employee was informed of the ${summaryLabel} of ${misconductListLabel} and pleaded ${singleChargePlea}.`
           : selectedMisconductCount > 0
-            ? `The employee was charged with ${misconductListLabel}.`
-            : "The employee was charged with ______________________________.");
+            ? `The employee was informed of the ${selectedMisconductCount > 1 ? `${summaryLabel}s` : summaryLabel} of ${misconductListLabel}.`
+            : hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType
+              ? `The employee attended the incapacity hearing relating to ${hearingDetailsForm.incapacityType.toLowerCase()}.`
+              : hearingDetailsForm.hearingType === "Appeal"
+                ? "The employee attended the appeal hearing."
+                : "The employee was charged with ______________________________.");
       const pleaRowValues =
-        selectedMisconductCount > 1
+        requiresPleaSelection(hearingDetailsForm) && selectedMisconductCount > 1
           ? Array.from({
               length: Math.max(hearingDetailsForm.misconductTypes.length, preliminaryPleaOverrideLines.length),
             })
@@ -1891,15 +2101,20 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const singleChargePlea = employeeCharges.length === 1
         ? toSentenceCaseLower(String(row.hearingDetails.pleasByCharge[employeeCharges[0]] || "").trim())
         : "";
+      const summaryLabel = getIssueSummaryLabel(row.hearingDetails);
       const mainValue =
         preliminaryChargeParagraphOverrideLines[employeeIndex] ||
-        (employeeCharges.length === 1 && singleChargePlea
-          ? `${row.referenceLabel} was charged with ${employeeChargeLabel} and pleaded ${singleChargePlea}.`
+        (employeeCharges.length === 1 && singleChargePlea && requiresPleaSelection(row.hearingDetails)
+          ? `${row.referenceLabel} was informed of the ${summaryLabel} of ${employeeChargeLabel} and pleaded ${singleChargePlea}.`
           : employeeCharges.length > 0
-            ? `${row.referenceLabel} was charged with ${employeeChargeLabel}.`
-            : `${row.referenceLabel} was charged with ______________________________.`);
+            ? `${row.referenceLabel} was informed of the ${employeeCharges.length > 1 ? `${summaryLabel}s` : summaryLabel} of ${employeeChargeLabel}.`
+            : row.hearingDetails.hearingType === "Incapacity" && row.hearingDetails.incapacityType
+              ? `${row.referenceLabel} attended the incapacity hearing relating to ${row.hearingDetails.incapacityType.toLowerCase()}.`
+              : row.hearingDetails.hearingType === "Appeal"
+                ? `${row.referenceLabel} attended the appeal hearing.`
+                : `${row.referenceLabel} was charged with ______________________________.`);
       const subRows =
-        employeeCharges.length > 1
+        requiresPleaSelection(row.hearingDetails) && employeeCharges.length > 1
           ? employeeCharges
               .map((type, chargeIndex) => {
                 const plea = toSentenceCaseLower(String(row.hearingDetails.pleasByCharge[type] || "").trim());
@@ -1942,17 +2157,17 @@ const DisciplinaryHearingOutcomeGenerator = ({
       const sentences: string[] = [];
       if (presentContinuedRows.length > 0) {
         const subject = presentContinuedRows.length > 1 ? "employees" : "employee";
-        const chargePhrase = hasMultipleMisconductTypes(presentContinuedRows) ? "charges and rights" : "charge and rights";
-        sentences.push(`The ${subject} understood the ${chargePhrase} as they were stipulated in the notice of hearing.`);
+        const noticePhrase = getNoticeContentPhrase(presentContinuedRows[0]?.hearingDetails || hearingDetailsForm, hasMultipleMisconductTypes(presentContinuedRows) ? 2 : 1);
+        sentences.push(`The ${subject} understood the ${noticePhrase} as they were stipulated in the notice of hearing.`);
       }
       if (proceededInAbsenceRows.length > 0) {
         sentences.push(
-          `There were no objections to proceeding with the disciplinary hearing, and the hearing proceeded in the absence of ${joinEmployeeReferences(
+          `There were no objections to proceeding with the ${getOutcomeHearingLabel(hearingDetailsForm.hearingType)}, and the hearing proceeded in the absence of ${joinEmployeeReferences(
             proceededInAbsenceRows.map((row) => row.inlineReferenceLabel),
           )}.`,
         );
       } else if (continuedRows.length > 0 || activeRows.length === 0) {
-        sentences.push("There were no objections to proceeding with the disciplinary hearing.");
+        sentences.push(`There were no objections to proceeding with the ${getOutcomeHearingLabel(hearingDetailsForm.hearingType)}.`);
       }
 
       if (postponedRows.length > 0) {
@@ -1968,8 +2183,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
       if (withdrawnRows.length > 0) {
         sentences.push(
           withdrawnRows.length === 1
-            ? `The disciplinary proceedings against ${withdrawnRows[0].inlineReferenceLabel} were withdrawn.`
-            : `The disciplinary proceedings against ${joinEmployeeReferences(
+            ? `The proceedings against ${withdrawnRows[0].inlineReferenceLabel} were withdrawn.`
+            : `The proceedings against ${joinEmployeeReferences(
                 withdrawnRows.map((row, index) => (index === 0 ? row.referenceLabel : row.inlineReferenceLabel)),
               )} were withdrawn.`,
         );
@@ -2017,12 +2232,20 @@ const DisciplinaryHearingOutcomeGenerator = ({
     })),
   ];
   const firstIssueNumber = preliminaryRows.length + 1;
-  const issueInDisputeValue = previewForm.issueInDispute.trim() || defaultIssueInDisputeParagraph;
-  const defaultAnalysisIntroParagraph = `${defaultAnalysisFindingParagraph} ${
-    employeeForms.length > 1
-      ? "The employees were afforded proper notice of the proceedings, an opportunity to state their case, and the matter was dealt with in a procedurally fair manner."
-      : "The employee was afforded proper notice of the proceedings, an opportunity to state his/her case, and the matter was dealt with in a procedurally fair manner."
-  }`;
+  const issueInDisputeValue =
+    previewForm.issueInDispute.trim() ||
+    (isPoorPerformanceIncapacity
+      ? "I must determine whether there are sufficient grounds to prove, on a balance of probability, that the employee did not perform to a required standard and further that a fair and reasonable procedure has been followed."
+      : isIllHealthIncapacity
+        ? "The issues for determination are whether, on a balance of probabilities, the employee suffers from incapacity; if so, whether such incapacity is temporary or permanent; and whether the employer followed a fair and reasonable procedure in dealing with the matter."
+      : defaultIssueInDisputeParagraph);
+  const defaultAnalysisIntroParagraph = isPoorPerformanceIncapacity || isIllHealthIncapacity
+    ? "Having considered the evidence, the probabilities, and the submissions made during the incapacity hearing, I am satisfied that the employer followed a fair procedure. The employee was afforded proper notice of the proceedings, an opportunity to make submissions, and the matter was dealt with in a procedurally fair manner."
+    : `${defaultAnalysisFindingParagraph} ${
+        employeeForms.length > 1
+          ? "The employees were afforded proper notice of the proceedings, an opportunity to state their case, and the matter was dealt with in a procedurally fair manner."
+          : "The employee was afforded proper notice of the proceedings, an opportunity to state his/her case, and the matter was dealt with in a procedurally fair manner."
+      }`;
   const analysisIntroValue = previewForm.analysisIntro.trim() || defaultAnalysisIntroParagraph;
   const analysisDetailValue = previewForm.analysisDetail.trim() || editablePlaceholderText;
   const analysisFindingValue = previewForm.analysisFinding.trim() || editablePlaceholderText;
@@ -2255,7 +2478,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
       }
     };
 
-    writeCenteredLine("IN THE DISCIPLINARY HEARING", 10, "bold", 0.2);
+    writeCenteredLine(getOutcomeHearingBanner(hearingDetailsForm.hearingType).toUpperCase(), 10, "bold", 0.2);
     writeCenteredLine(documentVenueHeading, 10, "bold", 10);
 
     writePlainParagraph("In the matter between:", { gapAfter: 4 });
@@ -2275,7 +2498,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
     pdf.setTextColor(0, 0, 0);
-    pdf.text("OUTCOME OF THE DISCIPLINARY HEARING", pageWidth / 2, cursorY, { align: "center" });
+    pdf.text(getOutcomeHearingTitle(hearingDetailsForm.hearingType).toUpperCase(), pageWidth / 2, cursorY, { align: "center" });
     cursorY += 6.4;
     pdf.line(marginX, cursorY, pageWidth - marginX, cursorY);
     cursorY += 9;
@@ -2410,7 +2633,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
         .replace(/[^A-Za-z0-9_-]+/g, "_")
         .replace(/^_+|_+$/g, "") || "employee";
     const safeDate = hearingDetailsForm.hearingDate || new Date().toISOString().slice(0, 10);
-    const documentLabel = "Disciplinary Hearing Outcome";
+    const documentLabel = getSavedOutcomeDocumentLabel(hearingDetailsForm.hearingType);
     const employeeInitials = firstEmployee.employeeName
       .trim()
       .split(/\s+/)
@@ -2421,7 +2644,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
     const documentNameSuffixBase = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
     const documentNameSuffix = normalizedEmployees.length > 1 ? `${documentNameSuffixBase} + ${normalizedEmployees.length - 1}` : documentNameSuffixBase;
     const documentName = `${documentLabel}${documentNameSuffix}`;
-    const downloadFileName = `Disciplinary_Hearing_Outcome_${safeEmployeeName}_${safeDate}.pdf`;
+    const downloadFileName = `${documentLabel.replace(/[^A-Za-z0-9]+/g, "_")}_${safeEmployeeName}_${safeDate}.pdf`;
     const uploadFilePath = [
       "disciplinary-hearing-outcomes",
       sanitizeFileSegment(clientForm.clientName || "client", "client"),
@@ -2840,16 +3063,71 @@ const DisciplinaryHearingOutcomeGenerator = ({
         : form.employeeAttendance === "Absent"
           ? hearingProcessOptions.filter((option) => option !== "Continued")
           : hearingProcessOptions;
+    const currentIssueOptions = getSelectableIssueOptions(form);
+    const issueFieldLabel = getIssueFieldLabel(form);
+    const issuePickerPlaceholder = getIssuePickerPlaceholder(form);
     const selectedChargeValue =
       form.misconductTypes.length === 0
-        ? "Select misconduct type(s)"
+        ? issuePickerPlaceholder
         : form.misconductTypes.length === 1
           ? form.misconductTypes[0]
-          : `${form.misconductTypes.length} misconduct type(s) selected`;
+          : `${form.misconductTypes.length} ${issueFieldLabel.toLowerCase()}(s) selected`;
 
     return (
       <>
         <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeHearingType${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
+              Hearing Type <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={form.hearingType || undefined}
+              onValueChange={(value) =>
+                isEmployeeScoped
+                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "hearingType", value as HearingType)
+                  : handleHearingDetailsFieldChange("hearingType", value as HearingType)
+              }
+            >
+              <SelectTrigger id={`disciplinaryOutcomeHearingType${fieldSuffix}`} className={inputClassName}>
+                <SelectValue placeholder="Select hearing type" />
+              </SelectTrigger>
+              <SelectContent className="text-[11px]">
+                {hearingTypeOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[11px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {form.hearingType === "Incapacity" ? (
+            <div className="space-y-2">
+              <Label htmlFor={`disciplinaryOutcomeIncapacityType${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
+                Incapacity Type <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={form.incapacityType || undefined}
+                onValueChange={(value) =>
+                  isEmployeeScoped
+                    ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "incapacityType", value as IncapacityType)
+                    : handleHearingDetailsFieldChange("incapacityType", value as IncapacityType)
+                }
+              >
+                <SelectTrigger id={`disciplinaryOutcomeIncapacityType${fieldSuffix}`} className={inputClassName}>
+                  <SelectValue placeholder="Select incapacity type" />
+                </SelectTrigger>
+                <SelectContent className="text-[11px]">
+                  {incapacityTypeOptions.map((option) => (
+                    <SelectItem key={option} value={option} className="text-[11px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor={`disciplinaryOutcomeNoticeDate${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Notice Date <span className="text-red-500">*</span>
@@ -3176,31 +3454,6 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
-              Interpreter <span className="text-red-500">*</span>
-            </Label>
-            <Select
-              value={form.interpreter || undefined}
-              onValueChange={(value) =>
-                isEmployeeScoped
-                  ? handleEmployeeHearingDetailsFieldChange(employeeIndex, "interpreter", value as InterpreterOption)
-                  : handleHearingDetailsFieldChange("interpreter", value as InterpreterOption)
-              }
-            >
-              <SelectTrigger id={`disciplinaryOutcomeInterpreter${fieldSuffix}`} className={inputClassName}>
-                <SelectValue placeholder="Select interpreter option" />
-              </SelectTrigger>
-              <SelectContent className="text-[11px]">
-                {interpreterOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[11px]">
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor={`disciplinaryOutcomeAppealNotice${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
               Appeal Notice <span className="text-red-500">*</span>
             </Label>
@@ -3226,105 +3479,132 @@ const DisciplinaryHearingOutcomeGenerator = ({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor={`disciplinaryOutcomeCharges${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
-            Charge <span className="text-red-500">*</span>
-          </Label>
-          <Popover
-            open={isChargePickerActive}
-            onOpenChange={(open) => {
-              if (isEmployeeScoped) {
-                setActiveEmployeeChargePickerIndex(open ? employeeIndex : null);
-                return;
-              }
-              setChargePickerOpen(open);
-            }}
-          >
-            <PopoverTrigger asChild>
-              <Button
-                id={`disciplinaryOutcomeCharges${fieldSuffix}`}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={isChargePickerActive}
-                className={cn(
-                  inputClassName,
-                  "w-full justify-between px-3 text-[12px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
-                  form.misconductTypes.length === 0 && "text-[11px] text-slate-400",
-                )}
-              >
-                <span className="truncate text-left">{selectedChargeValue}</span>
-                <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
-              onCloseAutoFocus={() => {
+        {requiresIssueSelection(form) ? (
+          <div className="space-y-2">
+            <Label htmlFor={`disciplinaryOutcomeCharges${fieldSuffix}`} className="text-[11px] font-semibold text-slate-600">
+              {issueFieldLabel} <span className="text-red-500">*</span>
+            </Label>
+            <Popover
+              open={isChargePickerActive}
+              onOpenChange={(open) => {
                 if (isEmployeeScoped) {
-                  setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
+                  setActiveEmployeeChargePickerIndex(open ? employeeIndex : null);
                   return;
                 }
-                setChargeSearchValue("");
+                setChargePickerOpen(open);
               }}
             >
-              <Command shouldFilter={false}>
-                <CommandInput
-                  value={chargeSearch}
-                  onValueChange={(value) => {
-                    if (isEmployeeScoped) {
-                      setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: value }));
-                      return;
-                    }
-                    setChargeSearchValue(value);
-                  }}
-                  placeholder="Search offences..."
-                  className="h-9 border-0 text-[11px] focus:ring-0"
-                />
-                <CommandList
-                  className="max-h-[320px] overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:thin]"
-                  onWheelCapture={(event) => event.stopPropagation()}
+              <PopoverTrigger asChild>
+                <Button
+                  id={`disciplinaryOutcomeCharges${fieldSuffix}`}
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={isChargePickerActive}
+                  className={cn(
+                    inputClassName,
+                    "w-full justify-between px-3 text-[12px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900",
+                    form.misconductTypes.length === 0 && "text-[11px] text-slate-400",
+                  )}
                 >
-                  <CommandEmpty className="py-4 text-center text-[11px] text-slate-500">
-                    No offence found.
-                  </CommandEmpty>
-                  {offenceCategoryOrder.map((category) => {
-                    const options = conductOffenceOptions.filter(
-                      (offence) =>
-                        offence.category === category &&
-                        (!normalizedChargeSearch || offence.name.toLowerCase().startsWith(normalizedChargeSearch)),
-                    );
-                    if (options.length === 0) return null;
-                    return (
-                      <CommandGroup key={category} heading={offenceGroupLabel[category]}>
-                        {options.map((offence) => {
-                          const isSelected = form.misconductTypes.includes(offence.name);
-                          return (
-                            <CommandItem
-                              key={offence.name}
-                              value={offence.name}
-                              onSelect={() =>
-                                isEmployeeScoped
-                                  ? (handleEmployeeToggleCharge(employeeIndex, offence.name), setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" })))
-                                  : (handleToggleCharge(offence.name), setChargeSearchValue(""))
-                              }
-                              className="text-[11px]"
-                            >
-                              <Check className={`mr-2 h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-0"}`} />
-                              <span>{offence.name}</span>
-                            </CommandItem>
+                  <span className="truncate text-left">{selectedChargeValue}</span>
+                  <ChevronsUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] overflow-hidden p-0"
+                onCloseAutoFocus={() => {
+                  if (isEmployeeScoped) {
+                    setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" }));
+                    return;
+                  }
+                  setChargeSearchValue("");
+                }}
+              >
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    value={chargeSearch}
+                    onValueChange={(value) => {
+                      if (isEmployeeScoped) {
+                        setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: value }));
+                        return;
+                      }
+                      setChargeSearchValue(value);
+                    }}
+                    placeholder={getIssueSearchPlaceholder(form)}
+                    className="h-9 border-0 text-[11px] focus:ring-0"
+                  />
+                  <CommandList
+                    className="max-h-[320px] overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:thin]"
+                    onWheelCapture={(event) => event.stopPropagation()}
+                  >
+                    <CommandEmpty className="py-4 text-center text-[11px] text-slate-500">
+                      {getIssueEmptyLabel(form)}
+                    </CommandEmpty>
+                    {form.hearingType === "Disciplinary"
+                      ? offenceCategoryOrder.map((category) => {
+                          const options = conductOffenceOptions.filter(
+                            (offence) =>
+                              offence.category === category &&
+                              (!normalizedChargeSearch || offence.name.toLowerCase().startsWith(normalizedChargeSearch)),
                           );
-                        })}
-                      </CommandGroup>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
+                          if (options.length === 0) return null;
+                          return (
+                            <CommandGroup key={category} heading={offenceGroupLabel[category]}>
+                              {options.map((offence) => {
+                                const isSelected = form.misconductTypes.includes(offence.name);
+                                return (
+                                  <CommandItem
+                                    key={offence.name}
+                                    value={offence.name}
+                                    onSelect={() =>
+                                      isEmployeeScoped
+                                        ? (handleEmployeeToggleCharge(employeeIndex, offence.name), setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" })))
+                                        : (handleToggleCharge(offence.name), setChargeSearchValue(""))
+                                    }
+                                    className="text-[11px]"
+                                  >
+                                    <Check className={`mr-2 h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                                    <span>{offence.name}</span>
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          );
+                        })
+                      : (
+                        <CommandGroup>
+                          {currentIssueOptions
+                            .filter((option) => !normalizedChargeSearch || option.toLowerCase().includes(normalizedChargeSearch))
+                            .map((option) => {
+                              const isSelected = form.misconductTypes.includes(option);
+                              return (
+                                <CommandItem
+                                  key={option}
+                                  value={option}
+                                  onSelect={() =>
+                                    isEmployeeScoped
+                                      ? (handleEmployeeToggleCharge(employeeIndex, option), setEmployeeChargeSearchValues((current) => ({ ...current, [employeeIndex]: "" })))
+                                      : (handleToggleCharge(option), setChargeSearchValue(""))
+                                  }
+                                  className="text-[11px]"
+                                >
+                                  <Check className={`mr-2 h-3.5 w-3.5 ${isSelected ? "opacity-100" : "opacity-0"}`} />
+                                  <span>{option}</span>
+                                </CommandItem>
+                              );
+                            })}
+                        </CommandGroup>
+                      )}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        ) : null}
 
-        {form.misconductTypes.length > 0 ? (
+        {requiresPleaSelection(form) && form.misconductTypes.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2">
             {form.misconductTypes.map((type) => (
               <div key={`${fieldSuffix}-${type}`} className="space-y-2">
@@ -3695,7 +3975,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
             >
               <div className="space-y-10">
                 <div className="pt-6 text-center">
-                  <p className="text-[13px] font-bold uppercase leading-6">In The Disciplinary Hearing</p>
+                  <p className="text-[13px] font-bold uppercase leading-6">{getOutcomeHearingBanner(hearingDetailsForm.hearingType)}</p>
                   <p className="text-[13px] font-bold uppercase leading-6">{documentVenueHeading}</p>
                 </div>
 
@@ -3718,7 +3998,7 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
                 <div className="space-y-2">
                   <div className="border-t border-black" />
-                  <p className="text-center text-[13px] font-bold uppercase leading-6">Outcome Of The Disciplinary Hearing</p>
+                  <p className="text-center text-[13px] font-bold uppercase leading-6">{getOutcomeHearingTitle(hearingDetailsForm.hearingType)}</p>
                   <div className="border-t border-black" />
                 </div>
 

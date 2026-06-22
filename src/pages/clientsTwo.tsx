@@ -1423,6 +1423,7 @@ const ClientsTwo = () => {
   const totalClientTablePages = Math.max(1, Math.ceil(tableRows.length / CLIENTS_TABLE_PAGE_SIZE));
   const currentClientTablePage = Math.min(clientTablePage, totalClientTablePages);
   const currentClientTableOffset = (currentClientTablePage - 1) * CLIENTS_TABLE_PAGE_SIZE;
+  const clientTableScrollRef = useRef<HTMLDivElement | null>(null);
   const paginatedTableRows = useMemo(
     () => tableRows.slice(currentClientTableOffset, currentClientTableOffset + CLIENTS_TABLE_PAGE_SIZE),
     [currentClientTableOffset, tableRows],
@@ -1432,6 +1433,9 @@ const ClientsTwo = () => {
   useEffect(() => {
     setClientTablePage(1);
   }, [clientGroupFilters, clientIndustryFilters, clientProvinceFilters, clientServiceFilters, clientStatusFilters, searchQuery]);
+  useEffect(() => {
+    clientTableScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [currentClientTablePage]);
   const allVisibleSelected = useMemo(
     () => paginatedTableRows.length > 0 && paginatedTableRows.every((row) => selectedClientIds.has(String(row.id))),
     [paginatedTableRows, selectedClientIds],
@@ -1680,6 +1684,7 @@ const ClientsTwo = () => {
     const { data, error } = await (supabase as any)
       .from("clients")
       .select("*")
+      .eq("deleted", false)
       .order("created_at", { ascending: false, nullsFirst: false });
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1722,6 +1727,7 @@ const ClientsTwo = () => {
       const { data, error } = await (supabase as any)
         .from("documents")
         .select("id, document_name, document_type, client_name, client_id, created_at, created_by_name, file_url")
+        .eq("deleted", false)
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
 
@@ -1765,6 +1771,7 @@ const ClientsTwo = () => {
         .from("case_files")
         .select("id, file_number, parties, case_type, case_subtype, status, current_stage, next_date, short_description")
         .eq("client_id", clientId)
+        .eq("deleted", false)
         .order("created_at", { ascending: false, nullsFirst: false });
       if (error) throw error;
 
@@ -2179,6 +2186,17 @@ const ClientsTwo = () => {
   useEffect(() => {
     void fetchClients();
   }, [fetchClients]);
+  useEffect(() => {
+    const handleTrashBinChanged = () => {
+      void fetchClients();
+      if (selectedClientRow) {
+        void fetchClientGeneratedDocuments(selectedClientRow);
+        void fetchClientMatters(selectedClientRow);
+      }
+    };
+    window.addEventListener("trash-bin-changed", handleTrashBinChanged);
+    return () => window.removeEventListener("trash-bin-changed", handleTrashBinChanged);
+  }, [fetchClientGeneratedDocuments, fetchClientMatters, fetchClients, selectedClientRow]);
   useEffect(() => {
     setClientTablePage((prev) => Math.min(prev, totalClientTablePages));
   }, [totalClientTablePages]);
@@ -4311,44 +4329,33 @@ const ClientsTwo = () => {
     const ids = Array.from(selectedClientIds);
     if (ids.length === 0) return;
     const confirmed = window.confirm(
-      `Are you sure you want to permanently delete ${ids.length} client${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+      `Are you sure you want to move ${ids.length} client${ids.length === 1 ? "" : "s"} to the Trash Bin?`,
     );
     if (!confirmed) return;
     try {
-      const { data: contracts } = await agreementRecordTable().select("file_url").in("client_id", ids);
-      const contractFiles = (contracts ?? []).map((row: any) => String(row?.file_url || "").trim()).filter(Boolean);
-      if (contractFiles.length > 0) {
-        await supabase.storage.from("contracts").remove(contractFiles);
-      }
-      const logoPaths = clientRows
-        .filter((row) => ids.includes(String(row.id)))
-        .map((row) => String(row?.logoStoragePath || "").trim())
-        .filter(Boolean);
-      if (logoPaths.length > 0) {
-        await supabase.storage.from("client-logos").remove(logoPaths);
-      }
-      await (supabase as any).from("client_file_notes").delete().in("client_id", ids);
-      await agreementRecordTable().delete().in("client_id", ids);
-      await clientLogoTable().delete().in("client_id", ids);
-      const { error: clientDeleteError } = await (supabase as any).from("clients").delete().in("id", ids);
+      const { error: clientDeleteError } = await (supabase as any)
+        .from("clients")
+        .update({ deleted: true, deleted_at: new Date().toISOString() })
+        .in("id", ids);
       if (clientDeleteError) throw clientDeleteError;
       if (selectedClientRow?.id && ids.includes(String(selectedClientRow.id))) {
         setSelectedClientRow(null);
       }
       setSelectedClientIds(new Set());
       await fetchClients();
+      window.dispatchEvent(new CustomEvent("trash-bin-changed"));
       toast({
-        title: "Clients deleted",
-        description: `Deleted ${ids.length} client${ids.length === 1 ? "" : "s"} successfully.`,
+        title: "Clients moved to Trash Bin",
+        description: `Moved ${ids.length} client${ids.length === 1 ? "" : "s"} to the Trash Bin.`,
       });
     } catch (error: any) {
       toast({
         title: "Delete failed",
-        description: error?.message || "Could not delete selected clients.",
+        description: error?.message || "Could not move selected clients to the Trash Bin.",
         variant: "destructive",
       });
     }
-  }, [clientRows, currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
+  }, [currentUserIsSubuser, fetchClients, selectedClientIds, selectedClientRow?.id, toast]);
   const selectedClientIndexInTableRows = useMemo(() => {
     if (!selectedClientRow?.id) return -1;
     return tableRows.findIndex((row) => String(row.id) === String(selectedClientRow.id));
@@ -4578,7 +4585,7 @@ const ClientsTwo = () => {
                   </CardHeader>
                   <CardContent className="flex flex-1 min-h-0 flex-col gap-2 overflow-hidden pl-4 pr-4 pb-0">
                     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-slate-200">
-                      <div className="grid grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white [&>*+*]:pl-2">
+                      <div className="grid grid-cols-[24px_2.2fr_2.3fr_1.6fr_0.86fr_1.89fr] items-center gap-2 border-b bg-[#2D4256] pl-1 pr-3 py-3 text-xs font-semibold text-white [&>*+*]:pl-2">
                         <div className="flex items-center justify-center">
                           <Checkbox
                             indicator="x"
@@ -4591,15 +4598,15 @@ const ClientsTwo = () => {
                         <div>Client Name</div>
                         <div>Registered Name</div>
                         <div>Contact Person</div>
-                        <div>Contact Number</div>
+                        <div>Number</div>
                         <div>Email</div>
                       </div>
 
-                      <div className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
+                      <div ref={clientTableScrollRef} className="employee-table-scroll min-h-0 flex-1 divide-y overflow-y-auto">
                         {paginatedTableRows.map((row) => (
                           <div
                             key={row.id}
-                            className="group grid w-full cursor-pointer grid-cols-[0.39fr_2.2fr_2.3fr_1.6fr_1.1fr_1.65fr] items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
+                            className="group grid h-[36px] w-full cursor-pointer grid-cols-[24px_2.2fr_2.3fr_1.6fr_0.86fr_1.89fr] items-center gap-2 pl-1 pr-3 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2"
                             onClick={() => openClientFile(row)}
                           >
                             <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
@@ -4611,13 +4618,13 @@ const ClientsTwo = () => {
                                 className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                               />
                             </div>
-                            <div className="text-left text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">
+                            <div className="text-left text-slate-700 group-hover:font-semibold">
                               {row.tradingAs}
                             </div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.companyNameDisplay}</div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactPerson}</div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.contactNumber}</div>
-                            <div className="text-slate-700 group-hover:font-semibold group-hover:text-[#2f9f35]">{row.email}</div>
+                            <div className="text-slate-700 group-hover:font-semibold">{row.companyNameDisplay}</div>
+                            <div className="text-slate-700 group-hover:font-semibold">{row.contactPerson}</div>
+                            <div className="text-slate-700 group-hover:font-semibold">{row.contactNumber}</div>
+                            <div className="text-slate-700 group-hover:font-semibold">{row.email}</div>
                           </div>
                         ))}
                       </div>

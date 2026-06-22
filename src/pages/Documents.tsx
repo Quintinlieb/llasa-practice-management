@@ -117,6 +117,45 @@ const normalizeLegacyDocumentKey = (value: string | null | undefined): DocumentK
 
 const documentsTableCacheKey = "documents:table-cache";
 const DOCUMENTS_TABLE_PAGE_SIZE = 25;
+const companyTypeSuffixByValue: Record<string, string> = {
+  "Private Company ((Pty) Ltd)": "(Pty) Ltd",
+  "Public Company (Ltd)": "Ltd",
+  "Personal Liability Company (Inc.)": "Inc.",
+  "State-Owned Company (SOC Ltd)": "SOC Ltd",
+  "Non-Profit Company (NPC)": "NPC",
+  "Close Corporation (CC)": "CC",
+  "Co-operative (Co-op)": "Co-op",
+  "Sole Proprietor (SP)": "SP",
+  "Partnership (Partnership)": "Partnership",
+  "Business Trust (Trust)": "Trust",
+};
+const appendCompanyTypeSuffix = (registeredName: string, companyType: string) => {
+  const suffix = companyTypeSuffixByValue[companyType] || "";
+  if (!suffix) return registeredName;
+  const normalizedName = registeredName.toLowerCase();
+  const normalizedSuffix = suffix.toLowerCase();
+  if (normalizedName.endsWith(normalizedSuffix)) return registeredName;
+  return `${registeredName} ${suffix}`;
+};
+const buildDocumentClientLabel = (registeredName: unknown, companyType: unknown, tradingAs: unknown) => {
+  const registered = String(registeredName ?? "").trim();
+  const type = String(companyType ?? "").trim();
+  const trading = String(tradingAs ?? "").trim();
+  const registeredWithType = registered ? appendCompanyTypeSuffix(registered, type) : "";
+  if (registeredWithType && trading) {
+    return `${registeredWithType} t/a ${trading}`;
+  }
+  return registeredWithType || trading || "";
+};
+const getDocumentClientLabelFromRelation = (value: unknown) => {
+  const client = Array.isArray(value) ? value[0] : value;
+  if (!client || typeof client !== "object") return "";
+  return buildDocumentClientLabel(
+    (client as { registered_name?: unknown }).registered_name,
+    (client as { company_type?: unknown }).company_type,
+    (client as { trading_as?: unknown }).trading_as,
+  );
+};
 
 const formatDocumentClientName = (value: string) => {
   const raw = String(value || "").trim();
@@ -236,6 +275,24 @@ const getDiscHearingOutcomeBreadcrumbClientName = (draftState: unknown) => {
   return String(candidate.clientRegisteredName || "").trim();
 };
 
+const getDiscHearingOutcomeBreadcrumbType = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const candidate = draftState as {
+    hearingType?: unknown;
+    hearingDetailsForm?: unknown;
+  };
+  const directType = String(candidate.hearingType || "").trim();
+  if (directType) return directType;
+  const hearingDetailsForm = candidate.hearingDetailsForm;
+  if (!hearingDetailsForm || typeof hearingDetailsForm !== "object") return "";
+  return String((hearingDetailsForm as { hearingType?: unknown }).hearingType || "").trim();
+};
+
+const getDiscHearingOutcomeBreadcrumbTitle = (draftState: unknown) => {
+  const hearingType = getDiscHearingOutcomeBreadcrumbType(draftState);
+  return hearingType ? `${hearingType} Hearing` : "Hearing";
+};
+
 const getPermContractBreadcrumbClientName = (draftState: unknown) => {
   if (!draftState || typeof draftState !== "object") return "";
   const company = (draftState as { company?: unknown }).company;
@@ -273,7 +330,7 @@ const splitCreatedOnParts = (value: string) => {
   };
 };
 
-const documentsTableGridClassName = "grid-cols-[0.39fr_0.72fr_2.35fr_2.05fr_0.82fr_1fr_0.36fr]";
+const documentsTableGridClassName = "grid-cols-[24px_0.72fr_2.35fr_2.05fr_0.82fr_1fr_0.36fr]";
 
 const loadCachedDocumentRows = (): DocumentTableRow[] => {
   try {
@@ -342,7 +399,7 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   discWarningGenerator: { category: "Discipline", label: "Warnings 2" },
   hearingNotice: { category: "Notices", label: "Hearing Notice" },
   abscondHearingNotice: { category: "Notices", label: "Abscondment Letter" },
-  disciplinaryHearingOutcome: { category: "Outcome", label: "Disciplinary Hearing Outcome" },
+  disciplinaryHearingOutcome: { category: "Outcome", label: "Hearing Outcome" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
   incapacityPerformanceHearingNotice: { category: "Notices", label: "Incapacity Hearing (Performance)" },
@@ -430,7 +487,7 @@ const documentCreateFlyoutItems: Record<
     { title: "Contemplated Retrenchment (S189)", selectedDocument: "contemplatedRetrenchmentNotice" },
   ],
   Outcome: [
-    { title: "Disciplinary Hearing Outcome", selectedDocument: "disciplinaryHearingOutcome" },
+    { title: "Hearing Outcome", selectedDocument: "disciplinaryHearingOutcome" },
     { title: "Performance Hearing", disabled: true },
     { title: "Illness Hearing", disabled: true },
     { title: "Performance Consultation", disabled: true },
@@ -502,7 +559,7 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   discWarningGenerator: "Warning",
   hearingNotice: "Hearing Notice",
   abscondHearingNotice: "Abscondment Letter",
-  disciplinaryHearingOutcome: "Disciplinary Hearing Outcome",
+  disciplinaryHearingOutcome: "Hearing Outcome",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
   incapacityPerformanceHearingNotice: "Incapacity Hearing (Performance)",
@@ -527,6 +584,17 @@ const minimizedTabLabelByDocument: Partial<Record<DocumentKey, string>> = {
 
 const getMinimizedTabLabel = (documentKey: DocumentKey) =>
   minimizedTabLabelByDocument[documentKey] || modalTitleByDocument[documentKey];
+
+const normalizeLoadedMinimizedTabs = (tabs: MinimizedGeneratorTab[]) =>
+  tabs.map((tab) => {
+    const normalizedKey = normalizeLegacyDocumentKey(tab.documentKey);
+    if (!normalizedKey) return tab;
+    return {
+      ...tab,
+      documentKey: normalizedKey,
+      label: getMinimizedTabLabel(normalizedKey),
+    };
+  });
 
 const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   discWarningGenerator: "Warning Details",
@@ -592,7 +660,7 @@ const Documents = () => {
   const [documentRows, setDocumentRows] = useState<DocumentTableRow[]>(() => loadCachedDocumentRows());
   const [isDocumentsLoading, setIsDocumentsLoading] = useState(() => loadCachedDocumentRows().length === 0);
   const [minimizedTabs, setMinimizedTabs] = useState<MinimizedGeneratorTab[]>(() =>
-    loadMinimizedDocumentTabs() as MinimizedGeneratorTab[],
+    normalizeLoadedMinimizedTabs(loadMinimizedDocumentTabs() as MinimizedGeneratorTab[]),
   );
   const [stepMeta, setStepMeta] = useState<{
     steps: readonly string[];
@@ -765,7 +833,8 @@ const Documents = () => {
   }, [documentRows]);
 
   useEffect(() => {
-    const syncMinimizedTabs = () => setMinimizedTabs(loadMinimizedDocumentTabs() as MinimizedGeneratorTab[]);
+    const syncMinimizedTabs = () =>
+      setMinimizedTabs(normalizeLoadedMinimizedTabs(loadMinimizedDocumentTabs() as MinimizedGeneratorTab[]));
     window.addEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
     return () => window.removeEventListener(minimizedDocumentTabsChangedEvent, syncMinimizedTabs);
   }, []);
@@ -817,12 +886,18 @@ const Documents = () => {
       }
       let queryResult = await (supabase as any)
         .from("documents")
-        .select("id, document_name, document_type, client_name, created_at, created_by_name, file_url")
+        .select(
+          "id, document_name, document_type, client_id, client_name, created_at, created_by_name, file_url, client:clients(registered_name,company_type,trading_as)",
+        )
+        .eq("deleted", false)
         .order("created_at", { ascending: false });
       if (queryResult.error) {
         queryResult = await (supabase as any)
           .from("documents")
-          .select("id, document_name, document_type, client_name, created_at, created_by, file_url")
+          .select(
+            "id, document_name, document_type, client_id, client_name, created_at, created_by, file_url, client:clients(registered_name,company_type,trading_as)",
+          )
+          .eq("deleted", false)
           .order("created_at", { ascending: false });
       }
       if (!isMounted) return;
@@ -830,16 +905,19 @@ const Documents = () => {
         setIsDocumentsLoading(false);
         return;
       }
-      const rows: DocumentTableRow[] = (queryResult.data ?? []).map((row: any) => ({
-        id: String(row.id ?? crypto.randomUUID()),
-        documentName: String(row.document_name ?? ""),
-        documentType: String(row.document_type ?? ""),
-        clientName: String(row.client_name ?? ""),
-        createdOn: formatCreatedOn(String(row.created_at ?? "")),
-        createdAtRaw: String(row.created_at ?? ""),
-        createdBy: String(row.created_by_name ?? row.created_by ?? ""),
-        fileUrl: String(row.file_url ?? ""),
-      }));
+      const rows: DocumentTableRow[] = (queryResult.data ?? []).map((row: any) => {
+        const resolvedClientLabel = getDocumentClientLabelFromRelation(row.client);
+        return {
+          id: String(row.id ?? crypto.randomUUID()),
+          documentName: String(row.document_name ?? ""),
+          documentType: String(row.document_type ?? ""),
+          clientName: resolvedClientLabel || String(row.client_name ?? ""),
+          createdOn: formatCreatedOn(String(row.created_at ?? "")),
+          createdAtRaw: String(row.created_at ?? ""),
+          createdBy: String(row.created_by_name ?? row.created_by ?? ""),
+          fileUrl: String(row.file_url ?? ""),
+        };
+      });
       setDocumentRows(rows);
       setIsDocumentsLoading(false);
     };
@@ -847,13 +925,16 @@ const Documents = () => {
     const interval = setInterval(() => void loadDocuments(), 10000);
     const onFocus = () => void loadDocuments();
     const onDocumentsRowCreated = () => void loadDocuments();
+    const onTrashBinChanged = () => void loadDocuments();
     window.addEventListener("focus", onFocus);
     window.addEventListener("documents-row-created", onDocumentsRowCreated);
+    window.addEventListener("trash-bin-changed", onTrashBinChanged);
     return () => {
       isMounted = false;
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("documents-row-created", onDocumentsRowCreated);
+      window.removeEventListener("trash-bin-changed", onTrashBinChanged);
     };
   }, [documentRows.length]);
 
@@ -910,6 +991,8 @@ const Documents = () => {
     modalDocument === "abscondHearingNotice" ? getAbscondHearingBreadcrumbClientName(activeSession?.draftState) : "";
   const discHearingOutcomeBreadcrumbClientName =
     modalDocument === "disciplinaryHearingOutcome" ? getDiscHearingOutcomeBreadcrumbClientName(activeSession?.draftState) : "";
+  const discHearingOutcomeBreadcrumbTitle =
+    modalDocument === "disciplinaryHearingOutcome" ? getDiscHearingOutcomeBreadcrumbTitle(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
     modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
   const miscTerminationBreadcrumbClientName =
@@ -922,9 +1005,9 @@ const Documents = () => {
         : modalDocument === "abscondHearingNotice" && abscondHearingBreadcrumbClientName
           ? `${modalTitle} (${abscondHearingBreadcrumbClientName})`
         : modalDocument === "disciplinaryHearingOutcome" && discHearingOutcomeBreadcrumbClientName
-          ? `Disciplinary Hearing (${discHearingOutcomeBreadcrumbClientName})`
+          ? `${discHearingOutcomeBreadcrumbTitle} (${discHearingOutcomeBreadcrumbClientName})`
           : modalDocument === "disciplinaryHearingOutcome"
-            ? "Disciplinary Hearing"
+            ? discHearingOutcomeBreadcrumbTitle
           : modalDocument === "permContract" && permContractBreadcrumbClientName
             ? `${modalTitle} (${permContractBreadcrumbClientName})`
             : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName
@@ -1306,8 +1389,7 @@ const Documents = () => {
   const canCurrentUserDeleteDocuments = useMemo(() => {
     if (!user?.id || !isCurrentUserRoleLoaded) return false;
     const role = currentUserSubuserRole.trim().toLowerCase();
-    if (!role) return true;
-    return role === "consultant";
+    return !role;
   }, [currentUserSubuserRole, isCurrentUserRoleLoaded, user?.id]);
   const documentTypes = useMemo(
     () => Array.from(new Set(documentRows.map((row) => row.documentType).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
@@ -1401,13 +1483,16 @@ const Documents = () => {
     if (!canCurrentUserDeleteDocuments) {
       toast({
         title: "Permission denied",
-        description: "Only the master user and consultant subusers can delete documents.",
+        description: "Only the master user can delete documents.",
         variant: "destructive",
       });
       return;
     }
 
-    const { error } = await (supabase as any).from("documents").delete().in("id", idsToDelete);
+    const { error } = await (supabase as any)
+      .from("documents")
+      .update({ deleted: true, deleted_at: new Date().toISOString() })
+      .in("id", idsToDelete);
 
     if (error) {
       toast({
@@ -1424,12 +1509,17 @@ const Documents = () => {
       idsToDelete.forEach((id) => next.delete(id));
       return next;
     });
+    window.dispatchEvent(new CustomEvent("trash-bin-changed"));
+    toast({
+      title: "Documents moved to Trash Bin",
+      description: `Moved ${idsToDelete.length} document${idsToDelete.length === 1 ? "" : "s"} to the Trash Bin.`,
+    });
   };
   const promptDeleteSelectedDocuments = () => {
     if (!canCurrentUserDeleteDocuments) {
       toast({
         title: "Permission denied",
-        description: "Only the master user and consultant subusers can delete documents.",
+        description: "Only the master user can delete documents.",
         variant: "destructive",
       });
       return;
@@ -1438,8 +1528,8 @@ const Documents = () => {
     if (idsToDelete.length === 0) return;
     const confirmed = window.confirm(
       idsToDelete.length === 1
-        ? "Are you sure you want to delete this document?"
-        : `Are you sure you want to delete these ${idsToDelete.length} documents?`,
+        ? "Are you sure you want to move this document to the Trash Bin?"
+        : `Are you sure you want to move these ${idsToDelete.length} documents to the Trash Bin?`,
     );
     if (!confirmed) return;
     void handleDeleteSelectedDocuments(idsToDelete);
@@ -1741,8 +1831,8 @@ const Documents = () => {
                           />
                         </div>
                         <div>Date</div>
-                        <div>Document Name</div>
-                        <div>Client Name</div>
+                        <div>Document Description</div>
+                        <div>Client</div>
                         <div className="text-center">Type</div>
                         <div className="text-center">Created By</div>
                         <div className="text-center">View</div>
@@ -1754,7 +1844,7 @@ const Documents = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No documents found.</div>
                         ) : (
                           paginatedDocumentRows.map((row) => (
-                            <div key={row.id} className={cn("group grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs leading-4 hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", documentsTableGridClassName)}>
+                            <div key={row.id} className={cn("group grid h-[36px] w-full cursor-default items-center gap-2 pl-1 pr-3 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", documentsTableGridClassName)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -1768,7 +1858,7 @@ const Documents = () => {
                                 {splitCreatedOnParts(row.createdOn).date ? (
                                   <Tooltip disableHoverableContent>
                                     <TooltipTrigger asChild>
-                                      <span className="inline-block cursor-default transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
+                                      <span className="inline-block transition-colors group-hover:font-semibold">
                                         {splitCreatedOnParts(row.createdOn).date}
                                       </span>
                                     </TooltipTrigger>
@@ -1783,11 +1873,11 @@ const Documents = () => {
                                 )}
                               </div>
                               <div>
-                                <span className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">
+                                <span className="transition-colors group-hover:font-semibold">
                                   {row.documentName}
                                 </span>
                               </div>
-                              <div className="transition-colors group-hover:font-semibold group-hover:text-[#2f9f35]">{formatDocumentClientName(row.clientName)}</div>
+                              <div className="transition-colors group-hover:font-semibold">{formatDocumentClientName(row.clientName)}</div>
                               <div className="flex justify-center">
                                 {row.documentType ? (
                                   <span

@@ -150,7 +150,7 @@ type MatterDetailsTableProps = {
   bodyMaxHeightClassName?: string;
 };
 const MATTER_DETAILS_TABLE_GRID = "grid-cols-[110px_90px_2.75fr_1fr_72px]";
-const CASE_FILES_TABLE_GRID = "grid-cols-[0.35fr_0.95fr_1.5fr_2.75fr_1fr_0.8fr_0.9fr_0.5fr_1.1fr]";
+const CASE_FILES_TABLE_GRID = "grid-cols-[24px_105px_1.7fr_2.75fr_1fr_0.8fr_90px_0.5fr_1.1fr]";
 const caseFilesTableCacheKey = "case-files:table-cache";
 const CASE_FILES_TABLE_PAGE_SIZE = 25;
 const CASE_DOCUMENTS_BUCKET = "case-documents";
@@ -182,12 +182,7 @@ const buildMatterClientLabel = (registeredName: unknown, companyType: unknown, t
   const type = String(companyType ?? "").trim();
   const trading = String(tradingAs ?? "").trim();
   const registeredWithType = registered ? appendCompanyTypeSuffix(registered, type) : "";
-  if (
-    registeredWithType &&
-    trading &&
-    trading.toLowerCase() !== registered.toLowerCase() &&
-    trading.toLowerCase() !== registeredWithType.toLowerCase()
-  ) {
+  if (registeredWithType && trading) {
     return `${registeredWithType} t/a ${trading}`;
   }
   return registeredWithType || trading || "";
@@ -208,6 +203,15 @@ const getMatterClientTradingAsName = (value: unknown) => {
   const tradingAsIndex = label.toLowerCase().indexOf(" t/a ");
   if (tradingAsIndex < 0) return "";
   return label.slice(tradingAsIndex + 5).trim();
+};
+const getMatterClientLabelFromRelation = (value: unknown) => {
+  const client = Array.isArray(value) ? value[0] : value;
+  if (!client || typeof client !== "object") return "";
+  return buildMatterClientLabel(
+    (client as { registered_name?: unknown }).registered_name,
+    (client as { company_type?: unknown }).company_type,
+    (client as { trading_as?: unknown }).trading_as,
+  );
 };
 
 const CASE_TYPE_OPTIONS = [
@@ -1293,6 +1297,7 @@ const Matters = () => {
       .from("clients")
       .select("id,registered_name,company_type,trading_as,status")
       .or("status.is.null,status.eq.active")
+      .eq("deleted", false)
       .order("created_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false, nullsFirst: false });
     if (error) {
@@ -1462,6 +1467,7 @@ const Matters = () => {
     if (!role) return true;
     return role !== "consultant" && role !== "administrator";
   }, [currentUserSubuserRole]);
+  const canCurrentUserDeleteCases = useMemo(() => !currentUserSubuserRole.trim(), [currentUserSubuserRole]);
   const isFallbackActorName = useCallback(
     (value: string) => {
       const current = String(value || "").trim();
@@ -1678,7 +1684,10 @@ const Matters = () => {
     }
     const { data, error } = await (supabase as any)
       .from("case_files")
-      .select("id,user_id,client_id,file_number,client_name,parties,case_type,forum,next_date,consultant,status,priority,last_updated,updated_at,created_at,case_subtype,case_number,current_stage,short_description")
+      .select(
+        "id,user_id,client_id,file_number,client_name,parties,case_type,forum,next_date,consultant,status,priority,last_updated,updated_at,created_at,case_subtype,case_number,current_stage,short_description,client:clients(registered_name,company_type,trading_as)",
+      )
+      .eq("deleted", false)
       .order("created_at", { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -1755,13 +1764,14 @@ const Matters = () => {
       const normalizedStatus = normalizeStatus(row.status ?? "Active");
       const createdById = String(row.user_id || "").trim();
       const dateEvents = sortCaseDateEvents(dateEventsByCaseId.get(String(row.id || "").trim()) ?? []);
+      const resolvedClientLabel = getMatterClientLabelFromRelation(row.client);
       return {
         id: row.id,
         createdById,
         createdByName: creatorNameById.get(createdById) || "Unknown User",
         clientId: row.client_id ?? "",
         fileNo: row.file_number ?? "--",
-        client: row.client_name ?? "--",
+        client: resolvedClientLabel || row.client_name || "--",
         parties: row.parties ?? "--",
         caseType: row.case_type ?? "--",
         forumVenue: row.forum ?? "--",
@@ -1895,6 +1905,13 @@ const Matters = () => {
 
   useEffect(() => {
     void fetchCaseFiles();
+  }, [fetchCaseFiles]);
+  useEffect(() => {
+    const handleTrashBinChanged = () => {
+      void fetchCaseFiles();
+    };
+    window.addEventListener("trash-bin-changed", handleTrashBinChanged);
+    return () => window.removeEventListener("trash-bin-changed", handleTrashBinChanged);
   }, [fetchCaseFiles]);
 
   useEffect(() => {
@@ -2538,16 +2555,35 @@ const Matters = () => {
 
   const handleDeleteSelectedCases = async () => {
     if (selectedCaseIds.size === 0) return;
-    if (!window.confirm("Are you sure you want to delete the selected matter(s)?")) return;
+    if (!canCurrentUserDeleteCases) {
+      toast({
+        title: "Delete not allowed",
+        description: "Only the master user can delete matters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!window.confirm("Are you sure you want to move the selected matter(s) to the Trash Bin?")) return;
     const ids = Array.from(selectedCaseIds);
-    const { error } = await (supabase as any).from("case_files").delete().in("id", ids);
+    const { error } = await (supabase as any)
+      .from("case_files")
+      .update({ deleted: true, deleted_at: new Date().toISOString() })
+      .in("id", ids);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
       return;
     }
+    if (selectedCase?.id && ids.includes(selectedCase.id)) {
+      setSelectedCase(null);
+    }
     setSelectedCaseIds(new Set());
     invalidateDashboardWeeklyMattersCache();
     await fetchCaseFiles();
+    window.dispatchEvent(new CustomEvent("trash-bin-changed"));
+    toast({
+      title: "Matters moved to Trash Bin",
+      description: `Moved ${ids.length} matter${ids.length === 1 ? "" : "s"} to the Trash Bin.`,
+    });
   };
   useEffect(() => {
     setCaseFilesTablePage((prev) => Math.min(prev, totalCaseFilesTablePages));
@@ -3368,7 +3404,7 @@ const Matters = () => {
                           <div className="px-4 py-6 text-xs text-slate-500">No case files found.</div>
                         ) : (
                           paginatedCaseFiles.map((caseFile) => (
-                            <div key={caseFile.id} className={cn("grid w-full items-center gap-2 pl-1 pr-3 py-2 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", CASE_FILES_TABLE_GRID)}>
+                            <div key={caseFile.id} className={cn("group grid h-[36px] w-full cursor-default items-center gap-2 pl-1 pr-3 text-left text-xs hover:bg-[#3eca44]/5 [&>*+*]:border-l [&>*+*]:border-slate-200 [&>*+*]:pl-2", CASE_FILES_TABLE_GRID)}>
                               <div className="flex items-center justify-center">
                                 <Checkbox
                                   indicator="x"
@@ -3378,9 +3414,9 @@ const Matters = () => {
                                   className="h-3 w-3 rounded-[2px] border-slate-400 text-white data-[state=checked]:border-[#3eca44] data-[state=checked]:bg-[#3eca44]"
                                 />
                               </div>
-                              <button type="button" onClick={() => setSelectedCase(caseFile)} className="font-medium text-left hover:underline">{caseFile.fileNo}</button>
-                              <div>{getMatterClientDisplayName(caseFile.client)}</div>
-                              <div>{caseFile.parties}</div>
+                              <button type="button" onClick={() => setSelectedCase(caseFile)} className="text-left group-hover:font-semibold hover:underline">{caseFile.fileNo}</button>
+                              <div className="group-hover:font-semibold">{getMatterClientDisplayName(caseFile.client)}</div>
+                              <div className="group-hover:font-semibold">{caseFile.parties}</div>
                               <div className="flex justify-center">
                                 <Badge className={`rounded-full border px-2.5 py-0.5 text-[10px] font-medium shadow-none ${getCaseTypePillClassName(caseFile.caseType)}`}>
                                   {caseFile.caseType}

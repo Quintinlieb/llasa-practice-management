@@ -20,6 +20,8 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           created_by_name: string | null
+          deleted: boolean
+          deleted_at: string | null
           document_name: string
           document_type: string
           client_name: string
@@ -36,6 +38,8 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           created_by_name?: string | null
+          deleted?: boolean
+          deleted_at?: string | null
           document_name: string
           document_type: string
           client_name: string
@@ -52,6 +56,8 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           created_by_name?: string | null
+          deleted?: boolean
+          deleted_at?: string | null
           document_name?: string
           document_type?: string
           client_name?: string
@@ -221,6 +227,8 @@ export type Database = {
           client_surname: string
           company_id: string
           created_at: string | null
+          deleted: boolean
+          deleted_at: string | null
           ee_billing_cycle: string | null
           email: string | null
           gender: string | null
@@ -243,6 +251,8 @@ export type Database = {
           client_surname: string
           company_id: string
           created_at?: string | null
+          deleted?: boolean
+          deleted_at?: string | null
           ee_billing_cycle?: string | null
           email?: string | null
           gender?: string | null
@@ -265,6 +275,8 @@ export type Database = {
           client_surname?: string
           company_id?: string
           created_at?: string | null
+          deleted?: boolean
+          deleted_at?: string | null
           ee_billing_cycle?: string | null
           email?: string | null
           gender?: string | null

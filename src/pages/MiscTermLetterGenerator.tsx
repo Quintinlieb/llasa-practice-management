@@ -50,6 +50,7 @@ type ClientRecord = {
   trading_as: string | null;
   company_type: string | null;
   registration_number: string | null;
+  office_number: string | null;
   primary_number: string | null;
   primary_email: string | null;
   physical_address_line1: string | null;
@@ -523,7 +524,7 @@ const mapClientRecordToState = (record: ClientRecord): ClientStepState => ({
   tradingName: String(record.trading_as || "").trim(),
   companyType: String(record.company_type || "").trim(),
   registrationNumber: String(record.registration_number || "").trim(),
-  phone: String(record.primary_number || "").trim(),
+  phone: String(record.office_number || record.primary_number || "").trim(),
   email: String(record.primary_email || "").trim(),
   address: buildClientAddress(record),
   addressLine1: String(record.physical_address_line1 || "").trim(),
@@ -974,7 +975,7 @@ const MiscTermLetterGenerator = ({
       const { data, error } = await db
         .from("clients")
         .select(
-          "id,registered_name,trading_as,company_type,registration_number,primary_number,primary_email,physical_address_line1,physical_address_line2,city,province,area_code,bargaining_council",
+          "id,registered_name,trading_as,company_type,registration_number,office_number,primary_number,primary_email,physical_address_line1,physical_address_line2,city,province,area_code,bargaining_council",
         )
         .order("registered_name", { ascending: true, nullsFirst: false });
 

@@ -99,11 +99,22 @@ type EmployeeStepState = {
 };
 
 type TerminationStepState = {
+  hearingType:
+    | ""
+    | "Disciplinary Hearing"
+    | "Abscondment"
+    | "Incapacity (Performance)"
+    | "Incapacity (Ill Health)"
+    | "Incapacity (Incompatibility)"
+    | "Incapacity (Impossibility)"
+    | "Appeal";
   hearingDate: string;
+  abscondingDate: string;
   letterDate: string;
   misconductTypes: string[];
   progressiveDisciplinaryAction: "" | "Yes" | "No PDA applied";
   terminationNotice: "None" | "One week" | "Two weeks" | "One month";
+  noticeType: "" | "Work Notice" | "Payment in Lieu";
   appealNotice: "3 days" | "5 days" | "7 days" | "10 days";
   issuingMethods: string[];
   bargainingCouncil: string;
@@ -177,11 +188,14 @@ const emptyEmployeeState: EmployeeStepState = {
 };
 
 const emptyTerminationState: TerminationStepState = {
+  hearingType: "",
   hearingDate: "",
+  abscondingDate: "",
   letterDate: "",
   misconductTypes: [],
   progressiveDisciplinaryAction: "",
   terminationNotice: "None",
+  noticeType: "",
   appealNotice: "5 days",
   issuingMethods: ["By Hand"],
   bargainingCouncil: "None",
@@ -195,6 +209,34 @@ const selectTriggerClassName = cn(
   fieldClassName,
   "!h-8 !border-slate-300 !text-[10px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[10px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
 );
+const hearingTypeOptions: readonly NonNullable<TerminationStepState["hearingType"]>[] = [
+  "Disciplinary Hearing",
+  "Abscondment",
+  "Incapacity (Performance)",
+  "Incapacity (Ill Health)",
+  "Incapacity (Incompatibility)",
+  "Incapacity (Impossibility)",
+  "Appeal",
+] as const;
+const normalizeTerminationHearingType = (value: unknown): TerminationStepState["hearingType"] => {
+  if (
+    value === "Disciplinary Hearing" ||
+    value === "Abscondment" ||
+    value === "Incapacity (Performance)" ||
+    value === "Incapacity (Ill Health)" ||
+    value === "Incapacity (Incompatibility)" ||
+    value === "Incapacity (Impossibility)" ||
+    value === "Appeal"
+  ) {
+    return value;
+  }
+  if (value === "Disciplinary") return "Disciplinary Hearing";
+  if (value === "Incapacity") return "Incapacity (Performance)";
+  if (value === "Incapacity (ill health)") return "Incapacity (Ill Health)";
+  if (value === "Incapacity (incompatibility)") return "Incapacity (Incompatibility)";
+  if (value === "Incapacity (impossibility)") return "Incapacity (Impossibility)";
+  return "";
+};
 const fallbackMisconductTypeOptions = [
   "Unauthorised Absenteeism",
   "Poor Time Keeping",
@@ -215,9 +257,31 @@ const fallbackMisconductTypeOptions = [
   "Alcohol or Drug Misuse",
   "Conflict of Interest",
 ] as const;
+const performanceConcernOptions = [
+  "Not meeting required productivity levels",
+  "Not achieving expected work output",
+  "Work not meeting required quality standards",
+  "Inability to meet deadlines or required turnaround times",
+  "Not achieving agreed performance targets or KPIs",
+  "Inconsistent work performance",
+  "Errors affecting accuracy of work output",
+  "Difficulty performing key duties of the position",
+] as const;
+const illHealthConcernOptions = [
+  "Prolonged or repeated absence from work due to ill health",
+  "Medical condition affecting ability to perform core duties",
+  "Medical report of permanent incapacity",
+  "Medical report of temporary incapacity",
+  "Reduced physical capacity affecting required tasks",
+  "Reduced ability to perform duties effectively due to ill health",
+  "Inability to perform duties safely due to health condition",
+  "Ongoing medical restrictions limiting role requirements",
+  "Limited capacity despite reasonable support provided",
+] as const;
 
 const progressiveDisciplinaryActionOptions = ["Yes", "No PDA applied"] as const;
 const terminationNoticeOptions = ["None", "One week", "Two weeks", "One month"] as const;
+const noticeTypeOptions = ["Work Notice", "Payment in Lieu"] as const;
 const appealNoticeOptions = ["3 days", "5 days", "7 days", "10 days"] as const;
 const issuingMethodOptions = ["By Hand", "By Email", "By Registered Post", "By Regular Post", "By WhatsApp", "By Facebook"] as const;
 const appealNoticeTextByValue: Record<TerminationStepState["appealNotice"], string> = {
@@ -562,6 +626,7 @@ const normalizeTerminationDraft = (value: unknown): TerminationStepState => {
   return {
     ...emptyTerminationState,
     ...candidate,
+    hearingType: normalizeTerminationHearingType(candidate.hearingType),
     bargainingCouncil: String(candidate.bargainingCouncil || emptyTerminationState.bargainingCouncil).trim() || "None",
     misconductTypes: Array.isArray(candidate.misconductTypes)
       ? candidate.misconductTypes.map((item) => String(item || "").trim()).filter(Boolean)
@@ -609,9 +674,23 @@ const terminationNoticeTextByValue: Record<TerminationStepState["terminationNoti
   "Two weeks": "with 2 weeks' notice",
   "One month": "with 1 month's notice",
 };
+const terminationNoticePeriodTextByValue: Record<Exclude<TerminationStepState["terminationNotice"], "None">, string> = {
+  "One week": "one (1) week's notice",
+  "Two weeks": "two (2) weeks' notice",
+  "One month": "one (1) month's notice",
+};
+
+const getIncapacityTypeLabel = (hearingType: TerminationStepState["hearingType"]) => {
+  if (hearingType === "Incapacity (Performance)") return "poor performance";
+  if (hearingType === "Incapacity (Ill Health)") return "ill health";
+  if (hearingType === "Incapacity (Impossibility)") return "impossibility";
+  if (hearingType === "Incapacity (Incompatibility)") return "incompatibility";
+  return "";
+};
 
 const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
   const hearingDateDisplay = formatLongDate(termination.hearingDate) || "[hearing date]";
+  const abscondingDateDisplay = formatLongDate(termination.abscondingDate) || "[absconding date]";
   const misconductSummary = formatMisconductList(termination.misconductTypes);
   const appealNoticeDisplay = appealNoticeTextByValue[termination.appealNotice] || "five (5) days";
   const usesPda = termination.progressiveDisciplinaryAction === "Yes";
@@ -621,9 +700,53 @@ const buildMiscTermBodyParagraphs = (termination: TerminationStepState) => {
   const propertyReturnText = noticeText
     ? "You are required to return all company property in your possession to the employer on your last day of employment."
     : "You are required to return all company property in your possession to the employer immediately.";
+  const incapacityTypeLabel = getIncapacityTypeLabel(termination.hearingType);
+  const isIncapacityNoticeSelected =
+    Boolean(incapacityTypeLabel) &&
+    termination.terminationNotice !== "None";
+  const isIncapacityWorkNotice =
+    isIncapacityNoticeSelected &&
+    termination.noticeType === "Work Notice";
+  const isIncapacityPaymentInLieu =
+    isIncapacityNoticeSelected &&
+    termination.noticeType === "Payment in Lieu";
+
+  if (termination.hearingType === "Abscondment") {
+    return [
+      `We refer to the abovementioned matter and the abscondment hearing held on ${hearingDateDisplay}.`,
+      "After considering the statements and/or evidence presented at the abscondment hearing, the Chairperson found that regardless of our attempts to contact you to determine your whereabouts and expected return, you show no intention of returning to work.",
+      `Take notice that we acknowledge your repudiation of your employment contract by way of absconding since ${abscondingDateDisplay}. We confirm that your actions constitute termination of employment effective ${abscondingDateDisplay}. You are required to return all company property in your possession to the employer immediately.`,
+      `You may appeal against this termination within ${appealNoticeDisplay} from the date of this letter, in accordance with the company's appeal procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
+      "We trust you find the above in order and wish you well in your future endeavours.",
+    ];
+  }
+
+  if (isIncapacityWorkNotice) {
+    return [
+      `We refer to the abovementioned matter and the Incapacity hearing held on ${hearingDateDisplay}.`,
+      `After considering the statements and/or evidence presented at the incapacity hearing, the Chairperson found you lack the required capacity due to ${incapacityTypeLabel}.`,
+      `Take notice that your employment is hereby terminated ${noticeText} for incapacity relating to ${incapacityTypeLabel}. You are required to work during this notice period and thereafter to return all company property in your possession to the employer on your last day of employment.`,
+      `You may appeal against this decision to terminate your employment within ${appealNoticeDisplay} from the date of this termination letter, in accordance with the company's appeal procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
+      "We trust you find the above in order and wish you well in your future endeavours.",
+    ];
+  }
+
+  if (isIncapacityPaymentInLieu) {
+    const paymentInLieuNoticeText =
+      termination.terminationNotice === "None"
+        ? ""
+        : terminationNoticePeriodTextByValue[termination.terminationNotice];
+    return [
+      `We refer to the abovementioned matter and the Incapacity hearing held on ${hearingDateDisplay}.`,
+      `After considering the statements and/or evidence presented at the incapacity hearing, the Chairperson found you lack the required capacity due to ${incapacityTypeLabel}.`,
+      `Take notice that your employment is hereby terminated for incapacity relating to ${incapacityTypeLabel}. The termination will be with ${paymentInLieuNoticeText} during which period you are not required to work and will be paid in lieu thereof. You are required to return all company property in your possession to the employer immediately.`,
+      `You may appeal against this decision to terminate your employment within ${appealNoticeDisplay} from the date of this termination letter, in accordance with the company's appeal procedures. Alternatively, you may refer a dispute to ${disputeForumText} within thirty (30) days from the date of termination.`,
+      "We trust you find the above in order and wish you well in your future endeavours.",
+    ];
+  }
 
   return [
-    `The abovementioned matter refers and the disciplinary hearing held on ${hearingDateDisplay}.`,
+    `We refer to the abovementioned matter and the disciplinary hearing held on ${hearingDateDisplay}.`,
     `After considering the statements and/or evidence presented at the disciplinary hearing, the Chairperson found you guilty of misconduct relating to ${misconductSummary}.`,
     usesPda
       ? `Take notice that we are implementing progressive disciplinary action and your employment is hereby ${terminationActionText} for misconduct relating to ${misconductSummary}. ${propertyReturnText}`
@@ -962,6 +1085,7 @@ const MiscTermLetterGenerator = ({
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
   const hearingDatePickerRef = useRef<HTMLInputElement | null>(null);
+  const abscondingDatePickerRef = useRef<HTMLInputElement | null>(null);
   const letterDatePickerRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1180,16 +1304,46 @@ const MiscTermLetterGenerator = ({
     employee.city.trim().length > 0 &&
     employee.province.trim().length > 0 &&
     employee.areaCode.trim().length > 0;
+  const selectedClientLabel = client.companyName || "Select client";
+  const normalizedMisconductSearchValue = misconductSearchValue.trim().toLowerCase();
+  const isAbscondmentHearing = termination.hearingType === "Abscondment";
+  const isPerformanceHearing = termination.hearingType === "Incapacity (Performance)";
+  const isIllHealthHearing = termination.hearingType === "Incapacity (Ill Health)";
+  const showProgressiveDisciplinaryAction = termination.hearingType === "Disciplinary Hearing";
+  const showTerminationNoticeFields = !isAbscondmentHearing;
+  const requiresIssueSelection =
+    termination.hearingType === "Disciplinary Hearing" || isPerformanceHearing || isIllHealthHearing;
   const isTerminationStepComplete =
+    termination.hearingType.trim().length > 0 &&
     termination.hearingDate.trim().length > 0 &&
+    (!isAbscondmentHearing || termination.abscondingDate.trim().length > 0) &&
     termination.letterDate.trim().length > 0 &&
-    termination.misconductTypes.length > 0 &&
-    termination.progressiveDisciplinaryAction.trim().length > 0 &&
+    (!requiresIssueSelection || termination.misconductTypes.length > 0) &&
+    (!showProgressiveDisciplinaryAction || termination.progressiveDisciplinaryAction.trim().length > 0) &&
+    (!showTerminationNoticeFields || termination.terminationNotice === "None" || termination.noticeType.trim().length > 0) &&
     termination.appealNotice.trim().length > 0 &&
     termination.issuingMethods.length > 0 &&
     termination.bargainingCouncil.trim().length > 0;
-  const selectedClientLabel = client.companyName || "Select client";
-  const normalizedMisconductSearchValue = misconductSearchValue.trim().toLowerCase();
+  const issueFieldLabel = isPerformanceHearing
+    ? "Performance Concern(s)"
+    : isIllHealthHearing
+      ? "Ill Health Condition(s)"
+      : "Misconduct Type(s)";
+  const issuePickerPlaceholder = isPerformanceHearing
+    ? "Select performance concern(s)"
+    : isIllHealthHearing
+      ? "Select ill health condition(s)"
+      : "Select misconduct type(s)";
+  const issueSearchPlaceholder = isPerformanceHearing
+    ? "Search performance concerns..."
+    : isIllHealthHearing
+      ? "Search ill health conditions..."
+      : "Search misconduct types...";
+  const issueEmptyLabel = isPerformanceHearing
+    ? "No performance concern found."
+    : isIllHealthHearing
+      ? "No ill health condition found."
+      : misconductLoadMessage;
   const filteredClients = useMemo(() => {
     const searchValue = clientSearchValue.trim().toLowerCase();
     if (!searchValue) return clients;
@@ -1201,12 +1355,22 @@ const MiscTermLetterGenerator = ({
   }, [clients, clientSearchValue]);
   const misconductSelectionLabel =
     termination.misconductTypes.length === 0
-      ? "Select misconduct type(s)"
-      : `${termination.misconductTypes.length} misconduct type(s) selected`;
-  const filteredConductOffences = useMemo(() => {
+      ? issuePickerPlaceholder
+      : `${termination.misconductTypes.length} ${issueFieldLabel.toLowerCase()} selected`;
+  const filteredConductOffenceOptions = useMemo(() => {
     if (!normalizedMisconductSearchValue) return conductOffences;
     return conductOffences.filter((offence) => offence.name.toLowerCase().includes(normalizedMisconductSearchValue));
   }, [conductOffences, normalizedMisconductSearchValue]);
+  const filteredConcernOptions = useMemo(() => {
+    const options = isPerformanceHearing
+      ? performanceConcernOptions
+      : isIllHealthHearing
+        ? illHealthConcernOptions
+        : [];
+    if (!normalizedMisconductSearchValue) return options;
+    return options.filter((option) => option.toLowerCase().includes(normalizedMisconductSearchValue));
+  }, [isIllHealthHearing, isPerformanceHearing, normalizedMisconductSearchValue]);
+  const showCategorizedConductOffences = !isPerformanceHearing && !isIllHealthHearing;
   const issuingMethodSelectionLabel =
     termination.issuingMethods.length === 0
       ? "Select method(s) of issuing"
@@ -1221,7 +1385,14 @@ const MiscTermLetterGenerator = ({
   };
 
   const updateTermination = <K extends keyof TerminationStepState>(key: K, value: TerminationStepState[K]) => {
-    setTermination((current) => ({ ...current, [key]: value }));
+    setTermination((current) => ({
+      ...current,
+      [key]: value,
+      ...(key === "hearingType" ? { misconductTypes: [], abscondingDate: "" } : {}),
+      ...(key === "hearingType" && value !== "Disciplinary Hearing" ? { progressiveDisciplinaryAction: "" } : {}),
+      ...(key === "hearingType" && value === "Abscondment" ? { terminationNotice: "None", noticeType: "" } : {}),
+      ...(key === "terminationNotice" && value === "None" ? { noticeType: "" } : {}),
+    }));
   };
 
   const toggleMisconductType = (value: string) => {
@@ -1542,7 +1713,7 @@ const MiscTermLetterGenerator = ({
       const generatedByUrl = "www.llasa.co.za";
       const generatedByY = pageHeight - 5.5;
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(6.5);
+      pdf.setFontSize(7);
       pdf.setTextColor(63, 63, 70);
       const generatedByPrefixWidth = pdf.getTextWidth(generatedByPrefix);
       const generatedByUrlWidth = pdf.getTextWidth(generatedByUrl);
@@ -1705,10 +1876,6 @@ const MiscTermLetterGenerator = ({
   const stepOneBody = (
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
-        <div className="rounded-sm border border-[#d6e8d7] bg-[#f4fbf5] px-3 py-2 text-[10px] text-slate-600">
-          Select the client record that should feed this letter. The later steps will build on this selected company profile.
-        </div>
-
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="miscTermClient" className="text-[10px] font-semibold text-slate-600">
@@ -1844,10 +2011,6 @@ const MiscTermLetterGenerator = ({
   const stepTwoBody = (
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
-        <div className="rounded-sm border border-[#d6e8d7] bg-[#f4fbf5] px-3 py-2 text-[10px] text-slate-600">
-          Complete the employee details for this next stage. Address Line 1 is optional. All other fields in this step are required.
-        </div>
-
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="miscTermEmployeeName" className="text-[10px] font-semibold text-slate-600">
@@ -1906,7 +2069,10 @@ const MiscTermLetterGenerator = ({
               Province <span className="text-red-500">*</span>
             </Label>
             <Select value={employee.province} onValueChange={(value) => updateEmployee("province", value)}>
-              <SelectTrigger id="miscTermEmployeeProvince" className={selectTriggerClassName}>
+              <SelectTrigger
+                id="miscTermEmployeeProvince"
+                className={cn(selectTriggerClassName, !employee.province && "[&>span]:text-slate-400 [&>span]:font-normal")}
+              >
                 <SelectValue placeholder="Select province" />
               </SelectTrigger>
               <SelectContent className="text-[10px]">
@@ -1932,12 +2098,6 @@ const MiscTermLetterGenerator = ({
             />
           </div>
         </div>
-
-        {!isEmployeeStepComplete ? (
-          <div className="rounded-sm border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
-            Name, surname, city, province, and area code must be completed before this step is ready.
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -1946,6 +2106,30 @@ const MiscTermLetterGenerator = ({
     <div className={cn("h-full py-1", hiddenScrollClassName)}>
       <div className="space-y-4">
         <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="miscTermHearingType" className="text-[10px] font-semibold text-slate-600">
+              Hearing Type <span className="text-red-500">*</span>
+            </Label>
+            <Select
+              value={termination.hearingType || undefined}
+              onValueChange={(value) => updateTermination("hearingType", value as TerminationStepState["hearingType"])}
+            >
+              <SelectTrigger
+                id="miscTermHearingType"
+                className={cn(selectTriggerClassName, !termination.hearingType && "[&>span]:text-slate-400 [&>span]:font-normal")}
+              >
+                <SelectValue placeholder="Select hearing type" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {hearingTypeOptions.map((option) => (
+                  <SelectItem key={option} value={option} disabled={option === "Appeal"} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="miscTermHearingDate" className="text-[10px] font-semibold text-slate-600">
               Hearing Date <span className="text-red-500">*</span>
@@ -1979,165 +2163,244 @@ const MiscTermLetterGenerator = ({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="miscTermMisconductTypes" className="text-[10px] font-semibold text-slate-600">
-              Misconduct Type(s) <span className="text-red-500">*</span>
-            </Label>
-            <Popover
-              open={misconductSearchOpen}
-              onOpenChange={(open) => {
-                if (!open) setMisconductSearchValue("");
-                setMisconductSearchOpen(open);
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  id="miscTermMisconductTypes"
-                  type="button"
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={misconductSearchOpen}
-                  className={cn(
-                    fieldClassName,
-                    "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900 [&>svg]:ml-2 [&>svg]:shrink-0",
-                    termination.misconductTypes.length === 0 && "text-[10px] text-slate-400",
-                  )}
-                >
-                  <span className="truncate text-left">{misconductSelectionLabel}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
-                onWheel={(event) => event.stopPropagation()}
+          {isAbscondmentHearing ? (
+            <div className="space-y-2">
+              <Label htmlFor="miscTermAbscondingDate" className="text-[10px] font-semibold text-slate-600">
+                Absconding Date <span className="text-red-500">*</span>
+              </Label>
+              <div className="flex items-start gap-2">
+                <Input
+                  id="miscTermAbscondingDate"
+                  type="text"
+                  readOnly
+                  value={termination.abscondingDate ? formatDateForDisplay(termination.abscondingDate) : ""}
+                  placeholder="Please select a date"
+                  onClick={() => openHiddenDatePicker(abscondingDatePickerRef)}
+                  onFocus={() => openHiddenDatePicker(abscondingDatePickerRef)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openHiddenDatePicker(abscondingDatePickerRef);
+                    }
+                  }}
+                  className={`${fieldClassName} cursor-pointer placeholder:!font-normal`}
+                />
+                <input
+                  ref={abscondingDatePickerRef}
+                  type="date"
+                  value={termination.abscondingDate}
+                  onChange={(event) => updateTermination("abscondingDate", event.target.value)}
+                  className="sr-only"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
+              </div>
+            </div>
+          ) : requiresIssueSelection ? (
+            <div className="space-y-2">
+              <Label htmlFor="miscTermMisconductTypes" className="text-[10px] font-semibold text-slate-600">
+                {issueFieldLabel} <span className="text-red-500">*</span>
+              </Label>
+              <Popover
+                open={misconductSearchOpen}
+                onOpenChange={(open) => {
+                  if (!open) setMisconductSearchValue("");
+                  setMisconductSearchOpen(open);
+                }}
               >
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    value={misconductSearchValue}
-                    onValueChange={setMisconductSearchValue}
-                    placeholder="Search misconduct types..."
-                    className="h-8 text-[11px] placeholder:text-[10px]"
-                  />
-                  <CommandList className="max-h-[248px] overscroll-contain">
-                    <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
-                    {offenceCategoryOrder.map((category) => {
-                      const offences = filteredConductOffences.filter((offence) => offence.category === category);
-                      if (offences.length === 0) return null;
-                      return (
-                        <CommandGroup
-                          key={category}
-                          heading={category}
-                          className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
-                        >
-                          {offences.map((offence) => {
-                            const isSelected = termination.misconductTypes.includes(offence.name);
+                <PopoverTrigger asChild>
+                  <Button
+                    id="miscTermMisconductTypes"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={misconductSearchOpen}
+                    className={cn(
+                      fieldClassName,
+                      "w-full justify-between px-3 text-[11px] font-medium hover:bg-white hover:text-slate-900 data-[state=open]:bg-white data-[state=open]:text-slate-900 [&>svg]:ml-2 [&>svg]:shrink-0",
+                      termination.misconductTypes.length === 0 && "text-[10px] text-slate-400",
+                    )}
+                  >
+                    <span className="truncate text-left">{misconductSelectionLabel}</span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
+                  onWheel={(event) => event.stopPropagation()}
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      value={misconductSearchValue}
+                      onValueChange={setMisconductSearchValue}
+                      placeholder={issueSearchPlaceholder}
+                      className="h-8 text-[11px] placeholder:text-[10px]"
+                    />
+                    <CommandList className="max-h-[248px] overscroll-contain">
+                      <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{issueEmptyLabel}</CommandEmpty>
+                      {showCategorizedConductOffences
+                        ? offenceCategoryOrder.map((category) => {
+                            const offences = filteredConductOffenceOptions.filter((offence) => offence.category === category);
+                            if (offences.length === 0) return null;
                             return (
-                              <CommandItem
-                                key={`${category}-${offence.name}`}
-                                value={`${category} ${offence.name}`}
-                                onSelect={() => toggleMisconductType(offence.name)}
-                                className={cn(
-                                  "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
-                                  isSelected ? "text-[#2f9f35]" : "text-slate-600",
-                                )}
+                              <CommandGroup
+                                key={category}
+                                heading={category}
+                                className="px-1 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-slate-200 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-bold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-slate-900"
                               >
-                                <p
+                                {offences.map((offence) => {
+                                  const isSelected = termination.misconductTypes.includes(offence.name);
+                                  return (
+                                    <CommandItem
+                                      key={`${category}-${offence.name}`}
+                                      value={`${category} ${offence.name}`}
+                                      onSelect={() => toggleMisconductType(offence.name)}
+                                      className={cn(
+                                        "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
+                                        isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                      )}
+                                    >
+                                      <p
+                                        className={cn(
+                                          "min-w-0 truncate text-[10px] font-medium",
+                                          isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                        )}
+                                      >
+                                        {offence.name}
+                                      </p>
+                                      {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            );
+                          })
+                        : (
+                          <CommandGroup className="px-1">
+                            {filteredConcernOptions.map((option) => {
+                              const isSelected = termination.misconductTypes.includes(option);
+                              return (
+                                <CommandItem
+                                  key={option}
+                                  value={option}
+                                  onSelect={() => toggleMisconductType(option)}
                                   className={cn(
-                                    "min-w-0 truncate text-[10px] font-medium",
+                                    "flex items-center justify-between gap-3 px-3 py-2 text-[10px]",
                                     isSelected ? "text-[#2f9f35]" : "text-slate-600",
                                   )}
                                 >
-                                  {offence.name}
-                                </p>
-                                {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
-                              </CommandItem>
-                            );
-                          })}
-                        </CommandGroup>
-                      );
-                    })}
-                  </CommandList>
-                </Command>
-                <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
-                  {termination.misconductTypes.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {termination.misconductTypes.map((type) => (
-                        <div
-                          key={type}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
-                        >
-                          <span className="truncate">{type}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[10px] text-slate-500">No misconduct types selected.</p>
+                                  <p
+                                    className={cn(
+                                      "min-w-0 truncate text-[10px] font-medium",
+                                      isSelected ? "text-[#2f9f35]" : "text-slate-600",
+                                    )}
+                                  >
+                                    {option}
+                                  </p>
+                                  {isSelected ? <Check className="h-3.5 w-3.5 text-[#2f9f35]" /> : null}
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        )}
+                    </CommandList>
+                  </Command>
+                  <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3">
+                    {termination.misconductTypes.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {termination.misconductTypes.map((type) => (
+                          <div
+                            key={type}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#3eca44] bg-[#3eca44]/10 px-2.5 py-1 text-[10px] font-medium text-[#2f9f35]"
+                          >
+                            <span className="truncate">{type}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-500">No {issueFieldLabel.toLowerCase()} selected.</p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : null}
+
+          {showProgressiveDisciplinaryAction ? (
+            <div className="space-y-2">
+              <Label htmlFor="miscTermPda" className="text-[10px] font-semibold text-slate-600">
+                Progressive Disciplinary Action (PDA) <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={termination.progressiveDisciplinaryAction}
+                onValueChange={(value) => updateTermination("progressiveDisciplinaryAction", value as TerminationStepState["progressiveDisciplinaryAction"])}
+              >
+                <SelectTrigger
+                  id="miscTermPda"
+                  className={cn(
+                    selectTriggerClassName,
+                    !termination.progressiveDisciplinaryAction && "[&>span]:text-slate-400 [&>span]:font-normal",
                   )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
+                >
+                  <SelectValue placeholder="Select PDA option" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {progressiveDisciplinaryActionOptions.map((option) => (
+                    <SelectItem key={option} value={option} className="text-[10px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="miscTermPda" className="text-[10px] font-semibold text-slate-600">
-              Progressive Disciplinary Action (PDA) <span className="text-red-500">*</span>
-            </Label>
-            <Select
-              value={termination.progressiveDisciplinaryAction}
-              onValueChange={(value) => updateTermination("progressiveDisciplinaryAction", value as TerminationStepState["progressiveDisciplinaryAction"])}
-            >
-              <SelectTrigger id="miscTermPda" className={selectTriggerClassName}>
-                <SelectValue placeholder="Select PDA option" />
-              </SelectTrigger>
-              <SelectContent className="text-[10px]">
-                {progressiveDisciplinaryActionOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showTerminationNoticeFields ? (
+            <div className="space-y-2">
+              <Label htmlFor="miscTermTerminationNotice" className="text-[10px] font-semibold text-slate-600">
+                Termination Notice <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={termination.terminationNotice}
+                onValueChange={(value) => updateTermination("terminationNotice", value as TerminationStepState["terminationNotice"])}
+              >
+                <SelectTrigger id="miscTermTerminationNotice" className={selectTriggerClassName}>
+                  <SelectValue placeholder="Select termination notice" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {terminationNoticeOptions.map((option) => (
+                    <SelectItem key={option} value={option} className="text-[10px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
-          <div className="space-y-2">
-            <Label htmlFor="miscTermAppealNotice" className="text-[10px] font-semibold text-slate-600">
-              Appeal Notice <span className="text-red-500">*</span>
-            </Label>
-            <Select value={termination.appealNotice} onValueChange={(value) => updateTermination("appealNotice", value as TerminationStepState["appealNotice"])}>
-              <SelectTrigger id="miscTermAppealNotice" className={selectTriggerClassName}>
-                <SelectValue placeholder="Select appeal period" />
-              </SelectTrigger>
-              <SelectContent className="text-[10px]">
-                {appealNoticeOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="miscTermTerminationNotice" className="text-[10px] font-semibold text-slate-600">
-              Termination Notice <span className="text-red-500">*</span>
-            </Label>
-            <Select
-              value={termination.terminationNotice}
-              onValueChange={(value) => updateTermination("terminationNotice", value as TerminationStepState["terminationNotice"])}
-            >
-              <SelectTrigger id="miscTermTerminationNotice" className={selectTriggerClassName}>
-                <SelectValue placeholder="Select termination notice" />
-              </SelectTrigger>
-              <SelectContent className="text-[10px]">
-                {terminationNoticeOptions.map((option) => (
-                  <SelectItem key={option} value={option} className="text-[10px]">
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {showTerminationNoticeFields && termination.terminationNotice !== "None" ? (
+            <div className="space-y-2">
+              <Label htmlFor="miscTermNoticeType" className="text-[10px] font-semibold text-slate-600">
+                Notice Type <span className="text-red-500">*</span>
+              </Label>
+              <Select value={termination.noticeType || undefined} onValueChange={(value) => updateTermination("noticeType", value as TerminationStepState["noticeType"])}>
+                <SelectTrigger
+                  id="miscTermNoticeType"
+                  className={cn(selectTriggerClassName, !termination.noticeType && "[&>span]:text-slate-400 [&>span]:font-normal")}
+                >
+                  <SelectValue placeholder="Select notice type" />
+                </SelectTrigger>
+                <SelectContent className="text-[10px]">
+                  {noticeTypeOptions.map((option) => (
+                    <SelectItem key={option} value={option} className="text-[10px]">
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="miscTermIssuingMethods" className="text-[10px] font-semibold text-slate-600">
@@ -2252,6 +2515,24 @@ const MiscTermLetterGenerator = ({
                 tabIndex={-1}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="miscTermAppealNotice" className="text-[10px] font-semibold text-slate-600">
+              Appeal Notice <span className="text-red-500">*</span>
+            </Label>
+            <Select value={termination.appealNotice} onValueChange={(value) => updateTermination("appealNotice", value as TerminationStepState["appealNotice"])}>
+              <SelectTrigger id="miscTermAppealNotice" className={selectTriggerClassName}>
+                <SelectValue placeholder="Select appeal period" />
+              </SelectTrigger>
+              <SelectContent className="text-[10px]">
+                {appealNoticeOptions.map((option) => (
+                  <SelectItem key={option} value={option} className="text-[10px]">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2 md:col-span-2">

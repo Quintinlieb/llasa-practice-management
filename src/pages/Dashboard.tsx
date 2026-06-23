@@ -335,9 +335,15 @@ function getMatterHeaderTitle(caseType: unknown, subtype: unknown) {
   }
 
   const normalizedSubtype = safeSubtype.toLowerCase();
-  if (normalizedSubtype === "discipline") return "Disciplinary Hearing";
-  if (normalizedSubtype === "incapacity (performance)") return "Poor Performance Hearing";
-  if (normalizedSubtype === "incapacity (ill health)") return "Ill Health Hearing";
+  if (normalizedSubtype === "discipline" || normalizedSubtype === "disciplinary") return "Disciplinary Hearing";
+  if (
+    normalizedSubtype === "incapacity (performance)" ||
+    normalizedSubtype === "incapacity (ill health)" ||
+    normalizedSubtype === "incapacity"
+  ) {
+    return "Incapacity Hearing";
+  }
+  if (normalizedSubtype === "appeal") return "Appeal Hearing";
   if (normalizedSubtype === "grievance") return "Grievance Hearing";
   if (normalizedSubtype === "abscondment") return "Abscondment Hearing";
   return "Hearing";

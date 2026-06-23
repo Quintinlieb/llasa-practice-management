@@ -367,9 +367,9 @@ const formatClientMatterType = (matter: Pick<ClientMatter, "caseType" | "subtype
   }
 
   const subtype = String(matter.subtype || "").trim().toLowerCase();
-  if (subtype === "discipline") return "Disciplinary Hearing";
-  if (subtype === "incapacity (performance)") return "Poor Performance Hearing";
-  if (subtype === "incapacity (ill health)") return "Ill Health Hearing";
+  if (subtype === "discipline" || subtype === "disciplinary") return "Disciplinary Hearing";
+  if (subtype === "incapacity (performance)" || subtype === "incapacity (ill health)" || subtype === "incapacity") return "Incapacity Hearing";
+  if (subtype === "appeal") return "Appeal Hearing";
   if (subtype === "grievance") return "Grievance Hearing";
   if (subtype === "abscondment") return "Abscondment Hearing";
   return "Hearing";

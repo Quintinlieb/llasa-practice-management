@@ -230,8 +230,10 @@ const NEW_MATTER_OPTIONS: Array<{ label: string; caseType: (typeof CASE_TYPE_OPT
 ];
 const SUBTYPE_NONE = "None";
 const REFERRAL_SUBTYPE = "Referral";
+const HEARING_SUBTYPE_OPTIONS = ["Disciplinary", "Incapacity", "Appeal"] as const;
+type HearingSubtype = (typeof HEARING_SUBTYPE_OPTIONS)[number];
 const CASE_TYPE_SUBTYPE_OPTIONS: Partial<Record<(typeof CASE_TYPE_OPTIONS)[number], readonly string[]>> = {
-  Hearing: ["Discipline", "Incapacity (performance)", "Incapacity (ill health)", "Grievance", "Abscondment"],
+  Hearing: HEARING_SUBTYPE_OPTIONS,
   Consultation: ["General", "Grievance", "Performance", "Retrenchment", "Employment Equity", "Case Preparation", "Wage Negotiations", "Mutual Interest Matters"],
   CCMA: [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
   "Bargaining Council": [REFERRAL_SUBTYPE, "Conciliation", "In Limine", "Con/Arb", "Arbitration"],
@@ -450,10 +452,34 @@ const getSubtypeOptions = (caseType: string) => CASE_TYPE_SUBTYPE_OPTIONS[caseTy
 const shouldHideSubtype = (caseType: string) => caseType === "Labour Court";
 const isReferralSubtype = (caseType: string, subtype: string) =>
   (caseType === "CCMA" || caseType === "Bargaining Council") && subtype === REFERRAL_SUBTYPE;
+const normalizeHearingSubtype = (subtype: string): HearingSubtype | string => {
+  const trimmedSubtype = String(subtype || "").trim();
+  const normalizedSubtype = trimmedSubtype.toLowerCase();
+  if (normalizedSubtype === "discipline" || normalizedSubtype === "disciplinary") return "Disciplinary";
+  if (normalizedSubtype === "incapacity (performance)" || normalizedSubtype === "incapacity (ill health)" || normalizedSubtype === "incapacity") return "Incapacity";
+  if (normalizedSubtype === "appeal") return "Appeal";
+  return trimmedSubtype;
+};
 const getSubtypeValueForCaseType = (caseType: string, currentSubtype = "") => {
   if (shouldHideSubtype(caseType)) return SUBTYPE_NONE;
   const options = getSubtypeOptions(caseType);
-  return options.includes(currentSubtype) ? currentSubtype : "";
+  const normalizedCurrentSubtype = caseType === "Hearing" ? normalizeHearingSubtype(currentSubtype) : currentSubtype;
+  return options.includes(normalizedCurrentSubtype) ? normalizedCurrentSubtype : "";
+};
+const getHearingMatterLabel = (subtype: string) => {
+  const normalizedSubtype = String(subtype || "").trim().toLowerCase();
+  if (normalizedSubtype === "discipline" || normalizedSubtype === "disciplinary") return "Disciplinary Hearing";
+  if (
+    normalizedSubtype === "incapacity (performance)" ||
+    normalizedSubtype === "incapacity (ill health)" ||
+    normalizedSubtype === "incapacity"
+  ) {
+    return "Incapacity Hearing";
+  }
+  if (normalizedSubtype === "appeal") return "Appeal Hearing";
+  if (normalizedSubtype === "grievance") return "Grievance Hearing";
+  if (normalizedSubtype === "abscondment") return "Abscondment Hearing";
+  return "Hearing";
 };
 const getCaseTypePillClassName = (caseType: string) => {
   const normalized = String(caseType || "").trim().toLowerCase();
@@ -469,11 +495,12 @@ const getCaseTypePillClassName = (caseType: string) => {
   return "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100 hover:text-slate-700";
 };
 const getOutcomeFlowConfig = (caseType: string, subtype: string): OutcomeFlowConfig => {
+  const normalizedSubtype = caseType === "Hearing" ? normalizeHearingSubtype(subtype) : subtype;
   if (caseType === "CCMA" || caseType === "Bargaining Council") return CCMA_OUTCOME_FLOW;
-  if (caseType === "Hearing" && subtype === "Discipline") return HEARING_DISCIPLINE_OUTCOME_FLOW;
-  if (caseType === "Hearing" && subtype === "Incapacity (performance)") return HEARING_INCAPACITY_PERFORMANCE_OUTCOME_FLOW;
-  if (caseType === "Hearing" && subtype === "Incapacity (ill health)") return HEARING_INCAPACITY_ILL_HEALTH_OUTCOME_FLOW;
-  if (caseType === "Hearing" && subtype === "Grievance") return HEARING_GRIEVANCE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && normalizedSubtype === "Disciplinary") return HEARING_DISCIPLINE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && normalizedSubtype === "Incapacity") return HEARING_INCAPACITY_PERFORMANCE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && normalizedSubtype === "Appeal") return HEARING_GRIEVANCE_OUTCOME_FLOW;
+  if (caseType === "Hearing" && normalizedSubtype === "Grievance") return HEARING_GRIEVANCE_OUTCOME_FLOW;
   if (caseType === "Consultation" && subtype === "Grievance") return CONSULTATION_GRIEVANCE_OUTCOME_FLOW;
   if (caseType === "Consultation" && subtype === "Performance") return CONSULTATION_PERFORMANCE_OUTCOME_FLOW;
   if (caseType === "Consultation" && subtype === "Retrenchment") return CONSULTATION_RETRENCHMENT_OUTCOME_FLOW;
@@ -488,7 +515,7 @@ const shouldShowAmountSettled = (outcomeType: string) => {
   return normalizedType === "Settlement" || normalizedType === "Settled";
 };
 const shouldShowDismissalMisconductTypes = (caseType: string, subtype: string, outcomeType: string) =>
-  caseType === "Hearing" && subtype === "Discipline" && outcomeType.trim() === "Guilty - Dismissal";
+  caseType === "Hearing" && normalizeHearingSubtype(subtype) === "Disciplinary" && outcomeType.trim() === "Guilty - Dismissal";
 const shouldShowAmountAwarded = (outcomeType: string) => {
   const normalizedType = outcomeType.trim();
   if (normalizedType === "Award (reinstatement with backpay)" || normalizedType === "Award (Compensation)") {
@@ -546,7 +573,7 @@ const createBlankCaseForm = (): NewCaseForm => ({
 const createCaseEditForm = (caseFile: CaseFile): CaseEditForm => ({
   parties: caseFile.parties === "--" ? "" : caseFile.parties,
   caseType: caseFile.caseType === "--" ? "" : caseFile.caseType,
-  subtype: caseFile.subtype === "--" ? "" : caseFile.subtype,
+  subtype: caseFile.subtype === "--" ? "" : (caseFile.caseType === "Hearing" ? String(normalizeHearingSubtype(caseFile.subtype)) : caseFile.subtype),
   forumVenue: caseFile.forumVenue === "--" ? "" : caseFile.forumVenue,
   caseNumber: caseFile.caseNumber === "--" ? "" : caseFile.caseNumber,
   currentStage: caseFile.currentStage === "--" ? "Awaiting Date" : caseFile.currentStage,
@@ -1039,13 +1066,7 @@ const getMatterHeaderTitle = (caseFile: CaseFile | null) => {
     return hasSubtype ? `${caseFile.caseType} (${subtype})` : caseFile.caseType;
   }
 
-  const subtype = String(caseFile.subtype || "").trim().toLowerCase();
-  if (subtype === "discipline") return "Disciplinary Hearing";
-  if (subtype === "incapacity (performance)") return "Poor Performance Hearing";
-  if (subtype === "incapacity (ill health)") return "Ill Health Hearing";
-  if (subtype === "grievance") return "Grievance Hearing";
-  if (subtype === "abscondment") return "Abscondment Hearing";
-  return "Hearing";
+  return getHearingMatterLabel(caseFile.subtype);
 };
 
 const loadCachedCaseFiles = (): CaseFile[] => {
@@ -1781,7 +1802,9 @@ const Matters = () => {
         priority: normalizePriority(row.priority),
         lastUpdated: toIsoDate(row.last_updated ?? row.updated_at ?? row.created_at ?? new Date().toISOString()),
         caseTitle: row.parties ?? "--",
-        subtype: row.case_subtype ?? "--",
+        subtype: row.case_type === "Hearing"
+          ? String(normalizeHearingSubtype(String(row.case_subtype ?? "--")))
+          : row.case_subtype ?? "--",
         caseNumber: row.case_number ?? "--",
         employerRepresentative: "--",
         currentStage: String(row.current_stage || "").trim() || resolveCurrentStage("--", normalizedStatus, []),

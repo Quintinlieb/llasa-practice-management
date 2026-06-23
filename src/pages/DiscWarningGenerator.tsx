@@ -2,6 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import DashboardLayout from "@/components/DashboardLayout";
 import { BriefcaseIcon, EnvelopeIcon, MapPinIcon, PhoneIcon as HeroPhoneIcon } from "@heroicons/react/24/outline";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
@@ -168,6 +178,20 @@ type DiscWarningGeneratorDraftState = {
   warningForm: WarningFormState;
 };
 
+type WarningGuardState =
+  | {
+      open: true;
+      mode: "serious" | "dismissible";
+      misconductName: string;
+      pendingWarningType: Exclude<WarningFormState["warningType"], "">;
+    }
+  | {
+      open: false;
+      mode: null;
+      misconductName: "";
+      pendingWarningType: "";
+    };
+
 const isDiscWarningGeneratorDraftState = (value: unknown): value is DiscWarningGeneratorDraftState => {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -223,6 +247,7 @@ const stepShellCopy = [
 
 const inputClassName =
   "h-8 rounded-sm border-slate-300 bg-white !text-[12px] md:!text-[12px] font-medium text-slate-900 shadow-none placeholder:!text-[12px] md:placeholder:!text-[12px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
+const placeholderTextColor = "#94a3b8";
 
 const companyTypeSuffixByValue: Record<string, string> = {
   "Private Company ((Pty) Ltd)": "(Pty) Ltd",
@@ -397,6 +422,43 @@ const warningTypeLabelByValue: Record<Exclude<WarningFormState["warningType"], "
   second: "Second Written Warning",
   serious: "Serious Written Warning",
   final: "Final Written Warning",
+};
+
+const emptyWarningGuardState: WarningGuardState = {
+  open: false,
+  mode: null,
+  misconductName: "",
+  pendingWarningType: "",
+};
+
+const getWarningGuardState = (
+  misconductTypes: string[],
+  warningType: WarningFormState["warningType"],
+  conductOffences: ConductOffence[],
+): WarningGuardState => {
+  if (!warningType) return emptyWarningGuardState;
+  const selectedOffences = misconductTypes
+    .map((type) => conductOffences.find((offence) => offence.name === type))
+    .filter((offence): offence is ConductOffence => Boolean(offence));
+  const dismissibleOffence = selectedOffences.find((offence) => offence.category === "Dismissible");
+  if (dismissibleOffence) {
+    return {
+      open: true,
+      mode: "dismissible",
+      misconductName: dismissibleOffence.name,
+      pendingWarningType: warningType,
+    };
+  }
+  const seriousOffence = selectedOffences.find((offence) => offence.category === "Serious");
+  if (seriousOffence && warningType && warningType !== "final") {
+    return {
+      open: true,
+      mode: "serious",
+      misconductName: seriousOffence.name,
+      pendingWarningType: warningType,
+    };
+  }
+  return emptyWarningGuardState;
 };
 
 const generatedDocumentsBucket = "documents";
@@ -778,6 +840,16 @@ const DiscWarningGeneratorContent = ({
       : warningForm.misconductTypes.length === 1
         ? warningForm.misconductTypes[0]
         : `${warningForm.misconductTypes.length} misconduct type(s) selected`;
+  const [misconductSearchValue, setMisconductSearchValue] = useState("");
+  const filteredConductOffences = useMemo(() => {
+    const searchValue = misconductSearchValue.trim().toLowerCase();
+    if (!searchValue) return conductOffences;
+    return conductOffences.filter((offence) => offence.name.toLowerCase().includes(searchValue));
+  }, [conductOffences, misconductSearchValue]);
+  const handleMisconductSearchOpenChange = (open: boolean) => {
+    if (!open) setMisconductSearchValue("");
+    setMisconductSearchOpen(open);
+  };
   const warningTypeLabel = warningForm.warningType ? warningTypeLabelByValue[warningForm.warningType] : "";
   const hasClientLogo = Boolean(clientForm.companyLogoDataUrl);
   const showClientLogoField = Boolean(clientForm.clientId && clientForm.companyLogoDataUrl);
@@ -1084,7 +1156,7 @@ const DiscWarningGeneratorContent = ({
                 <Label htmlFor="discWarningMisconductTypes" className="text-[12px] font-semibold text-slate-600">
                   Misconduct Type(s) <span className="text-red-500">*</span>
                 </Label>
-                <Popover open={misconductSearchOpen} onOpenChange={setMisconductSearchOpen}>
+                <Popover open={misconductSearchOpen} onOpenChange={handleMisconductSearchOpenChange}>
                   <PopoverTrigger asChild>
                     <Button
                       id="discWarningMisconductTypes"
@@ -1107,15 +1179,19 @@ const DiscWarningGeneratorContent = ({
                     className="flex max-h-[380px] w-[var(--radix-popover-trigger-width)] min-w-[420px] flex-col overflow-hidden p-0"
                     onWheel={(event) => event.stopPropagation()}
                   >
-                    <Command shouldFilter>
+                    <Command shouldFilter={false}>
                       <CommandInput
+                        value={misconductSearchValue}
+                        onValueChange={setMisconductSearchValue}
                         placeholder="Search misconduct types..."
                         className="h-8 text-[13px] placeholder:text-[12px]"
                       />
                       <CommandList className="max-h-[248px] overscroll-contain">
-                        <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
+                        {filteredConductOffences.length === 0 ? (
+                          <CommandEmpty className="px-3 py-4 text-sm text-slate-500">{misconductLoadMessage}</CommandEmpty>
+                        ) : null}
                         {offenceCategoryOrder.map((category) => {
-                          const offences = conductOffences.filter((offence) => offence.category === category);
+                          const offences = filteredConductOffences.filter((offence) => offence.category === category);
                           if (offences.length === 0) return null;
                           return (
                             <CommandGroup
@@ -1128,7 +1204,7 @@ const DiscWarningGeneratorContent = ({
                                 return (
                                   <CommandItem
                                     key={`${category}-${offence.name}`}
-                                    value={`${offenceGroupLabel[category]} ${offence.name}`}
+                                    value={offence.name}
                                     onSelect={() => onMisconductToggle(offence.name)}
                                     className={cn(
                                       "flex items-center justify-between gap-3 px-3 py-2 text-[12px]",
@@ -1226,17 +1302,23 @@ const DiscWarningGeneratorContent = ({
                     Warning Type <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={warningForm.warningType || undefined}
+                    value={warningForm.warningType}
                     onValueChange={(value) => onWarningTypeChange(value as Exclude<WarningFormState["warningType"], "">)}
                   >
                     <SelectTrigger
                       id="discWarningWarningType"
                       className={cn(
                         inputClassName,
-                        "!h-8 !border-slate-300 !text-[12px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[12px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:text-slate-400",
+                        "!h-8 !border-slate-300 !text-[12px] hover:!border-[#3eca44] focus:!border-[#3eca44] focus-visible:!border-[#3eca44] [&>span]:text-[12px] [&>span]:font-medium data-[placeholder]:[&>span]:font-normal data-[placeholder]:[&>span]:!text-slate-400",
+                        !warningForm.warningType && "!text-slate-400",
                       )}
+                      style={!warningForm.warningType ? { color: placeholderTextColor } : undefined}
                     >
-                      <SelectValue placeholder="Select warning type" />
+                      <SelectValue
+                        placeholder="Select warning type"
+                        className={cn(!warningForm.warningType && "!font-normal !text-slate-400")}
+                        style={!warningForm.warningType ? { color: placeholderTextColor } : undefined}
+                      />
                     </SelectTrigger>
                     <SelectContent className="text-[12px]">
                       <SelectItem value="first" className="text-[12px]">First Written Warning</SelectItem>
@@ -1509,6 +1591,7 @@ const DiscWarningGenerator = ({
   const [warningForm, setWarningForm] = useState<WarningFormState>(() =>
     normalizeWarningFormState(resolvedDraftState?.warningForm),
   );
+  const [warningGuardState, setWarningGuardState] = useState<WarningGuardState>(emptyWarningGuardState);
   const [misconductSearchOpen, setMisconductSearchOpen] = useState(false);
   const [conductOffences, setConductOffences] = useState<ConductOffence[]>([]);
   const [misconductLoadMessage, setMisconductLoadMessage] = useState("No misconduct types found.");
@@ -1719,21 +1802,51 @@ const DiscWarningGenerator = ({
     }));
   };
 
+  const resetWarningType = useCallback(() => {
+    setWarningForm((current) => ({
+      ...current,
+      warningType: "",
+      validityPeriod: "",
+    }));
+  }, []);
+
   const handleWarningTypeChange = (value: Exclude<WarningFormState["warningType"], "">) => {
+    const nextGuardState = getWarningGuardState(warningForm.misconductTypes, value, conductOffences);
+    if (nextGuardState.open) {
+      setWarningGuardState(nextGuardState);
+      return;
+    }
     setWarningForm((current) => ({
       ...current,
       warningType: value,
       validityPeriod: warningValidityByType[value],
     }));
+    setWarningGuardState(emptyWarningGuardState);
   };
 
-  const handleMisconductToggle = (name: string) => {
+  const applyPendingWarningTypeOverride = useCallback(() => {
+    if (!warningGuardState.open) return;
+    const { pendingWarningType } = warningGuardState;
     setWarningForm((current) => ({
       ...current,
-      misconductTypes: current.misconductTypes.includes(name)
-        ? current.misconductTypes.filter((item) => item !== name)
-        : [...current.misconductTypes, name],
+      warningType: pendingWarningType,
+      validityPeriod: warningValidityByType[pendingWarningType],
     }));
+    setWarningGuardState(emptyWarningGuardState);
+  }, [warningGuardState]);
+
+  const handleMisconductToggle = (name: string) => {
+    let nextMisconductTypes: string[] = [];
+    setWarningForm((current) => {
+      nextMisconductTypes = current.misconductTypes.includes(name)
+        ? current.misconductTypes.filter((item) => item !== name)
+        : [...current.misconductTypes, name];
+      return {
+        ...current,
+        misconductTypes: nextMisconductTypes,
+      };
+    });
+    setWarningGuardState(getWarningGuardState(nextMisconductTypes, warningForm.warningType, conductOffences));
   };
 
   const handleDownloadPdf = useCallback(async () => {
@@ -2288,28 +2401,66 @@ const DiscWarningGenerator = ({
     } satisfies DiscWarningGeneratorDraftState);
   }, [activeStep, clientForm, employeeForm, isFinished, onDraftStateChange, warningForm]);
 
+  const guardDescription =
+    warningGuardState.mode === "dismissible"
+      ? `${warningGuardState.misconductName} warrants a dismissal and a hearing should be booked. Consider changing the misconduct type to justify a less severe warning type.`
+      : warningGuardState.mode === "serious"
+        ? `${warningGuardState.misconductName} warrants a final written warning on first offence. Consider changing the misconduct type to justify a less severe warning type.`
+        : "";
+
   const content = (
-    <DiscWarningGeneratorContent
-      activeStep={activeStep}
-      isFinished={isFinished}
-      clientRows={clientRows}
-      clientForm={clientForm}
-      employeeForm={employeeForm}
-      warningForm={warningForm}
-      onEmployeeFormChange={handleEmployeeFormChange}
-      onWarningFormChange={handleWarningFormChange}
-      onWarningTypeChange={handleWarningTypeChange}
-      misconductSearchOpen={misconductSearchOpen}
-      setMisconductSearchOpen={setMisconductSearchOpen}
-      conductOffences={conductOffences}
-      misconductLoadMessage={misconductLoadMessage}
-      onMisconductToggle={handleMisconductToggle}
-      clientSearchOpen={clientSearchOpen}
-      setClientSearchOpen={setClientSearchOpen}
-      onClientSelect={handleClientSelect}
-      clientLoadMessage={clientLoadMessage}
-      onClientLogoRemove={handleClientLogoRemove}
-    />
+    <>
+      <DiscWarningGeneratorContent
+        activeStep={activeStep}
+        isFinished={isFinished}
+        clientRows={clientRows}
+        clientForm={clientForm}
+        employeeForm={employeeForm}
+        warningForm={warningForm}
+        onEmployeeFormChange={handleEmployeeFormChange}
+        onWarningFormChange={handleWarningFormChange}
+        onWarningTypeChange={handleWarningTypeChange}
+        misconductSearchOpen={misconductSearchOpen}
+        setMisconductSearchOpen={setMisconductSearchOpen}
+        conductOffences={conductOffences}
+        misconductLoadMessage={misconductLoadMessage}
+        onMisconductToggle={handleMisconductToggle}
+        clientSearchOpen={clientSearchOpen}
+        setClientSearchOpen={setClientSearchOpen}
+        onClientSelect={handleClientSelect}
+        clientLoadMessage={clientLoadMessage}
+        onClientLogoRemove={handleClientLogoRemove}
+      />
+
+      <AlertDialog
+        open={warningGuardState.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWarningGuardState(emptyWarningGuardState);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Caution</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogDescription>{guardDescription}</AlertDialogDescription>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                resetWarningType();
+                setWarningGuardState(emptyWarningGuardState);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={applyPendingWarningTypeOverride}>
+              Override
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 
   if (embedded) {

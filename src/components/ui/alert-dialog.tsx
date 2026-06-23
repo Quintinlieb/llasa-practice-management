@@ -56,7 +56,7 @@ const AlertDialogTitle = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <AlertDialogPrimitive.Title ref={ref} className={cn("text-sm font-semibold text-white", className)} {...props} />
+  <AlertDialogPrimitive.Title ref={ref} className={cn("text-[15px] font-semibold text-white", className)} {...props} />
 ));
 AlertDialogTitle.displayName = AlertDialogPrimitive.Title.displayName;
 
@@ -66,7 +66,7 @@ const AlertDialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Description
     ref={ref}
-    className={cn("bg-white px-4 pt-5 pb-0 text-[11px] leading-6 text-slate-700", className)}
+    className={cn("bg-white px-4 pt-5 pb-0 text-[12px] leading-6 text-slate-700", className)}
     {...props}
   />
 ));
@@ -79,7 +79,7 @@ const AlertDialogAction = React.forwardRef<
   <AlertDialogPrimitive.Action
     ref={ref}
     className={cn(
-      "inline-flex h-8 w-[92px] items-center justify-center rounded bg-[#3eca44] px-3 text-[11px] font-medium text-white transition-colors hover:bg-[#34b73b] focus:outline-none focus-visible:outline-none focus:ring-0",
+      "inline-flex h-8 w-[92px] items-center justify-center rounded bg-[#3eca44] px-3 text-[12px] font-medium text-white transition-colors hover:bg-[#34b73b] focus:outline-none focus-visible:outline-none focus:ring-0",
       className,
     )}
     {...props}
@@ -94,7 +94,7 @@ const AlertDialogCancel = React.forwardRef<
   <AlertDialogPrimitive.Cancel
     ref={ref}
     className={cn(
-      "inline-flex h-8 w-[92px] items-center justify-center rounded border border-slate-300 bg-white px-3 text-[11px] font-medium text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus:outline-none focus-visible:outline-none focus:ring-0",
+      "inline-flex h-8 w-[92px] items-center justify-center rounded border border-slate-300 bg-white px-3 text-[12px] font-medium text-slate-700 transition-colors hover:border-[#3eca44] hover:bg-white hover:text-[#2f9f35] focus:outline-none focus-visible:outline-none focus:ring-0",
       className,
     )}
     {...props}

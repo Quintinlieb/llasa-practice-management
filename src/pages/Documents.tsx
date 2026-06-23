@@ -22,7 +22,7 @@ import {
   saveMinimizedDocumentTabs,
   type StoredMinimizedDocumentTab,
 } from "@/lib/minimizedDocumentTabs";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Menu, Minus, Search, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Menu, Minus, Search, Undo2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -34,19 +34,14 @@ type DocumentKey =
   | "disciplinaryHearingOutcome"
   | "precautionarySuspensionNotice"
   | "contemplatedRetrenchmentNotice"
-  | "incapacityPerformanceHearingNotice"
-  | "incapacityIllHealthHearingNotice"
   | "serviceCertificate"
   | "acknowledgementOfDebt"
   | "permContract"
   | "temporaryContract"
   | "addendum"
   | "noticeTermination"
-  | "illHealthTermination"
-  | "abscondmentTermination"
   | "retrenchmentTermination"
   | "retirementTermination"
-  | "poorPerformanceTermination"
   | "mutualTermination";
 type ModalDocumentKey = DocumentKey;
 
@@ -315,8 +310,35 @@ const getMiscTerminationBreadcrumbClientName = (draftState: unknown) => {
   if (!client || typeof client !== "object") return "";
   const candidate = client as {
     tradingName?: unknown;
+    registeredName?: unknown;
+    companyName?: unknown;
   };
-  return String(candidate.tradingName || "").trim();
+  const tradingName = String(candidate.tradingName || "").trim();
+  if (tradingName) return tradingName;
+  const registeredName = String(candidate.registeredName || "").trim();
+  if (registeredName) return registeredName;
+  return String(candidate.companyName || "").trim();
+};
+
+const getMiscTerminationBreadcrumbHearingType = (draftState: unknown) => {
+  if (!draftState || typeof draftState !== "object") return "";
+  const termination = (draftState as { termination?: unknown }).termination;
+  if (!termination || typeof termination !== "object") return "";
+  const hearingType = String((termination as { hearingType?: unknown }).hearingType || "").trim();
+  if (!hearingType) return "";
+  if (hearingType === "Disciplinary Hearing") return "Misconduct";
+  if (hearingType === "Abscondment") return "Abscondment";
+  if (hearingType.startsWith("Incapacity")) return "Incapacity";
+  return hearingType;
+};
+
+const getMiscTerminationBreadcrumbTitle = (draftState: unknown) => {
+  const clientName = getMiscTerminationBreadcrumbClientName(draftState);
+  const hearingType = getMiscTerminationBreadcrumbHearingType(draftState);
+  if (hearingType && clientName) return `Dismissal Letter / ${hearingType} (${clientName})`;
+  if (hearingType) return `Dismissal Letter / ${hearingType}`;
+  if (clientName) return `Dismissal Letter (${clientName})`;
+  return "Dismissal Letter";
 };
 
 const splitCreatedOnParts = (value: string) => {
@@ -378,19 +400,14 @@ const documentComponents: Record<DocumentKey, ComponentType<DocumentComponentPro
   disciplinaryHearingOutcome: lazyDocumentComponent(() => import("./DisciplinaryHearingOutcomeGenerator")),
   precautionarySuspensionNotice: lazyDocumentComponent(() => import("./PrecautionarySuspensionNoticeGenerator")),
   contemplatedRetrenchmentNotice: lazyDocumentComponent(() => import("./ContemplatedRetrenchmentNoticeGenerator")),
-  incapacityPerformanceHearingNotice: lazyDocumentComponent(() => import("./IncapacityPerformanceHearingNoticeGenerator")),
-  incapacityIllHealthHearingNotice: lazyDocumentComponent(() => import("./IncapacityIllHealthHearingNoticeGenerator")),
   serviceCertificate: lazyDocumentComponent(() => import("./ServiceCertificateGenerator")),
   acknowledgementOfDebt: lazyDocumentComponent(() => import("./AcknowledgementOfDebtGenerator")),
   permContract: lazyDocumentComponent(() => import("./PermContractGenerator")),
   temporaryContract: lazyDocumentComponent(() => import("./TemporaryContractGenerator")),
   addendum: lazyDocumentComponent(() => import("./AddendumGenerator")),
   noticeTermination: lazyDocumentComponent(() => import("./MiscTermLetterGenerator")),
-  illHealthTermination: lazyDocumentComponent(() => import("./IllHealthTerminationGenerator")),
-  abscondmentTermination: lazyDocumentComponent(() => import("./AbscondmentTerminationGenerator")),
   retrenchmentTermination: lazyDocumentComponent(() => import("./RetrenchmentTerminationGenerator")),
   retirementTermination: lazyDocumentComponent(() => import("./RetirementTerminationGenerator")),
-  poorPerformanceTermination: lazyDocumentComponent(() => import("./PoorPerformanceTerminationGenerator")),
   mutualTermination: lazyDocumentComponent(() => import("./MutualTerminationGenerator")),
 };
 
@@ -402,39 +419,28 @@ const documentMeta: Record<DocumentKey, { category: string; label: string }> = {
   disciplinaryHearingOutcome: { category: "Outcome", label: "Hearing Outcome" },
   precautionarySuspensionNotice: { category: "Notices", label: "Precautionary Suspension" },
   contemplatedRetrenchmentNotice: { category: "Notices", label: "Contemplated Retrenchment (S189)" },
-  incapacityPerformanceHearingNotice: { category: "Notices", label: "Incapacity Hearing (Performance)" },
-  incapacityIllHealthHearingNotice: { category: "Notices", label: "Incapacity Hearing (Ill health)" },
   serviceCertificate: { category: "Other", label: "Certificate of Service" },
   acknowledgementOfDebt: { category: "Other", label: "Acknowledgement of Debt" },
   permContract: { category: "Contracts", label: "Permanent" },
   temporaryContract: { category: "Contracts", label: "Temporary Contract" },
   addendum: { category: "Contracts", label: "Addendum" },
-  noticeTermination: { category: "Terminations", label: "Misconduct" },
-  illHealthTermination: { category: "Terminations", label: "Ill Health" },
-  abscondmentTermination: { category: "Terminations", label: "Abscondment/Desertion" },
+  noticeTermination: { category: "Terminations", label: "Dismissal Letter" },
   retrenchmentTermination: { category: "Terminations", label: "Retrenchment" },
   retirementTermination: { category: "Terminations", label: "Retirement" },
-  poorPerformanceTermination: { category: "Terminations", label: "Poor Performance" },
   mutualTermination: { category: "Terminations", label: "Mutual Separation Agreement" },
 };
 
 const terminationDocumentKeys = [
   "noticeTermination",
-  "illHealthTermination",
-  "abscondmentTermination",
   "retrenchmentTermination",
   "retirementTermination",
-  "poorPerformanceTermination",
   "mutualTermination",
 ] as const satisfies readonly DocumentKey[];
 
 const terminationLetterDocumentKeys = [
   "noticeTermination",
-  "illHealthTermination",
-  "abscondmentTermination",
   "retrenchmentTermination",
   "retirementTermination",
-  "poorPerformanceTermination",
 ] as const satisfies readonly DocumentKey[];
 
 const noticeDocumentKeys = [
@@ -442,77 +448,36 @@ const noticeDocumentKeys = [
   "abscondHearingNotice",
   "precautionarySuspensionNotice",
   "contemplatedRetrenchmentNotice",
-  "incapacityPerformanceHearingNotice",
-  "incapacityIllHealthHearingNotice",
 ] as const satisfies readonly DocumentKey[];
-
-const documentCreateMenuItems = [
-  { title: "Discipline" },
-  { title: "Contracts" },
-  { title: "Terminations" },
-  { title: "Notices" },
-  { title: "Outcome" },
-  { title: "Litigation" },
-  { title: "Other" },
-] as const;
-
-const documentCreateFlyoutItems: Record<
-  (typeof documentCreateMenuItems)[number]["title"],
-  Array<{ title: string; selectedDocument?: DocumentKey; disabled?: boolean }>
-> = {
-  Discipline: [
-    { title: "Code of Conduct", selectedDocument: "codeOfConduct" },
-    { title: "Warning", selectedDocument: "discWarningGenerator" },
-  ],
-  Contracts: [
-    { title: "Permanent", selectedDocument: "permContract" },
-    { title: "Temporary Contract", selectedDocument: "temporaryContract" },
-    { title: "Addendum", selectedDocument: "addendum" },
-  ],
-  Terminations: [
-    { title: "Misconduct", selectedDocument: "noticeTermination" },
-    { title: "Ill Health", selectedDocument: "illHealthTermination" },
-    { title: "Poor Performance", selectedDocument: "poorPerformanceTermination" },
-    { title: "Abscondment/Desertion", selectedDocument: "abscondmentTermination" },
-    { title: "Retrenchment", selectedDocument: "retrenchmentTermination" },
-    { title: "Retirement", selectedDocument: "retirementTermination" },
-    { title: "Mutual Separation", selectedDocument: "mutualTermination" },
-  ],
-  Notices: [
-    { title: "Hearing Notice", selectedDocument: "hearingNotice" },
-    { title: "Abscondment Letter", selectedDocument: "abscondHearingNotice" },
-    { title: "Incapacity Hearing (Performance)", selectedDocument: "incapacityPerformanceHearingNotice" },
-    { title: "Incapacity Hearing (Ill Health)", selectedDocument: "incapacityIllHealthHearingNotice" },
-    { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
-    { title: "Contemplated Retrenchment (S189)", selectedDocument: "contemplatedRetrenchmentNotice" },
-  ],
-  Outcome: [
-    { title: "Hearing Outcome", selectedDocument: "disciplinaryHearingOutcome" },
-    { title: "Performance Hearing", disabled: true },
-    { title: "Illness Hearing", disabled: true },
-    { title: "Performance Consultation", disabled: true },
-    { title: "Retrenchment Consultation", disabled: true },
-    { title: "Grievance Consultation", disabled: true },
-    { title: "Wage Negotiations", disabled: true },
-  ],
-  Litigation: [],
-  Other: [
-    { title: "Certificate of Service", selectedDocument: "serviceCertificate" },
-    { title: "Acknowledgement of Debt", selectedDocument: "acknowledgementOfDebt" },
-  ],
-};
 
 const activeNewDocumentKeys = new Set<DocumentKey>([
   "codeOfConduct",
   "discWarningGenerator",
   "permContract",
-  "noticeTermination",
   "hearingNotice",
   "abscondHearingNotice",
+  "noticeTermination",
   "disciplinaryHearingOutcome",
 ]);
 
-type DocumentCreateCategory = (typeof documentCreateMenuItems)[number]["title"];
+const documentCreateMenuItems: Array<{ title: string; selectedDocument: DocumentKey }> = [
+  { title: "Code of Conduct", selectedDocument: "codeOfConduct" },
+  { title: "Warning", selectedDocument: "discWarningGenerator" },
+  { title: "Notice of Hearing", selectedDocument: "hearingNotice" },
+  { title: "Abscondment Letter", selectedDocument: "abscondHearingNotice" },
+  { title: "Dismissal Letter", selectedDocument: "noticeTermination" },
+  { title: "Outcome of Hearing", selectedDocument: "disciplinaryHearingOutcome" },
+  { title: "Permanent Employment Contract", selectedDocument: "permContract" },
+  { title: "Temporary Employment Contract", selectedDocument: "temporaryContract" },
+  { title: "Addendum to Employment Contract", selectedDocument: "addendum" },
+  { title: "Retrenchment Letter", selectedDocument: "retrenchmentTermination" },
+  { title: "Retirement Letter", selectedDocument: "retirementTermination" },
+  { title: "Mutual Separation Agreement", selectedDocument: "mutualTermination" },
+  { title: "Precautionary Suspension", selectedDocument: "precautionarySuspensionNotice" },
+  { title: "Retrenchment Consultation Notice (s189)", selectedDocument: "contemplatedRetrenchmentNotice" },
+  { title: "Certificate of Service", selectedDocument: "serviceCertificate" },
+  { title: "Acknowledgement of Debt", selectedDocument: "acknowledgementOfDebt" },
+];
 
 const wizardDocumentKeys = [
   "discWarningGenerator",
@@ -562,24 +527,19 @@ const modalTitleByDocument: Record<DocumentKey, string> = {
   disciplinaryHearingOutcome: "Hearing Outcome",
   precautionarySuspensionNotice: "Precautionary Suspension",
   contemplatedRetrenchmentNotice: "Contemplated Retrenchment (S189)",
-  incapacityPerformanceHearingNotice: "Incapacity Hearing (Performance)",
-  incapacityIllHealthHearingNotice: "Incapacity Hearing (Ill health)",
   serviceCertificate: "Certificate of Service",
   acknowledgementOfDebt: "Acknowledgement of Debt",
   permContract: "Permanent",
   temporaryContract: "Temporary Contract",
   addendum: "Addendum",
-  noticeTermination: "Misconduct",
-  illHealthTermination: "Ill Health",
-  abscondmentTermination: "Abscondment/Desertion",
+  noticeTermination: "Dismissal Letter",
   retrenchmentTermination: "Retrenchment",
   retirementTermination: "Retirement",
-  poorPerformanceTermination: "Poor Performance",
   mutualTermination: "Mutual Separation Agreement",
 };
 
 const minimizedTabLabelByDocument: Partial<Record<DocumentKey, string>> = {
-  noticeTermination: "Misc Termination",
+  noticeTermination: "Dismissal Letter",
 };
 
 const getMinimizedTabLabel = (documentKey: DocumentKey) =>
@@ -603,17 +563,12 @@ const detailStepLabelByDocument: Partial<Record<DocumentKey, string>> = {
   disciplinaryHearingOutcome: "Hearing Details",
   precautionarySuspensionNotice: "Notice Details",
   contemplatedRetrenchmentNotice: "Notice Details",
-  incapacityPerformanceHearingNotice: "Notice Details",
-  incapacityIllHealthHearingNotice: "Notice Details",
   serviceCertificate: "Certificate Details",
   acknowledgementOfDebt: "Debt Details",
   addendum: "Addendum Details",
   noticeTermination: "Termination Details",
-  illHealthTermination: "Termination Details",
-  abscondmentTermination: "Termination Details",
   retrenchmentTermination: "Termination Details",
   retirementTermination: "Termination Details",
-  poorPerformanceTermination: "Termination Details",
   mutualTermination: "Termination Details",
   permContract: "Contract Details",
   temporaryContract: "Employment Details",
@@ -653,7 +608,6 @@ const Documents = () => {
   const [documentCreatedOnFilter, setDocumentCreatedOnFilter] = useState<"all" | "last7" | "last14" | "last30" | "last60">("all");
   const [expandedFilterSection, setExpandedFilterSection] = useState<string | null>(null);
   const [isNewDocumentMenuOpen, setIsNewDocumentMenuOpen] = useState(false);
-  const [openDocumentCategory, setOpenDocumentCategory] = useState<DocumentCreateCategory | null>(null);
   const [currentUserSubuserRole, setCurrentUserSubuserRole] = useState("");
   const [isCurrentUserRoleLoaded, setIsCurrentUserRoleLoaded] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
@@ -995,8 +949,8 @@ const Documents = () => {
     modalDocument === "disciplinaryHearingOutcome" ? getDiscHearingOutcomeBreadcrumbTitle(activeSession?.draftState) : "";
   const permContractBreadcrumbClientName =
     modalDocument === "permContract" ? getPermContractBreadcrumbClientName(activeSession?.draftState) : "";
-  const miscTerminationBreadcrumbClientName =
-    modalDocument === "noticeTermination" ? getMiscTerminationBreadcrumbClientName(activeSession?.draftState) : "";
+  const miscTerminationBreadcrumbTitle =
+    modalDocument === "noticeTermination" ? getMiscTerminationBreadcrumbTitle(activeSession?.draftState) : "";
   const modalBreadcrumbTitle =
     modalDocument === "discWarningGenerator" && discWarningBreadcrumbClientName
       ? `${modalTitle} (${discWarningBreadcrumbClientName})`
@@ -1010,8 +964,8 @@ const Documents = () => {
             ? discHearingOutcomeBreadcrumbTitle
           : modalDocument === "permContract" && permContractBreadcrumbClientName
             ? `${modalTitle} (${permContractBreadcrumbClientName})`
-            : modalDocument === "noticeTermination" && miscTerminationBreadcrumbClientName
-              ? `${modalTitle} (${miscTerminationBreadcrumbClientName})`
+            : modalDocument === "noticeTermination"
+              ? miscTerminationBreadcrumbTitle
       : modalTitle;
   const modalHeaderCategoryTitle = modalDocument ? getShellCategoryTitle(modalDocument) : "";
   const modalHeaderLabel = modalDocument ? documentMeta[modalDocument].label : "";
@@ -1195,50 +1149,6 @@ const Documents = () => {
       "Review all wording carefully before downloading the final precautionary suspension notice.",
     ],
   ] as const;
-  const incapacityPerformanceHearingStepNotes = [
-    [
-      "This step controls how your company details appear on the incapacity hearing notice.",
-      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
-      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
-    ],
-    [
-      "Select an employee from your saved list or capture employee details manually.",
-      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
-    ],
-    [
-      "Capture the notice date, hearing date, hearing time, hearing location, and the applicable performance concern type(s).",
-      "Each selected performance concern type requires a concern description before you can continue.",
-      "A proper concern description should answer where the employee did not meet required standards, with enough detail to prepare a response.",
-      "Use an incapacity (poor performance) procedure for performance concerns. Do not treat poor performance as misconduct or follow a disciplinary misconduct process.",
-    ],
-    [
-      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
-      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
-      "Review all wording carefully before downloading the final incapacity hearing notice.",
-    ],
-  ] as const;
-  const incapacityIllHealthHearingStepNotes = [
-    [
-      "This step controls how your company details appear on the incapacity hearing notice.",
-      "Company name, registration number, and address are pulled from Company Settings. You can still add a trading name and adjust contact details for this notice.",
-      "If you upload a logo, choose the letterhead layout and colour theme that match your company style.",
-    ],
-    [
-      "Select an employee from your saved list or capture employee details manually.",
-      "For the address section, city, province, and area code are required. Address line 1 and 2 are optional.",
-    ],
-    [
-      "Capture the notice date, hearing date, hearing time, hearing location, and the applicable ill-health concern type(s).",
-      "Each selected ill-health concern type requires a concern description before you can continue.",
-      "A proper concern description should explain how the employee's health condition affects the ability to perform required duties.",
-      "Use an incapacity (ill health) procedure. Do not treat ill health as misconduct or follow a disciplinary misconduct process.",
-    ],
-    [
-      "The preview opens read-only. Select Edit to unlock paragraph editing and add/delete controls.",
-      "After editing, select Save to lock the preview again. Download is enabled only when not in edit mode.",
-      "Review all wording carefully before downloading the final incapacity hearing notice.",
-    ],
-  ] as const;
   const contemplatedRetrenchmentNoticeStepNotes = [
     [
       "This step controls how your company details appear on the contemplated retrenchment notice.",
@@ -1308,10 +1218,6 @@ const Documents = () => {
     disciplinaryHearingStepNotes[modalActiveStep] ?? disciplinaryHearingStepNotes[0];
   const precautionarySuspensionActiveNotes =
     precautionarySuspensionStepNotes[modalActiveStep] ?? precautionarySuspensionStepNotes[0];
-  const incapacityPerformanceHearingActiveNotes =
-    incapacityPerformanceHearingStepNotes[modalActiveStep] ?? incapacityPerformanceHearingStepNotes[0];
-  const incapacityIllHealthHearingActiveNotes =
-    incapacityIllHealthHearingStepNotes[modalActiveStep] ?? incapacityIllHealthHearingStepNotes[0];
   const contemplatedRetrenchmentNoticeActiveNotes =
     contemplatedRetrenchmentNoticeStepNotes[modalActiveStep] ?? contemplatedRetrenchmentNoticeStepNotes[0];
   const serviceCertificateActiveNotes =
@@ -1356,20 +1262,13 @@ const Documents = () => {
         ? precautionarySuspensionActiveNotes
       : modalDocument === "contemplatedRetrenchmentNotice"
         ? contemplatedRetrenchmentNoticeActiveNotes
-      : modalDocument === "incapacityPerformanceHearingNotice"
-        ? incapacityPerformanceHearingActiveNotes
-      : modalDocument === "incapacityIllHealthHearingNotice"
-        ? incapacityIllHealthHearingActiveNotes
       : modalDocument === "serviceCertificate"
         ? serviceCertificateActiveNotes
       : modalDocument === "acknowledgementOfDebt"
         ? acknowledgementOfDebtActiveNotes
       : modalDocument === "noticeTermination" ||
-          modalDocument === "illHealthTermination" ||
-          modalDocument === "abscondmentTermination" ||
           modalDocument === "retrenchmentTermination" ||
           modalDocument === "retirementTermination" ||
-          modalDocument === "poorPerformanceTermination" ||
           modalDocument === "mutualTermination"
         ? modalDocument === "mutualTermination"
           ? mutualTerminationActiveNotes
@@ -1543,9 +1442,7 @@ const Documents = () => {
 
   const newDocumentDropdownItemStyle =
     "cursor-pointer text-[12.33px] font-medium text-slate-700 transition-transform duration-150 focus:bg-[#3eca44]/10 focus:text-[#2f9f35] data-[highlighted]:translate-x-[3px]";
-  const newDocumentDropdownContentStyle = "w-56 rounded-[4px] border-slate-200 p-1";
-  const newDocumentSubItemStyle =
-    "cursor-pointer pl-3 text-[11.83px] font-medium text-slate-600 transition-transform duration-150 focus:bg-transparent focus:text-[#2f9f35] data-[highlighted]:bg-transparent data-[highlighted]:translate-x-[3px] data-[highlighted]:text-[#2f9f35]";
+  const newDocumentDropdownContentStyle = "w-[273px] rounded-[4px] border-slate-200 p-1";
   const newDocumentButtonStyle =
     "h-8 w-36 justify-between rounded-[4px] px-3 text-[12.33px] inline-flex items-center border border-[#3eca44] bg-[#3eca44] text-white hover:bg-[#34b73b] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0";
 
@@ -1559,7 +1456,6 @@ const Documents = () => {
       return;
     }
     setIsNewDocumentMenuOpen(false);
-    setOpenDocumentCategory(null);
     navigate("/documents", { state: { selectedDocument: documentKey } });
   };
 
@@ -1724,12 +1620,7 @@ const Documents = () => {
                         </DropdownMenu>
                         <DropdownMenu
                           open={isNewDocumentMenuOpen}
-                          onOpenChange={(open) => {
-                            setIsNewDocumentMenuOpen(open);
-                            if (!open) {
-                              setOpenDocumentCategory(null);
-                            }
-                          }}
+                          onOpenChange={setIsNewDocumentMenuOpen}
                         >
                           <DropdownMenuTrigger asChild>
                             <Button type="button" className={newDocumentButtonStyle}>
@@ -1742,75 +1633,27 @@ const Documents = () => {
                             sideOffset={0}
                             className={newDocumentDropdownContentStyle}
                           >
-                            {documentCreateMenuItems.map((category) => {
-                              const flyoutItems = documentCreateFlyoutItems[category.title];
-                              const isOpen = openDocumentCategory === category.title;
-                              if (flyoutItems.length === 0) {
-                                return (
-                                  <DropdownMenuItem
-                                    key={category.title}
-                                    disabled
-                                    className={cn(newDocumentDropdownItemStyle, "cursor-not-allowed opacity-50")}
-                                  >
-                                    {category.title}
-                                  </DropdownMenuItem>
-                                );
-                              }
-
+                            {documentCreateMenuItems.map((item) => {
+                              const itemDisabled =
+                                !activeNewDocumentKeys.has(item.selectedDocument) ||
+                                (item.selectedDocument === "disciplinaryHearingOutcome" &&
+                                  !canCurrentUserAccessDisciplinaryHearingOutcome);
                               return (
-                                <div key={category.title}>
-                                  <DropdownMenuItem
-                                    onSelect={(event) => {
-                                      event.preventDefault();
-                                      setOpenDocumentCategory((current) => (current === category.title ? null : category.title));
-                                    }}
-                                    className={cn(newDocumentDropdownItemStyle, isOpen && "bg-[#3eca44]/10 text-[#2f9f35]")}
-                                  >
-                                    <span className="flex w-full items-center justify-between gap-2">
-                                      <span>{category.title}</span>
-                                      <ChevronDown
-                                        className={cn(
-                                          "h-3.5 w-3.5 flex-none transition-transform duration-150",
-                                          isOpen ? "rotate-180 text-[#2f9f35]" : "text-slate-500",
-                                        )}
-                                        aria-hidden="true"
-                                      />
-                                    </span>
-                                  </DropdownMenuItem>
-                                  {isOpen ? (
-                                    <div className="pb-1">
-                                      {flyoutItems.map((item) => {
-                                        const itemDisabled =
-                                          item.disabled ||
-                                          !item.selectedDocument ||
-                                          !activeNewDocumentKeys.has(item.selectedDocument) ||
-                                          (item.selectedDocument === "disciplinaryHearingOutcome" &&
-                                            !canCurrentUserAccessDisciplinaryHearingOutcome);
-
-                                        return (
-                                          <DropdownMenuItem
-                                            key={`${category.title}-${item.title}`}
-                                            onSelect={(event) => {
-                                              event.preventDefault();
-                                              if (itemDisabled || !item.selectedDocument) return;
-                                              openDocumentGenerator(item.selectedDocument);
-                                            }}
-                                            disabled={itemDisabled}
-                                            className={cn(
-                                              newDocumentSubItemStyle,
-                                              itemDisabled ? "cursor-not-allowed opacity-50" : "",
-                                            )}
-                                          >
-                                            <span className="flex items-center gap-2">
-                                              <ChevronRight className="h-3 w-3 text-slate-400" aria-hidden="true" />
-                                              <span>{item.title}</span>
-                                            </span>
-                                          </DropdownMenuItem>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : null}
-                                </div>
+                                <DropdownMenuItem
+                                  key={item.selectedDocument}
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    if (itemDisabled) return;
+                                    openDocumentGenerator(item.selectedDocument);
+                                  }}
+                                  disabled={itemDisabled}
+                                  className={cn(
+                                    newDocumentDropdownItemStyle,
+                                    itemDisabled && "cursor-not-allowed opacity-50",
+                                  )}
+                                >
+                                  {item.title}
+                                </DropdownMenuItem>
                               );
                             })}
                           </DropdownMenuContent>
@@ -2022,11 +1865,13 @@ const Documents = () => {
                           ? "Documents / "
                           : modalDocument === "abscondHearingNotice"
                           ? "Documents / Notices / "
-                          : modalDocument === "disciplinaryHearingOutcome"
+                        : modalDocument === "disciplinaryHearingOutcome"
                             ? "Documents / Outcome / "
                           : modalDocument === "permContract"
                             ? "Documents / Contracts / "
-                            : "Documents / Terminations / "}
+                            : modalDocument === "noticeTermination"
+                              ? "Documents / "
+                              : "Documents / Terminations / "}
                       </span>
                     <span className="text-white">{modalBreadcrumbTitle}</span>
                     </span>

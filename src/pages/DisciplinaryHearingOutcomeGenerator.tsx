@@ -2427,8 +2427,9 @@ const DisciplinaryHearingOutcomeGenerator = ({
       cursorY += options?.gapAfter ?? paragraphGap;
     };
 
-    const writeSigningStatement = () => {
-      const segments: Array<{ text: string; bold?: boolean; size?: number; yOffset?: number }> = [
+    type SigningStatementSegment = { text: string; bold?: boolean; size?: number; yOffset?: number };
+
+    const getSigningStatementSegments = (): SigningStatementSegment[] => [
         { text: "Done and Signed at " },
         { text: signingPlaceValue || "________________", bold: true },
         { text: " on this " },
@@ -2440,6 +2441,26 @@ const DisciplinaryHearingOutcomeGenerator = ({
         { text: signingMonthValue || "________________", bold: true },
         { text: ` ${signingYearValue}`, bold: true },
       ];
+
+    const getSigningStatementHeight = () => {
+      const segments = getSigningStatementSegments();
+      let segmentX = marginX;
+      let lineCount = 1;
+      segments.forEach((segment) => {
+        pdf.setFont("helvetica", segment.bold ? "bold" : "normal");
+        pdf.setFontSize(segment.size ?? 10);
+        const segmentWidth = pdf.getTextWidth(segment.text);
+        if (segmentX > marginX && segmentX + segmentWidth > pageWidth - marginX) {
+          segmentX = marginX;
+          lineCount += 1;
+        }
+        segmentX += segmentWidth;
+      });
+      return lineCount * paragraphLineHeight + paragraphGap;
+    };
+
+    const writeSigningStatement = () => {
+      const segments = getSigningStatementSegments();
       keepRoom(paragraphLineHeight + paragraphGap);
       pdf.setFontSize(10);
       pdf.setTextColor(0, 0, 0);
@@ -2596,7 +2617,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
 
     const chairpersonSignatureWidth = 33;
     const chairpersonSignatureHeight = 31;
-    keepRoom(chairpersonSignatureDataUrl ? chairpersonSignatureHeight + 40 : 46);
+    const chairpersonSigningBlockHeight = getSigningStatementHeight() + 32;
+    keepRoom(chairpersonSigningBlockHeight);
     writeSigningStatement();
     cursorY += 18;
     if (chairpersonSignatureDataUrl) {

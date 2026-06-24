@@ -237,6 +237,13 @@ const normalizeTerminationHearingType = (value: unknown): TerminationStepState["
   if (value === "Incapacity (impossibility)") return "Incapacity (Impossibility)";
   return "";
 };
+
+const getTerminationLetterCategory = (hearingType: TerminationStepState["hearingType"]) => {
+  if (hearingType === "Abscondment") return "Abscondment";
+  if (hearingType.startsWith("Incapacity")) return "Incapacity";
+  return "Misconduct";
+};
+
 const fallbackMisconductTypeOptions = [
   "Unauthorised Absenteeism",
   "Poor Time Keeping",
@@ -1726,16 +1733,18 @@ const MiscTermLetterGenerator = ({
       pdf.setLineWidth(0.15);
       pdf.line(generatedByUrlX, generatedByY + 0.35, generatedByUrlX + generatedByUrlWidth, generatedByY + 0.35);
 
-      const employeeInitial = employee.name.trim().charAt(0).toUpperCase();
+      const terminationLetterCategory = getTerminationLetterCategory(termination.hearingType);
+      const documentLabel = `Termination Letter - ${terminationLetterCategory}`;
+      const employeeInitials = employee.name
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => `${part.charAt(0).toUpperCase()}.`)
+        .join("");
       const employeeSurname = employee.surname.trim();
-      const documentNameSuffix = employeeInitial && employeeSurname ? ` (${employeeInitial}. ${employeeSurname})` : "";
-      const documentName = `Termination Letter - Misconduct${documentNameSuffix}`;
-      const downloadFileName =
-        documentName
-          .toLowerCase()
-          .replace(/[^a-z0-9._-]+/g, "_")
-          .replace(/^_+|_+$/g, "") || "termination_letter_misconduct.pdf";
-      const normalizedDownloadFileName = downloadFileName.endsWith(".pdf") ? downloadFileName : `${downloadFileName}.pdf`;
+      const documentNameSuffix = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
+      const documentName = `${documentLabel}${documentNameSuffix}`;
+      const normalizedDownloadFileName = `${documentName}.pdf`;
       const uploadBlob = pdf.output("blob");
       const uploadSafeClientName =
         (client.companyName || client.tradingName || client.registeredName || "client")
@@ -1746,9 +1755,9 @@ const MiscTermLetterGenerator = ({
         documentName
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "termination-letter-misconduct";
+          .replace(/^-+|-+$/g, "") || "termination-letter";
       const uploadFilePath = [
-        "misconduct-termination-letters",
+        "termination-letters",
         uploadSafeClientName,
         `${Date.now()}-${uploadSafeDocumentName}.pdf`,
       ].join("/");
@@ -1774,7 +1783,7 @@ const MiscTermLetterGenerator = ({
       }
 
       const logResult = await logGeneratedDocument({
-        documentLabel: "Termination Letter - Misconduct",
+        documentLabel,
         documentName,
         documentType: "Termination",
         clientId: client.clientId,

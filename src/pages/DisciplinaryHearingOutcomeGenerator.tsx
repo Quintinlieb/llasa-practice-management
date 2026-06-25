@@ -8,7 +8,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { logGeneratedDocument } from "@/lib/documentsLog";
 import { fetchCurrentUserSignatureUrl } from "@/lib/userSignatures";
 import { supabase } from "@/integrations/supabase/client";
 import { Building2, Check, ChevronDown, ChevronsUpDown, FileText, Info, Pencil, Plus, X } from "lucide-react";
@@ -161,7 +160,6 @@ const stepIcons = [Building2, FileText, Check] as const;
 const inputClassName =
   "h-8 rounded-sm border-slate-300 bg-white !text-[11px] md:!text-[11px] font-medium text-slate-900 shadow-none placeholder:!text-[11px] md:placeholder:!text-[11px] placeholder:font-normal placeholder:text-slate-400 data-[placeholder]:font-normal data-[placeholder]:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0";
 const editablePlaceholderText = "Please start typing here...";
-const generatedDocumentsBucket = "documents";
 const monthOptions = [
   "January",
   "February",
@@ -683,7 +681,8 @@ const getNoticeContentPhrase = (form: HearingDetailsFormState, count: number) =>
   if (form.hearingType === "Incapacity") {
     if (form.incapacityType === "Poor Performance") return `${count > 1 ? "performance concerns" : "performance concern"} and rights`;
     if (form.incapacityType === "Ill Health") return `${count > 1 ? "health concerns" : "health concern"} and rights`;
-    return "grounds and rights";
+    if (form.incapacityType === "Impossibility") return "incapacity details and rights";
+    return "incapacity details and rights";
   }
   if (form.hearingType === "Appeal") return "grounds of appeal and rights";
   return `${count > 1 ? "charges" : "charge"} and rights`;
@@ -893,12 +892,6 @@ const splitEditorDraftLines = (value: string) =>
   String(value || "")
     .split(/\r?\n/)
     .map((line) => stripParagraphNumberPrefix(line));
-
-const sanitizeFileSegment = (value: string, fallback: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || fallback;
 
 const parseDraftState = (value: unknown): OutcomeDraftState => {
   if (!value || typeof value !== "object") {
@@ -1921,6 +1914,8 @@ const DisciplinaryHearingOutcomeGenerator = ({
     hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType === "Poor Performance";
   const isIllHealthIncapacity =
     hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType === "Ill Health";
+  const isImpossibilityIncapacity =
+    hearingDetailsForm.hearingType === "Incapacity" && hearingDetailsForm.incapacityType === "Impossibility";
   const employeeHearingSummaryRows = normalizedEmployees.map((employee, index) => ({
     fullName: employeeRoleLabels[index] || `Employee ${index + 1}`,
     referenceLabel: `The ${employeeRoleLabels[index] || `Employee ${index + 1}`}`,
@@ -2238,8 +2233,10 @@ const DisciplinaryHearingOutcomeGenerator = ({
       ? "I must determine whether there are sufficient grounds to prove, on a balance of probability, that the employee did not perform to a required standard and further that a fair and reasonable procedure has been followed."
       : isIllHealthIncapacity
         ? "The issues for determination are whether, on a balance of probabilities, the employee suffers from incapacity; if so, whether such incapacity is temporary or permanent; and whether the employer followed a fair and reasonable procedure in dealing with the matter."
+      : isImpossibilityIncapacity
+        ? "The issues for determination are whether, on a balance of probabilities, the employee has the required capacity to perform his/her duties; if so, whether there are alternatives to dismissal; and whether the employer followed a fair and reasonable procedure in dealing with the matter."
       : defaultIssueInDisputeParagraph);
-  const defaultAnalysisIntroParagraph = isPoorPerformanceIncapacity || isIllHealthIncapacity
+  const defaultAnalysisIntroParagraph = isPoorPerformanceIncapacity || isIllHealthIncapacity || isImpossibilityIncapacity
     ? "Having considered the evidence, the probabilities, and the submissions made during the incapacity hearing, I am satisfied that the employer followed a fair procedure. The employee was afforded proper notice of the proceedings, an opportunity to make submissions, and the matter was dealt with in a procedurally fair manner."
     : `${defaultAnalysisFindingParagraph} ${
         employeeForms.length > 1
@@ -2667,60 +2664,12 @@ const DisciplinaryHearingOutcomeGenerator = ({
     const documentNameSuffix = normalizedEmployees.length > 1 ? `${documentNameSuffixBase} + ${normalizedEmployees.length - 1}` : documentNameSuffixBase;
     const documentName = `${documentLabel}${documentNameSuffix}`;
     const downloadFileName = `${documentLabel.replace(/[^A-Za-z0-9]+/g, "_")}_${safeEmployeeName}_${safeDate}.pdf`;
-    const uploadFilePath = [
-      "disciplinary-hearing-outcomes",
-      sanitizeFileSegment(clientForm.clientName || "client", "client"),
-      `${Date.now()}-${sanitizeFileSegment(documentName, "disciplinary-hearing-outcome")}.pdf`,
-    ].join("/");
-    const uploadBlob = pdf.output("blob");
-    let uploadedFileUrl = "";
-
-    const { error: uploadError } = await supabase.storage.from(generatedDocumentsBucket).upload(uploadFilePath, uploadBlob, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: "application/pdf",
-    });
-
-    if (uploadError) {
-      toast({
-        title: "Upload Error",
-        description: `Could not save document file: ${uploadError.message}`,
-        variant: "destructive",
-      });
-    } else {
-      const { data: publicUrlData } = supabase.storage.from(generatedDocumentsBucket).getPublicUrl(uploadFilePath);
-      uploadedFileUrl = String(publicUrlData?.publicUrl ?? "").trim();
-    }
-
-    const logResult = await logGeneratedDocument({
-      documentLabel,
-      documentName,
-      documentType: "Outcome",
-      clientId: clientForm.clientId,
-      clientName: clientForm.clientName,
-      fileUrl: uploadedFileUrl,
-      employeeName: firstEmployee.employeeName,
-      employeeSurname: firstEmployee.employeeSurname,
-      tradingName: clientForm.clientTradingAsName,
-      registeredName: clientForm.clientRegisteredName,
-    });
-
-    if ("error" in logResult) {
-      toast({
-        title: "Save Error",
-        description: `Could not save document row: ${logResult.error}`,
-        variant: "destructive",
-      });
-    } else {
-      window.dispatchEvent(new CustomEvent("documents-row-created"));
-    }
 
     pdf.save(downloadFileName);
     toast({
       title: "Download ready",
-      description: "The disciplinary hearing outcome PDF has been downloaded.",
+      description: `${documentName} has been downloaded without saving a document row.`,
     });
-    onRequestClose?.();
   }
 
   downloadPdfRef.current = handleDownloadPdf;

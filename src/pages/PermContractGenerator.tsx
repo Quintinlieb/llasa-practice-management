@@ -711,7 +711,7 @@ const normalizeClauseBodyText = (value: string) =>
 const clauseEditorNumberSpacing = "     ";
 
 const stripClauseEditorNumberPrefix = (value: string) =>
-  String(value || "").replace(/^\s*\d+(?:\.\d+)*\.?\s*/, "").trim();
+  String(value || "").replace(/^\s*\d+(?:\.\d+)*\.?\s*/, "");
 
 const parseClauseEditorDraft = (value: string) =>
   String(value || "")

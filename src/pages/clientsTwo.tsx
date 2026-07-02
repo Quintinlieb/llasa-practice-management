@@ -21,6 +21,7 @@ import { CalendarDays, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Cl
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
+import { formatActivityDate, getActivityKeyForClientNoteType, getClientNoteVerb, logActivity, taskCreatedActivityKey } from "@/lib/activityLog";
 import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
 import { supabase } from "@/integrations/supabase/client";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -2090,7 +2091,8 @@ const ClientsTwo = () => {
         assigned_to_user_id: assignedToUserId,
         assigned_to_name: assignee.label,
       };
-      const { error } = editingClientTaskId
+      let insertedTaskId = "";
+      const { data: insertedTask, error } = editingClientTaskId
         ? await (supabase as any)
             .from("diary_tasks")
             .update(payload)
@@ -2103,8 +2105,40 @@ const ClientsTwo = () => {
               ...payload,
               created_by: user.id,
               created_by_name: resolveCurrentUserName(),
-            });
+            })
+            .select("id")
+            .single();
       if (error) throw error;
+      insertedTaskId = String((insertedTask as any)?.id || "");
+      if (!editingClientTaskId) {
+        const actorName = resolveCurrentUserName();
+        const taskCreatedAt = new Date().toISOString();
+        const taskClientName =
+          String(selectedClientRow?.companyNameDisplay || "").trim() ||
+          String(selectedClientRow?.companyName || "").trim() ||
+          String(selectedClientRow?.tradingAs || "").trim() ||
+          "Client";
+        void logActivity({
+          activityKey: taskCreatedActivityKey,
+          actionSentence: `${actorName} created a task on ${formatActivityDate(taskCreatedAt)}`,
+          sourceTable: "diary_tasks",
+          sourceRecordId: insertedTaskId,
+          parentTable: relatedMatterId ? "case_files" : "clients",
+          parentId: relatedMatterId || selectedClientRow.id,
+          clientId: selectedClientRow.id,
+          clientName: taskClientName,
+          matterId: relatedMatterId || null,
+          documentType: taskType,
+          occurredAt: taskCreatedAt,
+          activityDate: taskCreatedAt.slice(0, 10),
+          metadata: {
+            source: "client_file",
+            task_type: taskType,
+            diary_date: diaryDate,
+            assigned_to: assignee.label,
+          },
+        });
+      }
       setIsClientTaskDialogOpen(false);
       setEditingClientTaskId(null);
       resetClientTaskForm();
@@ -3985,6 +4019,27 @@ const ClientsTwo = () => {
         if (error) throw error;
         savedFileNoteId = String(insertedFileNote?.id || "").trim();
         savedFileNoteRow = insertedFileNote;
+        const selectedClientName =
+          String(selectedClientRow?.companyNameDisplay || "").trim() ||
+          String(selectedClientRow?.companyName || "").trim() ||
+          String(selectedClientRow?.tradingAs || "").trim();
+        void logActivity({
+          activityKey: getActivityKeyForClientNoteType(noteType),
+          actionSentence: `${noteUserName} ${getClientNoteVerb(noteType)} on ${formatActivityDate(noteDate)}`,
+          actorUserId: user.id,
+          actorName: noteUserName,
+          sourceTable: "client_file_notes",
+          sourceRecordId: savedFileNoteId || undefined,
+          parentTable: "clients",
+          parentId: selectedClientRow.id,
+          clientId: selectedClientRow.id,
+          clientName: selectedClientName,
+          occurredAt: String(insertedFileNote?.created_at || new Date().toISOString()),
+          activityDate: noteDate,
+          metadata: {
+            note_type: noteType,
+          },
+        });
       }
 
       if (savedFileNoteRow && !String(savedFileNoteRow?.file_note_date || "").trim()) {

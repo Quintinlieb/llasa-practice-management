@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { formatActivityDate, getActivityKeyForDocument, logActivity } from "@/lib/activityLog";
 
 type LogGeneratedDocumentArgs = {
   documentLabel: string;
@@ -64,7 +65,7 @@ export const logGeneratedDocument = async ({
   tradingName,
   registeredName,
   createdByName,
-}: LogGeneratedDocumentArgs): Promise<{ ok: true } | { ok: false; error: string }> => {
+}: LogGeneratedDocumentArgs): Promise<{ ok: true; documentId?: string } | { ok: false; error: string }> => {
   const employeeFullName = `${String(employeeName ?? "").trim()} ${String(employeeSurname ?? "").trim()}`.trim();
   const safeEmployeeName = employeeFullName || "Employee";
   const safeLabel = String(documentLabel || "Document").trim() || "Document";
@@ -101,8 +102,27 @@ export const logGeneratedDocument = async ({
 
   let lastErrorMessage = "";
   for (const candidate of attempts) {
-    const { error } = await (supabase as any).from("documents").insert(candidate);
-    if (!error) return { ok: true };
+    const { data, error } = await (supabase as any).from("documents").insert(candidate).select("id,created_at").single();
+    if (!error) {
+      const documentId = String((data as any)?.id || "").trim();
+      void logActivity({
+        activityKey: getActivityKeyForDocument(safeLabel, String(documentType || "Other")),
+        actionSentence: `${actorName} generated ${resolvedDocumentName} on ${formatActivityDate((data as any)?.created_at || new Date())}`,
+        actorUserId: authUserId,
+        actorName,
+        sourceTable: "documents",
+        sourceRecordId: documentId || undefined,
+        clientId: resolvedClientId || undefined,
+        clientName,
+        documentType: String(documentType || "Other").trim() || "Other",
+        occurredAt: String((data as any)?.created_at || new Date().toISOString()),
+        metadata: {
+          document_label: safeLabel,
+          document_name: resolvedDocumentName,
+        },
+      });
+      return { ok: true, documentId };
+    }
     lastErrorMessage = error.message ?? "Unknown documents insert error.";
   }
 

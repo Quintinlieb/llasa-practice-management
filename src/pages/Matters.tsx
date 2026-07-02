@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { extractMentionTokens, resolveMentionRecipients } from "@/lib/mentionNotifications";
+import { formatActivityDate, logActivity } from "@/lib/activityLog";
 import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
 import { cn } from "@/lib/utils";
 import { invalidateDashboardWeeklyMattersCache } from "@/lib/dashboardWeeklyMatters";
@@ -2211,6 +2212,25 @@ const Matters = () => {
         .eq("case_file_id", selectedCase.id);
       if (outcomeCloseError) throw outcomeCloseError;
       const nextSelectedCase = { ...selectedCase, status: "Inactive" as const, currentStage: "Finalised" };
+      void logActivity({
+        activityKey: "matter_closed",
+        actionSentence: `${closedByName || "Unknown User"} closed matter ${selectedCase.fileNo} on ${formatActivityDate(new Date())}`,
+        actorUserId: user?.id,
+        actorName: closedByName,
+        sourceTable: "case_files",
+        sourceRecordId: selectedCase.id,
+        parentTable: "case_files",
+        parentId: selectedCase.id,
+        clientId: selectedCase.clientId,
+        clientName: selectedCase.client,
+        matterId: selectedCase.id,
+        matterFileNumber: selectedCase.fileNo,
+        matterType: [selectedCase.caseType, selectedCase.subtype].filter(Boolean).join(" - "),
+        metadata: {
+          status: "Inactive",
+          current_stage: "Finalised",
+        },
+      });
       setSelectedCase(nextSelectedCase);
       setCaseEditForm((prev) => prev ? { ...prev, status: "Inactive", currentStage: "Finalised" } : createCaseEditForm(nextSelectedCase));
       invalidateDashboardWeeklyMattersCache();
@@ -2336,10 +2356,38 @@ const Matters = () => {
               : null,
             closing_note: caseEditForm.outcome.closingNote.trim() || null,
           };
-          const { error } = await (supabase as any)
+          const { data: savedOutcome, error } = await (supabase as any)
             .from("case_outcomes")
-            .upsert(payload, { onConflict: "case_file_id" });
+            .upsert(payload, { onConflict: "case_file_id" })
+            .select("id,created_at,updated_at")
+            .single();
           if (error) throw error;
+          const actorName = resolveCurrentUserName();
+          const matterType = [caseEditForm.caseType.trim() || selectedCase.caseType, caseEditForm.subtype.trim() || selectedCase.subtype].filter(Boolean).join(" - ");
+          const finalisedMatterTypes = ["CCMA", "Bargaining Council", "Hearing"];
+          const isFinalisedMatter = finalisedMatterTypes.includes(caseEditForm.caseType.trim() || selectedCase.caseType);
+          void logActivity({
+            activityKey: "matter_outcome_saved",
+            actionSentence: `${actorName} ${isFinalisedMatter ? "finalised" : "saved an outcome for"} matter ${selectedCase.fileNo} on ${formatActivityDate(caseEditForm.outcome.outcomeDate || new Date())}`,
+            actorUserId: user?.id,
+            actorName,
+            sourceTable: "case_outcomes",
+            sourceRecordId: String((savedOutcome as any)?.id || "").trim() || undefined,
+            parentTable: "case_files",
+            parentId: selectedCase.id,
+            clientId: selectedCase.clientId,
+            clientName: selectedCase.client,
+            matterId: selectedCase.id,
+            matterFileNumber: selectedCase.fileNo,
+            matterType,
+            occurredAt: String((savedOutcome as any)?.updated_at || (savedOutcome as any)?.created_at || new Date().toISOString()),
+            activityDate: caseEditForm.outcome.outcomeDate.trim() || undefined,
+            metadata: {
+              outcome_type: caseEditForm.outcome.outcomeType.trim(),
+              amount_awarded: payload.amount_awarded,
+              amount_settled: payload.amount_settled,
+            },
+          });
         }
       }
 
@@ -2682,7 +2730,7 @@ const Matters = () => {
           next_date: nextActionDateForNewCase !== "--" ? nextActionDateForNewCase : (newCaseForm.nextDate || null),
           short_description: newCaseForm.shortDescription.trim() || null,
         })
-        .select("id")
+        .select("id,created_at")
         .single();
 
       if (caseError) throw caseError;
@@ -2700,6 +2748,26 @@ const Matters = () => {
         created_by_name: string;
       }> = [];
       const actorName = resolveCurrentUserName();
+      void logActivity({
+        activityKey: "matter_created",
+        actionSentence: `${actorName} created matter ${fileNumber} on ${formatActivityDate((insertedCase as any)?.created_at || new Date())}`,
+        actorUserId: user.id,
+        actorName,
+        sourceTable: "case_files",
+        sourceRecordId: caseFileId,
+        parentTable: "case_files",
+        parentId: caseFileId,
+        clientId: newCaseForm.clientId.trim(),
+        clientName: newCaseForm.clientName.trim(),
+        matterId: caseFileId,
+        matterFileNumber: fileNumber,
+        matterType: [newCaseForm.caseType.trim(), newCaseForm.subtype.trim()].filter(Boolean).join(" - "),
+        occurredAt: String((insertedCase as any)?.created_at || new Date().toISOString()),
+        metadata: {
+          status: newCaseForm.status,
+          priority: newCaseForm.priority,
+        },
+      });
       if (validNewCaseDateEvents.length > 0) {
         dateInserts.push(...validNewCaseDateEvents.map((event) => ({
           case_file_id: caseFileId,
@@ -3090,10 +3158,27 @@ const Matters = () => {
             note_content: noteContent,
             note_user_name: noteUserName,
           })
-          .select("id")
+          .select("id,created_at")
           .single();
         if (error) throw error;
         savedCaseNoteId = String(insertedCaseNote?.id || "").trim();
+        void logActivity({
+          activityKey: "matter_note_created",
+          actionSentence: `${noteUserName} made a matter note on ${formatActivityDate(noteDate)}`,
+          actorUserId: user.id,
+          actorName: noteUserName,
+          sourceTable: "case_notes",
+          sourceRecordId: savedCaseNoteId || undefined,
+          parentTable: "case_files",
+          parentId: selectedCase.id,
+          clientId: selectedCase.clientId,
+          clientName: selectedCase.client,
+          matterId: selectedCase.id,
+          matterFileNumber: selectedCase.fileNo,
+          matterType: [selectedCase.caseType, selectedCase.subtype].filter(Boolean).join(" - "),
+          occurredAt: String(insertedCaseNote?.created_at || new Date().toISOString()),
+          activityDate: noteDate,
+        });
       }
 
       if (savedCaseNoteId) {
@@ -3227,15 +3312,35 @@ const Matters = () => {
           await supabase.storage.from(CASE_DOCUMENTS_BUCKET).remove([editingCaseDocument.fileUrl]);
         }
       } else {
-        const { error } = await (supabase as any).from("case_documents").insert({
+        const { data: insertedCaseDocument, error } = await (supabase as any).from("case_documents").insert({
           case_file_id: selectedCase.id,
           description,
           document_name: nextDocumentName,
           file_url: nextFilePath,
           uploaded_by: uploadedBy,
           document_category: null,
-        });
+        }).select("id,created_at").single();
         if (error) throw error;
+        void logActivity({
+          activityKey: "matter_document_uploaded",
+          actionSentence: `${uploadedBy} uploaded a matter document on ${formatActivityDate((insertedCaseDocument as any)?.created_at || new Date())}`,
+          actorUserId: user.id,
+          actorName: uploadedBy,
+          sourceTable: "case_documents",
+          sourceRecordId: String((insertedCaseDocument as any)?.id || "").trim() || undefined,
+          parentTable: "case_files",
+          parentId: selectedCase.id,
+          clientId: selectedCase.clientId,
+          clientName: selectedCase.client,
+          matterId: selectedCase.id,
+          matterFileNumber: selectedCase.fileNo,
+          matterType: [selectedCase.caseType, selectedCase.subtype].filter(Boolean).join(" - "),
+          occurredAt: String((insertedCaseDocument as any)?.created_at || new Date().toISOString()),
+          metadata: {
+            document_name: nextDocumentName,
+            description,
+          },
+        });
       }
       await fetchCaseDocuments(selectedCase.id);
       setIsCaseDocumentDialogOpen(false);

@@ -34,7 +34,7 @@ const primaryNavItems = [
   { title: "Documents", url: "/documents", icon: FolderOpen },
   { title: "Calendar", url: "/calendar", icon: CalendarDays },
   { title: "Templates", icon: LayoutTemplate },
-  { title: "Reports", icon: ChartColumn },
+  { title: "Reports", url: "/reports", icon: ChartColumn },
   { title: "Team", icon: Users },
 ];
 
@@ -115,6 +115,8 @@ export function AppSidebar({ isCollapsed }: AppSidebarProps) {
                       ? pathname.startsWith("/documents")
                       : item.url === "/case-files"
                         ? pathname.startsWith("/case-files")
+                        : item.url === "/reports"
+                          ? pathname.startsWith("/reports")
                         : location.pathname === item.url
                     : false;
                   return (

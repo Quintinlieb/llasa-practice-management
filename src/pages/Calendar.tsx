@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { warnIfSouthAfricanPublicHoliday } from "@/lib/southAfricanPublicHolidays";
+import { formatActivityDate, logActivity, taskCreatedActivityKey } from "@/lib/activityLog";
 
 type CalendarView = "day" | "week" | "month";
 
@@ -1937,7 +1938,7 @@ const CalendarPage = () => {
                   return;
                 }
 
-                const { error: insertError } = await (supabase as any)
+                const { data: insertedTask, error: insertError } = await (supabase as any)
                   .from("diary_tasks")
                   .insert({
                     company_id: companyId,
@@ -1952,9 +1953,33 @@ const CalendarPage = () => {
                     assigned_to_name: assignee.label,
                     created_by: user.id,
                     created_by_name: createdByName,
-                  });
+                  })
+                  .select("id")
+                  .single();
 
                 if (insertError) throw insertError;
+
+                const taskCreatedAt = new Date().toISOString();
+                void logActivity({
+                  activityKey: taskCreatedActivityKey,
+                  actionSentence: `${createdByName} created a task on ${formatActivityDate(taskCreatedAt)}`,
+                  sourceTable: "diary_tasks",
+                  sourceRecordId: String((insertedTask as any)?.id || ""),
+                  parentTable: relatedMatterId && relatedMatterId !== "__none__" ? "case_files" : "clients",
+                  parentId: relatedMatterId && relatedMatterId !== "__none__" ? relatedMatterId : newEntryForm.clientId,
+                  clientId: newEntryForm.clientId,
+                  clientName: newEntryForm.client,
+                  matterId: relatedMatterId && relatedMatterId !== "__none__" ? relatedMatterId : null,
+                  documentType: newEntryForm.type,
+                  occurredAt: taskCreatedAt,
+                  activityDate: taskCreatedAt.slice(0, 10),
+                  metadata: {
+                    source: "calendar",
+                    task_type: newEntryForm.type,
+                    diary_date: newEntryForm.date,
+                    assigned_to: assignee.label,
+                  },
+                });
 
                 toast({
                   title: "Task saved",

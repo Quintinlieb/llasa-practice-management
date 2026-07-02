@@ -17,6 +17,7 @@ import ClientsTwo from "./pages/clientsTwo";
 import Documents from "./pages/Documents";
 import Matters from "./pages/Matters";
 import CalendarPage from "./pages/Calendar";
+import Reports from "./pages/Reports";
 import CodeOfConductPreviewPage from "./pages/documents/discipline/CodeOfConductPreview";
 import AddendumGenerator from "./pages/AddendumGenerator";
 import TemporaryContractGenerator from "./pages/TemporaryContractGenerator";
@@ -119,6 +120,7 @@ const AppRoutes = () => {
           <Route path="/documents" element={<Documents />} />
           <Route path="/case-files" element={<Matters />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="/employees" element={<Navigate to="/clients-2" replace />} />

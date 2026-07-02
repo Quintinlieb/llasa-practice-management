@@ -46,11 +46,11 @@ type DashboardEventConsultantOption = {
   label: string;
 };
 
-type DashboardTaskRow = {
-  id: string;
-  dateLabel: string;
-  taskType: string;
-  assignedTo: string;
+type DashboardProductivityRow = {
+  name: string;
+  points: number;
+  activities: number;
+  percentage: number;
 };
 
 type ConsultantEventPerson = DashboardWeeklySchedulePerson;
@@ -259,6 +259,13 @@ function getDashboardUpcomingEventsRange(days: DashboardEventRangeDays) {
   return {
     startLabel: formatDashboardDateValue(startDate),
     endLabel: formatDashboardDateValue(endDate),
+  };
+}
+function getDashboardCurrentMonthRange() {
+  const today = new Date();
+  return {
+    startLabel: formatDashboardDateValue(new Date(today.getFullYear(), today.getMonth(), 1)),
+    endLabel: formatDashboardDateValue(today),
   };
 }
 function formatDashboardShortDate(value: unknown) {
@@ -475,7 +482,9 @@ export default function Dashboard() {
       allDashboardEventConsultantsValue,
     ),
   );
-  const [taskRows, setTaskRows] = useState<DashboardTaskRow[]>([]);
+  const [productivityRows, setProductivityRows] = useState<DashboardProductivityRow[]>([]);
+  const [productivityActivityCount, setProductivityActivityCount] = useState(0);
+  const [productivityTotalPoints, setProductivityTotalPoints] = useState(0);
   const [consultantPeople, setConsultantPeople] = useState<ConsultantEventPerson[]>(
     () => loadCachedDashboardWeeklySchedulePeople() ?? [],
   );
@@ -682,29 +691,69 @@ export default function Dashboard() {
   useEffect(() => {
     let isMounted = true;
 
-    const loadDiaryTasks = async () => {
-      const todayLabel = new Date().toISOString().slice(0, 10);
-      const { data, error } = await (supabase as any)
-        .from("diary_tasks")
-        .select("id,diary_date,task_type,assigned_to_name")
-        .gte("diary_date", todayLabel)
-        .order("diary_date", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: true, nullsFirst: false })
-        .limit(5);
+    const loadProductivityShare = async () => {
+      const { startLabel, endLabel } = getDashboardCurrentMonthRange();
+      await (supabase as any).rpc("sync_reached_matter_date_activities");
 
-      if (!isMounted || error) return;
+      const { data: ruleData, error: ruleError } = await (supabase as any)
+        .from("activity_score_rules")
+        .select("activity_key,points");
+      if (!isMounted || ruleError) return;
 
-      const mapped = (Array.isArray(data) ? data : []).map((row: any) => ({
-        id: String(row?.id || ""),
-        dateLabel: formatDashboardDate(row?.diary_date),
-        taskType: String(row?.task_type || "").trim() || "--",
-        assignedTo: String(row?.assigned_to_name || "").trim() || "--",
-      })).filter((row) => row.id);
+      const scoreRulePoints = new Map<string, number>(
+        (Array.isArray(ruleData) ? ruleData : []).map((row: any) => [
+          String(row?.activity_key || ""),
+          Number(row?.points || 0),
+        ]),
+      );
 
-      setTaskRows(mapped);
+      const activityRows: any[] = [];
+      const batchSize = 1000;
+      let from = 0;
+      let shouldContinue = true;
+
+      while (shouldContinue) {
+        const { data, error } = await (supabase as any)
+          .from("activity_logs")
+          .select("actor_name,activity_key,points,activity_date")
+          .gte("activity_date", startLabel)
+          .lte("activity_date", endLabel)
+          .order("activity_date", { ascending: false })
+          .range(from, from + batchSize - 1);
+
+        if (!isMounted || error) return;
+        const nextRows = Array.isArray(data) ? data : [];
+        activityRows.push(...nextRows);
+        shouldContinue = nextRows.length === batchSize;
+        from += batchSize;
+      }
+
+      const byUser = new Map<string, { name: string; points: number; activities: number; percentage: number }>();
+      activityRows.forEach((row) => {
+        const name = String(row?.actor_name || "Unknown User").trim() || "Unknown User";
+        const activityKey = String(row?.activity_key || "");
+        const points = scoreRulePoints.get(activityKey) ?? Number(row?.points || 0);
+        const current = byUser.get(name) ?? { name, points: 0, activities: 0, percentage: 0 };
+        current.points += Number.isFinite(points) ? points : 0;
+        current.activities += 1;
+        byUser.set(name, current);
+      });
+
+      const totalPoints = Array.from(byUser.values()).reduce((sum, row) => sum + row.points, 0);
+      const mapped = Array.from(byUser.values())
+        .map((row) => ({
+          ...row,
+          points: Number(row.points.toFixed(2)),
+          percentage: totalPoints > 0 ? (row.points / totalPoints) * 100 : 0,
+        }))
+        .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
+
+      setProductivityRows(mapped);
+      setProductivityActivityCount(activityRows.length);
+      setProductivityTotalPoints(Number(totalPoints.toFixed(2)));
     };
 
-    void loadDiaryTasks();
+    void loadProductivityShare();
 
     return () => {
       isMounted = false;
@@ -1143,15 +1192,20 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3">
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-white/70 text-slate-700 shadow-sm">
-                              <CalendarCheck2 size={16} strokeWidth={2.1} />
+                              <Users size={16} strokeWidth={2.1} />
                             </div>
-                            <CardTitle className="text-[14px] font-semibold leading-none text-slate-800">
-                              Diary / Tasks
-                            </CardTitle>
+                            <div>
+                              <CardTitle className="text-[14px] font-semibold leading-none text-slate-800">
+                                Productivity Share
+                              </CardTitle>
+                              <p className="mt-1 text-[10.5px] text-slate-500">
+                                {productivityTotalPoints} points across {productivityActivityCount} activities
+                              </p>
+                            </div>
                           </div>
                           <button
                             type="button"
-                            onClick={() => navigate("/clients")}
+                            onClick={() => navigate("/reports")}
                             className="text-[12px] font-semibold text-slate-700 transition-colors hover:text-[#3eca44]"
                           >
                             View all
@@ -1163,16 +1217,16 @@ export default function Dashboard() {
                         <div className="min-h-0 flex-1 overflow-x-auto">
                           <table className="w-full min-w-[320px]">
                             <colgroup>
-                              <col className="w-[84px]" />
                               <col className="w-auto" />
-                              <col className="w-[72px]" />
+                              <col className="w-[78px]" />
+                              <col className="w-[82px]" />
                             </colgroup>
                             <thead>
                               <tr className="border-b border-slate-200 text-left">
-                                {["DATE", "TYPE", "ASSIGNED"].map((label) => (
+                                {["PERSON", "POINTS", "SCORE"].map((label) => (
                                   <th
                                     key={label}
-                                    className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500 ${label === "ASSIGNED" ? "text-right" : ""}`}
+                                    className={`px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.02em] text-slate-500 ${label !== "PERSON" ? "text-right" : ""}`}
                                   >
                                     {label}
                                   </th>
@@ -1180,46 +1234,30 @@ export default function Dashboard() {
                               </tr>
                             </thead>
                             <tbody>
-                              {taskRows.length === 0 ? (
+                              {productivityRows.length === 0 ? (
                                 <tr>
                                   <td colSpan={3} className="px-5 py-4 text-[11px] text-slate-500">
-                                    No diary tasks found.
+                                    No activity found for this month.
                                   </td>
                                 </tr>
                               ) : (
-                                taskRows.map((row) => (
+                                productivityRows.map((row) => (
                                   <tr
-                                    key={row.id}
+                                    key={row.name}
                                     className="border-b border-slate-100 transition-colors hover:bg-[#3eca44]/5 last:border-b-0"
                                     style={{ height: "45px" }}
                                   >
                                     <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>
-                                      {row.dateLabel}
-                                    </td>
-                                    <td className="px-5 py-0 align-middle text-[11px] text-slate-700" style={{ height: "45px" }}>
-                                      {row.taskType}
-                                    </td>
-                                    <td className="px-5 py-0 align-middle" style={{ height: "45px" }}>
-                                      <div className="flex items-center justify-end">
-                                        <TooltipProvider delayDuration={0}>
-                                          <Tooltip>
-                                            <TooltipTrigger asChild>
-                                              <span
-                                                className={cn(
-                                                  "inline-flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold",
-                                                  getAvatarClassName(row.assignedTo),
-                                                )}
-                                                aria-label={row.assignedTo}
-                                              >
-                                                {getInitials(row.assignedTo)}
-                                              </span>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top" className="rounded border border-[#3eca44]/35 text-[10px] shadow-none">
-                                              {row.assignedTo}
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </TooltipProvider>
+                                      <div className="min-w-0">
+                                        <div className="truncate font-semibold text-slate-800">{row.name}</div>
+                                        <div className="text-[10px] text-slate-500">{row.activities} activities</div>
                                       </div>
+                                    </td>
+                                    <td className="px-5 py-0 align-middle text-right text-[11px] font-semibold text-slate-800" style={{ height: "45px" }}>
+                                      {row.points}
+                                    </td>
+                                    <td className="px-5 py-0 align-middle text-right" style={{ height: "45px" }}>
+                                      <span className="text-[13px] font-semibold text-[#2f9f35]">{row.percentage.toFixed(1)}%</span>
                                     </td>
                                   </tr>
                                 ))

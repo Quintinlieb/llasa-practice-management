@@ -93,7 +93,14 @@ type LogoOrientation = "portrait" | "landscape";
 type HearingFormat = "in_person" | "virtual";
 type VirtualPlatform = "Microsoft Teams" | "Zoom" | "Google Meet" | "Skype";
 type OffenceCategory = "Minor" | "Serious" | "Dismissible";
-type HearingType = "Disciplinary" | "Poor Performance" | "Ill Health";
+type HearingType =
+  | "Disciplinary Hearing"
+  | "Abscondment"
+  | "Incapacity (Performance)"
+  | "Incapacity (Ill Health)"
+  | "Incapacity (Incompatibility)"
+  | "Incapacity (Impossibility)"
+  | "Appeal";
 
 type ConductOffence = {
   name: string;
@@ -138,6 +145,7 @@ type NoticeFormState = {
   performanceConcernDescriptions: Record<string, string[]>;
   illHealthConcernTypes: string[];
   illHealthConcernDescriptions: Record<string, string[]>;
+  incapacityDescription: string;
 };
 
 type DiscHearingNoticeDraftState = {
@@ -185,6 +193,7 @@ const emptyNoticeFormState: NoticeFormState = {
   performanceConcernDescriptions: {},
   illHealthConcernTypes: [],
   illHealthConcernDescriptions: {},
+  incapacityDescription: "",
 };
 
 const inputClassName =
@@ -207,10 +216,65 @@ const hearingFormatOptions: Array<{ value: HearingFormat; label: string }> = [
 ];
 
 const hearingTypeOptions: readonly HearingType[] = [
-  "Disciplinary",
-  "Poor Performance",
-  "Ill Health",
+  "Disciplinary Hearing",
+  "Abscondment",
+  "Incapacity (Performance)",
+  "Incapacity (Ill Health)",
+  "Incapacity (Incompatibility)",
+  "Incapacity (Impossibility)",
+  "Appeal",
 ] as const;
+
+const normalizeHearingType = (value: unknown): HearingType | "" => {
+  if (
+    value === "Disciplinary Hearing" ||
+    value === "Abscondment" ||
+    value === "Incapacity (Performance)" ||
+    value === "Incapacity (Ill Health)" ||
+    value === "Incapacity (Incompatibility)" ||
+    value === "Incapacity (Impossibility)"
+  ) {
+    return value;
+  }
+  if (value === "Disciplinary") return "Disciplinary Hearing";
+  if (value === "Poor Performance") return "Incapacity (Performance)";
+  if (value === "Ill Health") return "Incapacity (Ill Health)";
+  if (value === "Incapacity") return "Incapacity (Performance)";
+  if (value === "Incapacity (ill health)") return "Incapacity (Ill Health)";
+  if (value === "Incapacity (incompatibility)") return "Incapacity (Incompatibility)";
+  if (value === "Incapacity (impossibility)") return "Incapacity (Impossibility)";
+  return "";
+};
+
+const isPerformanceHearing = (hearingType: HearingType | "") => hearingType === "Incapacity (Performance)";
+const isIllHealthHearing = (hearingType: HearingType | "") => hearingType === "Incapacity (Ill Health)";
+const isDisciplinaryHearing = (hearingType: HearingType | "") => hearingType === "Disciplinary Hearing";
+const isSimpleIncapacityHearing = (hearingType: HearingType | "") =>
+  hearingType === "Incapacity (Incompatibility)" || hearingType === "Incapacity (Impossibility)";
+
+const getNoticeHearingTitle = (hearingType: HearingType | "") => {
+  if (isPerformanceHearing(hearingType)) return "Notice of Poor Performance Hearing";
+  if (isIllHealthHearing(hearingType)) return "Notice of Incapacity Hearing (Ill Health)";
+  if (isSimpleIncapacityHearing(hearingType)) return "Notice of Incapacity Hearing";
+  if (hearingType === "Abscondment") return "Notice of Abscondment Hearing";
+  if (hearingType === "Appeal") return "Notice of Appeal Hearing";
+  return "Notice of Disciplinary Hearing";
+};
+
+const getPreliminaryHearingTitle = (hearingType: HearingType | "") => {
+  if (isPerformanceHearing(hearingType)) return "Incapacity Hearing (Performance)";
+  if (isIllHealthHearing(hearingType)) return "Incapacity Hearing (Ill Health)";
+  if (isSimpleIncapacityHearing(hearingType)) return "Incapacity Hearing";
+  if (hearingType === "Abscondment") return "Abscondment Hearing";
+  if (hearingType === "Appeal") return "Appeal Hearing";
+  return "Disciplinary Hearing";
+};
+
+const getSimpleIncapacityLabel = (hearingType: HearingType | "") => {
+  if (hearingType === "Incapacity (Impossibility)") return "Impossibility";
+  if (hearingType === "Incapacity (Incompatibility)") return "Incompatibility";
+  return "Incapacity";
+};
 
 const performanceConcernTypeOptions = [
   "Not meeting required productivity levels",
@@ -248,54 +312,67 @@ const hearingMinuteOptions = Array.from({ length: 12 }, (_, index) => String(ind
 const getHearingRights = (hearingType: HearingType | "") =>
   [
     "The right to be given time to prepare your case.",
-    hearingType === "Poor Performance"
+    isPerformanceHearing(hearingType)
       ? "The right to be given advance warning of the performance concerns."
-      : hearingType === "Ill Health"
+      : isIllHealthHearing(hearingType)
         ? "The right to be given advance warning of the health concerns."
-        : "The right to be given advance warning of the charges.",
+        : isSimpleIncapacityHearing(hearingType)
+          ? "The right to be given advance warning of the incapacity description."
+          : "The right to be given advance warning of the charges.",
     "The right to be represented by a fellow employee / shop steward which must be an employee of the company. It is your responsibility to ensure the availability of your representative at the hearing. No external representation is permitted.",
     "The right to ask questions of any evidence produced or of statements by witnesses.",
     "The right to a fair and proper hearing.",
     "The right to call witnesses. It is your responsibility to ensure the availability of your witness/es at the hearing.",
     "The right to an interpreter. You may request another employee to perform this function.",
-    hearingType === "Poor Performance" || hearingType === "Ill Health"
+    isSimpleIncapacityHearing(hearingType)
+      ? "The right to appeal against any final decision taken by the company in terms of the appeal procedures."
+      : isPerformanceHearing(hearingType) || isIllHealthHearing(hearingType)
       ? "The right to appeal against the decision taken by the company in terms of the appeal procedures."
       : "The right to appeal against any disciplinary action in terms of the company appeal procedures.",
     "Note the importance of attending the hearing. If you do not attend the hearing or remain in attendance until the finalization thereof it will be conducted in your absence. The chairperson will then only have one version to make a decision on. It is your responsibility to inform your employer that you cannot attend with valid reasons. If absence is due to invalid reasons, the hearing will continue in your absence.",
   ] as const;
 
-const getPreliminaryIssuesRows = (hearingType: HearingType | "") =>
-  [
+const getPreliminaryIssuesRows = (hearingType: HearingType | "") => {
+  const rows = [
     { number: "1.", label: "The Complainant is present." },
     { number: "2.", label: "The Employee is present." },
-    { number: "3.", label: "Representation:" },
-    { number: "3.1", label: "A Shop Steward will represent the Employee." },
-    { number: "3.2", label: "An employee will represent the Employee." },
+    { number: "3.", label: "The Employee requires representation." },
+    { number: "3.1", label: "If yes, a shop steward will represent the Employee." },
+    { number: "3.2", label: "If yes, a co-worker will represent the employee." },
     { number: "3.3", label: "The Employee will represent him / herself." },
     { number: "4.", label: "The Employee requests an interpreter." },
     { number: "5.", label: "The employee received the notice on ________________________." },
     {
       number: "6.",
       label:
-        hearingType === "Poor Performance"
+        isPerformanceHearing(hearingType)
           ? "The Employee understands performance concern(s)."
-          : hearingType === "Ill Health"
+          : isIllHealthHearing(hearingType)
             ? "The Employee understands health concern(s)."
-            : "The Employee understands charge(s).",
+            : isSimpleIncapacityHearing(hearingType)
+              ? "The Employee understands the incapacity description."
+              : "The Employee understands charge(s).",
     },
     { number: "7.", label: "The Employee understands all his/her rights." },
     { number: "8.", label: "The hearing process has been explained to the Employee." },
     { number: "9.", label: "The Employee has witnesses." },
+  ];
+
+  if (isSimpleIncapacityHearing(hearingType)) return rows;
+
+  return [
+    ...rows,
     {
       number: "",
       label:
-        hearingType === "Poor Performance"
+        isPerformanceHearing(hearingType)
           ? "PLEA TO PERFORMANCE CONCERN(S)"
-          : hearingType === "Ill Health"
+          : isIllHealthHearing(hearingType)
             ? "PLEA TO HEALTH CONCERN(S)"
             : "PLEA TO CHARGE(S)",
     },
-  ] as const;
+  ];
+};
 
 const offenceCategoryOrder: OffenceCategory[] = ["Minor", "Serious", "Dismissible"];
 
@@ -473,7 +550,7 @@ const normalizeNoticeFormState = (value: unknown): NoticeFormState => {
   return {
     ...emptyNoticeFormState,
     ...candidate,
-    hearingType: typeof candidate.hearingType === "string" ? (candidate.hearingType as HearingType | "") : "",
+    hearingType: normalizeHearingType(candidate.hearingType),
     hearingPlatform:
       typeof candidate.hearingPlatform === "string" ? (candidate.hearingPlatform as VirtualPlatform | "") : "",
     misconductTypes: Array.isArray(candidate.misconductTypes)
@@ -524,6 +601,7 @@ const normalizeNoticeFormState = (value: unknown): NoticeFormState => {
               .map(([key, entryValue]) => [key, Array.isArray(entryValue) ? entryValue : [entryValue]]),
           )
         : {},
+    incapacityDescription: typeof candidate.incapacityDescription === "string" ? candidate.incapacityDescription : "",
   };
 };
 
@@ -681,7 +759,7 @@ const buildDefaultHearingLocation = (clientForm: ClientFormState) => {
 };
 
 const getActiveConcernConfig = (noticeForm: NoticeFormState) => {
-  if (noticeForm.hearingType === "Poor Performance") {
+  if (isPerformanceHearing(noticeForm.hearingType)) {
     return {
       sectionTitle: "C. PERFORMANCE CONCERN(S)",
       itemLabel: "Concern",
@@ -690,13 +768,23 @@ const getActiveConcernConfig = (noticeForm: NoticeFormState) => {
       descriptions: noticeForm.performanceConcernDescriptions,
     };
   }
-  if (noticeForm.hearingType === "Ill Health") {
+  if (isIllHealthHearing(noticeForm.hearingType)) {
     return {
       sectionTitle: "C. ILL-HEALTH CONCERN(S)",
       itemLabel: "Concern",
       itemLabelPlural: "ill-health concern type(s)",
       types: noticeForm.illHealthConcernTypes,
       descriptions: noticeForm.illHealthConcernDescriptions,
+    };
+  }
+  if (isSimpleIncapacityHearing(noticeForm.hearingType)) {
+    const label = getSimpleIncapacityLabel(noticeForm.hearingType);
+    return {
+      sectionTitle: "C. INCAPACITY DESCRIPTION",
+      itemLabel: "Description",
+      itemLabelPlural: "incapacity description",
+      types: [label],
+      descriptions: { [label]: [noticeForm.incapacityDescription] },
     };
   }
 
@@ -710,6 +798,8 @@ const getActiveConcernConfig = (noticeForm: NoticeFormState) => {
 };
 
 const buildPreliminaryChargeRows = (noticeForm: NoticeFormState) => {
+  if (isSimpleIncapacityHearing(noticeForm.hearingType)) return [];
+
   const activeConcernConfig = getActiveConcernConfig(noticeForm);
   const rows = activeConcernConfig.types.flatMap((type, chargeIndex) => {
     const label = String(type || "").trim() || `${activeConcernConfig.itemLabel} ${chargeIndex + 1}`;
@@ -873,9 +963,9 @@ const HearingNoticeGeneratorContent = ({
       : noticeForm.illHealthConcernTypes.length === 1
         ? noticeForm.illHealthConcernTypes[0]
         : `${noticeForm.illHealthConcernTypes.length} ill-health concern(s) selected`;
-  const requiresMisconductDetails = noticeForm.hearingType === "Disciplinary";
-  const requiresPerformanceConcernDetails = noticeForm.hearingType === "Poor Performance";
-  const requiresIllHealthConcernDetails = noticeForm.hearingType === "Ill Health";
+  const requiresMisconductDetails = isDisciplinaryHearing(noticeForm.hearingType);
+  const requiresPerformanceConcernDetails = isPerformanceHearing(noticeForm.hearingType);
+  const requiresIllHealthConcernDetails = isIllHealthHearing(noticeForm.hearingType);
   const employeeFullName = buildEmployeeFullName(employeeForm) || "______________________________";
   const previewLine = "______________________________";
   const employeeDetailRows = buildEmployeeDetailRows(employeeForm, previewLine);
@@ -883,7 +973,7 @@ const HearingNoticeGeneratorContent = ({
   const activeConcernConfig = getActiveConcernConfig(noticeForm);
   const hearingRights = getHearingRights(noticeForm.hearingType);
   const preliminaryIssuesRows = getPreliminaryIssuesRows(noticeForm.hearingType);
-  const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
+  const preliminaryPleaRowIndex = preliminaryIssuesRows.findIndex((row) => row.number === "");
   const currentYear = new Date().getFullYear();
   const issuedAndSignedLine = `Issued and signed at __________________ on this _____ day of _____________________ ${currentYear}.`;
   const [selectedHour = "", selectedMinute = ""] = noticeForm.hearingTime.split(":");
@@ -1286,7 +1376,12 @@ const HearingNoticeGeneratorContent = ({
                   </SelectTrigger>
                   <SelectContent className="text-[10px]">
                     {hearingTypeOptions.map((option) => (
-                      <SelectItem key={option} value={option} className="text-[10px]">
+                      <SelectItem
+                        key={option}
+                        value={option}
+                        disabled={option === "Appeal"}
+                        className={cn("text-[10px]", option === "Appeal" && "text-slate-400 opacity-60")}
+                      >
                         {option}
                       </SelectItem>
                     ))}
@@ -1583,7 +1678,7 @@ const HearingNoticeGeneratorContent = ({
               </div>
             ) : null}
 
-            {noticeForm.hearingType === "Poor Performance" ? (
+            {isPerformanceHearing(noticeForm.hearingType) ? (
               <div className="space-y-2">
                 <Label htmlFor="discHearingPerformanceConcerns" className="text-[10px] font-semibold text-slate-600">
                   Performance Concerns <span className="text-red-500">*</span>
@@ -1695,7 +1790,7 @@ const HearingNoticeGeneratorContent = ({
               </div>
             ) : null}
 
-            {noticeForm.hearingType === "Ill Health" ? (
+            {isIllHealthHearing(noticeForm.hearingType) ? (
               <div className="space-y-2">
                 <Label htmlFor="discHearingIllHealthConcerns" className="text-[10px] font-semibold text-slate-600">
                   Ill-health Concerns <span className="text-red-500">*</span>
@@ -1802,6 +1897,21 @@ const HearingNoticeGeneratorContent = ({
               </div>
             ) : null}
 
+            {isSimpleIncapacityHearing(noticeForm.hearingType) ? (
+              <div className="space-y-2">
+                <Label htmlFor="discHearingIncapacityDescription" className="text-[10px] font-semibold text-slate-600">
+                  Incapacity Description <span className="text-red-500">*</span>
+                </Label>
+                <Textarea
+                  id="discHearingIncapacityDescription"
+                  value={noticeForm.incapacityDescription}
+                  onChange={(event) => onNoticeFormChange("incapacityDescription", normalizeDescriptionLineBreaks(event.target.value))}
+                  placeholder="Enter incapacity details"
+                  className="min-h-[88px] rounded-sm border-slate-300 bg-white !text-[10px] font-medium text-slate-900 shadow-none placeholder:!text-[10px] placeholder:font-normal placeholder:text-slate-400 hover:border-[#3eca44] focus-visible:border-[#3eca44] focus-visible:ring-0"
+                />
+              </div>
+            ) : null}
+
             {requiresMisconductDetails && noticeForm.misconductTypes.length > 0 ? (
               <div className="space-y-4">
                 {noticeForm.misconductTypes.length === 1 ? (
@@ -1872,7 +1982,7 @@ const HearingNoticeGeneratorContent = ({
               </div>
             ) : null}
 
-            {noticeForm.hearingType === "Poor Performance" && noticeForm.performanceConcernTypes.length > 0 ? (
+            {isPerformanceHearing(noticeForm.hearingType) && noticeForm.performanceConcernTypes.length > 0 ? (
               <div className="space-y-4">
                 {noticeForm.performanceConcernTypes.length === 1 ? (
                   <Accordion type="single" defaultValue={noticeForm.performanceConcernTypes[0]} collapsible className="space-y-3">
@@ -1942,7 +2052,7 @@ const HearingNoticeGeneratorContent = ({
               </div>
             ) : null}
 
-            {noticeForm.hearingType === "Ill Health" && noticeForm.illHealthConcernTypes.length > 0 ? (
+            {isIllHealthHearing(noticeForm.hearingType) && noticeForm.illHealthConcernTypes.length > 0 ? (
               <div className="space-y-4">
                 {noticeForm.illHealthConcernTypes.length === 1 ? (
                   <Accordion type="single" defaultValue={noticeForm.illHealthConcernTypes[0]} collapsible className="space-y-3">
@@ -2009,11 +2119,7 @@ const HearingNoticeGeneratorContent = ({
             <div className="space-y-8">
             <div className="bg-white px-8 pt-4 pb-6 text-black">
               <h2 className="text-center text-[24px] font-bold uppercase tracking-tight text-black">
-                {noticeForm.hearingType === "Poor Performance"
-                  ? "Notice of Poor Performance Hearing"
-                  : noticeForm.hearingType === "Ill Health"
-                    ? "Notice of Incapacity Hearing (Ill Health)"
-                    : "Notice of Disciplinary Hearing"}
+                {getNoticeHearingTitle(noticeForm.hearingType)}
               </h2>
 
               <section className="mt-[32px] overflow-hidden rounded-[4px] border border-[#5f6872]">
@@ -2149,11 +2255,7 @@ const HearingNoticeGeneratorContent = ({
               <div className="mb-[14px] space-y-1 text-center text-black">
                 <h2 className="text-[20px] font-bold uppercase tracking-tight">Preliminary Issues Form</h2>
                 <p className="text-[16px] font-bold tracking-wide">
-                  {noticeForm.hearingType === "Poor Performance"
-                    ? "Incapacity Hearing (Performance)"
-                    : noticeForm.hearingType === "Ill Health"
-                      ? "Incapacity Hearing (Ill Health)"
-                      : "Disciplinary Hearing"}
+                  {getPreliminaryHearingTitle(noticeForm.hearingType)}
                 </p>
               </div>
               <section className="mt-[16px] overflow-hidden rounded-[4px] border border-[#5f6872]">
@@ -2196,7 +2298,7 @@ const HearingNoticeGeneratorContent = ({
                         <td className="border border-slate-300 px-2 py-1.5 align-top font-bold">
                           {rowIndex === preliminaryPleaRowIndex ? "" : row.number}
                         </td>
-                        <td className={cn("border border-slate-300 px-2 py-1.5 align-top", row.number === "3." && "font-bold")}>
+                        <td className="border border-slate-300 px-2 py-1.5 align-top">
                           {row.label}
                         </td>
                         <td className="border border-slate-300 px-2 py-1.5 text-center align-top font-bold">
@@ -2482,15 +2584,16 @@ const HearingNoticeGenerator = ({
     }
 
     if (field === "hearingType") {
-      if (value !== "Disciplinary") setMisconductPickerOpen(false);
-      if (value !== "Poor Performance") setPerformanceConcernPickerOpen(false);
-      if (value !== "Ill Health") setIllHealthConcernPickerOpen(false);
+      const nextType = normalizeHearingType(value);
+      if (!isDisciplinaryHearing(nextType)) setMisconductPickerOpen(false);
+      if (!isPerformanceHearing(nextType)) setPerformanceConcernPickerOpen(false);
+      if (!isIllHealthHearing(nextType)) setIllHealthConcernPickerOpen(false);
     }
 
     setNoticeForm((current) => {
       if (field === "hearingType") {
-        const nextType = value as HearingType | "";
-        if (nextType === "Disciplinary") {
+        const nextType = normalizeHearingType(value);
+        if (isDisciplinaryHearing(nextType)) {
           return {
             ...current,
             hearingType: nextType,
@@ -2498,9 +2601,10 @@ const HearingNoticeGenerator = ({
             performanceConcernDescriptions: {},
             illHealthConcernTypes: [],
             illHealthConcernDescriptions: {},
+            incapacityDescription: "",
           };
         }
-        if (nextType === "Poor Performance") {
+        if (isPerformanceHearing(nextType)) {
           return {
             ...current,
             hearingType: nextType,
@@ -2508,9 +2612,10 @@ const HearingNoticeGenerator = ({
             misconductDescriptions: {},
             illHealthConcernTypes: [],
             illHealthConcernDescriptions: {},
+            incapacityDescription: "",
           };
         }
-        if (nextType === "Ill Health") {
+        if (isIllHealthHearing(nextType)) {
           return {
             ...current,
             hearingType: nextType,
@@ -2518,6 +2623,19 @@ const HearingNoticeGenerator = ({
             misconductDescriptions: {},
             performanceConcernTypes: [],
             performanceConcernDescriptions: {},
+            incapacityDescription: "",
+          };
+        }
+        if (isSimpleIncapacityHearing(nextType)) {
+          return {
+            ...current,
+            hearingType: nextType,
+            misconductTypes: [],
+            misconductDescriptions: {},
+            performanceConcernTypes: [],
+            performanceConcernDescriptions: {},
+            illHealthConcernTypes: [],
+            illHealthConcernDescriptions: {},
           };
         }
         return {
@@ -2529,6 +2647,7 @@ const HearingNoticeGenerator = ({
           performanceConcernDescriptions: {},
           illHealthConcernTypes: [],
           illHealthConcernDescriptions: {},
+          incapacityDescription: "",
         };
       }
 
@@ -2713,9 +2832,10 @@ const HearingNoticeGenerator = ({
     employeeForm.employeeName.trim().length > 0 &&
     employeeForm.employeeSurname.trim().length > 0 &&
     employeeForm.employeeIdOrPassportNumber.trim().length > 0;
-  const requiresMisconductDetails = noticeForm.hearingType === "Disciplinary";
-  const requiresPerformanceConcernDetails = noticeForm.hearingType === "Poor Performance";
-  const requiresIllHealthConcernDetails = noticeForm.hearingType === "Ill Health";
+  const requiresMisconductDetails = isDisciplinaryHearing(noticeForm.hearingType);
+  const requiresPerformanceConcernDetails = isPerformanceHearing(noticeForm.hearingType);
+  const requiresIllHealthConcernDetails = isIllHealthHearing(noticeForm.hearingType);
+  const requiresIncapacityDescription = isSimpleIncapacityHearing(noticeForm.hearingType);
 
   const areMisconductDescriptionsComplete = noticeForm.misconductTypes.every(
     (type) =>
@@ -2746,7 +2866,8 @@ const HearingNoticeGenerator = ({
     (!requiresPerformanceConcernDetails ||
       (noticeForm.performanceConcernTypes.length > 0 && arePerformanceConcernDescriptionsComplete)) &&
     (!requiresIllHealthConcernDetails ||
-      (noticeForm.illHealthConcernTypes.length > 0 && areIllHealthConcernDescriptionsComplete));
+      (noticeForm.illHealthConcernTypes.length > 0 && areIllHealthConcernDescriptionsComplete)) &&
+    (!requiresIncapacityDescription || noticeForm.incapacityDescription.trim().length > 0);
 
   const proceedShortNoticeDialog = useCallback(() => {
     setShortNoticeDialogOpen(false);
@@ -2778,7 +2899,7 @@ const HearingNoticeGenerator = ({
     const activeConcernConfig = getActiveConcernConfig(noticeForm);
     const hearingRights = getHearingRights(noticeForm.hearingType);
     const preliminaryIssuesRows = getPreliminaryIssuesRows(noticeForm.hearingType);
-    const preliminaryPleaRowIndex = preliminaryIssuesRows.length - 1;
+    const preliminaryPleaRowIndex = preliminaryIssuesRows.findIndex((row) => row.number === "");
     const placeValue = formatHearingVenue(noticeForm.hearingFormat, noticeForm.hearingLocation, noticeForm.hearingPlatform) || lineFallback;
     const footerAddressLines = buildFooterAddressLines(clientForm);
     const currentYear = new Date().getFullYear();
@@ -2966,11 +3087,7 @@ const HearingNoticeGenerator = ({
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.text(
-      noticeForm.hearingType === "Poor Performance"
-        ? "NOTICE OF POOR PERFORMANCE HEARING"
-        : noticeForm.hearingType === "Ill Health"
-          ? "NOTICE OF INCAPACITY HEARING (ILL HEALTH)"
-          : "NOTICE OF DISCIPLINARY HEARING",
+      getNoticeHearingTitle(noticeForm.hearingType).toUpperCase(),
       pageWidth / 2,
       y,
       { align: "center" },
@@ -3156,11 +3273,7 @@ const HearingNoticeGenerator = ({
     y += 6.5;
     doc.setFontSize(11);
     doc.text(
-      noticeForm.hearingType === "Poor Performance"
-        ? "Incapacity Hearing (Performance)"
-        : noticeForm.hearingType === "Ill Health"
-          ? "Incapacity Hearing (Ill Health)"
-          : "Disciplinary Hearing",
+      getPreliminaryHearingTitle(noticeForm.hearingType),
       pageWidth / 2,
       y,
       { align: "center" },
@@ -3238,7 +3351,7 @@ const HearingNoticeGenerator = ({
       const isPleaRow = rowIndex === preliminaryPleaRowIndex;
       const fill = isPleaRow ? rowElevenFill : undefined;
       drawTableCell(tableX, y, numberColumnWidth, rowHeight, isPleaRow ? "" : row.number, { bold: true, fill, stroke: false });
-      drawTableCell(tableX + numberColumnWidth, y, descriptionColumnWidth, rowHeight, row.label, { bold: row.number === "3." || isPleaRow, fill, stroke: false });
+      drawTableCell(tableX + numberColumnWidth, y, descriptionColumnWidth, rowHeight, row.label, { bold: isPleaRow, fill, stroke: false });
       drawTableCell(
         tableX + numberColumnWidth + descriptionColumnWidth,
         y,
@@ -3341,13 +3454,14 @@ const HearingNoticeGenerator = ({
       .join("");
     const employeeSurname = employeeForm.employeeSurname.trim();
     const documentNameSuffix = employeeInitials && employeeSurname ? ` (${employeeInitials} ${employeeSurname})` : "";
-    const documentLabel = "Disciplinary Hearing Notice";
+    const documentLabel = getNoticeHearingTitle(noticeForm.hearingType);
     const documentName = `${documentLabel}${documentNameSuffix}`;
-    const downloadFileName = `${sanitizeFileSegment(documentLabel, "disciplinary-hearing-notice")}${documentNameSuffix}.pdf`;
+    const documentSlug = sanitizeFileSegment(documentLabel, "hearing-notice");
+    const downloadFileName = `${documentSlug}${documentNameSuffix}.pdf`;
     const uploadFilePath = [
       "disciplinary-hearing-notices",
       sanitizeFileSegment(clientForm.clientName || "client", "client"),
-      `${Date.now()}-${sanitizeFileSegment(documentName, "disciplinary-hearing-notice")}.pdf`,
+      `${Date.now()}-${sanitizeFileSegment(documentName, "hearing-notice")}.pdf`,
     ].join("/");
 
     const uploadBlob = doc.output("blob");

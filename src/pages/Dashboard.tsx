@@ -53,6 +53,13 @@ type DashboardProductivityRow = {
   percentage: number;
 };
 
+type DashboardProductivityShareRpcRow = {
+  actor_name: string | null;
+  points: number | string | null;
+  activities: number | string | null;
+  percentage: number | string | null;
+};
+
 type ConsultantEventPerson = DashboardWeeklySchedulePerson;
 
 type ConsultantWeekEvent = DashboardWeeklyMatterEvent;
@@ -692,64 +699,25 @@ export default function Dashboard() {
     let isMounted = true;
 
     const loadProductivityShare = async () => {
-      const { startLabel, endLabel } = getDashboardCurrentMonthRange();
-      await (supabase as any).rpc("sync_reached_matter_date_activities");
-
-      const { data: ruleData, error: ruleError } = await (supabase as any)
-        .from("activity_score_rules")
-        .select("activity_key,points");
-      if (!isMounted || ruleError) return;
-
-      const scoreRulePoints = new Map<string, number>(
-        (Array.isArray(ruleData) ? ruleData : []).map((row: any) => [
-          String(row?.activity_key || ""),
-          Number(row?.points || 0),
-        ]),
-      );
-
-      const activityRows: any[] = [];
-      const batchSize = 1000;
-      let from = 0;
-      let shouldContinue = true;
-
-      while (shouldContinue) {
-        const { data, error } = await (supabase as any)
-          .from("activity_logs")
-          .select("actor_name,activity_key,points,activity_date")
-          .gte("activity_date", startLabel)
-          .lte("activity_date", endLabel)
-          .order("activity_date", { ascending: false })
-          .range(from, from + batchSize - 1);
-
-        if (!isMounted || error) return;
-        const nextRows = Array.isArray(data) ? data : [];
-        activityRows.push(...nextRows);
-        shouldContinue = nextRows.length === batchSize;
-        from += batchSize;
+      const { data, error } = await (supabase as any).rpc("get_dashboard_productivity_share");
+      if (!isMounted) return;
+      if (error) {
+        console.warn("Unable to load dashboard productivity share:", error.message);
+        return;
       }
 
-      const byUser = new Map<string, { name: string; points: number; activities: number; percentage: number }>();
-      activityRows.forEach((row) => {
-        const name = String(row?.actor_name || "Unknown User").trim() || "Unknown User";
-        const activityKey = String(row?.activity_key || "");
-        const points = scoreRulePoints.get(activityKey) ?? Number(row?.points || 0);
-        const current = byUser.get(name) ?? { name, points: 0, activities: 0, percentage: 0 };
-        current.points += Number.isFinite(points) ? points : 0;
-        current.activities += 1;
-        byUser.set(name, current);
-      });
-
-      const totalPoints = Array.from(byUser.values()).reduce((sum, row) => sum + row.points, 0);
-      const mapped = Array.from(byUser.values())
-        .map((row) => ({
-          ...row,
-          points: Number(row.points.toFixed(2)),
-          percentage: totalPoints > 0 ? (row.points / totalPoints) * 100 : 0,
-        }))
-        .sort((left, right) => right.points - left.points || left.name.localeCompare(right.name));
+      const rows = Array.isArray(data) ? data as DashboardProductivityShareRpcRow[] : [];
+      const mapped = rows.map((row) => ({
+        name: String(row?.actor_name || "Unknown User").trim() || "Unknown User",
+        points: Number(Number(row?.points || 0).toFixed(2)),
+        activities: Number(row?.activities || 0),
+        percentage: Number(row?.percentage || 0),
+      }));
+      const totalPoints = mapped.reduce((sum, row) => sum + row.points, 0);
+      const totalActivities = mapped.reduce((sum, row) => sum + row.activities, 0);
 
       setProductivityRows(mapped);
-      setProductivityActivityCount(activityRows.length);
+      setProductivityActivityCount(totalActivities);
       setProductivityTotalPoints(Number(totalPoints.toFixed(2)));
     };
 
